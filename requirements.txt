@@ -27,4 +27,5 @@ openpyxl>=3.1.5
 
 # ── Config / ops ──────────────────────────────────────────────────────────
 python-dotenv>=1.0.0
+pyyaml>=6.0                 # config/survey_map.yml — the dynamic survey rules
 tenacity>=9.0.0             # retry/backoff on API pulls

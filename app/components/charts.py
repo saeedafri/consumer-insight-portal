@@ -57,10 +57,11 @@ def horizontal_bar(
     layout["margin"]["l"] = 8
     fig.update_layout(**layout)
     if base_n:
-        fig.add_annotation(
-            text=f"Base: n={base_n}", xref="paper", yref="paper", x=0, y=-0.12,
-            showarrow=False, font={"size": 11, "color": INK_MUTED}, xanchor="left",
-        )
+        # A percentage without its base is not a number an analyst can defend,
+        # so it goes on the axis where it cannot be cropped out of a screenshot.
+        fig.update_layout(xaxis_title=f"Base: n={base_n}",
+                          xaxis_title_font={"size": 11, "color": INK_MUTED})
+        fig.update_layout(margin={**fig.layout.margin.to_plotly_json(), "b": 52})
     return fig
 
 
@@ -223,4 +224,4 @@ def stat_tile(label: str, value: str, caption: str = "") -> None:
 def show_table(df: pd.DataFrame, label: str = "View the data") -> None:
     """The table view every chart on this page is required to offer."""
     with st.expander(label):
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width="stretch", hide_index=True)

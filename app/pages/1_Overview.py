@@ -49,9 +49,9 @@ else:
             charts.horizontal_bar(comp, "label", "pct",
                                   title=dimension.replace("_", " ").title(),
                                   base_n=int(comp["n"].sum())),
-            use_container_width=True,
+            width="stretch",
         )
     with right:
         st.plotly_chart(charts.donut(comp, "label", "n", title="Share of sample"),
-                        use_container_width=True)
+                        width="stretch")
     charts.show_table(comp.rename(columns={"label": dimension, "n": "Respondents", "pct": "Share"}))

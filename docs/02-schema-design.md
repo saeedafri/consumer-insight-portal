@@ -1,11 +1,30 @@
 # Database Schema — CSI Tables in `dwh_stg`
 
-**16 tables**, prefix `csi_`, plus eight `v_csi_` views.
+**17 tables**, prefix `csi_`, plus eight `v_csi_` views.
 DDL: `sql/001_schema.sql` · views: `sql/002_views.sql` · seed: `sql/003_seed_topics.sql`
 
 ---
 
 ## The two decisions that shape everything
+
+### 0. The survey is treated as data, not as code
+
+The questionnaire is not a fixed thing this system knows about. Which questions
+exist, what they are called, which module they belong to and which one supplies
+"gender" are all **resolved per wave**:
+
+| Concern | Where it lives | What happens to an unseen wave |
+|---|---|---|
+| question → module | `config/survey_map.yml` topic rules | unmatched questions get an `Unclassified` topic; nothing fails |
+| module → is it technical | the same rules | unknown modules load and are visible |
+| demographic cut → question | config for a known family, otherwise auto-detected from the question wording | an undetected cut is simply absent and the portal hides that filter |
+| the resolution itself | `csi_profile_map`, written every load | an analyst can correct it in the table, no code change |
+| age bands, generations, census regions | `config/survey_map.yml` | edit the YAML |
+
+On the 09/21/26 wave the loader resolved all ten demographic cuts on its own
+(`age<-D2, ethnicity<-D4, gender<-D1, income_band<-D5, …`) and classified 91 of
+93 questions into modules, with 2 open-end variables left `Unclassified` —
+loaded, visible, and harmless.
 
 ### 1. The fact table is long, not wide
 
@@ -70,7 +89,7 @@ Loaded from the Forsta datamap.
 | `csi_banner` | cross-tab column groups: Gender, Age, Ethnicity, Income, Urbanicity, Politics, Sentiment | 7 |
 | `csi_segment` | one row per column, with the **Forsta definition kept verbatim** (`(D2.ch12 or D2.ch10 or …)`), segment size, stat-test letter, low-base flag | 40 |
 | `csi_crosstab_run` | the Summary-sheet settings — respondent base, percentage base, filters, stat tests | 1 per export |
-| `csi_crosstab` | every cell: percentage, count, **true denominator**, significance letters. `stub_type` separates item rows from Net / Mean / Count rows | 33,240 |
+| `csi_crosstab` | every cell: percentage, count, **true denominator**, significance letters. `item_label` disambiguates grid sub-tables; `stub_type` separates item rows from Net / Mean / Count | 31,800 |
 
 ## LOADING — how it got here
 
@@ -79,6 +98,7 @@ Loaded from the Forsta datamap.
 | `csi_load_log` | audit row per load: source, object, rows read/loaded/bad, status, error |
 | `csi_load_error` | rows that failed validation, with reason and payload |
 | `csi_load_state` | watermarks, so incremental pulls never re-read a whole survey |
+| `csi_profile_map` | which question fed each demographic cut this wave, and whether that came from config or detection |
 
 ---
 

@@ -34,7 +34,7 @@ if picked:
     st.plotly_chart(
         charts.trend_line(data[data.item_label.isin(picked)], "wave_label", "pct", "item_label",
                           title=f"{qcode} over time", entity_order=picked[:6]),
-        use_container_width=True,
+        width="stretch",
     )
 charts.show_table(data.rename(columns={
     "wave_label": "Wave", "item_label": "Item", "pct": "%", "base_n": "Base"}))

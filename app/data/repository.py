@@ -59,7 +59,7 @@ def item_incidence(survey_id: int, question_id: int) -> pd.DataFrame:
 def single_distribution(survey_id: int, question_id: int) -> pd.DataFrame:
     return query_df(
         """
-        SELECT value_code, value_label, n, pct, base_n, is_nonresponse
+        SELECT value_code, answer_label AS value_label, n, pct, base_n, is_nonresponse
           FROM v_csi_single_distribution
          WHERE survey_id = :sid AND question_id = :qid
          ORDER BY value_code
@@ -71,7 +71,7 @@ def single_distribution(survey_id: int, question_id: int) -> pd.DataFrame:
 @st.cache_data(ttl=TTL, show_spinner=False)
 def crosstab(survey_id: int, qcode: str, banner_name: Optional[str] = None) -> pd.DataFrame:
     sql = """
-        SELECT stub_label, stub_type, banner_name, seg_letter, seg_label,
+        SELECT item_label, stub_label, stub_type, banner_name, seg_letter, seg_label,
                segment_size_n, denominator_n, low_base, pct, count_n, sig_letters
           FROM v_csi_crosstab
          WHERE survey_id = :sid AND qcode = :qcode
@@ -122,7 +122,7 @@ def profile_counts(survey_id: int, dimension: str) -> pd.DataFrame:
     return query_df(
         f"""
         SELECT {dimension} AS label, COUNT(*) AS n,
-               COUNT(*) / SUM(COUNT(*)) OVER () AS pct
+               COUNT(*) * 1.0 / SUM(COUNT(*)) OVER () AS pct
           FROM csi_profile p
           JOIN csi_respondent r ON r.respondent_id = p.respondent_id
          WHERE p.survey_id = :sid AND r.is_qualified = 1 AND {dimension} IS NOT NULL

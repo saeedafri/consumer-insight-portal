@@ -1,0 +1,143 @@
+# ══════════════════════════════════════════════════════════════════════════
+# Survey mapping rules — how CSI makes sense of a questionnaire it has never
+# seen before.
+#
+# Nothing here is required. If a new wave adds a module, renames a question or
+# drops one, the loader still works: unmatched questions land in a topic named
+# after themselves and unmatched demographics simply don't appear as filters.
+# These rules only make the portal tidier.
+#
+# Rules are matched in `priority` order (low first), first match wins.
+# `pattern` is a Python regex tested against the question code;
+# `text_pattern` is tested against the question wording (case-insensitive).
+# `family: "*"` applies to every survey.
+# ══════════════════════════════════════════════════════════════════════════
+
+topics:
+  # ── CSI-US, the Consumer Sentiment & Shopping Insights wave ─────────────
+  - {family: "CSI-US", priority: 10, pattern: "^q[1-6]$",                       topic: SHOPPING}
+  - {family: "CSI-US", priority: 20, pattern: "^DP\\d",                         topic: DEPT_STORES}
+  - {family: "CSI-US", priority: 30, pattern: "^DJ\\d",                         topic: DIAMONDS}
+  - {family: "CSI-US", priority: 40, pattern: "^BN\\d",                         topic: BNPL}
+  - {family: "CSI-US", priority: 50, pattern: "^D(28|29|30|31|32|33|34|35)\\b",  topic: AI_GENAI}
+  - {family: "CSI-US", priority: 60, pattern: "^GP\\d",                         topic: GLP1}
+  - {family: "CSI-US", priority: 70, pattern: "^CS\\d",                         topic: SENTIMENT}
+  - {family: "CSI-US", priority: 80, pattern: "^D(12|13|14|15)$",               topic: MACRO}
+  - {family: "CSI-US", priority: 90, pattern: "^D[1-8]$",                       topic: DEMOGRAPHICS}
+
+  # ── Applies to every survey: technical/paradata variables ───────────────
+  - {family: "*", priority: 900, pattern: "^(record|uuid|date|markers|status|source|session|url|list|decLang|userAgent|dcua|RID|start_date|conditions)$", topic: TECHNICAL}
+  - {family: "*", priority: 910, pattern: "^(qtime|vlist|vos|vbrowser|vmobile|vdropout|vterm|vq|voq)",   topic: TECHNICAL}
+
+  # ── Last-resort classification by wording, for a module we've never seen ─
+  - {family: "*", priority: 950, text_pattern: "\\b(gender|age|income|ethnicit|marital|relationship status|state|region|zip)\\b", topic: DEMOGRAPHICS}
+
+# Which question supplies each demographic cut. Auto-detected from the question
+# wording when a survey has no entry here, then written to csi_profile_map so
+# it is visible and editable per wave.
+profile:
+  CSI-US:
+    gender:          D1
+    age:             D2
+    relationship:    D3
+    ethnicity:       D4
+    income_band:     D5
+    urbanicity:      D6
+    political:       D7
+    state_name:      D8
+    outlook_income:  CS1
+    outlook_economy: CS2
+
+# Wording used to auto-detect a demographic when no explicit mapping exists.
+# First matching question code wins.
+profile_detect:
+  gender:          "what is your gender"
+  age:             "what is your age"
+  relationship:    "relationship status|marital status"
+  ethnicity:       "ethnicity|racial|race do you"
+  income_band:     "household income|total income"
+  urbanicity:      "area where your primary residence|urban|suburban|rural"
+  political:       "political philosophy|political party"
+  state_name:      "which state|state is your primary residence"
+  outlook_income:  "discretionary income"
+  outlook_economy: "economy overall"
+
+# Derived bands. Edit here rather than in code.
+age_bands:
+  - {label: "18-29",   min: 18, max: 29}
+  - {label: "30-44",   min: 30, max: 44}
+  - {label: "45-60",   min: 45, max: 60}
+  - {label: "Over 60", min: 61, max: 200}
+
+generations:
+  - {label: "GenZ",       min: 18, max: 28}
+  - {label: "Millennial", min: 29, max: 44}
+  - {label: "GenX",       min: 45, max: 60}
+  - {label: "Boomer",     min: 61, max: 200}
+
+# US Census regions. The export gives two-letter codes ('CT', 'NC'), but a
+# different wave or country may give full names, so both are listed and the
+# lookup is case-insensitive.
+census_regions:
+  Northeast: [Connecticut, Maine, Massachusetts, New Hampshire, Rhode Island, Vermont,
+              New Jersey, New York, Pennsylvania]
+  Midwest:   [Illinois, Indiana, Michigan, Ohio, Wisconsin, Iowa, Kansas, Minnesota,
+              Missouri, Nebraska, North Dakota, South Dakota]
+  South:     [Delaware, Florida, Georgia, Maryland, North Carolina, South Carolina,
+              Virginia, "West Virginia", "District of Columbia", Alabama, Kentucky,
+              Mississippi, Tennessee, Arkansas, Louisiana, Oklahoma, Texas]
+  West:      [Arizona, Colorado, Idaho, Montana, Nevada, "New Mexico", Utah, Wyoming,
+              Alaska, California, Hawaii, Oregon, Washington]
+
+state_codes:
+  AL: Alabama
+  AK: Alaska
+  AZ: Arizona
+  AR: Arkansas
+  CA: California
+  CO: Colorado
+  CT: Connecticut
+  DE: Delaware
+  DC: District of Columbia
+  FL: Florida
+  GA: Georgia
+  HI: Hawaii
+  ID: Idaho
+  IL: Illinois
+  IN: Indiana
+  IA: Iowa
+  KS: Kansas
+  KY: Kentucky
+  LA: Louisiana
+  ME: Maine
+  MD: Maryland
+  MA: Massachusetts
+  MI: Michigan
+  MN: Minnesota
+  MS: Mississippi
+  MO: Missouri
+  MT: Montana
+  NE: Nebraska
+  NV: Nevada
+  NH: New Hampshire
+  NJ: New Jersey
+  NM: New Mexico
+  NY: New York
+  NC: North Carolina
+  ND: North Dakota
+  OH: Ohio
+  OK: Oklahoma
+  OR: Oregon
+  PA: Pennsylvania
+  RI: Rhode Island
+  SC: South Carolina
+  SD: South Dakota
+  TN: Tennessee
+  TX: Texas
+  UT: Utah
+  VT: Vermont
+  VA: Virginia
+  WA: Washington
+  WV: West Virginia
+  WI: Wisconsin
+  WY: Wyoming

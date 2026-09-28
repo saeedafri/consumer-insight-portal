@@ -28,7 +28,11 @@ if catalog.empty or banner_df.empty:
 with f2:
     qcode = st.selectbox("Question", catalog.qcode.tolist())
 with f3:
-    banner = st.selectbox("Banner", banner_df.banner_name.tolist())
+    # "Total" is a single column and tells you nothing you can't get elsewhere,
+    # so open on the first real break.
+    options = banner_df.banner_name.tolist()
+    default = next((i for i, b in enumerate(options) if b != "Total"), 0)
+    banner = st.selectbox("Banner", options, index=default)
 
 cells = repo.crosstab(survey_id, qcode, banner)
 if cells.empty:
@@ -36,13 +40,33 @@ if cells.empty:
     st.stop()
 
 items = cells[cells.stub_type == "item"]
+
+# Grid questions (DP7 retailers, GP6 categories) print one sub-table per item,
+# so the scale labels repeat. Pick the item before pivoting or the rows collide.
+grid_items = sorted(items.item_label.dropna().unique())
+if grid_items:
+    chosen = st.selectbox("Grid item", grid_items,
+                          help="This question rates each item on the same scale.")
+    items = items[items.item_label == chosen]
+
 grid = items.pivot_table(index="stub_label", columns="seg_label", values="pct", aggfunc="mean")
 
 st.subheader(f"{qcode} × {banner}")
-st.dataframe(
-    grid.style.format("{:.1%}", na_rep="—").background_gradient(cmap="Reds", axis=None),
-    use_container_width=True,
-)
+# Segments Forsta flagged ** are too small to report (Non-binary is n=4 here).
+# Showing 75% off four people invites exactly the wrong reading, so those
+# columns are suppressed rather than shaded alongside real ones.
+suppressed = sorted(cells[cells.low_base == "**"].seg_label.unique())
+grid = grid.drop(columns=[c for c in suppressed if c in grid.columns])
+
+styled = grid.style.format("{:.1%}", na_rep="—")
+if not grid.empty:
+    # Shade by absolute magnitude across the whole table, on a fixed 0..max
+    # scale. Shading per row turns a two-column table into pure black and
+    # white and implies a ranking that two numbers cannot support.
+    styled = styled.background_gradient(
+        cmap="Reds", axis=None, vmin=0, vmax=float(grid.max(numeric_only=True).max() or 1)
+    )
+st.dataframe(styled, width="stretch")
 
 # Forsta prints the SEGMENT size in the header but divides by the number who
 # ANSWERED. On a routed question those differ a lot, so show the real one.
@@ -59,11 +83,11 @@ if _denoms:
             f" {max(_sizes)} in the segment — this question is routed."
         )
 
-low = cells[cells.low_base.isin(["*", "**"])].seg_label.unique()
-if len(low):
-    st.caption(
-        "⚠︎ Low base — interpret with caution or suppress: " + ", ".join(sorted(low))
-    )
+if suppressed:
+    st.caption("Suppressed (base too small to report): " + ", ".join(suppressed))
+caution = sorted(cells[cells.low_base == "*"].seg_label.unique())
+if caution:
+    st.caption("⚠︎ Low base — interpret with caution: " + ", ".join(caution))
 
 st.divider()
 st.subheader("Compare segments")
@@ -76,6 +100,6 @@ if picked:
     st.plotly_chart(
         charts.grouped_bar(sub, "stub_label", "pct", "seg_label",
                            title=f"{qcode} by segment", entity_order=sorted(picked)),
-        use_container_width=True,
+        width="stretch",
     )
 charts.show_table(items[["stub_label", "seg_label", "pct", "count_n", "denominator_n", "segment_size_n"]])

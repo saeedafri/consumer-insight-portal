@@ -21,12 +21,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# st.Page resolves paths relative to this file, not the working directory,
+# so the portal starts the same way from the repo root or from app/.
 PAGES = {
-    "Overview": "app/pages/1_Overview.py",
-    "Question explorer": "app/pages/2_Question_Explorer.py",
-    "Cross-tabs": "app/pages/3_Crosstabs.py",
-    "Trends": "app/pages/4_Trends.py",
-    "Data health": "app/pages/5_Data_Health.py",
+    "Overview": "pages/1_Overview.py",
+    "Question explorer": "pages/2_Question_Explorer.py",
+    "Cross-tabs": "pages/3_Crosstabs.py",
+    "Trends": "pages/4_Trends.py",
+    "Data health": "pages/5_Data_Health.py",
 }
 
 
@@ -50,8 +52,11 @@ def main() -> None:
             st.code(message)
         return
 
-    pages = [st.Page(path, title=title) for title, path in PAGES.items()]
-    st.navigation(pages).run()
+    pages = [
+        st.Page(str(Path(__file__).parent / path), title=title, url_path=title.lower().replace(" ", "-"))
+        for title, path in PAGES.items()
+    ]
+    st.navigation(pages, position="sidebar").run()
 
 
 if __name__ == "__main__":

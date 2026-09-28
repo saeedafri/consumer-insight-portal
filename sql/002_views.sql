@@ -45,7 +45,7 @@ SELECT
     (SELECT COUNT(*) FROM reached x
       WHERE x.survey_id = a.survey_id AND x.question_id = q.question_id) AS base_n,
     SUM(CASE WHEN a.value_code = 1 THEN 1 ELSE 0 END) AS selected_n,
-    SUM(CASE WHEN a.value_code = 1 THEN 1 ELSE 0 END)
+    SUM(CASE WHEN a.value_code = 1 THEN 1 ELSE 0 END) * 1.0
         / NULLIF((SELECT COUNT(*) FROM reached x
                    WHERE x.survey_id = a.survey_id AND x.question_id = q.question_id), 0) AS pct
 FROM csi_answer     a
@@ -61,10 +61,11 @@ CREATE OR REPLACE VIEW v_csi_single_distribution AS
 SELECT
     r.survey_id, q.question_id, q.qcode, q.qtext_short,
     a.value_code,
-    COALESCE(o.value_label, a.value_label) AS value_label,
+    COALESCE(o.value_label, a.value_label) AS answer_label,
     o.is_nonresponse, o.net_group,
     COUNT(*) AS n,
-    COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (PARTITION BY r.survey_id, q.question_id), 0) AS pct,
+    COUNT(*) * 1.0
+        / NULLIF(SUM(COUNT(*)) OVER (PARTITION BY r.survey_id, q.question_id), 0) AS pct,
     SUM(COUNT(*)) OVER (PARTITION BY r.survey_id, q.question_id) AS base_n
 FROM csi_answer     a
 JOIN csi_respondent r ON r.respondent_id = a.respondent_id AND r.is_qualified = 1
@@ -74,7 +75,8 @@ JOIN csi_question   q ON q.question_id = f.question_id
 LEFT JOIN csi_option o ON o.question_id = q.question_id AND o.value_code = a.value_code
 WHERE a.value_code IS NOT NULL
 GROUP BY r.survey_id, q.question_id, q.qcode, q.qtext_short,
-         a.value_code, value_label, o.is_nonresponse, o.net_group;
+         a.value_code, COALESCE(o.value_label, a.value_label),
+         o.is_nonresponse, o.net_group;
 
 -- Grid questions: item x scale point (DP7 retailers x sentiment, GP6 categories).
 CREATE OR REPLACE VIEW v_csi_grid AS
@@ -85,7 +87,8 @@ SELECT
     COALESCE(o.value_label, a.value_label) AS scale_label,
     o.sort_order AS scale_order,
     COUNT(*) AS n,
-    COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (PARTITION BY r.survey_id, q.qcode, i.item_id), 0) AS pct
+    COUNT(*) * 1.0
+        / NULLIF(SUM(COUNT(*)) OVER (PARTITION BY r.survey_id, q.qcode, i.item_id), 0) AS pct
 FROM csi_answer     a
 JOIN csi_respondent r ON r.respondent_id = a.respondent_id AND r.is_qualified = 1
 JOIN csi_field      f ON f.field_id = a.field_id
@@ -94,14 +97,14 @@ JOIN csi_item       i ON i.item_id = f.item_id
 LEFT JOIN csi_option o ON o.question_id = q.question_id AND o.value_code = a.value_code
 WHERE a.value_code IS NOT NULL
 GROUP BY r.survey_id, q.qcode, q.qtext_short, i.item_id, i.item_label,
-         a.value_code, scale_label, o.sort_order;
+         a.value_code, COALESCE(o.value_label, a.value_label), o.sort_order;
 
 -- The cross-tab grid as an analyst reads it, carrying BOTH bases.
 CREATE OR REPLACE VIEW v_csi_crosstab AS
 SELECT
     c.survey_id, s.wave_label,
     q.qcode, q.qtext,
-    c.stub_label, c.stub_type,
+    c.item_label, c.stub_label, c.stub_type,
     b.banner_name,
     g.seg_letter, g.seg_label,
     g.seg_base_n            AS segment_size_n,
@@ -145,7 +148,7 @@ CREATE OR REPLACE VIEW v_csi_question_base AS
 SELECT
     q.survey_id, t.topic_name, q.qcode, q.qtext_short, q.qtype,
     q.is_multi, q.base_n, q.base_desc,
-    ROUND(100 * q.base_n / NULLIF(h.qualified_n, 0), 1) AS pct_of_wave
+    ROUND(100.0 * q.base_n / NULLIF(h.qualified_n, 0), 1) AS pct_of_wave
 FROM csi_question q
 LEFT JOIN csi_topic t ON t.topic_id = q.topic_id
 LEFT JOIN v_csi_survey_health h ON h.survey_id = q.survey_id

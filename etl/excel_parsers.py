@@ -163,6 +163,7 @@ class ParsedSegment:
     banner_name: Optional[str] = None
     column_index: Optional[int] = None
     low_base: str = ""
+    is_total: bool = False
 
 
 def parse_crosstab_summary(path: str, sheet: str = "Summary") -> tuple[dict, list[ParsedSegment]]:
@@ -250,6 +251,7 @@ def parse_banner(path: str, sheet: str = "Percentages") -> list[ParsedSegment]:
                 banner_name=banner_name if label.lower() != "total" else "Total",
                 column_index=idx,
                 low_base=flag,
+                is_total=label.lower() == "total",
             )
         )
     return segments
@@ -260,25 +262,71 @@ def iter_crosstab_cells(
 ) -> Iterator[dict[str, Any]]:
     """Walk the stacked tables and yield one dict per cell.
 
+    Two structures appear in these sheets and they are easy to confuse:
+
+    * A **flat table** — one stub row per list item, e.g. q1's 15 activities.
+
+    * A **grid** — printed as a run of sub-tables, one per grid item, each with
+      its own banner block and its own base. DP7 "How do you feel about each of
+      the following retailers?" prints nine of them:
+
+            DP7: How do you feel about each of the following retailers?
+            Bergdorf Goodman                  <- sub-item header, no data
+                              Total (A)       <- banner repeats
+            Total             N=16            <- this item's own base
+            Very positive     0.5625          <- stub rows are the scale points
+            ...
+            Bloomingdale's
+            Total             N=22
+            ...
+
+      So the scale labels repeat once per retailer. Keyed on the stub alone
+      they collide and 8 of every 9 rows are lost — which is exactly what
+      happened before this was handled. `item_label` disambiguates them, and
+      the per-item `N=` is captured as that sub-table's base.
+
     Percentages and Counts share identical geometry, so they are read in
-    lock-step and merged into a single record per cell.
+    lock-step and merged into one record per cell.
     """
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     pct_rows = list(wb[pct_sheet].iter_rows(values_only=True))
     cnt_rows = list(wb[cnt_sheet].iter_rows(values_only=True))
     wb.close()
 
+    data_columns = [s.column_index for s in segments if s.column_index is not None]
     current_q: Optional[tuple[str, str]] = None
+    current_item: Optional[str] = None
+    item_base: Optional[int] = None
+
     for i, prow in enumerate(pct_rows):
         stub = "" if not prow or prow[0] is None else str(prow[0]).strip()
         if not stub:
             continue
 
+        # a new question table
         m = QCODE_RE.match(stub)
         if m and len(prow) > 1 and all(c is None for c in prow[1:6]):
             current_q = (m.group(1), m.group(2).strip())
+            current_item, item_base = None, None
             continue
-        if current_q is None or stub in {"Total"}:
+        if current_q is None:
+            continue
+
+        row_has_data = any(
+            j < len(prow) and prow[j] is not None for j in data_columns
+        )
+
+        # the base line of a table or sub-table: "Total | N=16"
+        if stub.lower() == "total":
+            first = next((prow[j] for j in data_columns if j < len(prow) and prow[j] is not None), None)
+            bm = BASE_RE.match(str(first or "").strip())
+            item_base = int(bm.group(1)) if bm else None
+            continue
+
+        # a sub-item header inside a grid: label in column A, no data beside it
+        if not row_has_data:
+            current_item = stub
+            item_base = None
             continue
 
         crow = cnt_rows[i] if i < len(cnt_rows) else [None] * len(prow)
@@ -287,8 +335,7 @@ def iter_crosstab_cells(
             j = seg.column_index
             if j is None or j >= len(prow):
                 continue
-            pct = prow[j]
-            cnt = crow[j] if j < len(crow) else None
+            pct, cnt = prow[j], (crow[j] if j < len(crow) else None)
             if pct is None and cnt is None:
                 continue
             sig = prow[j + 1] if j + 1 < len(prow) else None
@@ -296,6 +343,7 @@ def iter_crosstab_cells(
             yield {
                 "qcode": current_q[0],
                 "qtext": current_q[1],
+                "item_label": current_item,
                 "stub_label": stub,
                 "stub_type": kind,
                 "seg_label": seg.label,
@@ -307,8 +355,9 @@ def iter_crosstab_cells(
                 # The real denominator behind the percentage. Forsta's
                 # "Total Answering" base is the number ROUTED INTO the question,
                 # not the segment size: DP2 divides by 222, BN2 by 133, GP8 by 71.
-                # count / pct recovers it exactly.
-                "answer_base_n": _answer_base(cnt_v, pct_v),
+                # count / pct recovers it exactly; the sub-table's own N= is the
+                # fallback for a 0% cell inside a grid.
+                "answer_base_n": _answer_base(cnt_v, pct_v) or (item_base if seg.is_total else None),
                 "sig_letters": str(sig).strip() if sig and str(sig).strip() not in {"*", "**"} else None,
             }
 

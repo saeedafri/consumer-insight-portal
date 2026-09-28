@@ -55,7 +55,7 @@ if q.is_multi:
             charts.horizontal_bar(data, "item_label", "pct",
                                   title=f"{q.qcode} · % selected",
                                   base_n=int(data.base_n.max())),
-            use_container_width=True,
+            width="stretch",
         )
         charts.show_table(data.rename(columns={
             "item_label": "Item", "pct": "%", "selected_n": "n selected", "base_n": "Base"}))
@@ -68,10 +68,10 @@ else:
         with left:
             st.plotly_chart(
                 charts.horizontal_bar(data, "value_label", "pct", title=f"{q.qcode} · distribution"),
-                use_container_width=True,
+                width="stretch",
             )
         with right:
             st.plotly_chart(charts.donut(data, "value_label", "n", title="Share"),
-                            use_container_width=True)
+                            width="stretch")
         charts.show_table(data.rename(columns={
             "value_label": "Answer", "n": "Respondents", "pct": "%"}))

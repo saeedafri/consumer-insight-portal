@@ -308,14 +308,16 @@ CREATE TABLE IF NOT EXISTS csi_crosstab (
   item_id       INT UNSIGNED    NULL,
   option_id     INT UNSIGNED    NULL,
   segment_id    INT UNSIGNED    NOT NULL,
+  item_label    VARCHAR(500)    NULL               COMMENT 'grid sub-item, e.g. the retailer being rated in DP7',
   stub_label    VARCHAR(1000)   NOT NULL           COMMENT 'row label as printed',
+  stub_key      VARCHAR(600)    NOT NULL           COMMENT 'item_label|stub_label — unique within a table',
   stub_type     ENUM('item','net','mean','count','base') NOT NULL DEFAULT 'item',
   pct           DECIMAL(9,6)    NULL               COMMENT '0.527228 = 52.7%',
   count_n       INT             NULL,
   answer_base_n INT             NULL               COMMENT 'the true denominator: count_n / pct',
   sig_letters   VARCHAR(40)     NULL               COMMENT 'segments this cell significantly beats',
   PRIMARY KEY (crosstab_id),
-  UNIQUE KEY uq_crosstab (run_id, question_id, stub_label, segment_id),
+  UNIQUE KEY uq_crosstab (run_id, question_id, stub_key, segment_id),
   KEY ix_crosstab_lookup (survey_id, question_id, segment_id),
   KEY ix_crosstab_item (item_id),
   CONSTRAINT fk_crosstab_run FOREIGN KEY (run_id)
@@ -374,3 +376,24 @@ CREATE TABLE IF NOT EXISTS csi_load_state (
   PRIMARY KEY (feed_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Watermarks so incremental pulls never re-read a whole survey.';
+
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- DYNAMIC SURVEY SUPPORT
+--
+-- These two tables are what let a new wave load without a code change. The
+-- loader resolves which question supplies each demographic cut, records the
+-- decision here, and an analyst can correct it without touching Python.
+-- ───────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS csi_profile_map (
+  survey_id   INT UNSIGNED NOT NULL,
+  dimension   VARCHAR(40)  NOT NULL             COMMENT 'gender, age, income_band, ...',
+  qcode       VARCHAR(50)  NOT NULL             COMMENT 'the question that supplies it',
+  resolved_by ENUM('config','detected','manual') NOT NULL DEFAULT 'detected',
+  updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (survey_id, dimension),
+  CONSTRAINT fk_pmap_survey FOREIGN KEY (survey_id)
+    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Which question feeds each demographic cut, per wave. Auditable and editable.';

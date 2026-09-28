@@ -13,14 +13,15 @@ Streamlit portal, replacing the Excel round-trip that analysis runs on today.
 | Piece | State |
 |---|---|
 | Source-data analysis | done — both 09/21/26 exports fully parsed |
-| Database schema | 16 `csi_` tables + 8 views, DDL ready to apply to `dwh_stg` |
+| Database schema | 17 `csi_` tables + 8 views, applied and exercised end to end |
 | Excel loader | working end to end |
 | Forsta API client | written; key found in `Dwh/credentials.yml` and wired into `.env` |
-| Streamlit portal | 5 pages scaffolded |
+| Streamlit portal | 5 pages, **running against the real 09/21/26 data** |
+| Dynamic surveys | topics and demographic cuts resolved per wave from `config/survey_map.yml` |
 
-**Next step:** run `bash scripts/setup.sh` on a machine that can reach the STG
-server — this cloud session has no network route to it. Remaining asks for IT
-are in [`docs/04-it-requirements-checklist.md`](docs/04-it-requirements-checklist.md).
+**To see it now, with no credentials:** `bash scripts/run_local.sh`
+**To point it at `dwh_stg`:** `bash scripts/setup.sh` — needs a network route
+to the Azure server, which this cloud session does not have.
 
 ---
 
@@ -57,11 +58,13 @@ python -m etl.run_pipeline --source api --wave 2026-10 --family CSI-US
 consumer-insight-portal/
 ├── app/                    Streamlit portal
 │   ├── main.py             entry point and navigation
-│   ├── core/               config + pooled SQLAlchemy access
+│   ├── core/               config, pooled SQLAlchemy access, SQLite fallback
 │   ├── data/repository.py  every query the app makes, cached
 │   ├── components/         validated palette, Plotly builders
 │   └── pages/              Overview · Questions · Cross-tabs · Trends · Health
+├── config/survey_map.yml   topic rules and demographic detection — edit here, not in code
 ├── etl/
+│   ├── survey_map.py       resolves topics and cuts for a questionnaire it has never seen
 │   ├── forsta_client.py    Forsta REST client (x-apikey, retries, paging)
 │   ├── excel_parsers.py    parsers for both workbook formats
 │   ├── loaders.py          idempotent upserts
@@ -81,6 +84,7 @@ consumer-insight-portal/
 | [`03-forsta-integration.md`](docs/03-forsta-integration.md) | endpoints, auth, incremental loading, failure modes |
 | [`04-it-requirements-checklist.md`](docs/04-it-requirements-checklist.md) | **what to send IT** |
 | [`05-source-data-analysis.md`](docs/05-source-data-analysis.md) | what the two Excel files actually contain |
+| [`06-running-locally.md`](docs/06-running-locally.md) | the two run modes, and what local mode does not test |
 
 ## Conventions
 

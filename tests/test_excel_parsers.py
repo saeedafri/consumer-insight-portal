@@ -24,13 +24,15 @@ def test_normalise_label_cell():
 
 
 def test_classify_group():
-    assert classify_group("DP4") == "DEPT_STORES"
-    assert classify_group("BN7") == "BNPL"
-    assert classify_group("GP10") == "GLP1"
-    assert classify_group("D31") == "AI_GENAI"
-    assert classify_group("D5") == "DEMOGRAPHICS"
-    assert classify_group("CS1") == "SENTIMENT"
-    assert classify_group("qtime") == "PARADATA"
+    """Topic rules are per survey family — see config/survey_map.yml."""
+    assert classify_group("DP4", family="CSI-US") == "DEPT_STORES"
+    assert classify_group("BN7", family="CSI-US") == "BNPL"
+    assert classify_group("GP10", family="CSI-US") == "GLP1"
+    assert classify_group("D31", family="CSI-US") == "AI_GENAI"
+    assert classify_group("D5", family="CSI-US") == "DEMOGRAPHICS"
+    assert classify_group("CS1", family="CSI-US") == "SENTIMENT"
+    # technical variables are recognised whatever the survey
+    assert classify_group("qtime") == "TECHNICAL"
 
 
 def test_short_label():
@@ -86,3 +88,36 @@ def test_routed_questions_have_their_own_base():
     assert bases["D15"] == {260}
     # every cell still reports the segment size separately
     assert {c["segment_base_n"] for c in cells} == {404}
+
+
+@pytest.mark.skipif(not XTAB, reason="set CSI_TEST_XTAB")
+def test_grid_questions_keep_one_row_per_item_and_scale_point():
+    """DP7 rates 9 retailers on a 5-point scale; GP6 rates 21 categories on 4.
+
+    Forsta prints these as a run of sub-tables, so the scale labels repeat.
+    Keyed on the stub alone they collide and most rows are lost.
+    """
+    segments = xp.parse_banner(XTAB)
+    cells = [c for c in xp.iter_crosstab_cells(XTAB, segments) if c["seg_label"] == "Total"]
+    by_q = {}
+    for c in cells:
+        by_q.setdefault(c["qcode"], []).append(c)
+
+    assert len(by_q["DP7"]) == 9 * 5
+    assert len({c["item_label"] for c in by_q["DP7"]}) == 9
+    assert len(by_q["GP6"]) == 21 * 4
+    assert len({c["item_label"] for c in by_q["GP6"]}) == 21
+    # a flat question has no sub-items
+    assert {c["item_label"] for c in by_q["q1"]} == {None}
+
+
+@pytest.mark.skipif(not XTAB, reason="set CSI_TEST_XTAB")
+def test_grid_items_carry_their_own_base():
+    """Only people who shop a retailer rate it, so each row has its own base."""
+    segments = xp.parse_banner(XTAB)
+    cells = [c for c in xp.iter_crosstab_cells(XTAB, segments)
+             if c["qcode"] == "DP7" and c["seg_label"] == "Total"]
+    bases = {c["item_label"]: c["answer_base_n"] for c in cells if c["answer_base_n"]}
+    assert bases["Bergdorf Goodman"] == 16
+    assert bases["Bloomingdale's"] == 22
+    assert max(bases.values()) < 404      # never the wave base

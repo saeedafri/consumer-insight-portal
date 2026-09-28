@@ -166,6 +166,33 @@ the whole wave; cut by generation or income they fall into single figures.
 D35 is n=44. `csi_question.base_n` is populated at load and the portal warns
 above any chart whose base is below the wave base.
 
+### Grids are printed as sub-tables, not as rows
+
+Four questions are grids — `DP7` (9 retailers × a 5-point sentiment scale),
+`GP6` (21 food categories × 4 points), `D13` (3 concerns × 4), `q6` (3 expense
+types × 5). Forsta does not print them as a matrix. It prints a run of
+sub-tables, one per item, each re-stating the banner and its own base:
+
+```
+DP7: How do you feel about each of the following retailers?
+Bergdorf Goodman                 <- sub-item, no data on this line
+                    Total (A)    <- banner repeats
+Total               N=16         <- this item's own base
+Very positive       0.5625
+Somewhat positive   0.2500
+...
+Bloomingdale's
+Total               N=22
+...
+```
+
+So the scale labels repeat once per retailer. Keyed on the stub label alone
+they collide and eight of every nine rows are lost — which is exactly what the
+first version of the loader did, quietly, dropping 5,520 cells. `item_label`
+now disambiguates them and each sub-table's `N=` is captured as that row's
+base. The bases vary a lot: Bergdorf Goodman n=16, Bloomingdale's n=22,
+JCPenney n=67, up to n=107 — because only people who shop a retailer rate it.
+
 ---
 
 ## 4. What this implies for the design

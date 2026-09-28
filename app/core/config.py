@@ -49,11 +49,15 @@ class DatabaseConfig:
     pool_timeout: int = 30
     pool_recycle: int = 3600  # avoids the ~4s Azure SSL re-handshake penalty
 
+    sqlite_path: Optional[str] = None
+
     @property
     def url(self) -> str:
         """SQLAlchemy URL. Never log this — it contains the password."""
         from urllib.parse import quote_plus
 
+        if self.sqlite_path:
+            return f"sqlite:///{self.sqlite_path}"
         return (
             f"mysql+pymysql://{self.user}:{quote_plus(self.password)}"
             f"@{self.host}:{self.port}/{self.database}?charset=utf8mb4"
@@ -118,6 +122,13 @@ class Config:
     def database(self, role: str = "app") -> DatabaseConfig:
         """role='app' -> read-only account; role='etl' -> writer account."""
         if self.is_local:
+            sqlite_path = _env("LOCAL_SQLITE_PATH")
+            if sqlite_path:
+                return DatabaseConfig(
+                    host="", port=0, database=sqlite_path, user="", password="",
+                    sqlite_path=str((REPO_ROOT / sqlite_path).resolve()
+                                    if not Path(sqlite_path).is_absolute() else sqlite_path),
+                )
             return DatabaseConfig(
                 host=_env("LOCAL_DB_HOST", "127.0.0.1"),
                 port=_int_env("LOCAL_DB_PORT", 3306),

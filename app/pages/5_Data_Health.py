@@ -11,7 +11,7 @@ st.title("Data health")
 surveys = repo.list_surveys()
 if not surveys.empty:
     st.subheader("Waves in the portal")
-    st.dataframe(surveys, use_container_width=True, hide_index=True)
+    st.dataframe(surveys, width="stretch", hide_index=True)
 
 st.subheader("Recent ingest runs")
 runs = repo.ingest_history()
@@ -26,4 +26,4 @@ else:
         charts.stat_tile("Failed or partial", f"{len(failed)}")
     with c3:
         charts.stat_tile("Rows loaded", f"{int(runs.rows_loaded.sum()):,}")
-    st.dataframe(runs, use_container_width=True, hide_index=True)
+    st.dataframe(runs, width="stretch", hide_index=True)

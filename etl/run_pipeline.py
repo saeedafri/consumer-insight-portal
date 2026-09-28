@@ -13,13 +13,15 @@ import argparse
 import logging
 import sys
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any, Optional
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from app.core.config import config
-from app.core.database import get_engine
+from app.core.database import execute_many, get_engine
 from etl import excel_parsers as xp
+from etl import survey_map
 from etl.loaders import finish_run, load_definitions, start_run, upsert_survey
 
 logging.basicConfig(
@@ -48,7 +50,7 @@ def ingest_excel(raw_path: str, crosstab_path: Optional[str], wave: Optional[str
     log.info("survey_id=%s", survey_id)
 
     run = start_run(survey_id, "excel", "datamap", raw_path)
-    var_map = load_definitions(survey_id, questions)
+    var_map = load_definitions(survey_id, questions, family)
     finish_run(run, len(questions), len(var_map))
     log.info("Loaded %d variables", len(var_map))
 
@@ -60,7 +62,7 @@ def ingest_excel(raw_path: str, crosstab_path: Optional[str], wave: Optional[str
     finish_run(run, read, loaded)
     log.info("Loaded %d/%d respondents", loaded, read)
 
-    _rebuild_profiles(survey_id)
+    _rebuild_profiles(survey_id, questions, family)
     _rebuild_question_bases(survey_id)
 
     if crosstab_path:
@@ -109,7 +111,11 @@ def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str,
                 "run": run_id,
             },
         )
-        respondent_id = int(res.lastrowid)
+        respondent_id = conn.execute(
+            text("SELECT respondent_id FROM csi_respondent "
+                 "WHERE survey_id = :sid AND record_no = :rec"),
+            {"sid": survey_id, "rec": _int(rec.get("record")) or 0},
+        ).scalar()
 
         payload = []
         for column, value in rec.items():
@@ -142,59 +148,115 @@ def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str,
     return 1
 
 
-def _rebuild_profiles(survey_id: int) -> None:
-    """Flatten D1-D8 / CS1 / CS2 into csi_profile."""
-    mapping = {
-        "gender": "D1", "relationship": "D3", "ethnicity": "D4",
-        "income_band": "D5", "urbanicity": "D6", "political": "D7",
-        "state_name": "D8", "outlook_income": "CS1", "outlook_economy": "CS2",
-    }
-    cols = ", ".join(mapping)
-    selects = ",\n       ".join(
-        f"MAX(CASE WHEN v.field_name = '{qc}' THEN resp.value_label END) AS {col}"
-        for col, qc in mapping.items()
-    )
-    sql = f"""
-        INSERT INTO csi_profile (respondent_id, survey_id, {cols}, age_years)
-        SELECT r.respondent_id, r.survey_id,
-               {selects},
-               MAX(CASE WHEN v.field_name = 'D2'
-                        THEN CAST(NULLIF(REGEXP_SUBSTR(resp.value_label, '[0-9]+'), '') AS UNSIGNED)
-                   END) AS age_years
-          FROM csi_respondent r
-          JOIN csi_answer  resp ON resp.respondent_id = r.respondent_id
-          JOIN csi_field  v    ON v.field_id = resp.field_id
-         WHERE r.survey_id = :sid
-         GROUP BY r.respondent_id, r.survey_id
-        ON DUPLICATE KEY UPDATE
-            gender = VALUES(gender), relationship = VALUES(relationship),
-            ethnicity = VALUES(ethnicity), income_band = VALUES(income_band),
-            urbanicity = VALUES(urbanicity), political = VALUES(political),
-            state_name = VALUES(state_name), outlook_income = VALUES(outlook_income),
-            outlook_economy = VALUES(outlook_economy), age_years = VALUES(age_years)
+def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
+                      family: Optional[str] = None) -> None:
+    """Flatten the demographic questions into csi_profile.
+
+    Which question supplies which cut is resolved per survey — from
+    config/survey_map.yml when the family is known, otherwise auto-detected
+    from the question wording. The decision is written to csi_profile_map so
+    it is visible, auditable and correctable without touching code.
+
+    A dimension that cannot be resolved is simply absent: the column stays
+    NULL and the portal hides that filter rather than failing.
     """
-    with get_engine("etl").begin() as conn:
-        conn.execute(text(sql), {"sid": survey_id})
-        conn.execute(
+    eng = get_engine("etl")
+
+    if questions is None:
+        with eng.connect() as conn:
+            rows = conn.execute(
+                text("SELECT qcode, qtext FROM csi_question WHERE survey_id = :sid"),
+                {"sid": survey_id},
+            ).all()
+        questions = [SimpleNamespace(qcode=r[0], qtext=r[1]) for r in rows]
+
+    mapping = survey_map.resolve_profile_map(questions, family)
+    if not mapping:
+        log.warning("No demographic questions resolved for survey_id=%s — "
+                    "profile filters will be empty", survey_id)
+        return
+
+    explicit = (survey_map.load_config().get("profile") or {}).get(family or "", {})
+    with eng.begin() as conn:
+        for dimension, qcode in mapping.items():
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO csi_profile_map (survey_id, dimension, qcode, resolved_by)
+                    VALUES (:sid, :dim, :qcode, :how)
+                    ON DUPLICATE KEY UPDATE
+                        qcode = VALUES(qcode), resolved_by = VALUES(resolved_by)
+                    """
+                ),
+                {"sid": survey_id, "dim": dimension, "qcode": qcode,
+                 "how": "config" if explicit.get(dimension) == qcode else "detected"},
+            )
+    log.info("Profile mapping for survey_id=%s: %s", survey_id,
+             ", ".join(f"{k}<-{v}" for k, v in sorted(mapping.items())))
+
+    # Pull one row per respondent across only the mapped fields.
+    wanted = list(mapping.values())
+    with eng.connect() as conn:
+        rows = conn.execute(
             text(
                 """
-                UPDATE csi_profile
-                   SET age_band = CASE
-                         WHEN age_years BETWEEN 18 AND 29 THEN '18-29'
-                         WHEN age_years BETWEEN 30 AND 44 THEN '30-44'
-                         WHEN age_years BETWEEN 45 AND 60 THEN '45-60'
-                         WHEN age_years > 60 THEN 'Over 60' END,
-                       generation = CASE
-                         WHEN age_years BETWEEN 18 AND 28 THEN 'GenZ'
-                         WHEN age_years BETWEEN 29 AND 44 THEN 'Millennial'
-                         WHEN age_years BETWEEN 45 AND 60 THEN 'GenX'
-                         WHEN age_years > 60 THEN 'Boomer' END
-                 WHERE survey_id = :sid
+                SELECT a.respondent_id, f.field_name, a.value_label
+                  FROM csi_answer a
+                  JOIN csi_field f ON f.field_id = a.field_id
+                 WHERE a.survey_id = :sid AND f.field_name IN :names
                 """
-            ),
-            {"sid": survey_id},
+            ).bindparams(bindparam("names", expanding=True)),
+            {"sid": survey_id, "names": wanted},
+        ).all()
+
+    by_respondent: dict[int, dict[str, Any]] = {}
+    inverse = {v: k for k, v in mapping.items()}
+    for respondent_id, field_name, value in rows:
+        by_respondent.setdefault(respondent_id, {})[inverse[field_name]] = value
+
+    payload = []
+    for respondent_id, values in by_respondent.items():
+        age = survey_map.parse_age(values.get("age"))
+        state = values.get("state_name")
+        payload.append({
+            "rid": respondent_id, "sid": survey_id,
+            "gender": values.get("gender"),
+            "age": age,
+            "band": survey_map.age_band(age),
+            "gen": survey_map.generation(age),
+            "rel": values.get("relationship"),
+            "eth": values.get("ethnicity"),
+            "inc": values.get("income_band"),
+            "urb": values.get("urbanicity"),
+            "pol": values.get("political"),
+            "state": state,
+            "region": survey_map.census_region(state),
+            "oi": values.get("outlook_income"),
+            "oe": values.get("outlook_economy"),
+        })
+
+    if payload:
+        execute_many(
+            """
+            INSERT INTO csi_profile
+                (respondent_id, survey_id, gender, age_years, age_band, generation,
+                 relationship, ethnicity, income_band, urbanicity, political,
+                 state_name, census_region, outlook_income, outlook_economy)
+            VALUES (:rid, :sid, :gender, :age, :band, :gen, :rel, :eth, :inc,
+                    :urb, :pol, :state, :region, :oi, :oe)
+            ON DUPLICATE KEY UPDATE
+                gender = VALUES(gender), age_years = VALUES(age_years),
+                age_band = VALUES(age_band), generation = VALUES(generation),
+                relationship = VALUES(relationship), ethnicity = VALUES(ethnicity),
+                income_band = VALUES(income_band), urbanicity = VALUES(urbanicity),
+                political = VALUES(political), state_name = VALUES(state_name),
+                census_region = VALUES(census_region),
+                outlook_income = VALUES(outlook_income),
+                outlook_economy = VALUES(outlook_economy)
+            """,
+            payload,
         )
-    log.info("Rebuilt respondent profiles for survey_id=%s", survey_id)
+    log.info("Rebuilt %d profiles for survey_id=%s", len(payload), survey_id)
 
 
 def _rebuild_question_bases(survey_id: int) -> None:
@@ -210,20 +272,20 @@ def _rebuild_question_bases(survey_id: int) -> None:
         conn.execute(
             text(
                 """
-                UPDATE csi_question q
-                   SET q.base_n = (
+                UPDATE csi_question
+                   SET base_n = (
                        SELECT COUNT(DISTINCT a.respondent_id)
                          FROM csi_answer a
                          JOIN csi_field f ON f.field_id = a.field_id
                          JOIN csi_respondent r ON r.respondent_id = a.respondent_id
-                        WHERE f.question_id = q.question_id
+                        WHERE f.question_id = csi_question.question_id
                           AND r.is_qualified = 1
                           AND (a.value_code IS NOT NULL
                                OR a.value_label IS NOT NULL
                                OR a.value_number IS NOT NULL
                                OR a.value_text IS NOT NULL)
                    )
-                 WHERE q.survey_id = :sid
+                 WHERE csi_question.survey_id = :sid
                 """
             ),
             {"sid": survey_id},
@@ -282,18 +344,22 @@ def ingest_crosstabs(survey_id: int, path: str) -> None:
                 ),
                 {"sid": survey_id, "code": bcode, "name": banner_name[:500], "ord": order},
             )
-            banner_id = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
+            banner_id = conn.execute(
+                text("SELECT banner_id FROM csi_banner "
+                     "WHERE survey_id = :sid AND banner_code = :code"),
+                {"sid": survey_id, "code": bcode},
+            ).scalar()
             conn.execute(
                 text(
                     """
                     INSERT INTO csi_segment
                         (banner_id, survey_id, seg_letter, seg_label, seg_definition,
-                         base_n, is_total, low_base, sort_order)
+                         seg_base_n, is_total, low_base, sort_order)
                     VALUES (:bid, :sid, :letter, :label, :defn, :base, :tot, :flag, :ord)
                     ON DUPLICATE KEY UPDATE
                         seg_letter = VALUES(seg_letter),
                         seg_definition = COALESCE(VALUES(seg_definition), seg_definition),
-                        base_n = VALUES(base_n), low_base = VALUES(low_base),
+                        seg_base_n = VALUES(seg_base_n), low_base = VALUES(low_base),
                         segment_id = LAST_INSERT_ID(segment_id)
                     """
                 ),
@@ -306,7 +372,11 @@ def ingest_crosstabs(survey_id: int, path: str) -> None:
                     "flag": seg.low_base, "ord": order,
                 },
             )
-            seg_ids[seg.label] = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
+            seg_ids[seg.label] = conn.execute(
+                text("SELECT segment_id FROM csi_segment "
+                     "WHERE banner_id = :bid AND seg_label = :label"),
+                {"bid": banner_id, "label": seg.label[:255]},
+            ).scalar()
 
         qid_by_code = {
             code: qid
@@ -316,16 +386,23 @@ def ingest_crosstabs(survey_id: int, path: str) -> None:
             ).all()
         }
 
-    cells, read = [], 0
+    cells, read, skipped = [], 0, {}
     for cell in xp.iter_crosstab_cells(path, banner_segments):
         read += 1
         qid = qid_by_code.get(cell["qcode"])
         sid_seg = seg_ids.get(cell["seg_label"])
         if not qid or not sid_seg:
+            # Quota and terminate tables (vqtable*, voqtable*, vterm) are printed
+            # in the cross-tab but never appear in the datamap, so they have no
+            # question to attach to. Counted, not silently dropped.
+            skipped[cell["qcode"]] = skipped.get(cell["qcode"], 0) + 1
             continue
+        item_label = cell.get("item_label")
         cells.append(
             {
                 "run": ct_run, "sid": survey_id, "qid": qid, "seg": sid_seg,
+                "item": item_label[:500] if item_label else None,
+                "key": f"{item_label or ''}|{cell['stub_label']}"[:600],
                 "stub": cell["stub_label"][:1000], "kind": cell["stub_type"],
                 "pct": cell["pct"], "cnt": cell["count_n"],
                 "base": cell["answer_base_n"],
@@ -335,9 +412,10 @@ def ingest_crosstabs(survey_id: int, path: str) -> None:
 
     sql = """
         INSERT INTO csi_crosstab
-            (run_id, survey_id, question_id, segment_id, stub_label, stub_type,
-             pct, count_n, answer_base_n, sig_letters)
-        VALUES (:run, :sid, :qid, :seg, :stub, :kind, :pct, :cnt, :base, :sig)
+            (run_id, survey_id, question_id, segment_id, item_label, stub_key,
+             stub_label, stub_type, pct, count_n, answer_base_n, sig_letters)
+        VALUES (:run, :sid, :qid, :seg, :item, :key, :stub, :kind,
+                :pct, :cnt, :base, :sig)
         ON DUPLICATE KEY UPDATE
             pct = VALUES(pct), count_n = VALUES(count_n),
             answer_base_n = VALUES(answer_base_n), sig_letters = VALUES(sig_letters)
@@ -345,8 +423,12 @@ def ingest_crosstabs(survey_id: int, path: str) -> None:
     from app.core.database import execute_many
 
     loaded = execute_many(sql, cells) if cells else 0
-    finish_run(run_id, read, loaded)
+    finish_run(run_id, read, loaded, rejected=sum(skipped.values()))
     log.info("Loaded %d/%d cross-tab cells", loaded, read)
+    if skipped:
+        log.info("Skipped %d cells with no matching question: %s",
+                 sum(skipped.values()),
+                 ", ".join(f"{k}({v})" for k, v in sorted(skipped.items())))
 
 
 def _banner_code(name: str) -> str:
@@ -379,7 +461,7 @@ def ingest_api(wave: Optional[str], family: str = "CSI-US", full: bool = False) 
         datamap_payload=datamap,
     )
     run = start_run(survey_id, "api", "datamap", f"{client.base_url}/surveys/{fc.survey_path}/datamap")
-    var_map = load_definitions(survey_id, questions)
+    var_map = load_definitions(survey_id, questions, family)
     finish_run(run, len(questions), len(var_map))
 
     watermark = None if full else _watermark(survey_id)
@@ -389,7 +471,7 @@ def ingest_api(wave: Optional[str], family: str = "CSI-US", full: bool = False) 
         read += 1
         loaded += _load_one_respondent(survey_id, rec, var_map, run)
     finish_run(run, read, loaded)
-    _rebuild_profiles(survey_id)
+    _rebuild_profiles(survey_id, questions, family)
     _rebuild_question_bases(survey_id)
     log.info("API ingest complete: %d records", loaded)
 

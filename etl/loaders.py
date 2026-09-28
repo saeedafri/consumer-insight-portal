@@ -15,36 +15,47 @@ from typing import Any, Iterable, Optional
 from sqlalchemy import text
 
 from app.core.database import execute_many, get_engine, session_scope
+from etl import survey_map
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_QCODES = {
-    "record", "uuid", "date", "markers", "status", "vlist", "qtime", "vos",
-    "vosr15oe", "vbrowser", "vbrowserr15oe", "vmobiledevice", "vmobileos",
-    "start_date", "vdropout", "source", "decLang", "list", "userAgent",
-    "dcua", "url", "session", "RID", "conditions",
-}
+def classify_group(qcode: str, qtext: str = "", family: Optional[str] = None) -> str:
+    """Topic for a question. Config-driven — see config/survey_map.yml.
 
-GROUP_RULES: list[tuple[str, str]] = [
-    (r"^(q[1-6])$", "SHOPPING"),
-    (r"^DP\d", "DEPT_STORES"),
-    (r"^DJ\d", "DIAMONDS"),
-    (r"^BN\d", "BNPL"),
-    (r"^D(28|29|30|31|32|33|34|35)", "AI_GENAI"),
-    (r"^GP\d", "GLP1"),
-    (r"^CS\d", "SENTIMENT"),
-    (r"^D(12|13|14|15)$", "MACRO"),
-    (r"^D([1-8])$", "DEMOGRAPHICS"),
-]
+    Kept under the old name because the tests and callers use it; it now
+    delegates to the rules file, so a new module in a future wave is a config
+    edit rather than a code change.
+    """
+    return survey_map.classify_topic(qcode, qtext, family)
 
 
-def classify_group(qcode: str) -> str:
-    if qcode in SYSTEM_QCODES or qcode.startswith(("voq", "vq", "vterm")):
-        return "PARADATA"
-    for pattern, group in GROUP_RULES:
-        if re.match(pattern, qcode):
-            return group
-    return "PARADATA" if qcode.startswith("v") else "SHOPPING"
+def ensure_topic(conn, topic_code: str) -> Optional[int]:
+    """Return the topic_id, creating the topic if the questionnaire introduced
+    one we have never seen. An unknown module must never block a load."""
+    if not topic_code:
+        return None
+    row = conn.execute(
+        text("SELECT topic_id FROM csi_topic WHERE topic_code = :c"), {"c": topic_code}
+    ).first()
+    if row:
+        return int(row[0])
+    conn.execute(
+        text(
+            """
+            INSERT INTO csi_topic (topic_code, topic_name, is_technical, sort_order)
+            VALUES (:c, :n, :tech, 500)
+            ON DUPLICATE KEY UPDATE topic_id = LAST_INSERT_ID(topic_id)
+            """
+        ),
+        {
+            "c": topic_code,
+            "n": topic_code.replace("_", " ").title(),
+            "tech": 1 if survey_map.is_technical(topic_code) else 0,
+        },
+    )
+    return int(conn.execute(
+        text("SELECT topic_id FROM csi_topic WHERE topic_code = :c"), {"c": topic_code}
+    ).scalar())
 
 
 def short_label(text_value: str, limit: int = 120) -> str:
@@ -82,7 +93,7 @@ def upsert_survey(
         """
     )
     with get_engine("etl").begin() as conn:
-        res = conn.execute(
+        conn.execute(
             sql,
             {
                 "host": host, "path": path, "title": title[:500],
@@ -90,23 +101,25 @@ def upsert_survey(
                 "wave_date": wave_date, "digest": digest,
             },
         )
-        return int(res.lastrowid)
+        # Read the id back rather than trusting LAST_INSERT_ID(): that MySQL
+        # idiom returns nothing useful after an ON CONFLICT UPDATE, and is not
+        # portable to the local SQLite engine used for development.
+        return int(conn.execute(
+            text("SELECT survey_id FROM csi_survey "
+                 "WHERE forsta_host = :host AND forsta_path = :path"),
+            {"host": host, "path": path},
+        ).scalar())
 
 
 # ── definition layer ───────────────────────────────────────────────────────
-def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
+def load_definitions(survey_id: int, questions: list,
+                     family: Optional[str] = None) -> dict[str, int]:
     """Insert questions, rows, options and variables. Returns {field_name: field_id}."""
     with get_engine("etl").begin() as conn:
-        groups = {
-            code: gid
-            for code, gid in conn.execute(
-                text("SELECT topic_code, topic_id FROM csi_topic")
-            ).all()
-        }
-
         for order, q in enumerate(questions, start=1):
-            gid = groups.get(classify_group(q.qcode))
-            is_technical = 1 if classify_group(q.qcode) == "PARADATA" else 0
+            topic_code = classify_group(q.qcode, q.qtext, family)
+            gid = ensure_topic(conn, topic_code)
+            is_technical = 1 if survey_map.is_technical(topic_code) else 0
             conn.execute(
                 text(
                     """
@@ -131,7 +144,11 @@ def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
                     "sys": is_technical, "multi": 1 if q.is_multi else 0, "ord": order,
                 },
             )
-            qid = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
+            qid = conn.execute(
+                text("SELECT question_id FROM csi_question "
+                     "WHERE survey_id = :sid AND qcode = :qcode"),
+                {"sid": survey_id, "qcode": q.qcode[:50]},
+            ).scalar()
 
             for i, (code, label) in enumerate(q.options, start=1):
                 conn.execute(
@@ -158,13 +175,13 @@ def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
                         """
                         INSERT INTO csi_item
                             (question_id, item_code, item_label, item_short,
-                             is_exclusive, is_other_specify, sort_order)
+                             is_exclusive, is_other, sort_order)
                         VALUES (:qid, :rc, :rl, :rs, :excl, :oe, :ord)
                         ON DUPLICATE KEY UPDATE
                             item_label = VALUES(item_label),
                             item_short = VALUES(item_short),
                             is_exclusive = VALUES(is_exclusive),
-                            is_other_specify = VALUES(is_other_specify),
+                            is_other = VALUES(is_other),
                             sort_order = VALUES(sort_order)
                         """
                     ),
@@ -182,7 +199,7 @@ def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
             text(
                 """
                 INSERT IGNORE INTO csi_field
-                    (survey_id, question_id, item_id, field_name, storage_type)
+                    (survey_id, question_id, item_id, field_name, value_type)
                 SELECT q.survey_id, q.question_id, r.item_id, r.item_code,
                        CASE WHEN q.qtype IN ('numeric') THEN 'numeric'
                             WHEN q.qtype IN ('text') THEN 'text'
@@ -198,7 +215,7 @@ def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
             text(
                 """
                 INSERT IGNORE INTO csi_field
-                    (survey_id, question_id, item_id, field_name, storage_type)
+                    (survey_id, question_id, item_id, field_name, value_type)
                 SELECT q.survey_id, q.question_id, NULL, q.qcode,
                        CASE WHEN q.qtype = 'numeric' THEN 'numeric'
                             WHEN q.qtype = 'text' THEN 'text'

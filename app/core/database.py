@@ -6,11 +6,15 @@ from contextlib import contextmanager
 from typing import Any, Generator, Iterable, Optional, Sequence
 
 import pandas as pd
-from sqlalchemy import create_engine, text
+from functools import lru_cache
+from pathlib import Path
+
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import QueuePool
 
+from . import sqlite_compat
 from .config import config
 
 logger = logging.getLogger(__name__)
@@ -19,10 +23,55 @@ _engines: dict[str, Engine] = {}
 _sessions: dict[str, sessionmaker] = {}
 
 
+def dialect(role: str = "app") -> str:
+    """'mysql' for STG, 'sqlite' for a local file database."""
+    return get_engine(role).dialect.name
+
+
+_SCHEMA_SQL = Path(__file__).resolve().parents[2] / "sql" / "001_schema.sql"
+
+
+@lru_cache(maxsize=1)
+def _conflict_targets() -> dict:
+    try:
+        return sqlite_compat.conflict_targets(_SCHEMA_SQL.read_text(encoding="utf-8"))
+    except OSError:
+        return {}
+
+
+def _install_sqlite_translation(engine: Engine) -> None:
+    """Translate MySQL DML to SQLite at the driver boundary.
+
+    Every query in this codebase is written once, in MySQL, against the STG
+    warehouse. Rather than fork the loaders for local development, the
+    translation happens here — one place, applied to whatever SQL reaches the
+    cursor, including raw text() the loaders build themselves.
+    """
+    targets = _conflict_targets()
+
+    @event.listens_for(engine, "before_cursor_execute", retval=True)
+    def _translate(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001
+        return sqlite_compat.rewrite_dml(statement, targets), parameters
+
+
+def _portable(sql: str, role: str) -> str:
+    """Kept for callers that want the translated text up front."""
+    return sqlite_compat.rewrite_dml(sql, _conflict_targets()) \
+        if dialect(role) == "sqlite" else sql
+
+
 def get_engine(role: str = "app") -> Engine:
     """One pooled engine per role. 'app' is read-only, 'etl' can write."""
     if role not in _engines:
         db = config.database(role)
+        if db.url.startswith("sqlite"):
+            engine = create_engine(db.url, future=True)
+            _engines[role] = engine
+            _install_sqlite_translation(engine)
+            with engine.connect() as conn:
+                conn.execute(text("PRAGMA foreign_keys=ON"))
+            logger.info("Created SQLite engine role=%s path=%s", role, db.database)
+            return engine
         if not db.host or not db.database:
             raise RuntimeError(
                 "Database is not configured. Set STG_DB_HOST / STG_DB_NAME "
@@ -70,38 +119,55 @@ def query_df(sql: str, params: Optional[dict] = None, role: str = "app") -> pd.D
 
 def execute(sql: str, params: Optional[dict] = None, role: str = "etl") -> int:
     with get_engine(role).begin() as conn:
-        return conn.execute(text(sql), params or {}).rowcount
+        return conn.execute(text(_portable(sql, role)), params or {}).rowcount
 
 
 def execute_many(sql: str, rows: Sequence[dict], role: str = "etl", chunk: int = 1000) -> int:
     """Batched executemany — the workhorse for loading csi_answer."""
     total = 0
     rows = list(rows)
+    statement = text(_portable(sql, role))
     with get_engine(role).begin() as conn:
         for i in range(0, len(rows), chunk):
             batch = rows[i : i + chunk]
-            conn.execute(text(sql), batch)
+            conn.execute(statement, batch)
             total += len(batch)
     return total
 
 
 def run_sql_file(path: str, role: str = "etl") -> None:
-    """Execute a .sql migration file statement by statement."""
-    import re
-
+    """Apply a .sql migration. On SQLite the MySQL DDL is converted on the fly
+    (see sqlite_compat) so there is only one schema file to maintain."""
     raw = open(path, "r", encoding="utf-8").read()
-    # strip full-line comments, then split on ';' at end of statement
-    cleaned = "\n".join(l for l in raw.splitlines() if not l.strip().startswith("--"))
-    statements = [s.strip() for s in re.split(r";\s*\n", cleaned) if s.strip()]
+    statements = sqlite_compat.split_statements(raw)
+    is_sqlite = dialect(role) == "sqlite"
+
+    applied = 0
     with get_engine(role).begin() as conn:
         for stmt in statements:
-            conn.execute(text(stmt))
-    logger.info("Applied %s (%d statements)", path, len(statements))
+            for out in (sqlite_compat.convert_ddl(stmt) if is_sqlite else [stmt]):
+                if not out:
+                    continue
+                conn.execute(text(out))
+                applied += 1
+        if is_sqlite:
+            for idx in sqlite_compat.index_statements(raw):
+                conn.execute(text(idx))
+                applied += 1
+    logger.info("Applied %s (%d statements, dialect=%s)",
+                path, applied, "sqlite" if is_sqlite else "mysql")
 
 
 def healthcheck(role: str = "app") -> tuple[bool, str]:
     try:
-        with get_engine(role).connect() as conn:
+        engine = get_engine(role)
+        if engine.dialect.name == "sqlite":
+            import sqlite3
+
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return True, f"connected (local SQLite {sqlite3.sqlite_version})"
+        with engine.connect() as conn:
             ver = conn.execute(text("SELECT VERSION()")).scalar()
         return True, f"connected (MySQL {ver})"
     except Exception as exc:  # noqa: BLE001
