@@ -1,4 +1,4 @@
-"""Chart palette and Plotly template for CIP.
+"""Chart palette and Plotly template for CSI.
 
 The categorical order below is fixed — slot 1 is always Coresight red, slot 2
 always blue, and so on. Colour follows the entity, never its rank, so a filter

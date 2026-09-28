@@ -1,4 +1,4 @@
-"""The cross-tab grid, straight from cip_crosstab_cell."""
+"""The cross-tab grid, straight from csi_crosstab."""
 from __future__ import annotations
 
 import pandas as pd
@@ -35,8 +35,8 @@ if cells.empty:
     st.warning("No cells stored for that question/banner combination.")
     st.stop()
 
-items = cells[cells.stub_kind == "item"]
-grid = items.pivot_table(index="stub_label", columns="segment_label", values="pct", aggfunc="mean")
+items = cells[cells.stub_type == "item"]
+grid = items.pivot_table(index="stub_label", columns="seg_label", values="pct", aggfunc="mean")
 
 st.subheader(f"{qcode} × {banner}")
 st.dataframe(
@@ -44,7 +44,22 @@ st.dataframe(
     use_container_width=True,
 )
 
-low = cells[cells.low_base_flag.isin(["*", "**"])].segment_label.unique()
+# Forsta prints the SEGMENT size in the header but divides by the number who
+# ANSWERED. On a routed question those differ a lot, so show the real one.
+_denoms = sorted({int(d) for d in items.denominator_n.dropna().unique()})
+if _denoms:
+    _sizes = sorted({int(d) for d in items.segment_size_n.dropna().unique()})
+    if _denoms != _sizes:
+        st.info(
+            f"Percentages here are based on **{min(_denoms)}–{max(_denoms)}** answering"
+            f" respondents, not the {max(_sizes)} shown as the segment size — this"
+            f" question is routed."
+            if len(_denoms) > 1 else
+            f"Percentages here are based on **n={_denoms[0]}** who answered, not the"
+            f" {max(_sizes)} in the segment — this question is routed."
+        )
+
+low = cells[cells.low_base.isin(["*", "**"])].seg_label.unique()
 if len(low):
     st.caption(
         "⚠︎ Low base — interpret with caution or suppress: " + ", ".join(sorted(low))
@@ -53,14 +68,14 @@ if len(low):
 st.divider()
 st.subheader("Compare segments")
 picked = st.multiselect(
-    "Segments", sorted(items.segment_label.unique()),
-    default=sorted(items.segment_label.unique())[: min(3, items.segment_label.nunique())],
+    "Segments", sorted(items.seg_label.unique()),
+    default=sorted(items.seg_label.unique())[: min(3, items.seg_label.nunique())],
 )
 if picked:
-    sub = items[items.segment_label.isin(picked)]
+    sub = items[items.seg_label.isin(picked)]
     st.plotly_chart(
-        charts.grouped_bar(sub, "stub_label", "pct", "segment_label",
+        charts.grouped_bar(sub, "stub_label", "pct", "seg_label",
                            title=f"{qcode} by segment", entity_order=sorted(picked)),
         use_container_width=True,
     )
-charts.show_table(items[["stub_label", "segment_label", "pct", "count_n", "segment_base_n"]])
+charts.show_table(items[["stub_label", "seg_label", "pct", "count_n", "denominator_n", "segment_size_n"]])

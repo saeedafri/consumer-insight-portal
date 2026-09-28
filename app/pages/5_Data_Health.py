@@ -25,5 +25,5 @@ else:
     with c2:
         charts.stat_tile("Failed or partial", f"{len(failed)}")
     with c3:
-        charts.stat_tile("Rows loaded", f"{int(runs.records_loaded.sum()):,}")
+        charts.stat_tile("Rows loaded", f"{int(runs.rows_loaded.sum()):,}")
     st.dataframe(runs, use_container_width=True, hide_index=True)

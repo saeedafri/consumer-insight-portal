@@ -1,6 +1,6 @@
 """Parsers for the two Forsta Excel exports.
 
-These exist as a bridge: until the API key is issued, CIP can be loaded from
+These exist as a bridge: until the API key is issued, CSI can be loaded from
 the same files the team receives today. Once the key is live the API path
 produces identical rows, so nothing downstream changes.
 
@@ -54,7 +54,7 @@ class ParsedQuestion:
     rows: list[tuple[str, str]] = field(default_factory=list)
 
     @property
-    def is_multi_punch(self) -> bool:
+    def is_multi(self) -> bool:
         return bool(self.rows) and (self.value_min, self.value_max) == (0, 1)
 
 
@@ -108,7 +108,7 @@ def parse_datamap(path: str, sheet: str = "Datamap") -> list[ParsedQuestion]:
 
 
 def expand_variables(questions: list[ParsedQuestion]) -> list[tuple[str, str, Optional[str]]]:
-    """(variable_name, qcode, row_code) for every column of the flat export."""
+    """(field_name, qcode, item_code) for every column of the flat export."""
     variables: list[tuple[str, str, Optional[str]]] = []
     for q in questions:
         if q.rows:
@@ -162,7 +162,7 @@ class ParsedSegment:
     base_n: Optional[int]
     banner_name: Optional[str] = None
     column_index: Optional[int] = None
-    low_base_flag: str = ""
+    low_base: str = ""
 
 
 def parse_crosstab_summary(path: str, sheet: str = "Summary") -> tuple[dict, list[ParsedSegment]]:
@@ -249,7 +249,7 @@ def parse_banner(path: str, sheet: str = "Percentages") -> list[ParsedSegment]:
                 base_n=base,
                 banner_name=banner_name if label.lower() != "total" else "Total",
                 column_index=idx,
-                low_base_flag=flag,
+                low_base=flag,
             )
         )
     return segments
@@ -292,18 +292,48 @@ def iter_crosstab_cells(
             if pct is None and cnt is None:
                 continue
             sig = prow[j + 1] if j + 1 < len(prow) else None
+            pct_v, cnt_v = _as_float(pct), _as_int(cnt)
             yield {
                 "qcode": current_q[0],
                 "qtext": current_q[1],
                 "stub_label": stub,
-                "stub_kind": kind,
-                "segment_label": seg.label,
-                "segment_letter": seg.letter,
-                "pct": _as_float(pct),
-                "count_n": _as_int(cnt),
-                "base_n": seg.base_n,
-                "sig_against": str(sig).strip() if sig and str(sig).strip() not in {"*", "**"} else None,
+                "stub_type": kind,
+                "seg_label": seg.label,
+                "seg_letter": seg.letter,
+                "pct": pct_v,
+                "count_n": cnt_v,
+                # The segment's size (404 for Total) — what Forsta prints in the header.
+                "segment_base_n": seg.base_n,
+                # The real denominator behind the percentage. Forsta's
+                # "Total Answering" base is the number ROUTED INTO the question,
+                # not the segment size: DP2 divides by 222, BN2 by 133, GP8 by 71.
+                # count / pct recovers it exactly.
+                "answer_base_n": _answer_base(cnt_v, pct_v),
+                "sig_letters": str(sig).strip() if sig and str(sig).strip() not in {"*", "**"} else None,
             }
+
+
+def _answer_base(count_n: Optional[int], pct: Optional[float]) -> Optional[int]:
+    """Recover the denominator Forsta divided by: base = count / pct.
+
+    Verified against the 09/21/26 export, exact in every case:
+        DP2  16 / 0.07207207 = 222   (department-store buyers)
+        DJ3  .. / ..          = 186   (would consider lab-grown)
+        BN2  46 / 0.34586466 = 133   (BNPL users)
+        GP8  16 / 0.22535211 =  71   (GLP-1 users)
+        D15  .. / ..          = 260   (cut spending on gas)
+    Grid rows carry their own base — DP7 ranges from 16 to 107 across
+    retailers, because only shoppers of a retailer rate it.
+
+    Returns None when the cell is 0% and the base cannot be recovered.
+    Deliberately NOT falling back to the segment size: substituting 404 for an
+    unknown denominator is the exact error this column exists to prevent. The
+    caller has the segment size on csi_segment if it needs a display fallback.
+    """
+    if count_n is None or not pct:
+        return None
+    base = count_n / pct
+    return int(round(base)) if 0 < base < 10_000_000 else None
 
 
 def _stub_kind(stub: str) -> str:

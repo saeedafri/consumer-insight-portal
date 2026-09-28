@@ -1,4 +1,4 @@
-"""Plotly chart builders for CIP.
+"""Plotly chart builders for CSI.
 
 One builder per job:
     magnitude across items        -> horizontal_bar

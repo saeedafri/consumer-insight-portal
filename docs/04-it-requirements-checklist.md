@@ -112,13 +112,13 @@ the service account may list the directory so we can enumerate them ourselves.
 
 | Account | Used by | Grant |
 |---|---|---|
-| `cip_etl` | `etl/run_pipeline.py` | `SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES` on `cip_%` |
-| `cip_app` | the Streamlit portal | `SELECT` only, on `cip_%` and `v_cip_%` |
+| `csi_etl` | `etl/run_pipeline.py` | `SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES` on `csi_%` |
+| `csi_app` | the Streamlit portal | `SELECT` only, on `csi_%` and `v_csi_%` |
 
 `sql/004_grants.sql` has the statements ready. Splitting them means a bug in the
 portal cannot write to the warehouse.
 
-All CIP objects are prefixed `cip_` (views `v_cip_`) so they never collide with
+All CSI objects are prefixed `csi_` (views `v_csi_`) so they never collide with
 anything already in STG.
 
 ### 2.3 Firewall
@@ -148,8 +148,8 @@ at field close.
 >    and data-export rights on **directory `58f`** at `se1.decipherinc.com`.
 > 2. Whether that key is IP-restricted — if so, we will supply the ETL host's
 >    outbound IP for the allowlist.
-> 3. STG (DWH) MySQL: host, port, database name, and two accounts — `cip_etl`
->    (read/write on `cip_%`) and `cip_app` (read-only). SSL required.
+> 3. STG (DWH) MySQL: host, port, database name, and two accounts — `csi_etl`
+>    (read/write on `csi_%`) and `csi_app` (read-only). SSL required.
 > 4. A firewall rule from the ETL host to the STG MySQL server.
 >
 > **Needed soon, not blocking:**

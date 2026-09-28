@@ -1,4 +1,4 @@
-"""Create the CIP schema in the STG (DWH) database.
+"""Create the CSI schema in the STG (DWH) database.
 
     python scripts/init_db.py            # apply schema + views + seed
     python scripts/init_db.py --dry-run  # print what would run
@@ -15,7 +15,7 @@ from app.core.config import config          # noqa: E402
 from app.core.database import healthcheck, run_sql_file  # noqa: E402
 
 SQL_DIR = Path(__file__).resolve().parents[1] / "sql"
-ORDER = ["001_schema.sql", "002_views.sql", "003_seed_question_groups.sql"]
+ORDER = ["001_schema.sql", "002_views.sql", "003_seed_topics.sql"]
 
 
 def main() -> int:

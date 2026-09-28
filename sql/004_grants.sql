@@ -1,16 +1,16 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- CIP — least-privilege accounts. Run as a DBA on the STG (DWH) server.
--- Replace <DB>, <ETL_PWD>, <APP_PWD> before running. Do not commit real values.
+-- CSI least-privilege accounts on dwh_stg. Run as a DBA.
+-- Replace <ETL_PWD> / <APP_PWD> before running. Do not commit real values.
 -- ═══════════════════════════════════════════════════════════════════════════
 
--- Writer: used only by etl/ (the scheduled Forsta pull).
-CREATE USER IF NOT EXISTS 'cip_etl'@'%' IDENTIFIED BY '<ETL_PWD>' REQUIRE SSL;
+-- Writer: used only by the scheduled loader.
+CREATE USER IF NOT EXISTS 'csi_etl'@'%' IDENTIFIED BY '<ETL_PWD>' REQUIRE SSL;
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
-  ON `<DB>`.`cip_%` TO 'cip_etl'@'%';
+  ON `dwh_stg`.`csi_%` TO 'csi_etl'@'%';
 
--- Reader: used by the Streamlit app. Cannot modify anything.
-CREATE USER IF NOT EXISTS 'cip_app'@'%' IDENTIFIED BY '<APP_PWD>' REQUIRE SSL;
-GRANT SELECT ON `<DB>`.`cip_%` TO 'cip_app'@'%';
-GRANT SELECT ON `<DB>`.`v_cip_%` TO 'cip_app'@'%';
+-- Reader: used by the Streamlit portal. Cannot modify anything.
+CREATE USER IF NOT EXISTS 'csi_app'@'%' IDENTIFIED BY '<APP_PWD>' REQUIRE SSL;
+GRANT SELECT ON `dwh_stg`.`csi_%`   TO 'csi_app'@'%';
+GRANT SELECT ON `dwh_stg`.`v_csi_%` TO 'csi_app'@'%';
 
 FLUSH PRIVILEGES;

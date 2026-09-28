@@ -121,7 +121,7 @@ class Config:
             return DatabaseConfig(
                 host=_env("LOCAL_DB_HOST", "127.0.0.1"),
                 port=_int_env("LOCAL_DB_PORT", 3306),
-                database=_env("LOCAL_DB_NAME", "cip_local"),
+                database=_env("LOCAL_DB_NAME", "csi_local"),
                 user=_env("LOCAL_DB_USER", "root"),
                 password=_env("LOCAL_DB_PASSWORD"),
                 ssl_enabled=False,

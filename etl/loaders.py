@@ -1,4 +1,4 @@
-"""Upsert helpers: turn parsed Forsta objects into CIP rows.
+"""Upsert helpers: turn parsed Forsta objects into CSI rows.
 
 Everything is idempotent — re-running a load for the same wave updates in
 place rather than duplicating, so a failed nightly run can simply be re-run.
@@ -69,11 +69,11 @@ def upsert_survey(
     )
     sql = text(
         """
-        INSERT INTO cip_survey
-            (forsta_host, forsta_path, survey_title, survey_family, wave_label, wave_date, datamap_hash)
+        INSERT INTO csi_survey
+            (forsta_host, forsta_path, title, survey_family, wave_label, wave_date, datamap_hash)
         VALUES (:host, :path, :title, :family, :wave, :wave_date, :digest)
         ON DUPLICATE KEY UPDATE
-            survey_title = VALUES(survey_title),
+            title = VALUES(title),
             survey_family = COALESCE(VALUES(survey_family), survey_family),
             wave_label = COALESCE(VALUES(wave_label), wave_label),
             wave_date = COALESCE(VALUES(wave_date), wave_date),
@@ -95,32 +95,32 @@ def upsert_survey(
 
 # ── definition layer ───────────────────────────────────────────────────────
 def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
-    """Insert questions, rows, options and variables. Returns {variable_name: variable_id}."""
+    """Insert questions, rows, options and variables. Returns {field_name: field_id}."""
     with get_engine("etl").begin() as conn:
         groups = {
             code: gid
             for code, gid in conn.execute(
-                text("SELECT group_code, group_id FROM cip_question_group")
+                text("SELECT topic_code, topic_id FROM csi_topic")
             ).all()
         }
 
         for order, q in enumerate(questions, start=1):
             gid = groups.get(classify_group(q.qcode))
-            is_system = 1 if classify_group(q.qcode) == "PARADATA" else 0
+            is_technical = 1 if classify_group(q.qcode) == "PARADATA" else 0
             conn.execute(
                 text(
                     """
-                    INSERT INTO cip_question
-                        (survey_id, group_id, qcode, qtext, qtext_short, qtype,
-                         value_min, value_max, is_system, is_multi_punch, display_order)
+                    INSERT INTO csi_question
+                        (survey_id, topic_id, qcode, qtext, qtext_short, qtype,
+                         value_min, value_max, is_technical, is_multi, sort_order)
                     VALUES (:sid, :gid, :qcode, :qtext, :short, :qtype,
                             :vmin, :vmax, :sys, :multi, :ord)
                     ON DUPLICATE KEY UPDATE
-                        group_id = VALUES(group_id), qtext = VALUES(qtext),
+                        topic_id = VALUES(topic_id), qtext = VALUES(qtext),
                         qtext_short = VALUES(qtext_short), qtype = VALUES(qtype),
                         value_min = VALUES(value_min), value_max = VALUES(value_max),
-                        is_system = VALUES(is_system), is_multi_punch = VALUES(is_multi_punch),
-                        display_order = VALUES(display_order),
+                        is_technical = VALUES(is_technical), is_multi = VALUES(is_multi),
+                        sort_order = VALUES(sort_order),
                         question_id = LAST_INSERT_ID(question_id)
                     """
                 ),
@@ -128,7 +128,7 @@ def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
                     "sid": survey_id, "gid": gid, "qcode": q.qcode[:50],
                     "qtext": q.qtext, "short": short_label(q.qtext),
                     "qtype": q.qtype, "vmin": q.value_min, "vmax": q.value_max,
-                    "sys": is_system, "multi": 1 if q.is_multi_punch else 0, "ord": order,
+                    "sys": is_technical, "multi": 1 if q.is_multi else 0, "ord": order,
                 },
             )
             qid = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
@@ -137,13 +137,13 @@ def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
                 conn.execute(
                     text(
                         """
-                        INSERT INTO cip_answer_option
-                            (question_id, value_code, value_label, is_nonresponse, display_order)
+                        INSERT INTO csi_option
+                            (question_id, value_code, value_label, is_nonresponse, sort_order)
                         VALUES (:qid, :code, :label, :nr, :ord)
                         ON DUPLICATE KEY UPDATE
                             value_label = VALUES(value_label),
                             is_nonresponse = VALUES(is_nonresponse),
-                            display_order = VALUES(display_order)
+                            sort_order = VALUES(sort_order)
                         """
                     ),
                     {
@@ -152,27 +152,27 @@ def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
                     },
                 )
 
-            for i, (row_code, row_label) in enumerate(q.rows, start=1):
+            for i, (item_code, item_label) in enumerate(q.rows, start=1):
                 conn.execute(
                     text(
                         """
-                        INSERT INTO cip_question_row
-                            (question_id, row_code, row_label, row_label_short,
-                             is_exclusive, is_other_specify, display_order)
+                        INSERT INTO csi_item
+                            (question_id, item_code, item_label, item_short,
+                             is_exclusive, is_other_specify, sort_order)
                         VALUES (:qid, :rc, :rl, :rs, :excl, :oe, :ord)
                         ON DUPLICATE KEY UPDATE
-                            row_label = VALUES(row_label),
-                            row_label_short = VALUES(row_label_short),
+                            item_label = VALUES(item_label),
+                            item_short = VALUES(item_short),
                             is_exclusive = VALUES(is_exclusive),
                             is_other_specify = VALUES(is_other_specify),
-                            display_order = VALUES(display_order)
+                            sort_order = VALUES(sort_order)
                         """
                     ),
                     {
-                        "qid": qid, "rc": row_code[:50], "rl": (row_label or "")[:1000],
-                        "rs": short_label(row_label or "", 80),
-                        "excl": 1 if _is_exclusive(row_label) else 0,
-                        "oe": 1 if row_code.endswith("oe") else 0,
+                        "qid": qid, "rc": item_code[:50], "rl": (item_label or "")[:1000],
+                        "rs": short_label(item_label or "", 80),
+                        "excl": 1 if _is_exclusive(item_label) else 0,
+                        "oe": 1 if item_code.endswith("oe") else 0,
                         "ord": i,
                     },
                 )
@@ -181,14 +181,14 @@ def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
         conn.execute(
             text(
                 """
-                INSERT IGNORE INTO cip_variable
-                    (survey_id, question_id, row_id, variable_name, storage_type)
-                SELECT q.survey_id, q.question_id, r.row_id, r.row_code,
+                INSERT IGNORE INTO csi_field
+                    (survey_id, question_id, item_id, field_name, storage_type)
+                SELECT q.survey_id, q.question_id, r.item_id, r.item_code,
                        CASE WHEN q.qtype IN ('numeric') THEN 'numeric'
                             WHEN q.qtype IN ('text') THEN 'text'
                             ELSE 'code' END
-                FROM cip_question q
-                JOIN cip_question_row r ON r.question_id = q.question_id
+                FROM csi_question q
+                JOIN csi_item r ON r.question_id = q.question_id
                 WHERE q.survey_id = :sid
                 """
             ),
@@ -197,15 +197,15 @@ def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
         conn.execute(
             text(
                 """
-                INSERT IGNORE INTO cip_variable
-                    (survey_id, question_id, row_id, variable_name, storage_type)
+                INSERT IGNORE INTO csi_field
+                    (survey_id, question_id, item_id, field_name, storage_type)
                 SELECT q.survey_id, q.question_id, NULL, q.qcode,
                        CASE WHEN q.qtype = 'numeric' THEN 'numeric'
                             WHEN q.qtype = 'text' THEN 'text'
                             ELSE 'code' END
-                FROM cip_question q
-                LEFT JOIN cip_question_row r ON r.question_id = q.question_id
-                WHERE q.survey_id = :sid AND r.row_id IS NULL
+                FROM csi_question q
+                LEFT JOIN csi_item r ON r.question_id = q.question_id
+                WHERE q.survey_id = :sid AND r.item_id IS NULL
                 """
             ),
             {"sid": survey_id},
@@ -214,7 +214,7 @@ def load_definitions(survey_id: int, questions: list) -> dict[str, int]:
         return {
             name: vid
             for name, vid in conn.execute(
-                text("SELECT variable_name, variable_id FROM cip_variable WHERE survey_id = :sid"),
+                text("SELECT field_name, field_id FROM csi_field WHERE survey_id = :sid"),
                 {"sid": survey_id},
             ).all()
         }
@@ -237,7 +237,7 @@ def start_run(survey_id: Optional[int], source_type: str, object_type: str, sour
         res = conn.execute(
             text(
                 """
-                INSERT INTO cip_ingest_run (survey_id, source_type, object_type, source_ref)
+                INSERT INTO csi_load_log (survey_id, source_type, object_type, source_ref)
                 VALUES (:sid, :src, :obj, :ref)
                 """
             ),
@@ -252,11 +252,11 @@ def finish_run(run_id: int, read: int, loaded: int, rejected: int = 0, error: Op
         conn.execute(
             text(
                 """
-                UPDATE cip_ingest_run
-                   SET records_read = :read, records_loaded = :loaded,
-                       records_rejected = :rej, status = :status,
+                UPDATE csi_load_log
+                   SET rows_read = :read, rows_loaded = :loaded,
+                       rows_bad = :rej, status = :status,
                        error_text = :err, finished_at = NOW()
-                 WHERE ingest_run_id = :rid
+                 WHERE load_id = :rid
                 """
             ),
             {"read": read, "loaded": loaded, "rej": rejected, "status": status,

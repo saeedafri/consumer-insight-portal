@@ -1,4 +1,4 @@
-"""CIP ingestion pipeline.
+"""CSI ingestion pipeline.
 
     python -m etl.run_pipeline --source api    --wave 2026-09
     python -m etl.run_pipeline --source excel  --raw "Raw Data 09_21_26.xlsx" \
@@ -61,6 +61,7 @@ def ingest_excel(raw_path: str, crosstab_path: Optional[str], wave: Optional[str
     log.info("Loaded %d/%d respondents", loaded, read)
 
     _rebuild_profiles(survey_id)
+    _rebuild_question_bases(survey_id)
 
     if crosstab_path:
         ingest_crosstabs(survey_id, crosstab_path)
@@ -74,18 +75,18 @@ def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str,
         res = conn.execute(
             text(
                 """
-                INSERT INTO cip_respondent
-                    (survey_id, forsta_record, forsta_uuid, status_code, status_label,
+                INSERT INTO csi_respondent
+                    (survey_id, record_no, forsta_uuid, status_code, status_label,
                      is_qualified, completed_at, interview_secs, panel_source, sample_rid,
-                     markers, device_category, operating_system, browser, last_seen_qcode,
-                     ingest_run_id)
+                     markers, device, os, browser, dropout_qcode,
+                     load_id)
                 VALUES (:sid, :rec, :uuid, :sc, :sl, :qual, :done, :secs, :src, :rid,
                         :markers, :dev, :os, :br, :drop, :run)
                 ON DUPLICATE KEY UPDATE
                     status_code = VALUES(status_code), status_label = VALUES(status_label),
                     is_qualified = VALUES(is_qualified), completed_at = VALUES(completed_at),
                     interview_secs = VALUES(interview_secs),
-                    ingest_run_id = VALUES(ingest_run_id),
+                    load_id = VALUES(load_id),
                     respondent_id = LAST_INSERT_ID(respondent_id)
                 """
             ),
@@ -127,13 +128,13 @@ def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str,
             conn.execute(
                 text(
                     """
-                    INSERT INTO cip_response
-                        (respondent_id, survey_id, variable_id, value_code,
-                         value_label, value_numeric, value_text)
+                    INSERT INTO csi_answer
+                        (respondent_id, survey_id, field_id, value_code,
+                         value_label, value_number, value_text)
                     VALUES (:rid, :sid, :vid, :code, :label, :num, :txt)
                     ON DUPLICATE KEY UPDATE
                         value_code = VALUES(value_code), value_label = VALUES(value_label),
-                        value_numeric = VALUES(value_numeric), value_text = VALUES(value_text)
+                        value_number = VALUES(value_number), value_text = VALUES(value_text)
                     """
                 ),
                 payload,
@@ -142,42 +143,42 @@ def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str,
 
 
 def _rebuild_profiles(survey_id: int) -> None:
-    """Flatten D1-D8 / CS1 / CS2 into cip_respondent_profile."""
+    """Flatten D1-D8 / CS1 / CS2 into csi_profile."""
     mapping = {
         "gender": "D1", "relationship": "D3", "ethnicity": "D4",
         "income_band": "D5", "urbanicity": "D6", "political": "D7",
-        "state_name": "D8", "sentiment_income": "CS1", "sentiment_economy": "CS2",
+        "state_name": "D8", "outlook_income": "CS1", "outlook_economy": "CS2",
     }
     cols = ", ".join(mapping)
     selects = ",\n       ".join(
-        f"MAX(CASE WHEN v.variable_name = '{qc}' THEN resp.value_label END) AS {col}"
+        f"MAX(CASE WHEN v.field_name = '{qc}' THEN resp.value_label END) AS {col}"
         for col, qc in mapping.items()
     )
     sql = f"""
-        INSERT INTO cip_respondent_profile (respondent_id, survey_id, {cols}, age_years)
+        INSERT INTO csi_profile (respondent_id, survey_id, {cols}, age_years)
         SELECT r.respondent_id, r.survey_id,
                {selects},
-               MAX(CASE WHEN v.variable_name = 'D2'
+               MAX(CASE WHEN v.field_name = 'D2'
                         THEN CAST(NULLIF(REGEXP_SUBSTR(resp.value_label, '[0-9]+'), '') AS UNSIGNED)
                    END) AS age_years
-          FROM cip_respondent r
-          JOIN cip_response  resp ON resp.respondent_id = r.respondent_id
-          JOIN cip_variable  v    ON v.variable_id = resp.variable_id
+          FROM csi_respondent r
+          JOIN csi_answer  resp ON resp.respondent_id = r.respondent_id
+          JOIN csi_field  v    ON v.field_id = resp.field_id
          WHERE r.survey_id = :sid
          GROUP BY r.respondent_id, r.survey_id
         ON DUPLICATE KEY UPDATE
             gender = VALUES(gender), relationship = VALUES(relationship),
             ethnicity = VALUES(ethnicity), income_band = VALUES(income_band),
             urbanicity = VALUES(urbanicity), political = VALUES(political),
-            state_name = VALUES(state_name), sentiment_income = VALUES(sentiment_income),
-            sentiment_economy = VALUES(sentiment_economy), age_years = VALUES(age_years)
+            state_name = VALUES(state_name), outlook_income = VALUES(outlook_income),
+            outlook_economy = VALUES(outlook_economy), age_years = VALUES(age_years)
     """
     with get_engine("etl").begin() as conn:
         conn.execute(text(sql), {"sid": survey_id})
         conn.execute(
             text(
                 """
-                UPDATE cip_respondent_profile
+                UPDATE csi_profile
                    SET age_band = CASE
                          WHEN age_years BETWEEN 18 AND 29 THEN '18-29'
                          WHEN age_years BETWEEN 30 AND 44 THEN '30-44'
@@ -196,6 +197,40 @@ def _rebuild_profiles(survey_id: int) -> None:
     log.info("Rebuilt respondent profiles for survey_id=%s", survey_id)
 
 
+def _rebuild_question_bases(survey_id: int) -> None:
+    """Set csi_question.base_n to the number of qualified respondents who
+    actually reached each question.
+
+    This survey routes heavily — DP2-DP8 are asked only of department-store
+    buyers, BN2-BN8 only of BNPL users, GP2-GP10 only of GLP-1 users. Charting
+    any of them against the wave base understates them by 2-6x, so the base is
+    stored on the question and every view carries it.
+    """
+    with get_engine("etl").begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE csi_question q
+                   SET q.base_n = (
+                       SELECT COUNT(DISTINCT a.respondent_id)
+                         FROM csi_answer a
+                         JOIN csi_field f ON f.field_id = a.field_id
+                         JOIN csi_respondent r ON r.respondent_id = a.respondent_id
+                        WHERE f.question_id = q.question_id
+                          AND r.is_qualified = 1
+                          AND (a.value_code IS NOT NULL
+                               OR a.value_label IS NOT NULL
+                               OR a.value_number IS NOT NULL
+                               OR a.value_text IS NOT NULL)
+                   )
+                 WHERE q.survey_id = :sid
+                """
+            ),
+            {"sid": survey_id},
+        )
+    log.info("Rebuilt question bases for survey_id=%s", survey_id)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 def ingest_crosstabs(survey_id: int, path: str) -> None:
     settings, defs = xp.parse_crosstab_summary(path)
@@ -207,15 +242,15 @@ def ingest_crosstabs(survey_id: int, path: str) -> None:
     eng = get_engine("etl")
     with eng.begin() as conn:
         conn.execute(
-            text("UPDATE cip_crosstab_run SET is_current = 0 WHERE survey_id = :sid"),
+            text("UPDATE csi_crosstab_run SET is_current = 0 WHERE survey_id = :sid"),
             {"sid": survey_id},
         )
         res = conn.execute(
             text(
                 """
-                INSERT INTO cip_crosstab_run
-                    (survey_id, run_label, respondent_base, additional_filter, table_set,
-                     percentage_base, stat_test_levels, source_type, source_file, is_current)
+                INSERT INTO csi_crosstab_run
+                    (survey_id, run_label, respondent_base, extra_filter, table_set,
+                     pct_base, stat_test, source_type, source_file, is_current)
                 VALUES (:sid, :label, :resp, :filt, :ts, :pb, :stl, 'excel', :file, 1)
                 """
             ),
@@ -239,7 +274,7 @@ def ingest_crosstabs(survey_id: int, path: str) -> None:
             conn.execute(
                 text(
                     """
-                    INSERT INTO cip_banner (survey_id, banner_code, banner_name, display_order)
+                    INSERT INTO csi_banner (survey_id, banner_code, banner_name, sort_order)
                     VALUES (:sid, :code, :name, :ord)
                     ON DUPLICATE KEY UPDATE banner_name = VALUES(banner_name),
                                             banner_id = LAST_INSERT_ID(banner_id)
@@ -251,14 +286,14 @@ def ingest_crosstabs(survey_id: int, path: str) -> None:
             conn.execute(
                 text(
                     """
-                    INSERT INTO cip_segment
-                        (banner_id, survey_id, segment_letter, segment_label, definition_expr,
-                         base_n, is_total, low_base_flag, display_order)
+                    INSERT INTO csi_segment
+                        (banner_id, survey_id, seg_letter, seg_label, seg_definition,
+                         base_n, is_total, low_base, sort_order)
                     VALUES (:bid, :sid, :letter, :label, :defn, :base, :tot, :flag, :ord)
                     ON DUPLICATE KEY UPDATE
-                        segment_letter = VALUES(segment_letter),
-                        definition_expr = COALESCE(VALUES(definition_expr), definition_expr),
-                        base_n = VALUES(base_n), low_base_flag = VALUES(low_base_flag),
+                        seg_letter = VALUES(seg_letter),
+                        seg_definition = COALESCE(VALUES(seg_definition), seg_definition),
+                        base_n = VALUES(base_n), low_base = VALUES(low_base),
                         segment_id = LAST_INSERT_ID(segment_id)
                     """
                 ),
@@ -268,7 +303,7 @@ def ingest_crosstabs(survey_id: int, path: str) -> None:
                     "defn": definition_by_label.get(seg.label),
                     "base": seg.base_n or base_by_label.get(seg.label),
                     "tot": 1 if seg.label.lower() == "total" else 0,
-                    "flag": seg.low_base_flag, "ord": order,
+                    "flag": seg.low_base, "ord": order,
                 },
             )
             seg_ids[seg.label] = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
@@ -276,7 +311,7 @@ def ingest_crosstabs(survey_id: int, path: str) -> None:
         qid_by_code = {
             code: qid
             for code, qid in conn.execute(
-                text("SELECT qcode, question_id FROM cip_question WHERE survey_id = :sid"),
+                text("SELECT qcode, question_id FROM csi_question WHERE survey_id = :sid"),
                 {"sid": survey_id},
             ).all()
         }
@@ -285,26 +320,27 @@ def ingest_crosstabs(survey_id: int, path: str) -> None:
     for cell in xp.iter_crosstab_cells(path, banner_segments):
         read += 1
         qid = qid_by_code.get(cell["qcode"])
-        sid_seg = seg_ids.get(cell["segment_label"])
+        sid_seg = seg_ids.get(cell["seg_label"])
         if not qid or not sid_seg:
             continue
         cells.append(
             {
                 "run": ct_run, "sid": survey_id, "qid": qid, "seg": sid_seg,
-                "stub": cell["stub_label"][:1000], "kind": cell["stub_kind"],
-                "pct": cell["pct"], "cnt": cell["count_n"], "base": cell["base_n"],
-                "sig": cell["sig_against"],
+                "stub": cell["stub_label"][:1000], "kind": cell["stub_type"],
+                "pct": cell["pct"], "cnt": cell["count_n"],
+                "base": cell["answer_base_n"],
+                "sig": cell["sig_letters"],
             }
         )
 
     sql = """
-        INSERT INTO cip_crosstab_cell
-            (run_id, survey_id, question_id, segment_id, stub_label, stub_kind,
-             pct, count_n, base_n, sig_against)
+        INSERT INTO csi_crosstab
+            (run_id, survey_id, question_id, segment_id, stub_label, stub_type,
+             pct, count_n, answer_base_n, sig_letters)
         VALUES (:run, :sid, :qid, :seg, :stub, :kind, :pct, :cnt, :base, :sig)
         ON DUPLICATE KEY UPDATE
             pct = VALUES(pct), count_n = VALUES(count_n),
-            base_n = VALUES(base_n), sig_against = VALUES(sig_against)
+            answer_base_n = VALUES(answer_base_n), sig_letters = VALUES(sig_letters)
     """
     from app.core.database import execute_many
 
@@ -354,13 +390,14 @@ def ingest_api(wave: Optional[str], family: str = "CSI-US", full: bool = False) 
         loaded += _load_one_respondent(survey_id, rec, var_map, run)
     finish_run(run, read, loaded)
     _rebuild_profiles(survey_id)
+    _rebuild_question_bases(survey_id)
     log.info("API ingest complete: %d records", loaded)
 
 
 def _watermark(survey_id: int) -> Optional[str]:
     with get_engine("etl").connect() as conn:
         ts = conn.execute(
-            text("SELECT MAX(completed_at) FROM cip_respondent WHERE survey_id = :sid"),
+            text("SELECT MAX(completed_at) FROM csi_respondent WHERE survey_id = :sid"),
             {"sid": survey_id},
         ).scalar()
     return ts.strftime("%Y-%m-%d %H:%M:%S") if ts else None

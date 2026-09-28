@@ -55,8 +55,8 @@ Doing this before the API arrives means the portal has real data to build
 against, and the Excel loader stays as a permanent fallback for any wave that
 predates the integration.
 
-**Acceptance:** `cip_variable` has 375 rows; `cip_respondent` has 404;
-`v_cip_item_incidence` for `q1` returns 52.7% for "Met up with friends or
+**Acceptance:** `csi_field` has 375 rows; `csi_respondent` has 404;
+`v_csi_item_incidence` for `q1` returns 52.7% for "Met up with friends or
 family locally", matching the cross-tab to the decimal.
 
 ## Phase 4 — API pipeline (2 days, once the key lands)
@@ -88,7 +88,7 @@ Trends, Data health. Remaining work is analyst-driven:
 ## Phase 6 — Hardening
 
 Low-base suppression rules agreed with the research team; a reconciliation job
-that compares recomputed percentages against `cip_crosstab_cell` and alerts on
+that compares recomputed percentages against `csi_crosstab` and alerts on
 drift; alerting on failed ingest runs; a runbook.
 
 ---
@@ -107,7 +107,7 @@ said 52.7% is a credibility problem, not a rounding one.
 **2. Weighting.**
 
 These waves appear unweighted — the cross-tab bases are raw counts. If
-Coresight starts weighting, `cip_respondent_profile.weight` and the views are
+Coresight starts weighting, `csi_profile.weight` and the views are
 ready, but the scheme has to come from the research team, not from the
 pipeline.
 
@@ -120,7 +120,7 @@ pipeline.
 | API key delayed | blocks Phase 4 | Excel loader is a complete path; Phases 2–3 and 5 proceed regardless |
 | Questionnaire changes between waves | trend series break | `datamap_hash` flags drift; long fact table absorbs new questions with no DDL |
 | API datamap JSON differs from the documented shape | rework in Phase 4 | isolated to one adapter function |
-| Low bases charted as if solid | wrong conclusions in client work | `low_base_flag` carried through; portal warns |
+| Low bases charted as if solid | wrong conclusions in client work | `low_base` carried through; portal warns |
 | Recomputed vs published divergence | credibility | store both, label both, reconcile in Phase 6 |
 
 ---

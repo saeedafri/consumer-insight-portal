@@ -25,8 +25,8 @@ if catalog.empty:
 # Filters live in one row above the chart.
 f1, f2 = st.columns([1, 3])
 with f1:
-    group = st.selectbox("Module", ["All"] + sorted(catalog.group_name.dropna().unique().tolist()))
-scoped = catalog if group == "All" else catalog[catalog.group_name == group]
+    group = st.selectbox("Module", ["All"] + sorted(catalog.topic_name.dropna().unique().tolist()))
+scoped = catalog if group == "All" else catalog[catalog.topic_name == group]
 with f2:
     qmap = {int(r.question_id): f"{r.qcode} — {r.qtext_short}" for r in scoped.itertuples()}
     question_id = st.selectbox("Question", list(qmap), format_func=lambda k: qmap[k])
@@ -34,19 +34,31 @@ with f2:
 q = scoped[scoped.question_id == question_id].iloc[0]
 st.caption(q.qtext)
 
-if q.is_multi_punch:
+# The base travels with the question. Most of this questionnaire is routed —
+# DP2 is asked of department-store buyers only, BN2 of BNPL users, GP8 of
+# GLP-1 users — so the wave base would overstate the denominator badly.
+_wave_base = int(surveys[surveys.survey_id == survey_id].qualified_n.iloc[0] or 0)
+if q.base_n and _wave_base and int(q.base_n) < _wave_base:
+    st.info(
+        f"**Routed question** — asked of {int(q.base_n)} of {_wave_base} respondents"
+        f" ({100 * int(q.base_n) / _wave_base:.0f}%). All percentages below use"
+        f" n={int(q.base_n)} as the base."
+        + (f" Base: {q.base_desc}" if q.base_desc else "")
+    )
+
+if q.is_multi:
     data = repo.item_incidence(survey_id, question_id)
     if data.empty:
         st.warning("No responses stored for this question.")
     else:
         st.plotly_chart(
-            charts.horizontal_bar(data, "row_label", "pct",
+            charts.horizontal_bar(data, "item_label", "pct",
                                   title=f"{q.qcode} · % selected",
                                   base_n=int(data.base_n.max())),
             use_container_width=True,
         )
         charts.show_table(data.rename(columns={
-            "row_label": "Item", "pct": "%", "selected_n": "n selected", "base_n": "Base"}))
+            "item_label": "Item", "pct": "%", "selected_n": "n selected", "base_n": "Base"}))
 else:
     data = repo.single_distribution(survey_id, question_id)
     if data.empty:

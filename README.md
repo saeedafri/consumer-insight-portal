@@ -1,8 +1,8 @@
-# Consumer Insight Portal (CIP)
+# Consumer Insight Portal (CSI)
 
 Coresight Research · survey analytics on the STG (DWH) database.
 
-CIP pulls consumer-survey data from the **Forsta Surveys** platform
+CSI pulls consumer-survey data from the **Forsta Surveys** platform
 (`se1.decipherinc.com`, formerly Decipher) into MySQL and serves it through a
 Streamlit portal, replacing the Excel round-trip that analysis runs on today.
 
@@ -13,13 +13,14 @@ Streamlit portal, replacing the Excel round-trip that analysis runs on today.
 | Piece | State |
 |---|---|
 | Source-data analysis | done — both 09/21/26 exports fully parsed |
-| Database schema | drafted — 16 tables, 6 views, DDL ready to apply |
+| Database schema | 16 `csi_` tables + 8 views, DDL ready to apply to `dwh_stg` |
 | Excel loader | working end to end |
-| Forsta API client | written; **needs an API key** |
+| Forsta API client | written; key found in `Dwh/credentials.yml` and wired into `.env` |
 | Streamlit portal | 5 pages scaffolded |
 
-**Blocking:** a Forsta service-account API key. See
-[`docs/04-it-requirements-checklist.md`](docs/04-it-requirements-checklist.md).
+**Next step:** run `bash scripts/setup.sh` on a machine that can reach the STG
+server — this cloud session has no network route to it. Remaining asks for IT
+are in [`docs/04-it-requirements-checklist.md`](docs/04-it-requirements-checklist.md).
 
 ---
 
@@ -29,7 +30,7 @@ Streamlit portal, replacing the Excel round-trip that analysis runs on today.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env            # fill in STG_DB_* and FORSTA_*
+# .env is already populated from market-data-stg/.env and Dwh/credentials.yml
 python scripts/test_connection.py
 python scripts/init_db.py
 
@@ -76,7 +77,7 @@ consumer-insight-portal/
 | Document | Read it for |
 |---|---|
 | [`01-implementation-plan.md`](docs/01-implementation-plan.md) | phases, decisions, risks |
-| [`02-schema-design.md`](docs/02-schema-design.md) | the 16 tables and why the fact table is long |
+| [`02-schema-design.md`](docs/02-schema-design.md) | the 16 `csi_` tables, and why every percentage carries its own base |
 | [`03-forsta-integration.md`](docs/03-forsta-integration.md) | endpoints, auth, incremental loading, failure modes |
 | [`04-it-requirements-checklist.md`](docs/04-it-requirements-checklist.md) | **what to send IT** |
 | [`05-source-data-analysis.md`](docs/05-source-data-analysis.md) | what the two Excel files actually contain |
@@ -88,6 +89,6 @@ Matches `market-data-stg` and `SIP-Prod`: `APP_ENV` of `LOCAL`/`STAGING`/
 SQLAlchemy + PyMySQL with a pooled engine, Streamlit pinned to 1.55.0, Coresight
 red `#d62e2f`.
 
-All database objects are prefixed `cip_` (views `v_cip_`) so nothing collides
+All database objects are prefixed `csi_` (views `v_csi_`) so nothing collides
 with existing STG tables. The portal connects as a read-only account; only the
 ETL can write.

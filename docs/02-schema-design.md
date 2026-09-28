@@ -1,141 +1,141 @@
-# Database Schema — Consumer Insight Portal
+# Database Schema — CSI Tables in `dwh_stg`
 
-**16 tables in four layers**, all prefixed `cip_`, plus six `v_cip_` reporting
-views. DDL: `sql/001_schema.sql`, views: `sql/002_views.sql`.
-
----
-
-## The one design decision that matters
-
-The questionnaire changes every wave. This wave has 375 variables; next wave
-will have a different number, different modules, different retailer lists.
-
-A **wide** table (one column per variable) would mean a schema migration every
-month, and a portal that breaks whenever a question is renamed. So the fact
-table is **long**: one row per respondent × variable. New questions are new
-rows, not new columns. No DDL, ever.
-
-The cost is volume, and it is trivial here: 404 respondents × 375 variables ≈
-151,000 rows per wave. Twelve monthly waves is under 2 million rows.
-
-Two things soften the usual downsides of a long table:
-
-- `cip_respondent_profile` denormalises the eight demographic cuts the portal
-  filters on constantly, so a "GenZ women in the Midwest" filter is one indexed
-  join rather than eight EAV lookups.
-- `cip_crosstab_cell` stores the published numbers as computed by Forsta, so the
-  portal never has to recompute a figure that already appeared in a report.
+**16 tables**, prefix `csi_`, plus eight `v_csi_` views.
+DDL: `sql/001_schema.sql` · views: `sql/002_views.sql` · seed: `sql/003_seed_topics.sql`
 
 ---
 
-## Layer A — Definition (what was asked)
+## The two decisions that shape everything
 
-Loaded from the Forsta datamap. Six tables.
+### 1. The fact table is long, not wide
 
-| # | Table | Purpose | Rows this wave |
+The questionnaire changes every wave. This one has 375 columns; the next will
+differ. A wide table means a migration every month and a portal that breaks
+when a question is renamed. `csi_answer` holds **one row per respondent ×
+field**, so new questions are new rows and no DDL is ever needed.
+
+Volume is trivial: 404 × 375 ≈ 151,000 rows per wave, under 2 million for a
+year of monthly waves.
+
+### 2. Every percentage carries its own base
+
+This is the important one, and it came out of reading the files.
+
+**Most of this questionnaire is routed.** Only 222 of 404 respondents bought
+from a department store, so DP2–DP8 were asked of 222. Only 133 use BNPL, so
+BN2–BN8 were asked of 133. Only 71 take a GLP-1 drug, so GP2–GP10 were asked
+of 71. Forsta prints `N=404` in the cross-tab header — that is the *segment
+size* — but divides by the *answering base*. Read the header and you overstate
+the denominator by up to 6×.
+
+So the schema keeps the two apart, deliberately:
+
+| Column | Table | Meaning | DP2 example |
 |---|---|---|---|
-| 1 | `cip_survey` | One row per wave. Host, project path, field dates, `survey_family` for trending, `datamap_hash` to detect questionnaire drift. | 1 |
-| 2 | `cip_question_group` | Editorial modules — Department Stores, BNPL, GLP-1, Demographics, Paradata. Gives the portal its navigation. | 10 |
-| 3 | `cip_question` | One row per question as an analyst thinks of it: `q1`, `DP7`, `CS1`. Carries type, value range, multi-punch flag, base description. | 93 |
-| 4 | `cip_question_row` | Statement rows inside a list or grid — `q1r1` "Met up with friends", each retailer in `DP7`. Flags "None of these" as exclusive so it drops out of rankings. | 282 |
-| 5 | `cip_answer_option` | Code → label per question. `0=Unchecked/1=Checked`, or `1=Much worse … 6=Don't know`. `is_nonresponse` keeps "Don't know" out of Top-2-Box. | ~450 |
-| 6 | `cip_variable` | The physical column map: export header → question + row. **375 rows, matching all 375 columns exactly.** This is the bridge that makes loading mechanical. | 375 |
+| `seg_base_n` | `csi_segment` | how many people are in the column | 404 |
+| `answer_base_n` | `csi_crosstab` | the denominator behind the percentage | 222 |
+| `base_n` | `csi_question` | how many reached the question at all | 222 |
 
-## Layer B — Fact (what people said)
+`answer_base_n` is recovered exactly as `count_n / pct` and is left **NULL**
+when a 0% cell makes it unrecoverable — substituting the segment size is the
+precise error this column exists to prevent.
 
-| # | Table | Purpose | Rows this wave |
-|---|---|---|---|
-| 7 | `cip_respondent` | One row per interview: status, completion time, length, device, panel source, quota markers. | 404 |
-| 8 | `cip_respondent_profile` | Flattened demographics — gender, age, age band, generation, ethnicity, income, urbanicity, state, census region, sentiment. Derived at load. Reserves a `weight` column. | 404 |
-| 9 | `cip_response` | **The core fact.** One row per respondent × variable. Holds `value_code`, `value_label`, `value_numeric` and `value_text` so coded, numeric and verbatim answers share one table. | ~151,000 |
+---
 
-## Layer C — Aggregate (the published numbers)
+## DEFINITION — what was asked
 
-| # | Table | Purpose | Rows this wave |
-|---|---|---|---|
-| 10 | `cip_banner` | Cross-tab column groups: Gender, Age, Ethnicity, Income, Urbanicity, Politics, Sentiment. | 7 |
-| 11 | `cip_segment` | One row per column, with the **Forsta definition expression kept verbatim** (`(D2.ch12 or D2.ch10 or …)`), its base, stat-test letter, and low-base flag. | 40 |
-| 12 | `cip_crosstab_run` | The Summary-sheet settings — respondent base, percentage base, filters, stat-test levels. A percentage without these is not defensible. | 1 per export |
-| 13 | `cip_crosstab_cell` | Every cell: percentage, count, base, significance letters. Handles Net/Mean/Count stub rows via `stub_kind`. | 33,240 |
+Loaded from the Forsta datamap.
 
-## Layer D — Ops (how it got here)
-
-| # | Table | Purpose |
+| Table | Purpose | Rows, 09/21/26 |
 |---|---|---|
-| 14 | `cip_ingest_run` | Audit row for every load: source, object, counts read/loaded/rejected, status, error. Nothing enters CIP without one. |
-| 15 | `cip_ingest_reject` | Rows that failed validation, with the reason and payload, so an analyst can see what was dropped instead of wondering. |
-| — | `cip_datafeed_state` | Watermarks, so incremental pulls never re-read a whole survey. |
+| `csi_survey` | one row per wave: host, project path, field dates, `survey_family` for trending, `datamap_hash` to catch questionnaire drift | 1 |
+| `csi_topic` | report modules — Department Stores, BNPL, GLP-1, Demographics, Technical | 10 |
+| `csi_question` | one row per question as an analyst names it, **with its own `base_n` and `base_desc`** | 93 |
+| `csi_item` | statement rows in a list or grid — `q1r1`, each retailer in `DP7`. Flags "None of these" so it drops out of rankings | 282 |
+| `csi_option` | code → label. `0=Unchecked/1=Checked`, `1=Much worse … 6=Don't know`. `is_nonresponse` keeps "Don't know" out of Top-2-Box | ~450 |
+| `csi_field` | the export column map: header → question + item. **375 rows, matching all 375 columns exactly** | 375 |
+
+## DATA — what people said
+
+| Table | Purpose | Rows |
+|---|---|---|
+| `csi_respondent` | one row per interview: status, timing, device, panel source, quota markers | 404 |
+| `csi_profile` | flattened demographics — gender, age, band, generation, ethnicity, income, urbanicity, state, region, sentiment. Derived at load so a filter is one indexed join | 404 |
+| `csi_answer` | **the fact table.** `value_code`, `value_label`, `value_number`, `value_text` in one row per respondent × field | ~151,000 |
+
+## TABULATION — the published numbers
+
+| Table | Purpose | Rows |
+|---|---|---|
+| `csi_banner` | cross-tab column groups: Gender, Age, Ethnicity, Income, Urbanicity, Politics, Sentiment | 7 |
+| `csi_segment` | one row per column, with the **Forsta definition kept verbatim** (`(D2.ch12 or D2.ch10 or …)`), segment size, stat-test letter, low-base flag | 40 |
+| `csi_crosstab_run` | the Summary-sheet settings — respondent base, percentage base, filters, stat tests | 1 per export |
+| `csi_crosstab` | every cell: percentage, count, **true denominator**, significance letters. `stub_type` separates item rows from Net / Mean / Count rows | 33,240 |
+
+## LOADING — how it got here
+
+| Table | Purpose |
+|---|---|
+| `csi_load_log` | audit row per load: source, object, rows read/loaded/bad, status, error |
+| `csi_load_error` | rows that failed validation, with reason and payload |
+| `csi_load_state` | watermarks, so incremental pulls never re-read a whole survey |
 
 ---
 
 ## Relationships
 
 ```
-cip_survey ─┬─< cip_question ─┬─< cip_question_row ─┐
-            │                 └─< cip_answer_option │
-            │                                       │
-            ├─< cip_variable >──────────────────────┘
-            │        │
-            ├─< cip_respondent ──< cip_response >───┘
-            │        │
-            │        └─1:1─ cip_respondent_profile
-            │
-            ├─< cip_banner ──< cip_segment ──┐
+csi_survey ─┬─< csi_question ─┬─< csi_item ──┐
+            │                 └─< csi_option │
             │                                │
-            └─< cip_crosstab_run ──< cip_crosstab_cell
-                                        │
-                     (question_id, row_id, segment_id)
+            ├─< csi_field >──────────────────┘
+            │        │
+            ├─< csi_respondent ──< csi_answer >──┘
+            │        └─1:1─ csi_profile
+            │
+            ├─< csi_banner ──< csi_segment ──┐
+            │                                │
+            └─< csi_crosstab_run ──< csi_crosstab
+                                         │
+                      (question_id, item_id, segment_id)
 ```
 
-Read as: a survey has questions; a question has rows and answer options; every
-export column is a variable pointing at one question and optionally one row. A
-respondent belongs to a survey and has one response per variable. Separately, a
-survey has banners of segments, and a cross-tab run fills cells at the
-intersection of question, stub row and segment.
-
-Cascades are deliberate: deleting a survey removes its definitions, respondents,
-responses and cross-tabs, so a bad wave can be dropped and reloaded cleanly.
+Deleting a survey cascades to its definitions, respondents, answers and
+cross-tabs, so a bad wave can be dropped and reloaded cleanly.
 
 ---
 
-## Views the portal reads
-
-The app never touches base tables. Six views in `sql/002_views.sql`:
+## Views
 
 | View | What it answers |
 |---|---|
-| `v_cip_answers` | Denormalised answer stream with demographics attached — the general-purpose cut. |
-| `v_cip_item_incidence` | "% who selected each item" for every multi-punch question. Powers most bar charts. |
-| `v_cip_single_distribution` | Answer distribution for single-punch questions. Pie and stacked-bar source. |
-| `v_cip_crosstab` | The cross-tab grid as an analyst expects to read it, with bases and significance letters. |
-| `v_cip_trend` | Wave-over-wave series keyed on `survey_family`. |
-| `v_cip_survey_health` | Field stats — qualified, terminated, overquota, average length. |
+| `v_csi_answers` | denormalised answer stream with demographics attached |
+| `v_csi_item_incidence` | "% who selected each item", **on the question's own base** |
+| `v_csi_single_distribution` | single-punch distributions, with base |
+| `v_csi_grid` | grid questions — item × scale point (DP7 retailers, GP6 categories) |
+| `v_csi_crosstab` | the cross-tab grid, carrying both the segment size and the denominator |
+| `v_csi_trend` | wave-over-wave series keyed on `survey_family` |
+| `v_csi_survey_health` | field stats — qualified, terminated, overquota, average length |
+| `v_csi_question_base` | every question with its base and what share of the wave it represents |
 
 ---
 
 ## Indexing
 
-Beyond the primary and unique keys:
+- `csi_answer (survey_id, field_id, value_code)` — the incidence path
+- `csi_profile (survey_id, generation, gender, income_band)` — the filter path
+- `csi_crosstab (survey_id, question_id, segment_id)` — the grid path
+- `csi_survey (survey_family, wave_date)` — the trend path
 
-- `cip_response (survey_id, variable_id, value_code)` — the incidence path.
-- `cip_respondent_profile (survey_id, generation, gender, income_band)` — the filter path.
-- `cip_crosstab_cell (survey_id, question_id, segment_id)` — the grid path.
-- `cip_survey (survey_family, wave_date)` — the trend path.
-
-Every table is InnoDB / `utf8mb4_0900_ai_ci`. The utf8mb4 part is not optional:
-the retailer lists contain curly apostrophes (`Smith's Food & Drug`), which
-silently corrupt under `latin1`.
-
----
+InnoDB, `utf8mb4_0900_ai_ci` throughout. The utf8mb4 is not optional — retailer
+names carry curly apostrophes (`Smith's Food & Drug`) that corrupt under latin1.
 
 ## Deliberate omissions
 
-- **No weighting engine.** `cip_respondent_profile.weight` exists and defaults
-  to 1.0. When Coresight starts weighting these waves, the column is there and
-  the views multiply through it — but inventing a weighting scheme now would be
-  guessing.
-- **No partitioning.** At ~2M rows a year it would be premature. Revisit past
-  roughly 50M rows in `cip_response`.
-- **No verbatim coding tables.** The `…oe` open-ends land in
-  `cip_response.value_text`. If the team wants coded verbatims later, that is a
-  `cip_verbatim_code` table joining to `response_id` — additive, not a redesign.
+- **No weighting engine.** `csi_profile.weight` defaults to 1.0 and the views
+  multiply through it. These waves are unweighted; the scheme has to come from
+  the research team, not the pipeline.
+- **No partitioning.** Premature at ~2M rows a year. Revisit past ~50M.
+- **No verbatim coding.** Open-ends land in `csi_answer.value_text`. Coded
+  verbatims later would be a `csi_verbatim_code` table joining on `answer_id` —
+  additive, not a redesign.

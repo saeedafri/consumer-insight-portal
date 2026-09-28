@@ -74,11 +74,11 @@ Two options, in order of preference:
    returns only records not yet acknowledged; `POST .../ack` confirms receipt.
    No watermark bookkeeping, no risk of a boundary gap.
 2. **Date window** (works today, no setup). The pipeline reads
-   `MAX(completed_at)` from `cip_respondent` and passes it as `?start=`.
-   `cip_datafeed_state` stores the watermark.
+   `MAX(completed_at)` from `csi_respondent` and passes it as `?start=`.
+   `csi_load_state` stores the watermark.
 
-Either way every write is an upsert keyed on `(survey_id, forsta_record)` and
-`(respondent_id, variable_id)`, so re-running a load is always safe. `--full`
+Either way every write is an upsert keyed on `(survey_id, record_no)` and
+`(respondent_id, field_id)`, so re-running a load is always safe. `--full`
 ignores the watermark and reloads the wave from scratch.
 
 ---
@@ -102,7 +102,7 @@ regardless. If the layout changes, one function is affected.
 | `401` only from the scheduled host | key is IP-restricted | add the ETL host's outbound IP |
 | Connection timeout | our egress firewall blocks `se1.decipherinc.com:443` | open outbound HTTPS |
 | `datamap_hash` changed | questionnaire edited between waves | expected — review the diff before loading |
-| Row counts drop suddenly | `cond` filter or a quota change | check `cip_ingest_run`, compare to `summary/completions` |
+| Row counts drop suddenly | `cond` filter or a quota change | check `csi_load_log`, compare to `summary/completions` |
 
 `scripts/test_connection.py` distinguishes the first four automatically.
 
