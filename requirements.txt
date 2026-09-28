@@ -1,0 +1,30 @@
+# ══════════════════════════════════════════════════════════════════════════
+# Consumer Insight Portal (CIP) — Python dependencies
+# Mirrors the market-data-stg / SIP-Prod stack so deployment is identical.
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── Core framework ────────────────────────────────────────────────────────
+streamlit==1.55.0
+
+# ── Data processing ───────────────────────────────────────────────────────
+pandas>=2.3.0
+numpy>=2.4.0
+
+# ── Visualization ─────────────────────────────────────────────────────────
+plotly>=6.5.0
+
+# ── Database (Azure MySQL / STG DWH) ──────────────────────────────────────
+sqlalchemy>=2.0.46
+pymysql>=1.1.0
+cryptography>=46.0.0        # required for MySQL SSL connections
+
+# ── Forsta (Decipher) integration ─────────────────────────────────────────
+requests>=2.32.0
+decipher>=16.0.0            # official Forsta/Decipher "beacon" API client (optional)
+
+# ── Excel fallback ingestion ──────────────────────────────────────────────
+openpyxl>=3.1.5
+
+# ── Config / ops ──────────────────────────────────────────────────────────
+python-dotenv>=1.0.0
+tenacity>=9.0.0             # retry/backoff on API pulls

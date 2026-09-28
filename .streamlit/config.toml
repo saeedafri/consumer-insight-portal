@@ -1,0 +1,28 @@
+[global]
+suppressDeprecationWarnings = true
+
+[server]
+runOnSave = true
+headless = true
+enableStaticServing = true
+fileWatcherType = "auto"
+
+[browser]
+gatherUsageStats = false
+
+[logger]
+level = "info"
+
+[client]
+showSidebarNavigation = false
+showErrorDetails = "none"
+toolbarMode = "viewer"
+
+[ui]
+hideTopBar = true
+
+[theme]
+base = "light"
+primaryColor = "#d62e2f"
+backgroundColor = "#ffffff"
+textColor = "#1a1a2e"

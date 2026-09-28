@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+.pytest_cache/
+logs/*.log
+data/exports/*
+!data/exports/.gitkeep
+*.xlsx
+!docs/samples/*.xlsx
