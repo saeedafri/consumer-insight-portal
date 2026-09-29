@@ -1,7 +1,7 @@
 """Read-only query layer. Every page goes through here — no SQL in pages."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Sequence
 
 import pandas as pd
 import streamlit as st
@@ -379,3 +379,93 @@ def question_lookup(survey_id: int) -> pd.DataFrame:
         """,
         {"sid": survey_id},
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Saved views
+#
+# What is stored is the DEFINITION — filters, questions, break — not the
+# numbers. A saved view therefore re-runs against whatever is in the warehouse
+# today, which is the whole reason for saving it: "my GLP-1 cut" should follow
+# the data forward, not freeze last month's figures.
+# ═══════════════════════════════════════════════════════════════════════════
+import json as _json  # noqa: E402
+
+
+def list_views(survey_id: int, user_email: str) -> pd.DataFrame:
+    """A user's own views plus anything the team has shared.
+
+    Deliberately NOT cached: a view saved in one click must be in the list on
+    the next rerun, and the query is a handful of rows.
+    """
+    return query_df(
+        """
+        SELECT view_id, view_name, owner_email, is_shared, description,
+               definition, updated_at
+          FROM csi_saved_view
+         WHERE survey_id = :sid AND (owner_email = :email OR is_shared = 1)
+         ORDER BY is_shared, view_name
+        """,
+        {"sid": survey_id, "email": (user_email or "").lower()},
+    )
+
+
+def save_view(survey_id: int, name: str, owner_email: str, definition: dict,
+              description: str = "", shared: bool = False) -> None:
+    from app.core.database import execute
+
+    execute(
+        """
+        INSERT INTO csi_saved_view
+            (survey_id, view_name, owner_email, is_shared, definition, description)
+        VALUES (:sid, :name, :email, :shared, :definition, :description)
+        ON DUPLICATE KEY UPDATE
+            survey_id = VALUES(survey_id),
+            is_shared = VALUES(is_shared),
+            definition = VALUES(definition),
+            description = VALUES(description)
+        """,
+        {"sid": survey_id, "name": name.strip()[:160],
+         "email": (owner_email or "").lower(), "shared": 1 if shared else 0,
+         "definition": _json.dumps(definition), "description": description[:500]},
+    )
+
+
+def delete_view(view_id: int, owner_email: str) -> None:
+    from app.core.database import execute
+
+    execute(
+        "DELETE FROM csi_saved_view WHERE view_id = :vid AND owner_email = :email",
+        {"vid": view_id, "email": (owner_email or "").lower()},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Multi-question report
+# ═══════════════════════════════════════════════════════════════════════════
+def report(
+    survey_id: int,
+    question_ids: Sequence[int],
+    criteria: tuple = (),
+    break_dimension: Optional[str] = None,
+) -> dict[str, pd.DataFrame]:
+    """Run several questions over one cohort.
+
+    Returns {qcode: tidy frame}. Each question keeps its own base — the whole
+    point of reporting them together is comparing findings, not denominators.
+    """
+    lookup = question_lookup(survey_id).set_index("question_id")
+    out: dict[str, pd.DataFrame] = {}
+    for qid in question_ids:
+        qid = int(qid)
+        if qid not in lookup.index:
+            continue
+        frame = analyse(survey_id, qid, criteria, break_dimension)
+        if frame.empty:
+            continue
+        row = lookup.loc[qid]
+        frame = frame.copy()
+        frame.insert(0, "qcode", row.qcode)
+        frame.insert(1, "question", row.qtext_short)
+        out[str(row.qcode)] = frame
+    return out

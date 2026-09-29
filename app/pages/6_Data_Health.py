@@ -8,11 +8,14 @@ from app.data import repository as repo
 
 from app.components.header import page_title, render_header
 from app.core.config import config
+from app.components.footer import render_footer
+from app.core import auth
 from app.core.database import healthcheck
 
 _ok, _status = healthcheck("app")
 render_header("data-health", _status if _ok else "database unavailable",
               config.environment.value.upper())
+_user = auth.require_auth("data-health")
 page_title("Data health", "What loaded, when, and what was rejected.")
 
 if not _ok:
@@ -40,3 +43,5 @@ else:
     with c3:
         charts.stat_tile("Rows loaded", f"{int(runs.rows_loaded.sum()):,}")
     st.dataframe(runs, width="stretch", hide_index=True)
+
+render_footer()

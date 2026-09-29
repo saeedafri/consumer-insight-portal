@@ -4,16 +4,19 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from app.components import charts, export
+from app.components import charts, export, grid
 from app.data import repository as repo
 
 from app.components.header import page_title, render_header
 from app.core.config import config
+from app.components.footer import render_footer
+from app.core import auth
 from app.core.database import healthcheck
 
 _ok, _status = healthcheck("app")
 render_header("crosstabs", _status if _ok else "database unavailable",
               config.environment.value.upper())
+_user = auth.require_auth("crosstabs")
 page_title("Cross-tabs", "The published Forsta tables, with both bases carried through.")
 
 if not _ok:
@@ -62,22 +65,22 @@ if grid_items:
                           help="This question rates each item on the same scale.")
     items = items[items.item_label == chosen]
 
-grid = items.pivot_table(index="stub_label", columns="seg_label", values="pct", aggfunc="mean")
+matrix = items.pivot_table(index="stub_label", columns="seg_label", values="pct", aggfunc="mean")
 
 st.subheader(f"{qcode} × {banner}")
 # Segments Forsta flagged ** are too small to report (Non-binary is n=4 here).
 # Showing 75% off four people invites exactly the wrong reading, so those
 # columns are suppressed rather than shaded alongside real ones.
 suppressed = sorted(cells[cells.low_base == "**"].seg_label.unique())
-grid = grid.drop(columns=[c for c in suppressed if c in grid.columns])
+matrix = matrix.drop(columns=[c for c in suppressed if c in matrix.columns])
 
-styled = grid.style.format("{:.1%}", na_rep="—")
-if not grid.empty:
+styled = matrix.style.format("{:.1%}", na_rep="—")
+if not matrix.empty:
     # Shade by absolute magnitude across the whole table, on a fixed 0..max
     # scale. Shading per row turns a two-column table into pure black and
     # white and implies a ranking that two numbers cannot support.
     styled = styled.background_gradient(
-        cmap="Reds", axis=None, vmin=0, vmax=float(grid.max(numeric_only=True).max() or 1)
+        cmap="Reds", axis=None, vmin=0, vmax=float(matrix.max(numeric_only=True).max() or 1)
     )
 st.dataframe(styled, width="stretch")
 
@@ -120,13 +123,13 @@ flat = items[["stub_label", "seg_label", "pct", "count_n",
     "stub_label": "Row", "seg_label": "Segment", "pct": "%",
     "count_n": "Respondents", "denominator_n": "Base (answered)",
     "segment_size_n": "Segment size"})
-charts.show_table(flat)
+grid.show(flat, key='ct_grid')
 
 export.download_button(
     "Download to Excel",
     f"CSI_crosstab_{qcode}.xlsx",
     lambda: export.build_workbook(
-        {"Grid": grid.reset_index(), "Long form": flat},
+        {"Grid": matrix.reset_index(), "Long form": flat},
         f"{qcode} × {banner}",
         [("Wave", labels[survey_id]),
          ("Banner", banner),
@@ -136,3 +139,5 @@ export.download_button(
                   "Base (answered) is the denominator behind the percentage. "
                   "They differ on every routed question.")]),
     key_seed=f"ct{survey_id}{qcode}{banner}")
+
+render_footer()

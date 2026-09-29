@@ -19,6 +19,9 @@ Streamlit portal, replacing the Excel round-trip that analysis runs on today.
 | Streamlit portal | 6 pages, header navigation, **running against the real 09/21/26 data** |
 | Analysis Builder | arbitrary cohorts × any question × any break, verified against the published bases |
 | Excel export | branded workbook with a provenance sheet, on every table |
+| Access control | login gate, allowlist, cookie-backed sessions, sign-in audit |
+| Saved views | save a cohort + question set, share it with the team, re-run it later |
+| Interactive grids | AG Grid — sortable, resizable, label column pinned |
 | Dynamic surveys | topics and demographic cuts resolved per wave from `config/survey_map.yml` |
 
 **To see it now, with no credentials:** `bash scripts/run_local.sh`
@@ -88,6 +91,7 @@ consumer-insight-portal/
 | [`05-source-data-analysis.md`](docs/05-source-data-analysis.md) | what the two Excel files actually contain |
 | [`06-running-locally.md`](docs/06-running-locally.md) | the two run modes, and what local mode does not test |
 | [`07-analysis-builder.md`](docs/07-analysis-builder.md) | the cohort engine, how the base travels, and the label/code bug |
+| [`08-authentication.md`](docs/08-authentication.md) | providers, what IT must register for SSO, and what is not tested |
 
 ## Conventions
 

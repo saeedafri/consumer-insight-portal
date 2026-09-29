@@ -75,6 +75,8 @@ html, body {{ overflow-x: hidden !important; max-width: 100% !important; }}
   color: #6b6a68; text-align: right; line-height: 1.5; white-space: nowrap;
 }}
 .csi-header-meta .dot {{ font-size: 15px; vertical-align: -1px; }}
+.csi-header-user {{ color: #2d2a29; font-weight: 600; }}
+.csi-header-user.csi-warn {{ color: #b07000; }}
 
 @media (max-width: 1100px) {{
   .csi-header-inner {{ height: auto; padding: 12px 20px; gap: 20px; flex-wrap: wrap; }}
@@ -97,10 +99,23 @@ html, body {{ overflow-x: hidden !important; max-width: 100% !important; }}
 
 def render_header(active: str, db_status: str = "", environment: str = "") -> None:
     """Draw the header. `active` is the url_path of the current page."""
+    try:
+        from app.core import auth
+        signed_in = auth.get_current_user()
+        auth_mode = auth.provider()
+    except Exception:  # noqa: BLE001
+        signed_in, auth_mode = None, "off"
+
     links = "".join(
         f'<a href="{href}" target="_self" class="{"active" if path == active else ""}">{label}</a>'
         for label, path, href in NAV
     )
+    who = ""
+    if signed_in and auth_mode != "off":
+        who = f'<div class="csi-header-user">{signed_in}</div>'
+    elif auth_mode == "off":
+        who = '<div class="csi-header-user csi-warn">auth off</div>'
+
     meta = ""
     if db_status or environment:
         ok = db_status.startswith("connected")
@@ -110,7 +125,8 @@ def render_header(active: str, db_status: str = "", environment: str = "") -> No
             f'<div><strong>Consumer Insight Portal</strong>'
             f'{" · " + environment if environment else ""}</div>'
             f'<div style="color:{colour}"><span class="dot">●</span> {db_status}</div>'
-            f"</div>"
+            + who
+            + "</div>"
         )
     st.markdown(
         _CSS

@@ -8,11 +8,14 @@ from app.data import repository as repo
 
 from app.components.header import page_title, render_header
 from app.core.config import config
+from app.components.footer import render_footer
+from app.core import auth
 from app.core.database import healthcheck
 
 _ok, _status = healthcheck("app")
 render_header("overview", _status if _ok else "database unavailable",
               config.environment.value.upper())
+_user = auth.require_auth("overview")
 page_title("Wave overview", "Sample composition and headline sentiment for a single wave.")
 
 if not _ok:
@@ -79,3 +82,5 @@ else:
             [("Wave", labels[survey_id]),
              ("Base", f"n={int(comp['n'].sum())} qualified respondents")]),
         key_seed=f"ov{survey_id}{dimension}")
+
+render_footer()

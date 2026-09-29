@@ -397,3 +397,45 @@ CREATE TABLE IF NOT EXISTS csi_profile_map (
     REFERENCES csi_survey (survey_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Which question feeds each demographic cut, per wave. Auditable and editable.';
+
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- ACCESS AND SAVED WORK
+-- ───────────────────────────────────────────────────────────────────────────
+
+-- One row per sign-in. Gives an auditable record of who opened the portal and
+-- a way for an admin to revoke a session without waiting for it to expire.
+CREATE TABLE IF NOT EXISTS csi_auth_session (
+  session_id   VARCHAR(64)  NOT NULL,
+  user_email   VARCHAR(200) NOT NULL,
+  user_name    VARCHAR(200) NULL,
+  provider     VARCHAR(20)  NOT NULL DEFAULT 'local',
+  created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at   DATETIME     NULL,
+  revoked_at   DATETIME     NULL,
+  request_meta VARCHAR(500) NULL COMMENT 'host and user agent at sign-in',
+  PRIMARY KEY (session_id),
+  KEY ix_auth_user (user_email, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Sign-in audit and revocation.';
+
+-- A saved analysis: the filters, the questions and the break, as JSON.
+-- Storing the definition rather than the numbers means a saved view re-runs
+-- against the current data — which is the point of saving it.
+CREATE TABLE IF NOT EXISTS csi_saved_view (
+  view_id     INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  survey_id   INT UNSIGNED NOT NULL,
+  view_name   VARCHAR(160) NOT NULL,
+  owner_email VARCHAR(200) NOT NULL,
+  is_shared   TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '1 = visible to the whole team',
+  definition  TEXT         NOT NULL COMMENT 'JSON: criteria, question ids, break',
+  description VARCHAR(500) NULL,
+  created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (view_id),
+  UNIQUE KEY uq_saved_view (owner_email, view_name),
+  KEY ix_saved_view_survey (survey_id, is_shared),
+  CONSTRAINT fk_view_survey FOREIGN KEY (survey_id)
+    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Saved filter + question sets, re-run against current data.';

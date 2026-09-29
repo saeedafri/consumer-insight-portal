@@ -8,11 +8,14 @@ from app.data import repository as repo
 
 from app.components.header import page_title, render_header
 from app.core.config import config
+from app.components.footer import render_footer
+from app.core import auth
 from app.core.database import healthcheck
 
 _ok, _status = healthcheck("app")
 render_header("questions", _status if _ok else "database unavailable",
               config.environment.value.upper())
+_user = auth.require_auth("questions")
 page_title("Question explorer", "Every question in the wave, charted on its own base.")
 
 if not _ok:
@@ -106,3 +109,5 @@ else:
             "value_label": "Answer", "n": "Respondents", "pct": "%"})
         charts.show_table(table)
         _export(table, q, survey_id, labels)
+
+render_footer()

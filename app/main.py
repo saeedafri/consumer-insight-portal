@@ -26,6 +26,7 @@ HERE = Path(__file__).parent
 
 # title, file, url_path — url_path must match app/components/header.py NAV
 PAGES = [
+    ("Sign in",          "pages/0_Login.py",             "login"),
     ("Overview",         "pages/1_Overview.py",          "overview"),
     ("Questions",        "pages/2_Question_Explorer.py", "questions"),
     ("Analysis Builder", "pages/3_Analysis.py",          "analysis"),
