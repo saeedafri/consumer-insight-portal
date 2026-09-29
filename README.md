@@ -16,7 +16,9 @@ Streamlit portal, replacing the Excel round-trip that analysis runs on today.
 | Database schema | 17 `csi_` tables + 8 views, applied and exercised end to end |
 | Excel loader | working end to end |
 | Forsta API client | written; key found in `Dwh/credentials.yml` and wired into `.env` |
-| Streamlit portal | 5 pages, **running against the real 09/21/26 data** |
+| Streamlit portal | 6 pages, header navigation, **running against the real 09/21/26 data** |
+| Analysis Builder | arbitrary cohorts × any question × any break, verified against the published bases |
+| Excel export | branded workbook with a provenance sheet, on every table |
 | Dynamic surveys | topics and demographic cuts resolved per wave from `config/survey_map.yml` |
 
 **To see it now, with no credentials:** `bash scripts/run_local.sh`
@@ -60,8 +62,8 @@ consumer-insight-portal/
 │   ├── main.py             entry point and navigation
 │   ├── core/               config, pooled SQLAlchemy access, SQLite fallback
 │   ├── data/repository.py  every query the app makes, cached
-│   ├── components/         validated palette, Plotly builders
-│   └── pages/              Overview · Questions · Cross-tabs · Trends · Health
+│   ├── components/         header nav, validated palette, Plotly builders, Excel export
+│   └── pages/              Overview · Questions · Analysis Builder · Cross-tabs · Trends · Health
 ├── config/survey_map.yml   topic rules and demographic detection — edit here, not in code
 ├── etl/
 │   ├── survey_map.py       resolves topics and cuts for a questionnaire it has never seen
@@ -85,6 +87,7 @@ consumer-insight-portal/
 | [`04-it-requirements-checklist.md`](docs/04-it-requirements-checklist.md) | **what to send IT** |
 | [`05-source-data-analysis.md`](docs/05-source-data-analysis.md) | what the two Excel files actually contain |
 | [`06-running-locally.md`](docs/06-running-locally.md) | the two run modes, and what local mode does not test |
+| [`07-analysis-builder.md`](docs/07-analysis-builder.md) | the cohort engine, how the base travels, and the label/code bug |
 
 ## Conventions
 

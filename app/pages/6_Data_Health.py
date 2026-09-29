@@ -6,7 +6,20 @@ import streamlit as st
 from app.components import charts
 from app.data import repository as repo
 
-st.title("Data health")
+from app.components.header import page_title, render_header
+from app.core.config import config
+from app.core.database import healthcheck
+
+_ok, _status = healthcheck("app")
+render_header("data-health", _status if _ok else "database unavailable",
+              config.environment.value.upper())
+page_title("Data health", "What loaded, when, and what was rejected.")
+
+if not _ok:
+    st.error("The portal cannot reach the database.")
+    st.stop()
+
+
 
 surveys = repo.list_surveys()
 if not surveys.empty:

@@ -54,11 +54,12 @@ def ingest_excel(raw_path: str, crosstab_path: Optional[str], wave: Optional[str
     finish_run(run, len(questions), len(var_map))
     log.info("Loaded %d variables", len(var_map))
 
+    code_map = _code_lookup(survey_id)
     run = start_run(survey_id, "excel", "data", raw_path)
     read = loaded = 0
     for record in xp.iter_raw_records(raw_path):
         read += 1
-        loaded += _load_one_respondent(survey_id, record, var_map, run)
+        loaded += _load_one_respondent(survey_id, record, var_map, run, code_map)
     finish_run(run, read, loaded)
     log.info("Loaded %d/%d respondents", loaded, read)
 
@@ -69,8 +70,37 @@ def ingest_excel(raw_path: str, crosstab_path: Optional[str], wave: Optional[str
         ingest_crosstabs(survey_id, crosstab_path)
 
 
+def _code_lookup(survey_id: int) -> dict[int, dict[str, int]]:
+    """field_id -> {answer label: code}, for every question that is not a
+    0/1 multi-punch.
+
+    The Forsta export we receive is in LABEL format: a single-punch cell holds
+    "Yes", not 1. Running it through the multi-punch rule would stamp every
+    answered cell with code 1 — which silently makes "BNPL users" 404 people
+    instead of 133, and every single-punch filter useless. The datamap already
+    carries the dictionary, so the label is resolved back to its code here.
+    """
+    with get_engine("etl").connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT f.field_id, o.value_label, o.value_code
+                  FROM csi_field  f
+                  JOIN csi_question q ON q.question_id = f.question_id
+                  JOIN csi_option   o ON o.question_id = q.question_id
+                 WHERE f.survey_id = :sid AND q.is_multi = 0
+                """
+            ),
+            {"sid": survey_id},
+        ).all()
+    lookup: dict[int, dict[str, int]] = {}
+    for field_id, label, code in rows:
+        lookup.setdefault(int(field_id), {})[str(label).strip().lower()] = int(code)
+    return lookup
+
+
 def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str, int],
-                         run_id: int) -> int:
+                         run_id: int, code_map: Optional[dict[int, dict[str, int]]] = None) -> int:
     status_label = str(rec.get("status") or "").strip()
     status_code = STATUS_MAP.get(status_label)
     with get_engine("etl").begin() as conn:
@@ -123,6 +153,11 @@ def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str,
             if vid is None or value is None:
                 continue
             code, label = xp.normalise_label_cell(value)
+            # Single-punch and grid cells carry a scale label, not 0/1 — resolve
+            # it back to the datamap's code so filters and ordering work.
+            choices = (code_map or {}).get(vid)
+            if choices is not None and label is not None:
+                code = choices.get(label.strip().lower())
             payload.append(
                 {
                     "rid": respondent_id, "sid": survey_id, "vid": vid,
@@ -465,11 +500,12 @@ def ingest_api(wave: Optional[str], family: str = "CSI-US", full: bool = False) 
     finish_run(run, len(questions), len(var_map))
 
     watermark = None if full else _watermark(survey_id)
+    code_map = _code_lookup(survey_id)
     run = start_run(survey_id, "api", "data", f"{client.base_url}/surveys/{fc.survey_path}/data")
     read = loaded = 0
     for rec in client.iter_records(cond=config.ingest_cond, start=watermark, layout=fc.layout_id):
         read += 1
-        loaded += _load_one_respondent(survey_id, rec, var_map, run)
+        loaded += _load_one_respondent(survey_id, rec, var_map, run, code_map)
     finish_run(run, read, loaded)
     _rebuild_profiles(survey_id, questions, family)
     _rebuild_question_bases(survey_id)

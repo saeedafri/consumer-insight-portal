@@ -14,7 +14,7 @@ gatherUsageStats = false
 level = "info"
 
 [client]
-showSidebarNavigation = true
+showSidebarNavigation = false
 showErrorDetails = "none"
 toolbarMode = "viewer"
 

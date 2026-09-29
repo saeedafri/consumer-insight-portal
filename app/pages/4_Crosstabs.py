@@ -4,10 +4,23 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from app.components import charts
+from app.components import charts, export
 from app.data import repository as repo
 
-st.title("Cross-tabs")
+from app.components.header import page_title, render_header
+from app.core.config import config
+from app.core.database import healthcheck
+
+_ok, _status = healthcheck("app")
+render_header("crosstabs", _status if _ok else "database unavailable",
+              config.environment.value.upper())
+page_title("Cross-tabs", "The published Forsta tables, with both bases carried through.")
+
+if not _ok:
+    st.error("The portal cannot reach the database.")
+    st.stop()
+
+
 
 surveys = repo.list_surveys()
 if surveys.empty:
@@ -102,4 +115,24 @@ if picked:
                            title=f"{qcode} by segment", entity_order=sorted(picked)),
         width="stretch",
     )
-charts.show_table(items[["stub_label", "seg_label", "pct", "count_n", "denominator_n", "segment_size_n"]])
+flat = items[["stub_label", "seg_label", "pct", "count_n",
+              "denominator_n", "segment_size_n"]].rename(columns={
+    "stub_label": "Row", "seg_label": "Segment", "pct": "%",
+    "count_n": "Respondents", "denominator_n": "Base (answered)",
+    "segment_size_n": "Segment size"})
+charts.show_table(flat)
+
+export.download_button(
+    "Download to Excel",
+    f"CSI_crosstab_{qcode}.xlsx",
+    lambda: export.build_workbook(
+        {"Grid": grid.reset_index(), "Long form": flat},
+        f"{qcode} × {banner}",
+        [("Wave", labels[survey_id]),
+         ("Banner", banner),
+         ("Percentage base", str(cells.pct_base.iloc[0]) if "pct_base" in cells else "Total Answering"),
+         ("Suppressed segments", ", ".join(suppressed) or "None"),
+         ("Note", "Segment size is how many people are in the column; "
+                  "Base (answered) is the denominator behind the percentage. "
+                  "They differ on every routed question.")]),
+    key_seed=f"ct{survey_id}{qcode}{banner}")

@@ -3,10 +3,23 @@ from __future__ import annotations
 
 import streamlit as st
 
-from app.components import charts
+from app.components import charts, export
 from app.data import repository as repo
 
-st.title("Question explorer")
+from app.components.header import page_title, render_header
+from app.core.config import config
+from app.core.database import healthcheck
+
+_ok, _status = healthcheck("app")
+render_header("questions", _status if _ok else "database unavailable",
+              config.environment.value.upper())
+page_title("Question explorer", "Every question in the wave, charted on its own base.")
+
+if not _ok:
+    st.error("The portal cannot reach the database.")
+    st.stop()
+
+
 
 surveys = repo.list_surveys()
 if surveys.empty:
@@ -30,6 +43,20 @@ scoped = catalog if group == "All" else catalog[catalog.topic_name == group]
 with f2:
     qmap = {int(r.question_id): f"{r.qcode} — {r.qtext_short}" for r in scoped.itertuples()}
     question_id = st.selectbox("Question", list(qmap), format_func=lambda k: qmap[k])
+
+def _export(table, q, survey_id, labels):
+    """One Excel button, wherever the page ended up rendering a table."""
+    export.download_button(
+        "Download to Excel",
+        f"CSI_{q.qcode}_{labels[survey_id].split('· ')[-1]}.xlsx",
+        lambda: export.build_workbook(
+            {q.qcode: table}, f"{q.qcode} — {q.qtext_short}",
+            [("Wave", labels[survey_id]),
+             ("Question", q.qtext),
+             ("Base", f"n={int(q.base_n)}" if q.base_n else "see table"),
+             ("Base description", q.base_desc or "—")]),
+        key_seed=f"qe{survey_id}{q.qcode}")
+
 
 q = scoped[scoped.question_id == question_id].iloc[0]
 st.caption(q.qtext)
@@ -57,8 +84,10 @@ if q.is_multi:
                                   base_n=int(data.base_n.max())),
             width="stretch",
         )
-        charts.show_table(data.rename(columns={
-            "item_label": "Item", "pct": "%", "selected_n": "n selected", "base_n": "Base"}))
+        table = data.rename(columns={
+            "item_label": "Item", "pct": "%", "selected_n": "n selected", "base_n": "Base"})
+        charts.show_table(table)
+        _export(table, q, survey_id, labels)
 else:
     data = repo.single_distribution(survey_id, question_id)
     if data.empty:
@@ -73,5 +102,7 @@ else:
         with right:
             st.plotly_chart(charts.donut(data, "value_label", "n", title="Share"),
                             width="stretch")
-        charts.show_table(data.rename(columns={
-            "value_label": "Answer", "n": "Respondents", "pct": "%"}))
+        table = data.rename(columns={
+            "value_label": "Answer", "n": "Respondents", "pct": "%"})
+        charts.show_table(table)
+        _export(table, q, survey_id, labels)

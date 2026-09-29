@@ -1,6 +1,10 @@
 """Consumer Insight Portal — Streamlit entry point.
 
     streamlit run app/main.py
+
+Navigation lives in the header bar, not the sidebar (app/components/header.py),
+matching the Market Data Portal. `position="hidden"` stops Streamlit drawing
+its own sidebar nav alongside it.
 """
 from __future__ import annotations
 
@@ -11,52 +15,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import streamlit as st
 
-from app.core.config import config
-from app.core.database import healthcheck
-
 st.set_page_config(
-    page_title="Consumer Insight Portal",
+    page_title="Consumer Insight Portal · Coresight Research",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
-# st.Page resolves paths relative to this file, not the working directory,
-# so the portal starts the same way from the repo root or from app/.
-PAGES = {
-    "Overview": "pages/1_Overview.py",
-    "Question explorer": "pages/2_Question_Explorer.py",
-    "Cross-tabs": "pages/3_Crosstabs.py",
-    "Trends": "pages/4_Trends.py",
-    "Data health": "pages/5_Data_Health.py",
-}
+HERE = Path(__file__).parent
+
+# title, file, url_path — url_path must match app/components/header.py NAV
+PAGES = [
+    ("Overview",         "pages/1_Overview.py",          "overview"),
+    ("Questions",        "pages/2_Question_Explorer.py", "questions"),
+    ("Analysis Builder", "pages/3_Analysis.py",          "analysis"),
+    ("Cross-tabs",       "pages/4_Crosstabs.py",         "crosstabs"),
+    ("Trends",           "pages/5_Trends.py",            "trends"),
+    ("Data Health",      "pages/6_Data_Health.py",       "data-health"),
+]
 
 
 def main() -> None:
-    st.sidebar.markdown("### Consumer Insight Portal")
-    st.sidebar.caption(f"Environment: **{config.environment.value.upper()}**")
-
-    ok, message = healthcheck("app")
-    st.sidebar.markdown(
-        f"<span style='color:{'#1b7f4f' if ok else '#a61f20'};font-size:12px;'>"
-        f"{'● ' + message if ok else '● database unavailable'}</span>",
-        unsafe_allow_html=True,
-    )
-    if not ok:
-        st.error(
-            "The portal cannot reach the STG (DWH) database.\n\n"
-            "Check `STG_DB_HOST`, `APP_DB_USER` and the firewall rule for this host. "
-            "Details are in `docs/04-it-requirements-checklist.md`."
-        )
-        with st.expander("Connection error"):
-            st.code(message)
-        return
-
     pages = [
-        st.Page(str(Path(__file__).parent / path), title=title, url_path=title.lower().replace(" ", "-"))
-        for title, path in PAGES.items()
+        st.Page(str(HERE / path), title=title, url_path=url, default=(url == "overview"))
+        for title, path, url in PAGES
     ]
-    st.navigation(pages, position="sidebar").run()
+    st.navigation(pages, position="hidden").run()
 
 
 if __name__ == "__main__":

@@ -146,3 +146,236 @@ def ingest_history(limit: int = 25) -> pd.DataFrame:
         """,
         {"lim": limit},
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Analysis engine — arbitrary cohort, arbitrary question, arbitrary break
+#
+# The portal has to answer questions nobody wrote a page for: "among GenZ BNPL
+# users in the Midwest, which department stores did they buy from?" That is a
+# cohort (three criteria) crossed with a question, and it cannot be served from
+# the pre-computed cross-tab because Forsta never tabulated it.
+#
+# So the cohort is built as an intersection of EXISTS conditions over the long
+# fact table and the flattened profile, and the target question is aggregated
+# over whoever survives. Every result carries the base it was computed on.
+# ═══════════════════════════════════════════════════════════════════════════
+
+PROFILE_DIMENSIONS: dict[str, str] = {
+    "generation": "Generation",
+    "age_band": "Age band",
+    "gender": "Gender",
+    "ethnicity": "Ethnicity",
+    "income_band": "Household income",
+    "urbanicity": "Urbanicity",
+    "census_region": "Census region",
+    "state_name": "State",
+    "political": "Political philosophy",
+    "relationship": "Relationship status",
+    "outlook_income": "Discretionary-income outlook",
+    "outlook_economy": "Economy outlook",
+}
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def dimension_values(survey_id: int, dimension: str) -> list[str]:
+    """Distinct values of a demographic cut, most common first."""
+    if dimension not in PROFILE_DIMENSIONS:
+        raise ValueError(f"Unsupported dimension: {dimension}")
+    df = query_df(
+        f"""
+        SELECT {dimension} AS v, COUNT(*) AS n
+          FROM csi_profile p
+          JOIN csi_respondent r ON r.respondent_id = p.respondent_id
+         WHERE p.survey_id = :sid AND r.is_qualified = 1 AND {dimension} IS NOT NULL
+         GROUP BY {dimension}
+         ORDER BY n DESC
+        """,
+        {"sid": survey_id},
+    )
+    return df["v"].tolist()
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def question_choices(survey_id: int, question_id: int) -> pd.DataFrame:
+    """The selectable answers for a question — items for a multi-punch,
+    answer options for a single-punch. Used to build filter criteria."""
+    items = query_df(
+        """
+        SELECT i.item_id AS id, i.item_label AS label, 'item' AS kind
+          FROM csi_item i
+         WHERE i.question_id = :qid AND i.is_other = 0
+         ORDER BY i.sort_order
+        """,
+        {"qid": question_id},
+    )
+    if not items.empty:
+        return items
+    return query_df(
+        """
+        SELECT o.value_code AS id, o.value_label AS label, 'code' AS kind
+          FROM csi_option o
+         WHERE o.question_id = :qid
+         ORDER BY o.sort_order
+        """,
+        {"qid": question_id},
+    )
+
+
+def _cohort_sql(criteria: list[dict]) -> tuple[str, dict]:
+    """Build the WHERE fragment and params for a list of filter criteria.
+
+    Criteria are ANDed. Within one criterion the selected values are ORed,
+    which is what an analyst means by "GenZ or Millennial".
+    """
+    clauses: list[str] = []
+    params: dict[str, object] = {}
+    for n, crit in enumerate(criteria):
+        kind = crit.get("kind")
+        if kind == "profile":
+            dim = crit["dimension"]
+            if dim not in PROFILE_DIMENSIONS or not crit.get("values"):
+                continue
+            key = f"pv{n}"
+            placeholders = ", ".join(f":{key}_{i}" for i in range(len(crit["values"])))
+            params.update({f"{key}_{i}": v for i, v in enumerate(crit["values"])})
+            clauses.append(f"p.{dim} IN ({placeholders})")
+        elif kind == "item":
+            ids = crit.get("ids") or []
+            if not ids:
+                continue
+            key = f"iv{n}"
+            placeholders = ", ".join(f":{key}_{i}" for i in range(len(ids)))
+            params.update({f"{key}_{i}": v for i, v in enumerate(ids)})
+            clauses.append(
+                f"""EXISTS (SELECT 1 FROM csi_answer a{n}
+                              JOIN csi_field f{n} ON f{n}.field_id = a{n}.field_id
+                             WHERE a{n}.respondent_id = r.respondent_id
+                               AND f{n}.item_id IN ({placeholders})
+                               AND a{n}.value_code = 1)"""
+            )
+        elif kind == "code":
+            ids = crit.get("ids") or []
+            qid = crit.get("question_id")
+            if not ids or not qid:
+                continue
+            key = f"cv{n}"
+            placeholders = ", ".join(f":{key}_{i}" for i in range(len(ids)))
+            params.update({f"{key}_{i}": v for i, v in enumerate(ids)})
+            params[f"cq{n}"] = qid
+            clauses.append(
+                f"""EXISTS (SELECT 1 FROM csi_answer a{n}
+                              JOIN csi_field f{n} ON f{n}.field_id = a{n}.field_id
+                             WHERE a{n}.respondent_id = r.respondent_id
+                               AND f{n}.question_id = :cq{n}
+                               AND a{n}.value_code IN ({placeholders}))"""
+            )
+    return (" AND ".join(clauses) if clauses else "1=1"), params
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def cohort_size(survey_id: int, criteria: tuple) -> int:
+    where, params = _cohort_sql(list(criteria))
+    params["sid"] = survey_id
+    df = query_df(
+        f"""
+        SELECT COUNT(*) AS n
+          FROM csi_respondent r
+          LEFT JOIN csi_profile p ON p.respondent_id = r.respondent_id
+         WHERE r.survey_id = :sid AND r.is_qualified = 1 AND {where}
+        """,
+        params,
+    )
+    return int(df["n"].iloc[0]) if not df.empty else 0
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def analyse(
+    survey_id: int,
+    question_id: int,
+    criteria: tuple = (),
+    break_dimension: Optional[str] = None,
+) -> pd.DataFrame:
+    """Answer distribution for one question over a filtered cohort.
+
+    Returns tidy rows: answer, [segment], n, base_n, pct. The base is the
+    number in the cohort who ANSWERED this question — routed questions keep
+    their own denominator even after filtering.
+    """
+    where, params = _cohort_sql(list(criteria))
+    params.update({"sid": survey_id, "qid": question_id})
+
+    if break_dimension and break_dimension not in PROFILE_DIMENSIONS:
+        raise ValueError(f"Unsupported break: {break_dimension}")
+    seg_select = f"p.{break_dimension} AS segment," if break_dimension else "'Total' AS segment,"
+    seg_group = f"p.{break_dimension}" if break_dimension else "'Total'"
+
+    meta = query_df(
+        "SELECT qtype, is_multi FROM csi_question WHERE question_id = :qid",
+        {"qid": question_id},
+    )
+    if meta.empty:
+        return pd.DataFrame()
+    is_multi = bool(meta["is_multi"].iloc[0])
+
+    if is_multi:
+        sql = f"""
+            SELECT {seg_select}
+                   i.item_label AS answer,
+                   i.sort_order AS answer_order,
+                   SUM(CASE WHEN a.value_code = 1 THEN 1 ELSE 0 END) AS n,
+                   COUNT(*) AS base_n
+              FROM csi_respondent r
+              LEFT JOIN csi_profile p ON p.respondent_id = r.respondent_id
+              JOIN csi_answer a ON a.respondent_id = r.respondent_id
+              JOIN csi_field  f ON f.field_id = a.field_id AND f.question_id = :qid
+              JOIN csi_item   i ON i.item_id = f.item_id
+             WHERE r.survey_id = :sid AND r.is_qualified = 1 AND {where}
+             GROUP BY {seg_group}, i.item_label, i.sort_order
+        """
+    else:
+        sql = f"""
+            SELECT {seg_select}
+                   COALESCE(o.value_label, a.value_label) AS answer,
+                   COALESCE(o.sort_order, a.value_code) AS answer_order,
+                   COUNT(*) AS n,
+                   0 AS base_n
+              FROM csi_respondent r
+              LEFT JOIN csi_profile p ON p.respondent_id = r.respondent_id
+              JOIN csi_answer a ON a.respondent_id = r.respondent_id
+              JOIN csi_field  f ON f.field_id = a.field_id AND f.question_id = :qid
+              LEFT JOIN csi_option o ON o.question_id = :qid AND o.value_code = a.value_code
+             WHERE r.survey_id = :sid AND r.is_qualified = 1 AND {where}
+               AND a.value_code IS NOT NULL
+             GROUP BY {seg_group}, COALESCE(o.value_label, a.value_label),
+                      COALESCE(o.sort_order, a.value_code)
+        """
+
+    df = query_df(sql, params)
+    if df.empty:
+        return df
+
+    if not is_multi:
+        # base for a single-punch is everyone in the segment who answered
+        df["base_n"] = df.groupby("segment")["n"].transform("sum")
+
+    df["pct"] = df["n"] / df["base_n"].replace(0, pd.NA)
+    df = df.sort_values(["segment", "answer_order"]).reset_index(drop=True)
+    return df[["segment", "answer", "n", "base_n", "pct"]]
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def question_lookup(survey_id: int) -> pd.DataFrame:
+    """Every reportable question with the label the pickers show."""
+    return query_df(
+        """
+        SELECT q.question_id, q.qcode, q.qtext, q.qtext_short, q.qtype,
+               q.is_multi, q.base_n, t.topic_name
+          FROM csi_question q
+          LEFT JOIN csi_topic t ON t.topic_id = q.topic_id
+         WHERE q.survey_id = :sid AND q.is_technical = 0
+           AND q.qtype IN ('single', 'multi', 'grid_single', 'grid_multi')
+         ORDER BY t.sort_order, q.sort_order
+        """,
+        {"sid": survey_id},
+    )

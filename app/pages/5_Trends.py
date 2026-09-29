@@ -3,10 +3,23 @@ from __future__ import annotations
 
 import streamlit as st
 
-from app.components import charts
+from app.components import charts, export
 from app.data import repository as repo
 
-st.title("Trends")
+from app.components.header import page_title, render_header
+from app.core.config import config
+from app.core.database import healthcheck
+
+_ok, _status = healthcheck("app")
+render_header("trends", _status if _ok else "database unavailable",
+              config.environment.value.upper())
+page_title("Trends", "Wave over wave, within a survey family.")
+
+if not _ok:
+    st.error("The portal cannot reach the database.")
+    st.stop()
+
+
 
 surveys = repo.list_surveys()
 families = sorted(surveys.survey_family.dropna().unique().tolist())
@@ -36,5 +49,15 @@ if picked:
                           title=f"{qcode} over time", entity_order=picked[:6]),
         width="stretch",
     )
-charts.show_table(data.rename(columns={
-    "wave_label": "Wave", "item_label": "Item", "pct": "%", "base_n": "Base"}))
+trend_table = data.rename(columns={
+    "wave_label": "Wave", "item_label": "Item", "pct": "%", "base_n": "Base"})
+charts.show_table(trend_table)
+export.download_button(
+    "Download to Excel",
+    f"CSI_trend_{qcode}.xlsx",
+    lambda: export.build_workbook(
+        {"Trend": trend_table}, f"{qcode} over time",
+        [("Survey family", family), ("Question", qcode),
+         ("Note", "Each wave carries its own base; a moving base is not a trend "
+                  "in the underlying behaviour.")]),
+    key_seed=f"tr{family}{qcode}")
