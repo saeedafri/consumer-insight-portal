@@ -36,10 +36,7 @@ if surveys.empty:
     st.info("No survey waves loaded yet.")
     st.stop()
 
-wave_labels = {
-    int(r.survey_id): f"{r.survey_family or 'Survey'} · {r.wave_label or r.survey_id}"
-    for r in surveys.itertuples()
-}
+wave_labels = repo.wave_names(surveys)
 user_email = (user.email if user else "local-dev")
 
 if "an_criteria" not in st.session_state:
@@ -57,7 +54,7 @@ def _apply_view(definition: dict) -> None:
 
 
 # ── 1. wave and saved views ────────────────────────────────────────────────
-top = st.columns([2, 3, 2])
+top = st.columns([4, 3, 1])
 with top[0]:
     survey_id = st.selectbox("Wave", list(wave_labels), format_func=lambda k: wave_labels[k])
 
@@ -66,6 +63,7 @@ if questions.empty:
     st.warning("No reportable questions in this wave.")
     st.stop()
 
+week = surveys.set_index("survey_id").wave_label[survey_id]
 qlabel = {int(r.question_id): f"{r.qcode} — {r.qtext_short}" for r in questions.itertuples()}
 wave_base = int(surveys[surveys.survey_id == survey_id].qualified_n.iloc[0] or 0)
 
@@ -141,7 +139,7 @@ with m1:
 with m2:
     charts.stat_tile("Criteria applied", str(len(st.session_state.an_criteria)))
 with m3:
-    charts.stat_tile("Wave", wave_labels[survey_id])
+    charts.stat_tile("Wave", week)
 
 if n_cohort == 0:
     st.warning("No respondents match these criteria. Remove one and try again.")
@@ -192,15 +190,32 @@ if not frames:
 sheets: dict[str, pd.DataFrame] = {}
 for qcode, data in frames.items():
     qrow = questions[questions.qcode == qcode].iloc[0]
-    base_n = int(data["base_n"].max())
+    # segments partition the cohort, so the answering base is summed across them
+    base_n = int(data.groupby("segment")["base_n"].max().sum())
 
     st.markdown(f"##### {qcode} · {qrow.qtext_short}")
     st.caption(qrow.qtext)
-    if base_n < n_cohort:
+    is_grid = str(qrow.qtype).startswith("grid") and not qrow.is_multi
+    if is_grid:
+        st.info(f"**Grid** — each row is rated only by the people it applies to, so every "
+                f"row has its own base (largest here: n={base_n} of {n_cohort}). "
+                f"See the Base column.")
+    elif base_n < n_cohort:
         st.info(f"**Routed question** — {base_n} of the {n_cohort} in this cohort "
                 f"reached {qcode}. Percentages use n={base_n}.")
 
-    if chart_kind != "Table only":
+    if chart_kind != "Table only" and is_grid:
+        # one 100% bar per rated row, across the whole cohort
+        parts = data.assign(item=data.answer.str.split(" — ").str[0],
+                            scale=data.answer.str.split(" — ").str[-1])
+        stack = parts.groupby(["item", "scale"], as_index=False, sort=False)["n"].sum()
+        stack["pct"] = stack.n / stack.groupby("item").n.transform("sum")
+        choices = repo.question_choices(survey_id, int(qrow.question_id))
+        scale_order = list(dict.fromkeys(choices.label.str.split(" — ").str[-1]))
+        st.plotly_chart(charts.diverging_stack(stack, "item", "pct", "scale", scale_order,
+                                               title=f"{qcode} · share of each row's raters"),
+                        width="stretch", key=f"ch_{qcode}")
+    elif chart_kind != "Table only":
         if broken and chart_kind in ("Bar", "Grouped bar"):
             segments = sorted(data["segment"].dropna().unique())[:6]
             st.plotly_chart(
@@ -277,7 +292,7 @@ notes += ([(f"Filter {i + 1}", c["label"]) for i, c in enumerate(st.session_stat
 with s2:
     export.download_button(
         "Download report to Excel",
-        f"CSI_report_{wave_labels[survey_id].split('· ')[-1]}.xlsx",
+        f"CSI_report_{week}.xlsx",
         lambda: export.build_workbook(sheets, "Consumer Insight Portal — analysis", notes),
         key_seed=f"{survey_id}{'-'.join(frames)}{break_by}{len(criteria_for_sql)}",
     )

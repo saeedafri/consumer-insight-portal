@@ -3,8 +3,8 @@
 # seen before.
 #
 # Nothing here is required. If a new wave adds a module, renames a question or
-# drops one, the loader still works: unmatched questions land in a topic named
-# after themselves and unmatched demographics simply don't appear as filters.
+# drops one, the loader still works: unmatched questions land in the
+# UNCLASSIFIED topic and unmatched demographics simply don't appear as filters.
 # These rules only make the portal tidier.
 #
 # Rules are matched in `priority` order (low first), first match wins.
@@ -19,11 +19,17 @@ topics:
   - {family: "CSI-US", priority: 20, pattern: "^DP\\d",                         topic: DEPT_STORES}
   - {family: "CSI-US", priority: 30, pattern: "^DJ\\d",                         topic: DIAMONDS}
   - {family: "CSI-US", priority: 40, pattern: "^BN\\d",                         topic: BNPL}
-  - {family: "CSI-US", priority: 50, pattern: "^D(28|29|30|31|32|33|34|35)\\b",  topic: AI_GENAI}
+  - {family: "CSI-US", priority: 50, pattern: "^D(28|29|30|31|32|33|34|35)(?!\\d)", topic: AI_GENAI}
   - {family: "CSI-US", priority: 60, pattern: "^GP\\d",                         topic: GLP1}
   - {family: "CSI-US", priority: 70, pattern: "^CS\\d",                         topic: SENTIMENT}
   - {family: "CSI-US", priority: 80, pattern: "^D(12|13|14|15)$",               topic: MACRO}
   - {family: "CSI-US", priority: 90, pattern: "^D[1-8]$",                       topic: DEMOGRAPHICS}
+  # rotating modules added in the 09/28/26 wave
+  - {family: "CSI-US", priority: 100, pattern: "^XM\\d",                        topic: HOLIDAY_SHOPPING}
+  - {family: "CSI-US", priority: 110, pattern: "^HX\\d",                        topic: HOLIDAY_OUTLOOK}
+  - {family: "CSI-US", priority: 120, pattern: "^BT\\d",                        topic: BEAUTY}
+  - {family: "CSI-US", priority: 130, pattern: "^TF\\d",                        topic: TARIFFS}
+  - {family: "CSI-US", priority: 140, pattern: "^IN\\d",                        topic: INFLATION}
 
   # ── Applies to every survey: technical/paradata variables ───────────────
   - {family: "*", priority: 900, pattern: "^(record|uuid|date|markers|status|source|session|url|list|decLang|userAgent|dcua|RID|start_date|conditions)$", topic: TECHNICAL}
@@ -55,10 +61,13 @@ profile_detect:
   age:             "what is your age"
   relationship:    "relationship status|marital status"
   ethnicity:       "ethnicity|racial|race do you"
-  income_band:     "household income|total income"
-  urbanicity:      "area where your primary residence|urban|suburban|rural"
+  # the demographic phrasing only: "…to your monthly household income" (a
+  # debt-ratio question in Dec 2022) must not win over the real question
+  income_band:     "your total (annual )?household income|total income"
+  urbanicity:      "area where your primary residence|area where you live"
   political:       "political philosophy|political party"
-  state_name:      "which state|state is your primary residence"
+  # not "which state" alone: "Which statement…", "Which state did you move from?"
+  state_name:      "which state (is your primary residence|do you (currently )?(live|reside))|state is your primary residence"
   outlook_income:  "discretionary income"
   outlook_economy: "economy overall"
 
@@ -141,3 +150,20 @@ state_codes:
   WV: West Virginia
   WI: Wisconsin
   WY: Wyoming
+
+# Banded age answers (Qualtrics "What is your age group?") and the midpoints
+# the analysts average on (Beauty Shopper Profiles, "Age Income Beauty Total").
+age_band_labels:
+  - {pattern: "^18\\s*-\\s*29$",               band: "18-29",   mid: 23.5}
+  - {pattern: "^30\\s*-\\s*44$",               band: "30-44",   mid: 37}
+  - {pattern: "^45\\s*-\\s*60$",               band: "45-60",   mid: 52.5}
+  - {pattern: "^(over 60|>\\s*60|60\\s*\\+)$", band: "Over 60", mid: 67}
+
+# Household income midpoints, $000 — identical labels in Forsta and Qualtrics.
+income_midpoints_k:
+  "under $25,000": 13
+  "$25,000 - $49,999": 37.4995
+  "$50,000 - $99,999": 74.9995
+  "$100,000 - $149,999": 124.9995
+  "$150,000 - $199,999": 174.9995
+  "$200,000 or greater": 225

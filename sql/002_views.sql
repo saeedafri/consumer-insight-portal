@@ -153,3 +153,19 @@ FROM csi_question q
 LEFT JOIN csi_topic t ON t.topic_id = q.topic_id
 LEFT JOIN v_csi_survey_health h ON h.survey_id = q.survey_id
 WHERE q.is_technical = 0;
+
+
+-- Units the harmoniser could not settle alone, with its evidence.
+-- Unit rows are the ones without a concept option; answers are mapped only
+-- after confirmation, so every row here is one decision.
+CREATE OR REPLACE VIEW v_csi_mapping_queue AS
+SELECT m.survey_id, s.wave_label, s.title AS survey_title,
+       m.question_id, m.item_id, q.qcode, q.qtext, q.qtype, i.item_label,
+       m.concept_id, c.concept_code, c.concept_name,
+       m.method, m.confidence, m.evidence, m.created_at
+  FROM csi_concept_map m
+  JOIN csi_survey   s ON s.survey_id   = m.survey_id
+  JOIN csi_question q ON q.question_id = m.question_id
+  LEFT JOIN csi_item i ON i.item_id    = m.item_id
+  JOIN csi_concept  c ON c.concept_id  = m.concept_id
+ WHERE m.status = 'proposed' AND m.concept_option_id IS NULL;

@@ -1,8 +1,8 @@
 """CSI ingestion pipeline.
 
-    python -m etl.run_pipeline --source api    --wave 2026-09
+    python -m etl.run_pipeline --source api    --wave 2026-10-05
     python -m etl.run_pipeline --source excel  --raw "Raw Data 09_21_26.xlsx" \
-                               --crosstab "Cross Tabs 09_21_26.xlsx" --wave 2026-09
+                               --crosstab "Cross Tabs 09_21_26.xlsx" --wave 2026-09-21
 
 Both sources produce the same rows. `api` is the target state; `excel` is the
 bridge that works today, before the Forsta API key is issued.
@@ -20,6 +20,7 @@ from sqlalchemy import bindparam, text
 
 from app.core.config import config
 from app.core.database import execute_many, get_engine
+from app.data import harmonise
 from etl import excel_parsers as xp
 from etl import survey_map
 from etl.loaders import finish_run, load_definitions, start_run, upsert_survey
@@ -33,19 +34,21 @@ STATUS_MAP = {"Terminated": 1, "Overquota": 2, "Qualified": 3, "Partial": 4}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-def ingest_excel(raw_path: str, crosstab_path: Optional[str], wave: Optional[str],
+def ingest_excel(raw_path: str, crosstab_path: Optional[str], wave: str,
                  family: str = "CSI-US") -> None:
     questions = xp.parse_datamap(raw_path)
     log.info("Parsed %d question blocks from the datamap", len(questions))
 
-    title = next((q.qtext for q in questions if q.qcode == "record"), "Coresight survey")
+    title = f"{family} {wave}"
+    if crosstab_path:
+        title = xp.parse_crosstab_summary(crosstab_path)[0].get("Title") or title
     survey_id = upsert_survey(
         host=config.forsta.host,
-        path=config.forsta.survey_path or f"excel::{raw_path}",
-        title=f"{family} {wave or ''}".strip(),
+        path=config.forsta.survey_path or "excel",
+        title=title,
         survey_family=family,
         wave_label=wave,
-        wave_date=f"{wave}-01" if wave and len(wave) == 7 else None,
+        wave_date=_wave_date(wave),
     )
     log.info("survey_id=%s", survey_id)
 
@@ -68,6 +71,8 @@ def ingest_excel(raw_path: str, crosstab_path: Optional[str], wave: Optional[str
 
     if crosstab_path:
         ingest_crosstabs(survey_id, crosstab_path)
+
+    log.info("Harmonised: %s", harmonise.harmonise_survey(survey_id))
 
 
 def _code_lookup(survey_id: int) -> dict[int, dict[str, int]]:
@@ -251,14 +256,16 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
 
     payload = []
     for respondent_id, values in by_respondent.items():
-        age = survey_map.parse_age(values.get("age"))
+        age = survey_map.classify_age(values.get("age"))
         state = values.get("state_name")
         payload.append({
             "rid": respondent_id, "sid": survey_id,
             "gender": values.get("gender"),
-            "age": age,
-            "band": survey_map.age_band(age),
-            "gen": survey_map.generation(age),
+            "age": age["age"],
+            "band": age["band"],
+            "age_mid": age["mid"],
+            "inc_mid": survey_map.income_mid_k(values.get("income_band")),
+            "gen": age["gen"],
             "rel": values.get("relationship"),
             "eth": values.get("ethnicity"),
             "inc": values.get("income_band"),
@@ -276,9 +283,10 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
             INSERT INTO csi_profile
                 (respondent_id, survey_id, gender, age_years, age_band, generation,
                  relationship, ethnicity, income_band, urbanicity, political,
-                 state_name, census_region, outlook_income, outlook_economy)
+                 state_name, census_region, outlook_income, outlook_economy,
+                 age_mid, income_mid_k)
             VALUES (:rid, :sid, :gender, :age, :band, :gen, :rel, :eth, :inc,
-                    :urb, :pol, :state, :region, :oi, :oe)
+                    :urb, :pol, :state, :region, :oi, :oe, :age_mid, :inc_mid)
             ON DUPLICATE KEY UPDATE
                 gender = VALUES(gender), age_years = VALUES(age_years),
                 age_band = VALUES(age_band), generation = VALUES(generation),
@@ -287,7 +295,8 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
                 political = VALUES(political), state_name = VALUES(state_name),
                 census_region = VALUES(census_region),
                 outlook_income = VALUES(outlook_income),
-                outlook_economy = VALUES(outlook_economy)
+                outlook_economy = VALUES(outlook_economy),
+                age_mid = VALUES(age_mid), income_mid_k = VALUES(income_mid_k)
             """,
             payload,
         )
@@ -474,7 +483,7 @@ def _banner_code(name: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-def ingest_api(wave: Optional[str], family: str = "CSI-US", full: bool = False) -> None:
+def ingest_api(wave: str, family: str = "CSI-US", full: bool = False) -> None:
     from etl.forsta_client import ForstaClient
 
     fc = config.forsta
@@ -491,8 +500,8 @@ def ingest_api(wave: Optional[str], family: str = "CSI-US", full: bool = False) 
 
     survey_id = upsert_survey(
         host=fc.host, path=fc.survey_path,
-        title=f"{family} {wave or ''}".strip(), survey_family=family,
-        wave_label=wave, wave_date=f"{wave}-01" if wave and len(wave) == 7 else None,
+        title=f"{family} {wave}", survey_family=family,
+        wave_label=wave, wave_date=_wave_date(wave),
         datamap_payload=datamap,
     )
     run = start_run(survey_id, "api", "datamap", f"{client.base_url}/surveys/{fc.survey_path}/datamap")
@@ -510,6 +519,7 @@ def ingest_api(wave: Optional[str], family: str = "CSI-US", full: bool = False) 
     _rebuild_profiles(survey_id, questions, family)
     _rebuild_question_bases(survey_id)
     log.info("API ingest complete: %d records", loaded)
+    log.info("Harmonised: %s", harmonise.harmonise_survey(survey_id))
 
 
 def _watermark(survey_id: int) -> Optional[str]:
@@ -553,6 +563,13 @@ def _api_type(t: Any) -> str:
 
 
 # ── coercion helpers ───────────────────────────────────────────────────────
+def _wave_date(wave: str) -> Optional[str]:
+    """'2026-09-28' is a fielding week; '2026-09' a month."""
+    if len(wave) == 10:
+        return wave
+    return f"{wave}-01" if len(wave) == 7 else None
+
+
 def _int(v: Any) -> Optional[int]:
     try:
         return int(float(v))
@@ -593,7 +610,8 @@ def main() -> int:
     ap.add_argument("--source", choices=["api", "excel"], default="api")
     ap.add_argument("--raw", help="path to the raw-data .xlsx (source=excel)")
     ap.add_argument("--crosstab", help="path to the cross-tabs .xlsx (source=excel)")
-    ap.add_argument("--wave", help="wave label, e.g. 2026-09")
+    ap.add_argument("--wave", required=True,
+                    help="fielding week, e.g. 2026-09-28 — each wave is its own survey row")
     ap.add_argument("--family", default="CSI-US", help="survey family for trending")
     ap.add_argument("--full", action="store_true", help="ignore the watermark; reload everything")
     args = ap.parse_args()

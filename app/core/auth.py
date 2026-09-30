@@ -53,9 +53,11 @@ except Exception:  # noqa: BLE001
     _HAS_COOKIES = False
 
 
-@st.cache_resource(show_spinner=False)
 def _cookies():
-    """One controller per server process; the component itself is per-session."""
+    """A controller for THIS browser session. Never cache it process-wide: the
+    controller holds the cookies it read, so a shared one hands the first
+    visitor's session id to everyone after them. The library keeps its own
+    per-session state under the key, so building it each run is cheap."""
     return CookieController(key="csi_cookies") if _HAS_COOKIES else None
 
 
@@ -249,7 +251,21 @@ def _load_session(session_id: str) -> Optional[AuthUser]:
                     session_id=session_id, expires_at=expires)
 
 
+def debug_user() -> Optional[AuthUser]:
+    """Local-testing bypass, the same gate as the Market Data Portal:
+    APP_ENV=LOCAL and DEBUG=true, impersonating LOCAL_TEST_USER_EMAIL.
+    Never active on STG/PROD — APP_ENV is not LOCAL there."""
+    if not (config.is_local and config.debug):
+        return None
+    email = _env("LOCAL_TEST_USER_EMAIL") or "local@test.com"
+    return AuthUser(email=email.lower(), name="Local Test User", provider="debug",
+                    session_id="local-debug-session")
+
+
 def current_user() -> Optional[AuthUser]:
+    bypass = debug_user()
+    if bypass:
+        return bypass
     user = st.session_state.get(SESSION_KEY)
 
     if not isinstance(user, AuthUser):
@@ -274,6 +290,9 @@ def is_authenticated() -> bool:
 
 
 def get_current_user() -> Optional[str]:
+    bypass = debug_user()
+    if bypass:
+        return bypass.email
     if provider() == "off":
         return "local-dev"
     user = current_user()
@@ -344,6 +363,9 @@ def logout() -> None:
 def require_auth(page: str = "") -> Optional[AuthUser]:
     """Guard a page. Returns the user, or stops the script and sends the
     visitor to the login page."""
+    bypass = debug_user()
+    if bypass:
+        return bypass
     mode = provider()
 
     if mode == "off":

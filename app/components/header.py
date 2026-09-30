@@ -24,6 +24,7 @@ NAV: tuple[tuple[str, str, str], ...] = (
     ("Analysis Builder", "analysis", "/analysis"),
     ("Cross-tabs", "crosstabs", "/crosstabs"),
     ("Trends", "trends", "/trends"),
+    ("Mappings", "mappings", "/mappings"),
     ("Data Health", "data-health", "/data-health"),
 )
 
@@ -102,7 +103,7 @@ def render_header(active: str, db_status: str = "", environment: str = "") -> No
     try:
         from app.core import auth
         signed_in = auth.get_current_user()
-        auth_mode = auth.provider()
+        auth_mode = "debug" if auth.debug_user() else auth.provider()
     except Exception:  # noqa: BLE001
         signed_in, auth_mode = None, "off"
 
@@ -111,7 +112,9 @@ def render_header(active: str, db_status: str = "", environment: str = "") -> No
         for label, path, href in NAV
     )
     who = ""
-    if signed_in and auth_mode != "off":
+    if auth_mode == "debug":
+        who = f'<div class="csi-header-user csi-warn">{signed_in} · sign-in bypassed (local)</div>'
+    elif signed_in and auth_mode != "off":
         who = f'<div class="csi-header-user">{signed_in}</div>'
     elif auth_mode == "off":
         who = '<div class="csi-header-user csi-warn">auth off</div>'

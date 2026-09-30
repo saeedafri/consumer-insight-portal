@@ -1,7 +1,8 @@
-"""Create the CSI schema in the STG (DWH) database.
+"""Create or upgrade the CSI schema in the STG (DWH) database.
 
-    python scripts/init_db.py            # apply schema + views + seed
+    python scripts/init_db.py            # upgrade in place, then apply schema + views + seed
     python scripts/init_db.py --dry-run  # print what would run
+    python scripts/init_db.py --force    # run even though csi_load_log shows a running load
 """
 from __future__ import annotations
 
@@ -11,16 +12,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.core.config import config          # noqa: E402
-from app.core.database import healthcheck, run_sql_file  # noqa: E402
-
-SQL_DIR = Path(__file__).resolve().parents[1] / "sql"
-ORDER = ["001_schema.sql", "002_views.sql", "003_seed_topics.sql"]
+from app.core import schema_upgrade              # noqa: E402
+from app.core.config import config               # noqa: E402
+from app.core.database import get_engine, healthcheck  # noqa: E402
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="ignore a csi_load_log row stuck in 'running'")
     args = ap.parse_args()
 
     print(f"Environment: {config.environment.value}")
@@ -30,13 +31,13 @@ def main() -> int:
         print("\nCannot connect. Fill in STG_DB_* in .env — see .env.example.")
         return 1
 
-    for name in ORDER:
-        path = SQL_DIR / name
-        if args.dry_run:
-            print(f"[dry-run] would apply {name} ({path.stat().st_size} bytes)")
-            continue
-        print(f"Applying {name} ...")
-        run_sql_file(str(path), role="etl")
+    try:
+        ran = schema_upgrade.install(get_engine("etl"), dry_run=args.dry_run, force=args.force)
+    except RuntimeError as exc:
+        print(f"\nRefused: {exc}")
+        return 2
+    for statement in ran:
+        print(("[dry-run] " if args.dry_run else "applied   ") + statement)
     print("\nDone. 004_grants.sql is intentionally NOT applied — hand it to the DBA.")
     return 0
 

@@ -14,6 +14,9 @@ from etl.loaders import classify_group, short_label
 
 RAW = os.getenv("CSI_TEST_RAW")
 XTAB = os.getenv("CSI_TEST_XTAB")
+# These assertions are facts of the 09/21/26 questionnaire (DP, BN, GP modules).
+WAVE_0921 = pytest.mark.skipif(
+    "09_21_26" not in f"{RAW}{XTAB}", reason="asserts the 09/21/26 modules")
 
 
 def test_normalise_label_cell():
@@ -41,6 +44,7 @@ def test_short_label():
 
 
 @pytest.mark.skipif(not RAW, reason="set CSI_TEST_RAW")
+@WAVE_0921
 def test_parse_datamap_real_file():
     questions = xp.parse_datamap(RAW)
     codes = {q.qcode for q in questions}
@@ -71,6 +75,7 @@ def test_answer_base_recovery():
 
 
 @pytest.mark.skipif(not XTAB, reason="set CSI_TEST_XTAB")
+@WAVE_0921
 def test_routed_questions_have_their_own_base():
     """Routed questions must not inherit the 404 segment size."""
     segments = xp.parse_banner(XTAB)
@@ -91,6 +96,7 @@ def test_routed_questions_have_their_own_base():
 
 
 @pytest.mark.skipif(not XTAB, reason="set CSI_TEST_XTAB")
+@WAVE_0921
 def test_grid_questions_keep_one_row_per_item_and_scale_point():
     """DP7 rates 9 retailers on a 5-point scale; GP6 rates 21 categories on 4.
 
@@ -112,6 +118,7 @@ def test_grid_questions_keep_one_row_per_item_and_scale_point():
 
 
 @pytest.mark.skipif(not XTAB, reason="set CSI_TEST_XTAB")
+@WAVE_0921
 def test_grid_items_carry_their_own_base():
     """Only people who shop a retailer rate it, so each row has its own base."""
     segments = xp.parse_banner(XTAB)
@@ -121,3 +128,10 @@ def test_grid_items_carry_their_own_base():
     assert bases["Bergdorf Goodman"] == 16
     assert bases["Bloomingdale's"] == 22
     assert max(bases.values()) < 404      # never the wave base
+
+
+def test_clean_text_folds_non_breaking_spaces():
+    """The 09/28 datamap labels HX1 'Spent\xa0a lot less…'; the raw export uses
+    a normal space. Unfolded, 333 of 403 HX1 answers loaded with no code."""
+    assert xp.clean_text("Spent\xa0a lot  less\n") == "Spent a lot less"
+    assert xp.normalise_label_cell("NO TO:\xa0Gone to a bar") == (0, "Gone to a bar")

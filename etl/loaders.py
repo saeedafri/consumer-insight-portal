@@ -72,6 +72,9 @@ def upsert_survey(
     wave_label: Optional[str] = None,
     wave_date: Optional[str] = None,
     datamap_payload: Any = None,
+    platform: str = "forsta",
+    source_ref: Optional[str] = None,
+    study_type: str = "tracker",
 ) -> int:
     digest = (
         hashlib.sha256(json.dumps(datamap_payload, sort_keys=True, default=str).encode()).hexdigest()
@@ -81,14 +84,18 @@ def upsert_survey(
     sql = text(
         """
         INSERT INTO csi_survey
-            (forsta_host, forsta_path, title, survey_family, wave_label, wave_date, datamap_hash)
-        VALUES (:host, :path, :title, :family, :wave, :wave_date, :digest)
+            (forsta_host, forsta_path, title, survey_family, wave_label, wave_date,
+             datamap_hash, platform, source_ref, study_type)
+        VALUES (:host, :path, :title, :family, :wave, :wave_date, :digest,
+                :platform, :source_ref, :study_type)
         ON DUPLICATE KEY UPDATE
             title = VALUES(title),
             survey_family = COALESCE(VALUES(survey_family), survey_family),
             wave_label = COALESCE(VALUES(wave_label), wave_label),
             wave_date = COALESCE(VALUES(wave_date), wave_date),
             datamap_hash = COALESCE(VALUES(datamap_hash), datamap_hash),
+            forsta_host = VALUES(forsta_host),
+            study_type = VALUES(study_type),
             survey_id = LAST_INSERT_ID(survey_id)
         """
     )
@@ -99,100 +106,94 @@ def upsert_survey(
                 "host": host, "path": path, "title": title[:500],
                 "family": survey_family, "wave": wave_label,
                 "wave_date": wave_date, "digest": digest,
+                "platform": platform, "source_ref": source_ref or path,
+                "study_type": study_type,
             },
         )
         # Read the id back rather than trusting LAST_INSERT_ID(): that MySQL
         # idiom returns nothing useful after an ON CONFLICT UPDATE, and is not
         # portable to the local SQLite engine used for development.
         return int(conn.execute(
-            text("SELECT survey_id FROM csi_survey "
-                 "WHERE forsta_host = :host AND forsta_path = :path"),
-            {"host": host, "path": path},
+            text("SELECT survey_id FROM csi_survey WHERE platform = :platform "
+                 "AND source_ref = :source_ref AND wave_label = :wave"),
+            {"platform": platform, "source_ref": source_ref or path, "wave": wave_label},
         ).scalar())
 
 
 # ── definition layer ───────────────────────────────────────────────────────
 def load_definitions(survey_id: int, questions: list,
                      family: Optional[str] = None) -> dict[str, int]:
-    """Insert questions, rows, options and variables. Returns {field_name: field_id}."""
+    """Insert questions, rows, options and variables. Returns {field_name: field_id}.
+
+    Batched: a constant number of statements per wave (each round trip is
+    ~250 ms from the India office), whatever the number of questions."""
     with get_engine("etl").begin() as conn:
+        topic_ids: dict[str, Optional[int]] = {}
+        question_rows = []
         for order, q in enumerate(questions, start=1):
             topic_code = classify_group(q.qcode, q.qtext, family)
-            gid = ensure_topic(conn, topic_code)
-            is_technical = 1 if survey_map.is_technical(topic_code) else 0
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO csi_question
-                        (survey_id, topic_id, qcode, qtext, qtext_short, qtype,
-                         value_min, value_max, is_technical, is_multi, sort_order)
-                    VALUES (:sid, :gid, :qcode, :qtext, :short, :qtype,
-                            :vmin, :vmax, :sys, :multi, :ord)
-                    ON DUPLICATE KEY UPDATE
-                        topic_id = VALUES(topic_id), qtext = VALUES(qtext),
-                        qtext_short = VALUES(qtext_short), qtype = VALUES(qtype),
-                        value_min = VALUES(value_min), value_max = VALUES(value_max),
-                        is_technical = VALUES(is_technical), is_multi = VALUES(is_multi),
-                        sort_order = VALUES(sort_order),
-                        question_id = LAST_INSERT_ID(question_id)
-                    """
-                ),
-                {
-                    "sid": survey_id, "gid": gid, "qcode": q.qcode[:50],
-                    "qtext": q.qtext, "short": short_label(q.qtext),
-                    "qtype": q.qtype, "vmin": q.value_min, "vmax": q.value_max,
-                    "sys": is_technical, "multi": 1 if q.is_multi else 0, "ord": order,
-                },
-            )
-            qid = conn.execute(
-                text("SELECT question_id FROM csi_question "
-                     "WHERE survey_id = :sid AND qcode = :qcode"),
-                {"sid": survey_id, "qcode": q.qcode[:50]},
-            ).scalar()
+            if topic_code not in topic_ids:
+                topic_ids[topic_code] = ensure_topic(conn, topic_code)
+            question_rows.append({
+                "sid": survey_id, "gid": topic_ids[topic_code], "qcode": q.qcode[:50],
+                "qtext": q.qtext, "short": short_label(q.qtext), "qtype": q.qtype,
+                "vmin": q.value_min, "vmax": q.value_max,
+                "sys": 1 if survey_map.is_technical(topic_code) else 0,
+                "multi": 1 if q.is_multi else 0, "ord": order,
+            })
+        if question_rows:
+            conn.execute(text(
+                """
+                INSERT INTO csi_question
+                    (survey_id, topic_id, qcode, qtext, qtext_short, qtype,
+                     value_min, value_max, is_technical, is_multi, sort_order)
+                VALUES (:sid, :gid, :qcode, :qtext, :short, :qtype,
+                        :vmin, :vmax, :sys, :multi, :ord)
+                ON DUPLICATE KEY UPDATE
+                    topic_id = VALUES(topic_id), qtext = VALUES(qtext),
+                    qtext_short = VALUES(qtext_short), qtype = VALUES(qtype),
+                    value_min = VALUES(value_min), value_max = VALUES(value_max),
+                    is_technical = VALUES(is_technical), is_multi = VALUES(is_multi),
+                    sort_order = VALUES(sort_order)
+                """), question_rows)
+        qid = dict(conn.execute(text(
+            "SELECT qcode, question_id FROM csi_question WHERE survey_id = :sid"),
+            {"sid": survey_id}).all())
 
-            for i, (code, label) in enumerate(q.options, start=1):
-                conn.execute(
-                    text(
-                        """
-                        INSERT INTO csi_option
-                            (question_id, value_code, value_label, is_nonresponse, sort_order)
-                        VALUES (:qid, :code, :label, :nr, :ord)
-                        ON DUPLICATE KEY UPDATE
-                            value_label = VALUES(value_label),
-                            is_nonresponse = VALUES(is_nonresponse),
-                            sort_order = VALUES(sort_order)
-                        """
-                    ),
-                    {
-                        "qid": qid, "code": code, "label": (label or "")[:500],
-                        "nr": 1 if _is_nonresponse(label) else 0, "ord": i,
-                    },
-                )
+        option_rows = [
+            {"qid": qid[q.qcode[:50]], "code": code, "label": (label or "")[:500],
+             "nr": 1 if _is_nonresponse(label) else 0, "ord": i}
+            for q in questions for i, (code, label) in enumerate(q.options, start=1)]
+        if option_rows:
+            conn.execute(text(
+                """
+                INSERT INTO csi_option
+                    (question_id, value_code, value_label, is_nonresponse, sort_order)
+                VALUES (:qid, :code, :label, :nr, :ord)
+                ON DUPLICATE KEY UPDATE
+                    value_label = VALUES(value_label),
+                    is_nonresponse = VALUES(is_nonresponse),
+                    sort_order = VALUES(sort_order)
+                """), option_rows)
 
-            for i, (item_code, item_label) in enumerate(q.rows, start=1):
-                conn.execute(
-                    text(
-                        """
-                        INSERT INTO csi_item
-                            (question_id, item_code, item_label, item_short,
-                             is_exclusive, is_other, sort_order)
-                        VALUES (:qid, :rc, :rl, :rs, :excl, :oe, :ord)
-                        ON DUPLICATE KEY UPDATE
-                            item_label = VALUES(item_label),
-                            item_short = VALUES(item_short),
-                            is_exclusive = VALUES(is_exclusive),
-                            is_other = VALUES(is_other),
-                            sort_order = VALUES(sort_order)
-                        """
-                    ),
-                    {
-                        "qid": qid, "rc": item_code[:50], "rl": (item_label or "")[:1000],
-                        "rs": short_label(item_label or "", 80),
-                        "excl": 1 if _is_exclusive(item_label) else 0,
-                        "oe": 1 if item_code.endswith("oe") else 0,
-                        "ord": i,
-                    },
-                )
+        item_rows = [
+            {"qid": qid[q.qcode[:50]], "rc": item_code[:50], "rl": (item_label or "")[:1000],
+             "rs": short_label(item_label or "", 80),
+             "excl": 1 if _is_exclusive(item_label) else 0,
+             "oe": 1 if item_code.endswith("oe") else 0, "ord": i}
+            for q in questions for i, (item_code, item_label) in enumerate(q.rows, start=1)]
+        if item_rows:
+            conn.execute(text(
+                """
+                INSERT INTO csi_item
+                    (question_id, item_code, item_label, item_short,
+                     is_exclusive, is_other, sort_order)
+                VALUES (:qid, :rc, :rl, :rs, :excl, :oe, :ord)
+                ON DUPLICATE KEY UPDATE
+                    item_label = VALUES(item_label), item_short = VALUES(item_short),
+                    is_exclusive = VALUES(is_exclusive), is_other = VALUES(is_other),
+                    sort_order = VALUES(sort_order)
+                """), item_rows)
 
         # variables: one row per export column
         conn.execute(

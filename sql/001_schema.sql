@@ -4,7 +4,7 @@
 -- Prefix:   csi_   (views v_csi_)
 -- Charset:  utf8mb4 — retailer names contain curly apostrophes (Smith's)
 --
--- 16 tables, simple names, in four groups:
+-- 29 tables, simple names, in nine groups (schema v2):
 --
 --   DEFINITION  csi_survey · csi_topic · csi_question · csi_item
 --               csi_option · csi_field              — what was asked
@@ -14,6 +14,15 @@
 --                                                   — the published numbers
 --   LOADING     csi_load_log · csi_load_error · csi_load_state
 --                                                   — how it got here
+--   HARMONISATION csi_concept · csi_concept_option · csi_concept_map
+--                                                   — the same question across waves
+--   WEIGHTS     csi_weight_scheme · csi_weight
+--   COHORTS     csi_cohort_def · csi_respondent_cohort
+--   AGGREGATES  csi_agg_cell                        — the portal's speed layer
+--   PUBLICATIONS csi_publication · csi_publication_cell
+--   SUPPORT     csi_profile_map · csi_auth_session · csi_saved_view
+--
+-- Spec: docs/superpowers/specs/2026-09-29-survey-platform-design.md §5
 -- ═══════════════════════════════════════════════════════════════════════════
 
 SET NAMES utf8mb4;
@@ -29,17 +38,30 @@ CREATE TABLE IF NOT EXISTS csi_survey (
   forsta_path   VARCHAR(255) NOT NULL              COMMENT 'selfserve/58f/260908',
   title         VARCHAR(500) NOT NULL,
   survey_family VARCHAR(100) NULL                  COMMENT 'CSI-US — groups waves for trending',
-  wave_label    VARCHAR(50)  NULL                  COMMENT '2026-09',
+  wave_label    VARCHAR(50)  NOT NULL              COMMENT 'fielding week, 2026-09-28',
   wave_date     DATE         NULL,
   field_start   DATETIME     NULL,
   field_end     DATETIME     NULL,
   country       CHAR(2)      NULL DEFAULT 'US',
   status        ENUM('draft','fielding','closed','archived') NOT NULL DEFAULT 'closed',
   datamap_hash  CHAR(64)     NULL                  COMMENT 'sha256 of the datamap; detects questionnaire change',
+  platform      ENUM('forsta','qualtrics','surveymonkey') NOT NULL DEFAULT 'forsta'
+                                                   COMMENT 'which platform fielded the wave',
+  source_ref    VARCHAR(255) NOT NULL DEFAULT ''   COMMENT 'Forsta path, Qualtrics SV_ id or SurveyMonkey id',
+  study_type    ENUM('tracker','annual','adhoc') NOT NULL DEFAULT 'tracker',
+  load_status   ENUM('loading','verified','failed','superseded') NOT NULL DEFAULT 'verified'
+                                                   COMMENT 'only verified waves are shown',
+  language      VARCHAR(10)  NOT NULL DEFAULT 'en',
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (survey_id),
-  UNIQUE KEY uq_survey (forsta_host, forsta_path),
+  -- One Forsta project is re-fielded weekly with rotating modules, so the wave
+  -- is part of the identity. Keyed on path alone, a second week would merge
+  -- into the first and overwrite respondents that share a record number.
+  -- The wave's identity (spec §5.1). Listed first: SQLite upserts target the
+  -- first unique key, so both engines resolve a reload to the same row.
+  UNIQUE KEY uq_survey_source (platform, source_ref, wave_label),
+  UNIQUE KEY uq_survey (forsta_host, forsta_path, wave_label),
   KEY ix_survey_family (survey_family, wave_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Survey waves.';
@@ -167,12 +189,15 @@ CREATE TABLE IF NOT EXISTS csi_respondent (
   os             VARCHAR(100)    NULL,
   browser        VARCHAR(100)    NULL,
   dropout_qcode  VARCHAR(50)     NULL,
+  respondent_key CHAR(64)       NULL              COMMENT 'sha256 of the panel respondent id — never the id itself',
+  quality_flag   VARCHAR(40)    NULL              COMMENT 'speeder, straightliner, duplicate …',
   load_id        BIGINT UNSIGNED NULL,
   loaded_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (respondent_id),
   UNIQUE KEY uq_respondent (survey_id, record_no),
   KEY ix_respondent_qualified (survey_id, is_qualified),
   KEY ix_respondent_completed (survey_id, completed_at),
+  KEY ix_respondent_key (survey_id, respondent_key),
   CONSTRAINT fk_respondent_survey FOREIGN KEY (survey_id)
     REFERENCES csi_survey (survey_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
@@ -196,6 +221,8 @@ CREATE TABLE IF NOT EXISTS csi_profile (
   census_region     VARCHAR(20)   NULL             COMMENT 'derived from D8',
   outlook_income    VARCHAR(40)   NULL             COMMENT 'CS1',
   outlook_economy   VARCHAR(40)   NULL             COMMENT 'CS2',
+  age_mid           DECIMAL(6,2)  NULL             COMMENT 'midpoint of the age band, for averages',
+  income_mid_k      DECIMAL(10,4) NULL             COMMENT 'midpoint of the income band, $000',
   weight            DECIMAL(10,6) NOT NULL DEFAULT 1.000000 COMMENT 'reserved; these waves are unweighted',
   PRIMARY KEY (respondent_id),
   KEY ix_profile_cuts (survey_id, generation, gender, income_band),
@@ -223,6 +250,8 @@ CREATE TABLE IF NOT EXISTS csi_answer (
   UNIQUE KEY uq_answer (respondent_id, field_id),
   KEY ix_answer_field (survey_id, field_id, value_code),
   KEY ix_answer_respondent (respondent_id),
+  KEY ix_answer_cover (survey_id, field_id, value_code, respondent_id),
+  FULLTEXT KEY ft_answer_text (value_text),
   CONSTRAINT fk_answer_respondent FOREIGN KEY (respondent_id)
     REFERENCES csi_respondent (respondent_id) ON DELETE CASCADE,
   CONSTRAINT fk_answer_field FOREIGN KEY (field_id)
@@ -345,6 +374,8 @@ CREATE TABLE IF NOT EXISTS csi_load_log (
   rows_bad    INT             NOT NULL DEFAULT 0,
   status      ENUM('running','success','partial','failed') NOT NULL DEFAULT 'running',
   error_text  TEXT            NULL,
+  archive_uri    VARCHAR(1000)   NULL             COMMENT 'untouched source file or payload in Blob',
+  archive_sha256 CHAR(64)        NULL,
   started_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   finished_at DATETIME        NULL,
   PRIMARY KEY (load_id),
@@ -376,6 +407,219 @@ CREATE TABLE IF NOT EXISTS csi_load_state (
   PRIMARY KEY (feed_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Watermarks so incremental pulls never re-read a whole survey.';
+
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- HARMONISATION — the same question across waves and platforms
+-- A grid is stored as one concept per grid row, sharing a concept_group.
+-- ───────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS csi_concept (
+  concept_id    INT UNSIGNED      NOT NULL AUTO_INCREMENT,
+  concept_code  VARCHAR(80)       NOT NULL COMMENT 'BEAUTY_RETAILER_3M',
+  concept_name  VARCHAR(255)      NOT NULL,
+  concept_group VARCHAR(80)       NULL     COMMENT 'rows of one grid share a group',
+  topic_id      SMALLINT UNSIGNED NULL,
+  qtype         ENUM('single','multi','grid_single','grid_multi','numeric','text','datetime') NOT NULL,
+  description   VARCHAR(1000)     NULL,
+  match_text    VARCHAR(2000)     NULL     COMMENT 'normalised wording the harmoniser matches on',
+  created_at    TIMESTAMP         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (concept_id),
+  UNIQUE KEY uq_concept (concept_code),
+  KEY ix_concept_group (concept_group),
+  CONSTRAINT fk_concept_topic FOREIGN KEY (topic_id)
+    REFERENCES csi_topic (topic_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Canonical questions, stable across waves and platforms.';
+
+CREATE TABLE IF NOT EXISTS csi_concept_option (
+  concept_option_id INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+  concept_id        INT UNSIGNED  NOT NULL,
+  option_code       VARCHAR(80)   NOT NULL COMMENT 'amazon',
+  option_label      VARCHAR(500)  NOT NULL COMMENT 'Amazon.com',
+  sort_order        SMALLINT      NOT NULL DEFAULT 0,
+  midpoint          DECIMAL(12,4) NULL     COMMENT 'numeric midpoint of a band: 23.5, 74.9995',
+  net_group         VARCHAR(50)   NULL     COMMENT 'TOP2, ANY_DRUGSTORE',
+  is_nonresponse    TINYINT(1)    NOT NULL DEFAULT 0,
+  PRIMARY KEY (concept_option_id),
+  UNIQUE KEY uq_concept_option (concept_id, option_code),
+  CONSTRAINT fk_coption_concept FOREIGN KEY (concept_id)
+    REFERENCES csi_concept (concept_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Canonical answers, with band midpoints.';
+
+CREATE TABLE IF NOT EXISTS csi_concept_map (
+  map_id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  survey_id         INT UNSIGNED    NOT NULL,
+  map_key           VARCHAR(80)     NOT NULL COMMENT 'question_id:item_id:option_id, 0 when absent',
+  question_id       INT UNSIGNED    NOT NULL,
+  item_id           INT UNSIGNED    NULL,
+  option_id         INT UNSIGNED    NULL,
+  concept_id        INT UNSIGNED    NOT NULL,
+  concept_option_id INT UNSIGNED    NULL,
+  status            ENUM('proposed','confirmed','rejected') NOT NULL DEFAULT 'proposed',
+  method            ENUM('exact_text','similar_text','manual') NOT NULL,
+  confidence        DECIMAL(5,4)    NULL,
+  evidence          VARCHAR(1000)   NULL     COMMENT 'why the harmoniser proposed it',
+  reviewed_by       VARCHAR(200)    NULL,
+  reviewed_at       DATETIME        NULL,
+  created_at        TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (map_id),
+  UNIQUE KEY uq_concept_map (survey_id, map_key),
+  KEY ix_map_question (survey_id, question_id),
+  KEY ix_map_concept_option (concept_option_id),
+  KEY ix_map_status (status),
+  CONSTRAINT fk_map_survey FOREIGN KEY (survey_id)
+    REFERENCES csi_survey (survey_id) ON DELETE CASCADE,
+  CONSTRAINT fk_map_question FOREIGN KEY (question_id)
+    REFERENCES csi_question (question_id) ON DELETE CASCADE,
+  CONSTRAINT fk_map_item FOREIGN KEY (item_id)
+    REFERENCES csi_item (item_id) ON DELETE CASCADE,
+  CONSTRAINT fk_map_option FOREIGN KEY (option_id)
+    REFERENCES csi_option (option_id) ON DELETE CASCADE,
+  CONSTRAINT fk_map_concept FOREIGN KEY (concept_id)
+    REFERENCES csi_concept (concept_id) ON DELETE CASCADE,
+  CONSTRAINT fk_map_coption FOREIGN KEY (concept_option_id)
+    REFERENCES csi_concept_option (concept_option_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Wave question/item/option -> canonical concept, proposed or confirmed.';
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- WEIGHTS — supported, none applied yet
+-- ───────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS csi_weight_scheme (
+  scheme_id   INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  survey_id   INT UNSIGNED NOT NULL,
+  scheme_code VARCHAR(60)  NOT NULL COMMENT 'CENSUS_AGE_GENDER_REGION',
+  method      VARCHAR(100) NULL     COMMENT 'raking, cell, …',
+  targets     JSON         NULL,
+  description VARCHAR(500) NULL,
+  created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (scheme_id),
+  UNIQUE KEY uq_weight_scheme (survey_id, scheme_code),
+  CONSTRAINT fk_wscheme_survey FOREIGN KEY (survey_id)
+    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Named weighting schemes, per wave.';
+
+CREATE TABLE IF NOT EXISTS csi_weight (
+  respondent_id BIGINT UNSIGNED NOT NULL,
+  scheme_id     INT UNSIGNED    NOT NULL,
+  weight        DECIMAL(12,6)   NOT NULL,
+  PRIMARY KEY (respondent_id, scheme_id),
+  KEY ix_weight_scheme (scheme_id),
+  CONSTRAINT fk_weight_respondent FOREIGN KEY (respondent_id)
+    REFERENCES csi_respondent (respondent_id) ON DELETE CASCADE,
+  CONSTRAINT fk_weight_scheme FOREIGN KEY (scheme_id)
+    REFERENCES csi_weight_scheme (scheme_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='One weight per respondent per scheme.';
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- COHORTS — analyst rules made data ("Beauty shopper")
+-- ───────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS csi_cohort_def (
+  cohort_id   INT UNSIGNED      NOT NULL AUTO_INCREMENT,
+  cohort_code VARCHAR(60)       NOT NULL COMMENT 'BEAUTY_SHOPPER',
+  version     SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+  cohort_name VARCHAR(200)      NOT NULL,
+  rule_json   JSON              NOT NULL COMMENT 'any/all over concepts; see the spec §5.4',
+  base_note   VARCHAR(500)      NULL,
+  owner_email VARCHAR(200)      NULL,
+  is_current  TINYINT(1)        NOT NULL DEFAULT 1,
+  created_at  TIMESTAMP         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (cohort_id),
+  UNIQUE KEY uq_cohort_def (cohort_code, version)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Named, versioned respondent rules.';
+
+CREATE TABLE IF NOT EXISTS csi_respondent_cohort (
+  cohort_id     INT UNSIGNED    NOT NULL,
+  respondent_id BIGINT UNSIGNED NOT NULL,
+  survey_id     INT UNSIGNED    NOT NULL,
+  PRIMARY KEY (cohort_id, respondent_id),
+  KEY ix_rcohort_survey (cohort_id, survey_id),
+  KEY ix_rcohort_respondent (respondent_id),
+  CONSTRAINT fk_rcohort_cohort FOREIGN KEY (cohort_id)
+    REFERENCES csi_cohort_def (cohort_id) ON DELETE CASCADE,
+  CONSTRAINT fk_rcohort_respondent FOREIGN KEY (respondent_id)
+    REFERENCES csi_respondent (respondent_id) ON DELETE CASCADE,
+  CONSTRAINT fk_rcohort_survey FOREIGN KEY (survey_id)
+    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Materialised cohort membership.';
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- AGGREGATES — pre-computed cells for the portal's standard views
+-- ───────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS csi_agg_cell (
+  cell_id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  survey_id         INT UNSIGNED    NOT NULL,
+  cell_key          VARCHAR(200)    NOT NULL COMMENT 'question:item:option:cohort:scheme:dim:value',
+  question_id       INT UNSIGNED    NOT NULL,
+  item_id           INT UNSIGNED    NULL,
+  option_id         INT UNSIGNED    NULL,
+  concept_option_id INT UNSIGNED    NULL,
+  cohort_id         INT UNSIGNED    NULL     COMMENT 'NULL = all qualified respondents',
+  scheme_id         INT UNSIGNED    NULL     COMMENT 'NULL = unweighted',
+  dim               VARCHAR(30)     NOT NULL COMMENT 'total, gender, age_band, …',
+  dim_value         VARCHAR(120)    NOT NULL,
+  n                 INT             NOT NULL,
+  base_n            INT             NOT NULL,
+  n_weighted        DECIMAL(14,4)   NULL,
+  base_weighted     DECIMAL(14,4)   NULL,
+  sum_age_mid       DECIMAL(14,4)   NULL,
+  sum_income_mid_k  DECIMAL(16,4)   NULL,
+  built_at          TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (cell_id),
+  UNIQUE KEY uq_agg_cell (survey_id, cell_key),
+  KEY ix_agg_concept (concept_option_id, cohort_id, dim, survey_id),
+  KEY ix_agg_question (survey_id, question_id, dim),
+  CONSTRAINT fk_agg_survey FOREIGN KEY (survey_id)
+    REFERENCES csi_survey (survey_id) ON DELETE CASCADE,
+  CONSTRAINT fk_agg_question FOREIGN KEY (question_id)
+    REFERENCES csi_question (question_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Pre-computed counts per wave x answer x cut x cohort.';
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- PUBLICATIONS — frozen deliverables, with drift detection
+-- ───────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS csi_publication (
+  publication_id INT UNSIGNED      NOT NULL AUTO_INCREMENT,
+  pub_code       VARCHAR(80)       NOT NULL COMMENT 'BEAUTY_RETAILER_PROFILE',
+  version        SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+  pub_name       VARCHAR(255)      NOT NULL,
+  owner_email    VARCHAR(200)      NULL,
+  definition     JSON              NOT NULL COMMENT 'waves, concepts, cohort, break, scheme, min base',
+  footnote       VARCHAR(2000)     NULL,
+  destination    VARCHAR(1000)     NULL     COMMENT 'where it was delivered, e.g. SharePoint URL',
+  status         ENUM('draft','published','withdrawn') NOT NULL DEFAULT 'draft',
+  published_at   DATETIME          NULL,
+  created_at     TIMESTAMP         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (publication_id),
+  UNIQUE KEY uq_publication (pub_code, version)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='A delivered chart or table, frozen at a version.';
+
+CREATE TABLE IF NOT EXISTS csi_publication_cell (
+  cell_id        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  publication_id INT UNSIGNED    NOT NULL,
+  row_key        VARCHAR(250)    NOT NULL,
+  col_key        VARCHAR(250)    NOT NULL,
+  n              INT             NULL,
+  base_n         INT             NULL,
+  value          DECIMAL(18,6)   NULL,
+  PRIMARY KEY (cell_id),
+  UNIQUE KEY uq_publication_cell (publication_id, row_key, col_key),
+  CONSTRAINT fk_pcell_publication FOREIGN KEY (publication_id)
+    REFERENCES csi_publication (publication_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='The frozen numbers of a publication.';
 
 
 -- ───────────────────────────────────────────────────────────────────────────

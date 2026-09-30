@@ -78,6 +78,6 @@ def test_census_region_accepts_codes_and_names():
 
 def test_parse_age_handles_label_formats():
     assert sm.parse_age("34") == 34
-    assert sm.parse_age("Under 18") == 18
+    assert sm.parse_age("Under 18") == 17   # under-age, outside every band
     assert sm.parse_age(None) is None
     assert sm.parse_age("Prefer not to say") is None

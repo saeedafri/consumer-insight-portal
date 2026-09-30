@@ -110,7 +110,9 @@ def donut(
         )
     )
     layout = base_layout(title, height=400)
-    layout["legend"]["orientation"] = "h"
+    # every slice is labelled on the ring; a legend only collides with the title
+    layout["showlegend"] = False
+    layout["margin"] = {**layout.get("margin", {}), "l": 70, "r": 70}   # room for outside labels
     fig.update_layout(**layout)
     if center_text:
         fig.add_annotation(

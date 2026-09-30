@@ -1,4 +1,4 @@
-# Source Data Analysis — Forsta Exports, 09/21/26
+# Source Data Analysis — Forsta Exports, 09/21/26 and 09/28/26
 
 What the two files actually contain, measured rather than assumed. Every figure
 below was produced by parsing the files; nothing here is estimated.
@@ -213,3 +213,60 @@ JCPenney n=67, up to n=107 — because only people who shop a retailer rate it.
 4. **Flatten the demographics.** Filtering by generation shouldn't mean joining
    eight EAV rows per respondent. `csi_profile` pays for itself on
    every page load.
+
+
+---
+
+## 5. The 09/28/26 wave — what changed, and why the schema did not
+
+Files: `raw data 09-28-2026 2.xlsx` and
+`Shopping and Spending - inc Beauty + Holiday + Inflation + Cross tab 09-28- 2026  2.xlsx`.
+Same two-workbook layout, same sheets (`A1` + `Datamap`; `Summary` +
+`Percentages` + `Counts`), same label format with `NO TO:` prefixes. Measured
+with `etl/excel_parsers.py`:
+
+| | 09/21/26 | 09/28/26 |
+|---|---|---|
+| Title | …inc Dept Stores + BNPL + Diamonds + GLP1s | …inc Beauty + Holiday + Inflation + Tariffs |
+| Fielded | 09/21/26 | 09/28/26 – 09/29/26 |
+| Respondents (all Qualified) | 404 | 403 |
+| Export columns | 375 | 519 |
+| Question blocks | 93 | 103 |
+| Cross-tab tables / cells | 78 / 33,240 | 80 / 38,320 |
+| Banner segments | 40 | 40 (identical banner) |
+
+### A weekly tracker with rotating modules
+
+**55 question blocks are common** to both weeks — the tracker core:
+shopping activity (`q1`–`q6`), sentiment (`CS1`–`CS3`), demographics (`D1`–`D8`),
+Middle East / gas prices (`D12`–`D15`), AI and GenAI shopping (`D28`–`D35`), and
+the technical/paradata variables. Question codes and wording are identical
+across the two weeks, which is what makes trending by `qcode` safe.
+
+The rest rotates:
+
+| Dropped after 09/21 | Added on 09/28 |
+|---|---|
+| `DP1`–`DP8` Department Stores | `BT1`–`BT15` Beauty (22 blocks incl. "Other" verbatims) |
+| `DJ1`–`DJ5` Diamonds / Fine Jewelry | `XM1`, `XM1A`, `XM2`, `XM3` Holiday shopping tracker |
+| `BN1`–`BN8` Buy Now, Pay Later | `HX1`–`HX6`, `HX6_norm` Holiday spending outlook |
+| `GP1`–`GP10` GLP-1 impact | `TF1`–`TF6` Tariffs |
+| | `IN1`–`IN3` Inflation and prices |
+
+New shapes in 09/28: `BT14` is a 26-retailer × 5-point grid (each retailer
+rated only by its own shoppers, so each row has its own base); `HX6` is a
+bipolar "choose A or B" grid, with Forsta's `HX6_norm` re-expression alongside.
+
+### Consequences that are now in the code
+
+1. **Each week is its own `csi_survey` row.** Both weeks come from the same
+   Forsta project. Keyed on host + path alone, the second week would have merged
+   into the first and overwritten respondents that share a record number.
+   `uq_survey` is now `(forsta_host, forsta_path, wave_label)` and `--wave` is
+   required (`2026-09-21`, `2026-09-28`).
+2. **Module topics are config, not code.** `config/survey_map.yml` gained BEAUTY,
+   HOLIDAY_SHOPPING, HOLIDAY_OUTLOOK, TARIFFS and INFLATION. A module nobody has
+   configured still loads — its questions land in an `UNCLASSIFIED` topic until
+   a rule is added.
+3. **Trends only span what repeats.** A trend for `BT1` has one point until
+   Beauty is asked again; the Trends page says so rather than drawing a line.

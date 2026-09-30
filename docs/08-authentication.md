@@ -21,6 +21,15 @@ Chosen by `AUTH_PROVIDER`, or inferred from what is configured.
 refuses to render and says why, because an open portal on a staging host is
 how survey microdata leaks.
 
+## Local testing bypass
+
+Until OIDC/SSO is wired in (the same flow as MDP and SIP), local testing skips
+sign-in: with `APP_ENV=LOCAL` **and** `DEBUG=true`, `auth.debug_user()` returns
+`LOCAL_TEST_USER_EMAIL` (default `local@test.com`) and every page treats that as
+the signed-in user — saved views and export provenance are attributed to it.
+Neither condition alone is enough, and `tests/test_auth.py` proves it never
+activates on STAGING or PRODUCTION.
+
 ## Configuration
 
 ```bash

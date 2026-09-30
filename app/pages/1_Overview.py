@@ -29,10 +29,7 @@ if surveys.empty:
     st.info("No survey waves loaded yet. Run `python -m etl.run_pipeline --source excel ...`.")
     st.stop()
 
-labels = {
-    int(r.survey_id): f"{r.survey_family or 'Survey'} · {r.wave_label or r.survey_id}"
-    for r in surveys.itertuples()
-}
+labels = repo.wave_names(surveys)
 survey_id = st.selectbox("Wave", list(labels), format_func=lambda k: labels[k])
 row = surveys[surveys.survey_id == survey_id].iloc[0]
 

@@ -121,3 +121,32 @@ def test_excel_export_is_a_readable_workbook_with_provenance(repo, qid):
     about = wb["About this export"]
     labels = [about.cell(row=r, column=1).value for r in range(3, 12)]
     assert "Wave" in labels and "Base" in labels
+
+
+# ── 09/28 wave: routed multi-select items and non-breaking-space labels ─────
+def _wave2_qid(repo, code):
+    lookup = repo.question_lookup(2).set_index("qcode")
+    if code not in lookup.index:
+        pytest.skip("09/28 wave not loaded as survey 2")
+    return int(lookup.loc[code, "question_id"])
+
+
+def test_multi_select_base_is_everyone_answering_the_question(repo):
+    """BT8 shows cosmetics only to cosmetics buyers; Forsta still divides by
+    everyone who answered BT8 (264), not by those shown the item (83)."""
+    df = repo.analyse(2, _wave2_qid(repo, "BT8"), ())
+    mascara = df[df.answer == "Mascara"].iloc[0]
+    assert int(mascara.base_n) == 264
+    assert abs(float(mascara.pct) - 0.1515) < 0.0005
+
+
+def test_every_single_punch_answer_resolves_to_a_code(repo):
+    df = repo.analyse(2, _wave2_qid(repo, "HX1"), ())
+    assert len(df) == 7 and int(df.n.sum()) == 403
+
+
+def test_grid_rows_are_separate_distributions(repo):
+    df = repo.analyse(2, _wave2_qid(repo, "BT14"), ())
+    per_row = df.assign(item=df.answer.str.split(" — ").str[0]).groupby("item").pct.sum()
+    assert len(per_row) > 1
+    assert ((per_row - 1).abs() < 1e-9).all(), "each rated row must sum to 100%"

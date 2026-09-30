@@ -1,0 +1,267 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Consumer Insight Portal \u2014 Forsta to dwh_stg to Streamlit",
+    "output": ".archify/dataflow-cip-ingestion-20260929-162000/cip-dataflow.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      520
+    ]
+  },
+  "stages": [
+    {
+      "label": "Source"
+    },
+    {
+      "label": "Ingest"
+    },
+    {
+      "label": "Store (dwh_stg)"
+    },
+    {
+      "label": "Model"
+    },
+    {
+      "label": "Consume"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "forsta",
+      "type": "external",
+      "label": "Forsta REST API",
+      "sublabel": "se1.decipherinc.com",
+      "stage": 0,
+      "row": 0,
+      "tag": "x-apikey",
+      "height": 64,
+      "width": 128
+    },
+    {
+      "id": "excel",
+      "type": "external",
+      "label": "Excel exports",
+      "sublabel": "raw + cross-tab xlsx",
+      "stage": 0,
+      "row": 2,
+      "tag": "today",
+      "height": 64,
+      "width": 128
+    },
+    {
+      "id": "etl",
+      "type": "backend",
+      "label": "run_pipeline.py",
+      "sublabel": "parse, validate, upsert",
+      "stage": 1,
+      "row": 1,
+      "tag": "per wave",
+      "height": 64,
+      "width": 128
+    },
+    {
+      "id": "defs",
+      "type": "database",
+      "label": "Definition tables",
+      "sublabel": "survey question item option",
+      "stage": 2,
+      "row": 0,
+      "tag": "csi_",
+      "height": 64,
+      "width": 128
+    },
+    {
+      "id": "answers",
+      "type": "database",
+      "label": "Response tables",
+      "sublabel": "respondent profile answer",
+      "stage": 2,
+      "row": 1,
+      "tag": "long format",
+      "height": 64,
+      "width": 128
+    },
+    {
+      "id": "xtab",
+      "type": "database",
+      "label": "Cross-tab tables",
+      "sublabel": "banner segment crosstab",
+      "stage": 2,
+      "row": 2,
+      "tag": "published",
+      "height": 64,
+      "width": 128
+    },
+    {
+      "id": "views",
+      "type": "backend",
+      "label": "v_csi_ views",
+      "sublabel": "base travels with %",
+      "stage": 3,
+      "row": 1,
+      "tag": "read model",
+      "height": 64,
+      "width": 128
+    },
+    {
+      "id": "portal",
+      "type": "frontend",
+      "label": "Streamlit portal",
+      "sublabel": "filters, charts, Excel",
+      "stage": 4,
+      "row": 1,
+      "tag": "analysts",
+      "height": 64,
+      "width": 128
+    }
+  ],
+  "flows": [
+    {
+      "id": "api-pull",
+      "from": "forsta",
+      "to": "etl",
+      "label": "API pull",
+      "classification": "blocked: account disabled",
+      "variant": "dashed",
+      "labelAt": [
+        186,
+        108
+      ]
+    },
+    {
+      "id": "excel-load",
+      "from": "excel",
+      "to": "etl",
+      "label": "xlsx load",
+      "classification": "bridge",
+      "variant": "emphasis",
+      "labelAt": [
+        186,
+        442
+      ]
+    },
+    {
+      "id": "write-defs",
+      "from": "etl",
+      "to": "defs",
+      "label": "questions",
+      "variant": "default",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          315,
+          160
+        ]
+      ]
+    },
+    {
+      "id": "write-answers",
+      "from": "etl",
+      "to": "answers",
+      "label": "answers",
+      "variant": "emphasis"
+    },
+    {
+      "id": "write-xtab",
+      "from": "etl",
+      "to": "xtab",
+      "label": "cells",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          315,
+          388
+        ]
+      ]
+    },
+    {
+      "id": "read-defs",
+      "from": "defs",
+      "to": "views",
+      "label": "labels",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          745,
+          160
+        ]
+      ]
+    },
+    {
+      "id": "read-answers",
+      "from": "answers",
+      "to": "views",
+      "label": "cohorts",
+      "variant": "emphasis"
+    },
+    {
+      "id": "read-xtab",
+      "from": "xtab",
+      "to": "views",
+      "label": "published %",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          745,
+          388
+        ]
+      ]
+    },
+    {
+      "id": "serve",
+      "from": "views",
+      "to": "portal",
+      "label": "read-only SQL",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "What each flow carries",
+      "items": [
+        "API pull / xlsx load: datamap (questions, options, rows) + one record per respondent",
+        "questions -> csi_survey, csi_topic, csi_question, csi_item, csi_option, csi_field",
+        "answers -> csi_respondent, csi_profile, csi_answer (long format)",
+        "cells -> csi_banner, csi_segment, csi_crosstab_run, csi_crosstab with the true answering base"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Why long format",
+      "items": [
+        "One row per respondent x export column in csi_answer",
+        "A new module (Beauty, Tariffs) is new rows, never a migration",
+        "09/21 had 375 columns, 09/28 has 519 \u2014 same schema"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Wave identity",
+      "items": [
+        "One Forsta project is re-fielded weekly with rotating modules",
+        "csi_survey is keyed on host + path + wave_label",
+        "Trends join waves by survey_family and question code"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Blocked today",
+      "items": [
+        "Forsta key exists but its API user is disabled (401)",
+        "Excel bridge loads the same tables until IT re-enables it",
+        "Portal reads through views; ETL is the only writer",
+        "Every run writes csi_load_log / csi_load_error for lineage"
+      ]
+    }
+  ]
+}

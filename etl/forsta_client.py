@@ -1,13 +1,13 @@
 """Thin client for the Forsta Surveys (Decipher) REST API.
 
-Verified against https://se1.decipherinc.com on 2026-09-28: the API is enabled
-on that host and every endpoint below resolves — an unauthenticated call to
-/api/v1/surveys/selfserve/58f/260908/datamap returns
+Checked against https://se1.decipherinc.com on 2026-09-29: the API is enabled
+and authenticates with the `x-apikey` header. The key on file is rejected with
 
-    {"$error": "invalid key. ...", "$code": 401}
+    {"$error": "API user account is not valid: account disabled", "$code": 401}
 
-i.e. the ONLY missing piece is a valid 64-character API key in the
-`x-apikey` header.
+so the owning Forsta user must be re-enabled (or a new key issued) before this
+client can pull. An unauthenticated call returns 401 for any path, so the survey
+path is only proven once a working key returns a datamap.
 
 Reference: https://forstasurveys.zendesk.com/hc/en-us/articles/4409469957531
 """

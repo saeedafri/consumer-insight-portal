@@ -32,7 +32,7 @@ python scripts/init_db.py
 if [ -f "$RAW" ]; then
   echo "── loading $RAW"
   python -m etl.run_pipeline --source excel --raw "$RAW" \
-      ${XTAB:+--crosstab "$XTAB"} --wave 2026-09 --family CSI-US
+      ${XTAB:+--crosstab "$XTAB"} --wave 2026-09-21 --family CSI-US
 else
   echo "!! $RAW not found — put the two workbooks in ./data/ or pass their paths"
   exit 1

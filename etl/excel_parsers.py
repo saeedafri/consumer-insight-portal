@@ -33,6 +33,16 @@ from typing import Any, Iterator, Optional
 import openpyxl
 
 NO_TO = "NO TO: "
+
+
+def clean_text(value: Any) -> str:
+    """Collapse every run of whitespace to one space.
+
+    Forsta's datamap writes some labels with non-breaking spaces
+    ('Spent\xa0a lot less…') while the raw export uses ordinary ones. Compared
+    as-is the label->code lookup misses and the answer loads with no code, so
+    every label passes through here, on every sheet."""
+    return " ".join(str(value).split())
 # Datamap headers appear both bare (`q1: ...`) and bracketed (`[CS1]: ...`).
 QCODE_RE = re.compile(r"^\[?([A-Za-z_][A-Za-z0-9_]*)\]?:\s*(.*)$", re.DOTALL)
 VALUES_RE = re.compile(r"^Values:\s*(-?\d+)\s*-\s*(-?\d+)")
@@ -65,7 +75,7 @@ def parse_datamap(path: str, sheet: str = "Datamap") -> list[ParsedQuestion]:
     current: Optional[ParsedQuestion] = None
 
     for raw in ws.iter_rows(values_only=True):
-        cells = [("" if c is None else str(c).strip()) for c in (list(raw) + ["", "", ""])[:3]]
+        cells = [("" if c is None else clean_text(c)) for c in (list(raw) + ["", "", ""])[:3]]
         a, b, c = cells
 
         m = QCODE_RE.match(a) if a else None
@@ -143,7 +153,7 @@ def normalise_label_cell(value: Any) -> tuple[Optional[int], Optional[str]]:
     """
     if value is None:
         return None, None
-    s = str(value).strip()
+    s = clean_text(value)
     if not s:
         return None, None
     if s.startswith(NO_TO):
@@ -227,9 +237,9 @@ def parse_banner(path: str, sheet: str = "Percentages") -> list[ParsedSegment]:
     for idx, cell in enumerate(seg_row):
         if not cell:
             continue
-        label = str(cell).strip()
+        label = clean_text(cell)
         if group_row[idx]:
-            banner_name = str(group_row[idx]).strip()
+            banner_name = clean_text(group_row[idx])
         letter = None
         m = SEGMENT_LETTER_RE.match(label)
         if m:
@@ -299,7 +309,7 @@ def iter_crosstab_cells(
     item_base: Optional[int] = None
 
     for i, prow in enumerate(pct_rows):
-        stub = "" if not prow or prow[0] is None else str(prow[0]).strip()
+        stub = "" if not prow or prow[0] is None else clean_text(prow[0])
         if not stub:
             continue
 

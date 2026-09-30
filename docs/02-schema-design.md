@@ -1,6 +1,8 @@
 # Database Schema — CSI Tables in `dwh_stg`
 
-**17 tables**, prefix `csi_`, plus eight `v_csi_` views.
+> Schema v2 (29 tables) is live in dwh_stg — see docs/superpowers/specs/2026-09-29-survey-platform-design.md §5. This document describes the 19 v1 tables, all of which v2 keeps unchanged.
+
+**19 tables**, prefix `csi_`, plus eight `v_csi_` views.
 DDL: `sql/001_schema.sql` · views: `sql/002_views.sql` · seed: `sql/003_seed_topics.sql`
 
 ---
@@ -67,7 +69,7 @@ Loaded from the Forsta datamap.
 
 | Table | Purpose | Rows, 09/21/26 |
 |---|---|---|
-| `csi_survey` | one row per wave: host, project path, field dates, `survey_family` for trending, `datamap_hash` to catch questionnaire drift | 1 |
+| `csi_survey` | one row per **fielding week**: host, project path, `wave_label` (`2026-09-28`), field dates, `survey_family` for trending, `datamap_hash` to catch questionnaire drift. Unique on host + path + `wave_label`, because one Forsta project is re-fielded weekly with rotating modules | 1 per week |
 | `csi_topic` | report modules — Department Stores, BNPL, GLP-1, Demographics, Technical | 10 |
 | `csi_question` | one row per question as an analyst names it, **with its own `base_n` and `base_desc`** | 93 |
 | `csi_item` | statement rows in a list or grid — `q1r1`, each retailer in `DP7`. Flags "None of these" so it drops out of rankings | 282 |

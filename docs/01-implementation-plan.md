@@ -12,52 +12,44 @@ history lives in files, and nothing is queryable across waves.
 
 ## Phase 0 — Done
 
-- Both 09/21/26 exports parsed and reverse-engineered end to end: 93 questions,
-  375 variables matching all 375 export columns exactly, 404 respondents,
-  40 banner segments, 78 cross-tab tables, 33,240 cells. See
-  `05-source-data-analysis.md`.
-- Forsta platform identified and the API verified live against
-  `se1.decipherinc.com`. See `03-forsta-integration.md`.
-- Schema drafted — 16 tables, 6 views. See `02-schema-design.md`.
-- Repository scaffolded with a working Excel loader, an API client, and the
-  Streamlit app.
+- All four exports parsed: 09/21/26 (93 question blocks, 375 columns, 404
+  respondents) and 09/28/26 (103 blocks, 519 columns, 403 respondents), raw +
+  cross-tab for each. See `05-source-data-analysis.md`.
+- Forsta platform identified; API host and auth scheme verified live. See
+  `03-forsta-integration.md`.
+- Schema: 19 tables, 8 views. See `02-schema-design.md`.
+- Data flow diagram: `.archify/dataflow-cip-ingestion-20260929-162000/cip-dataflow.html`.
 
-## Phase 1 — Credentials (blocked on IT)
+## Phase 1 — Credentials — one item left
 
-Hand `04-it-requirements-checklist.md` to IT. Four blocking items: the Forsta
-service-account API key, directory `58f` permissions, the STG MySQL connection
-with two accounts, and a firewall rule.
+- **STG (DWH) MySQL — resolved.** `dwh_stg` on
+  `csr-mysql8-flex-stg.mysql.database.azure.com`, account `dwh_app_access`.
+- **Forsta API — blocked.** The key on file is rejected:
+  `401 API user account is not valid: account disabled`. IT must re-enable the
+  user or issue a new key. See `04-it-requirements-checklist.md`.
 
-**This phase is the critical path. Nothing downstream needs anything else.**
+## Phase 2 — Schema deployment — done 29 Sep 2026
 
-## Phase 2 — Schema deployment (½ day once credentials land)
+`scripts/init_db.py` applied 001 → 002 → 003 to `dwh_stg`.
+`004_grants.sql` (read-only `csi_app` for the portal) still goes to the DBA.
 
-```bash
-python scripts/test_connection.py     # verify both integrations
-python scripts/init_db.py             # apply 001 → 002 → 003
-```
-
-`004_grants.sql` goes to the DBA rather than being run by the app.
-
-## Phase 3 — Excel backfill (1 day) — does not wait for the API key
-
-The Excel path works today. Load the 09/21/26 wave and any historic waves the
-team has on disk:
+## Phase 3 — Excel backfill — done 29 Sep 2026
 
 ```bash
-python -m etl.run_pipeline --source excel \
-    --raw "Raw Data 09_21_26.xlsx" \
-    --crosstab "Cross Tabs 09_21_26.xlsx" \
-    --wave 2026-09 --family CSI-US
+python -m etl.run_pipeline --source excel --raw "Raw Data 09_21_26.xlsx" \
+    --crosstab "Cross Tabs 09_21_26.xlsx" --wave 2026-09-21
+python -m etl.run_pipeline --source excel --raw "raw data 09-28-2026 2.xlsx" \
+    --crosstab "Shopping and Spending - inc Beauty + Holiday + Inflation + Cross tab 09-28- 2026  2.xlsx" \
+    --wave 2026-09-28
+python scripts/reconcile.py
 ```
 
-Doing this before the API arrives means the portal has real data to build
-against, and the Excel loader stays as a permanent fallback for any wave that
-predates the integration.
+Each fielding week is its own wave (`--wave YYYY-MM-DD`). The Excel loader stays
+as a permanent fallback for any wave that predates the API.
 
-**Acceptance:** `csi_field` has 375 rows; `csi_respondent` has 404;
-`v_csi_item_incidence` for `q1` returns 52.7% for "Met up with friends or
-family locally", matching the cross-tab to the decimal.
+**Acceptance (met):** `scripts/reconcile.py` reproduces every published Total
+cell from raw answers — 667/667 (09/21) and 788/788 (09/28). See
+`09-data-verification.md`.
 
 ## Phase 4 — API pipeline (2 days, once the key lands)
 
@@ -121,18 +113,14 @@ pipeline.
 | Questionnaire changes between waves | trend series break | `datamap_hash` flags drift; long fact table absorbs new questions with no DDL |
 | API datamap JSON differs from the documented shape | rework in Phase 4 | isolated to one adapter function |
 | Low bases charted as if solid | wrong conclusions in client work | `low_base` carried through; portal warns |
-| Recomputed vs published divergence | credibility | store both, label both, reconcile in Phase 6 |
+| Recomputed vs published divergence | credibility | `scripts/reconcile.py` after every load; exits 1 on any mismatch |
 
 ---
 
-## Note on the "Arcify" skill
+## Diagrams — Archify
 
-There is no skill named Arcify available in this workspace — not in the
-installed set, and no match in the skills catalogue. It may be an internal tool
-under a different name, or not yet published. The implementation plan above was
-produced without it.
-
-If you can point me at where Arcify lives — a repo, a marketplace, a package
-name — I will install it and redo the plan through it. If it turns out to be a
-house convention rather than a tool, tell me what it prescribes and I will
-restructure these documents to match.
+The "Arcify" skill is **Archify** (installed at `~/.claude/skills/archify`).
+It produced the ingestion data-flow diagram above (Forsta / Excel → ETL →
+`csi_` table groups → `v_csi_` views → portal), validated and browser-checked.
+Regenerate after an architecture change with
+`node ~/.claude/skills/archify/bin/archify.mjs finalize dataflow <candidate.json> <out.html> --quality showcase`.

@@ -5,23 +5,31 @@ already known, so nobody re-derives settled facts.
 
 ---
 
-## Already confirmed — no need To ask
+## Already confirmed — no need to ask
 
-Checked directly against `se1.decipherinc.com` on 28 September 2026:
+Re-checked directly on 29 September 2026:
 
 | Item | Value | How it was confirmed |
 |---|---|---|
-| Platform | Forsta Surveys (formerly Decipher/FocusVision) | the `/apps/lumos/` portal URL |
+| Platform | Forsta Surveys (formerly Decipher) | the `/apps/lumos/` portal URL; sign-in page is "Decipher: Sign in" |
 | API host | `se1.decipherinc.com` | the survey link itself |
 | API base | `https://se1.decipherinc.com/api/v1/` | live probe |
-| Auth scheme | `x-apikey:` request header | Forsta REST API docs |
-| Company directory | `58f` | from the URL path |
-| Project number | `260908` | from the URL path |
-| Survey path | `selfserve/58f/260908` | derived from the two above |
-| REST API status | **enabled and reachable on this host** | `GET /api/v1/surveys/selfserve/58f/260908/datamap` returned `{"$error": "invalid key…", "$code": 401}` — the route resolves, it only rejects the missing key |
+| Auth scheme | `x-apikey:` request header | error text: *"Missing API key. Supply the x-apikey header"* |
+| Company directory / project | `58f` / `260908` | from the URL path |
+| Existing key | a 64-character key is already on file (`Dwh/credentials.yml` → `FORSTA_API_KEY`) | sent to `rh/users/self` |
+| **Why it fails** | **`401 — API user account is not valid: account disabled`** | same answer on `rh/users/self`, `…/datamap` and `…/data` |
+| Our outbound IP (dev Mac on VPN) | `103.211.52.116` | `api.ipify.org`, 29 Sep 2026 |
+| STG (DWH) MySQL | `csr-mysql8-flex-stg.mysql.database.azure.com:3306`, database `dwh_stg`, account `dwh_app_access`, TLS | connected; `GRANT ALL ON dwh_stg.*`; all 19 `csi_` tables and 8 `v_csi_` views are created |
 
-That 401 is the useful result: the endpoint exists and the survey path is right.
-**A valid API key is the only thing standing between us and live data.**
+**Not yet confirmed:** that `selfserve/58f/260908` is the right API path. An
+unauthenticated call returns the same 401 for a made-up path
+(`selfserve/58f/999999999`) and for `nonsense/path`, so the 401 proves the host
+and auth scheme only — not the path. It is confirmed the moment a working key
+returns a datamap.
+
+**The single blocking fix:** the Forsta user that owns the existing key has been
+disabled. Either re-enable that user, or issue a new key on an active service
+account (1.1 below). Nothing else is needed to start pulling live data.
 
 ---
 
@@ -99,14 +107,15 @@ the service account may list the directory so we can enumerate them ourselves.
 
 ## 2. Our side — STG (DWH) MySQL
 
-### 2.1 Connection details
+### 2.1 Connection details — resolved
 
-| Setting | Env variable | Notes |
+| Setting | Env variable | Value |
 |---|---|---|
-| Host | `STG_DB_HOST` | the STG DWH server |
+| Host | `STG_DB_HOST` | `csr-mysql8-flex-stg.mysql.database.azure.com` |
 | Port | `STG_DB_PORT` | 3306 |
-| Database | `STG_DB_NAME` | existing STG schema, or a new `cip` schema — IT's call |
-| TLS | `STG_DB_SSL_CA` | required; `DigiCertGlobalRootG2.crt.pem`, as used by market-data-stg |
+| Database | `STG_DB_NAME` | `dwh_stg` |
+| Account | `STG_DB_USER` / `STG_DB_PASSWORD` | `dwh_app_access` — the DWH account US-census-ETL uses (`DB_USER_DWH` / `DB_PASSWORD_DWH`, held in `Code-Base/Modular-Code/.env`) |
+| TLS | `STG_DB_SSL_CA` | `DigiCertGlobalRootG2.crt.pem` |
 
 ### 2.2 Two database accounts, not one
 
@@ -143,23 +152,28 @@ at field close.
 
 ## 3. The short version — copy this into the ticket
 
-> **Blocking:**
-> 1. A 64-character Forsta Surveys API key on a **service account**, with view
->    and data-export rights on **directory `58f`** at `se1.decipherinc.com`.
-> 2. Whether that key is IP-restricted — if so, we will supply the ETL host's
->    outbound IP for the allowlist.
-> 3. STG (DWH) MySQL: host, port, database name, and two accounts — `csi_etl`
->    (read/write on `csi_%`) and `csi_app` (read-only). SSL required.
-> 4. A firewall rule from the ETL host to the STG MySQL server.
+> **Blocking (one item):**
+> 1. The Forsta user that owns our API key is **disabled** — the API answers
+>    `401 API user account is not valid: account disabled`. Please re-enable it,
+>    or issue a new 64-character key on an active **service account** with view
+>    and data-export rights on directory **`58f`** at `se1.decipherinc.com`.
 >
 > **Needed soon, not blocking:**
-> 5. The project paths of all CSI waves we should load, not just `260908`.
-> 6. Whether a codes-format data layout exists for this project (and its ID).
-> 7. Where secrets should live (Key Vault or server `.env`).
+> 2. Is the key IP-restricted? If so, allowlist the ETL host (dev Mac today:
+>    `103.211.52.116`; the Azure host's egress IP once it is scheduled there).
+> 3. Confirm the API path for this project is `selfserve/58f/260908`, and whether
+>    each weekly wave is re-fielded in the same project (09/21 and 09/28 both are,
+>    judging by the exports) or gets a new project number.
+> 4. The project paths of any historic waves we should backfill.
+> 5. Whether a codes-format data layout exists for this project (and its ID).
+> 6. A read-only `csi_app` account for the portal (`sql/004_grants.sql`); the
+>    portal uses `dwh_app_access` until then.
+> 7. Where secrets should live (Key Vault or server `.env`). Note:
+>    `Dwh/credentials.yml` currently holds several live keys in plaintext.
 > 8. Whether Forsta can push at field close (webhook/SFTP) rather than us polling.
 >
-> Everything else — the API host, base URL, auth header and survey path — is
-> already confirmed and needs no input.
+> Already settled, no input needed: API host, base URL, auth header, the STG
+> MySQL host, database (`dwh_stg`) and account.
 
 ---
 

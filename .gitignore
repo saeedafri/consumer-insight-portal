@@ -12,3 +12,4 @@ data/exports/*
 !data/exports/.gitkeep
 *.xlsx
 !docs/samples/*.xlsx
+data/*.db

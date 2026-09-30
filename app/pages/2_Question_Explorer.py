@@ -29,8 +29,7 @@ if surveys.empty:
     st.info("No survey waves loaded yet.")
     st.stop()
 
-labels = {int(r.survey_id): f"{r.survey_family or 'Survey'} · {r.wave_label or r.survey_id}"
-          for r in surveys.itertuples()}
+labels = repo.wave_names(surveys)
 survey_id = st.selectbox("Wave", list(labels), format_func=lambda k: labels[k])
 
 catalog = repo.question_catalog(survey_id)
@@ -51,7 +50,7 @@ def _export(table, q, survey_id, labels):
     """One Excel button, wherever the page ended up rendering a table."""
     export.download_button(
         "Download to Excel",
-        f"CSI_{q.qcode}_{labels[survey_id].split('· ')[-1]}.xlsx",
+        f"CSI_{q.qcode}_{surveys.set_index('survey_id').wave_label[survey_id]}.xlsx",
         lambda: export.build_workbook(
             {q.qcode: table}, f"{q.qcode} — {q.qtext_short}",
             [("Wave", labels[survey_id]),

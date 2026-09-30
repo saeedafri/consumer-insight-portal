@@ -16,6 +16,7 @@ uses, nothing more:
     AUTO_INCREMENT                            INTEGER PRIMARY KEY AUTOINCREMENT
     ON UPDATE CURRENT_TIMESTAMP               dropped
     inline KEY (...) lines                    separate CREATE INDEX
+    FULLTEXT KEY lines                        dropped (no SQLite equivalent)
     CREATE OR REPLACE VIEW                    DROP VIEW + CREATE VIEW
     ON DUPLICATE KEY UPDATE x = VALUES(x)     ON CONFLICT DO UPDATE SET x = excluded.x
     LAST_INSERT_ID()                          last_insert_rowid()
@@ -34,6 +35,7 @@ _AUTOINC = re.compile(r"\bAUTO_INCREMENT\b", re.I)
 _ON_UPDATE_TS = re.compile(r"\s+ON UPDATE CURRENT_TIMESTAMP\b", re.I)
 _CHARSET = re.compile(r"\s+(DEFAULT\s+)?CHARSET=\S+|\s+COLLATE=\S+", re.I)
 _KEY_LINE = re.compile(r"^\s*(UNIQUE\s+)?KEY\s+\w+\s*\([^)]*\),?\s*$", re.I | re.M)
+_FULLTEXT_LINE = re.compile(r"^\s*FULLTEXT\s+KEY\s+\w+\s*\([^)]*\),?\s*$", re.I | re.M)
 _TINYINT_LEN = re.compile(r"\bTINYINT\(\d+\)", re.I)
 _ADMIN = re.compile(r"^\s*(CREATE\s+USER|GRANT|FLUSH|SET\s+NAMES)\b", re.I)
 
@@ -115,6 +117,7 @@ def convert_ddl(stmt: str) -> list[str]:
     s = _TINYINT_LEN.sub("TINYINT", s)
     s = _ON_UPDATE_TS.sub("", s)
     s = _KEY_LINE.sub("", s)
+    s = _FULLTEXT_LINE.sub("", s)
 
     if _AUTOINC.search(s):
         pk = re.search(r"PRIMARY KEY \((\w+)\)", s)
@@ -143,3 +146,13 @@ def index_statements(sql: str) -> list[str]:
                 f"ON {table} ({key.group(3)})"
             )
     return out
+
+
+def convert_column_def(defn: str) -> str:
+    """One MySQL column definition, as written after ADD COLUMN, for SQLite."""
+    s = _COMMENT.sub("", defn)
+    s = _ENUM.sub("TEXT", s)
+    s = _UNSIGNED.sub(r"\1", s)
+    s = _TINYINT_LEN.sub("TINYINT", s)
+    s = _ON_UPDATE_TS.sub("", s)
+    return " ".join(s.split())

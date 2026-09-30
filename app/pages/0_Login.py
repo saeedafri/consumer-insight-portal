@@ -5,6 +5,8 @@ method appears depends on AUTH_PROVIDER — see docs/08-authentication.md.
 """
 from __future__ import annotations
 
+import time
+
 import streamlit as st
 
 from app.components.footer import render_footer
@@ -47,6 +49,11 @@ with left:
         if submitted:
             good, message = auth.sign_in_local(email, passphrase)
             if good:
+                # The session cookie is written by a browser component rendered in
+                # this run; navigating at once discards it before it executes and
+                # the user is signed out on the next page load.
+                # ponytail: fixed pause; a server-set cookie would remove it
+                time.sleep(1.0)
                 st.switch_page("pages/1_Overview.py")
             else:
                 st.error(message)
@@ -66,7 +73,7 @@ with right:
         <div style="background:#fafafa;border:1px solid #e8e8e6;border-radius:10px;
                     padding:16px 18px;font-size:13px;color:#52514e;line-height:1.7">
           <strong style="color:#1a1a2e">What is behind this login</strong><br>
-          Respondent-level consumer survey data — 404 interviews per wave,
+          Respondent-level consumer survey data — about 400 interviews per weekly wave,
           demographics, and every answer given.<br><br>
           It is client-confidential and not anonymised beyond the panel's own
           identifiers, so access is per person and every sign-in is recorded in

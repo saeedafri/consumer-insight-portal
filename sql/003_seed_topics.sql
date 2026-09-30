@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- CSI report modules, from the 09/21/26 questionnaire. Safe to re-run.
+-- CSI report modules, from the 09/21/26 and 09/28/26 questionnaires. Safe to re-run.
 -- ═══════════════════════════════════════════════════════════════════════════
 INSERT INTO csi_topic (topic_code, topic_name, is_technical, sort_order) VALUES
   ('SHOPPING',     'Shopping and Spending',          0, 10),
@@ -11,6 +11,11 @@ INSERT INTO csi_topic (topic_code, topic_name, is_technical, sort_order) VALUES
   ('SENTIMENT',    'Consumer Sentiment',             0, 70),
   ('MACRO',        'Macro and Gas Prices',           0, 80),
   ('DEMOGRAPHICS', 'Demographics',                   0, 90),
+  ('HOLIDAY_SHOPPING', 'Holiday Shopping Tracker',   0, 100),
+  ('HOLIDAY_OUTLOOK',  'Holiday Spending Outlook',   0, 110),
+  ('BEAUTY',           'Beauty',                     0, 120),
+  ('TARIFFS',          'Tariffs',                    0, 130),
+  ('INFLATION',        'Inflation and Prices',       0, 140),
   ('TECHNICAL',    'Paradata, Quotas and Technical', 1, 99)
 ON DUPLICATE KEY UPDATE
   topic_name = VALUES(topic_name),

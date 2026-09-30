@@ -103,3 +103,30 @@ def test_oidc_sign_in_refuses_claims_with_no_email(auth):
 def test_fingerprint_does_not_leak_the_identity(auth):
     tag = auth.fingerprint("john@coresight.com")
     assert "john" not in tag and "@" not in tag and len(tag) == 12
+
+
+# ── local-testing bypass (APP_ENV=LOCAL + DEBUG, as in the Market Data Portal) ─
+@pytest.mark.parametrize("env,debug,expected", [
+    ("LOCAL", True, "tester@coresight.com"),
+    ("LOCAL", False, None),        # LOCAL alone is not enough
+    ("STAGING", True, None),       # never on a server, whatever DEBUG says
+    ("PRODUCTION", True, None),
+])
+def test_bypass_only_with_local_and_debug(auth, monkeypatch, env, debug, expected):
+    from app.core.config import Environment
+    monkeypatch.setattr(auth.config, "environment", Environment[env])
+    monkeypatch.setattr(auth.config, "debug", debug)
+    monkeypatch.setenv("LOCAL_TEST_USER_EMAIL", "Tester@Coresight.com")
+    user = auth.debug_user()
+    assert (user.email if user else None) == expected
+
+
+def test_local_mode_uses_the_stg_database_unless_told_otherwise(monkeypatch):
+    from app.core.config import Environment, config
+    monkeypatch.setattr(config, "environment", Environment.LOCAL)
+    monkeypatch.delenv("LOCAL_SQLITE_PATH", raising=False)
+    monkeypatch.delenv("LOCAL_DB_HOST", raising=False)
+    monkeypatch.setenv("STG_DB_HOST", "stg.example")
+    assert config.database("app").host == "stg.example"
+    monkeypatch.setenv("LOCAL_SQLITE_PATH", "data/x.db")
+    assert config.database("app").sqlite_path

@@ -128,6 +128,60 @@ def generation(age: Optional[int], cfg: Optional[dict] = None) -> Optional[str]:
     return _band(age, cfg.get("generations", []))
 
 
+
+def parse_age_band(label: Optional[str]) -> tuple[Optional[str], Optional[float]]:
+    """A banded age answer -> (band, midpoint). A single-year answer is not a
+    band; "under 18" matches no band on purpose (outside every cut)."""
+    value = " ".join(str(label or "").split()).lower()
+    for rule in load_config().get("age_band_labels") or []:
+        if re.match(rule["pattern"], value):
+            return rule["band"], float(rule["mid"])
+    return None, None
+
+
+
+_RANGE = [
+    (re.compile(r"^(\d+)\s*-\s*(\d+)$"), lambda a, b: (int(a), int(b))),
+    (re.compile(r"^(?:over|>)\s*(\d+)$"), lambda a: (int(a) + 1, 200)),
+    (re.compile(r"^(\d+)\s*(?:\+|or (?:more|above|over|older))$"), lambda a: (int(a), 200)),
+    (re.compile(r"^(?:under|below|less than)\s*(\d+)$"), lambda a: (18, int(a) - 1)),
+]
+
+
+def _containing(low: int, high: int, cuts: list) -> Optional[str]:
+    return next((c["label"] for c in cuts if c["min"] <= low and high <= c["max"]), None)
+
+
+def classify_age(label: Optional[str]) -> dict:
+    """An age answer -> {age, band, gen, mid}.
+
+    A single year ('34') gives all four. A range ('26-41', 'over 60') has no
+    single age; it gets a band or generation only when it lies wholly inside
+    one — '26-41' spans GenZ and Millennials, so it gets neither. Midpoints of
+    the standard bands are the analysts' (age_band_labels)."""
+    value = " ".join(str(label or "").split()).lower()
+    for pattern, bounds in _RANGE:
+        m = pattern.match(value)
+        if not m:
+            continue
+        low, high = bounds(*m.groups())
+        if high < 18:                                 # "Under 18": outside every cut
+            return {"age": high, "band": None, "gen": None, "mid": high}
+        cfg = load_config()
+        _, known_mid = parse_age_band(value)
+        return {"age": None,
+                "band": _containing(low, high, cfg.get("age_bands", [])),
+                "gen": _containing(low, high, cfg.get("generations", [])),
+                # only an explicit "a - b" has a midpoint; "under 50" assumes its 18
+                "mid": known_mid if known_mid is not None
+                       else (low + high) / 2 if pattern is _RANGE[0][0] else None}
+    age = parse_age(label)
+    return {"age": age, "band": age_band(age), "gen": generation(age), "mid": age}
+
+def income_mid_k(label: Optional[str]) -> Optional[float]:
+    table = {k.lower(): v for k, v in (load_config().get("income_midpoints_k") or {}).items()}
+    return table.get(" ".join(str(label or "").split()).lower())
+
 @lru_cache(maxsize=1)
 def _region_index() -> dict[str, str]:
     """State -> census region, keyed on both the full name and the postal code.
@@ -158,8 +212,15 @@ def census_region(state_name: Optional[str]) -> Optional[str]:
 
 def parse_age(label: Optional[str]) -> Optional[int]:
     """D2 is asked in single years and exported as a label ('34', 'Under 18',
-    '70+'). Pull the first number out; return None when there isn't one."""
+    '70 or more'). Pull the first number out; return None when there isn't one.
+
+    'Under 18' is below the number, not at it: read as 18 it would put an
+    under-age respondent in GenZ and 18-29, which Forsta's banner excludes
+    (09/28 had one — our GenZ said 62, the published table 61)."""
     if label is None:
         return None
     m = re.search(r"\d+", str(label))
-    return int(m.group()) if m else None
+    if not m:
+        return None
+    age = int(m.group())
+    return age - 1 if re.match(r"\s*(under|below|less than)\b", str(label), re.I) else age

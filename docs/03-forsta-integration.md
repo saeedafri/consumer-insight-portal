@@ -23,16 +23,17 @@ That decomposes into everything the API needs except the key:
 | Survey path | `selfserve/58f/260908` |
 | Auth header | `x-apikey: <64-char key>` |
 
-**Verified live on 28 September 2026.** An unauthenticated request to
-`/api/v1/surveys/selfserve/58f/260908/datamap?format=json` returns:
+**Re-checked live on 29 September 2026.**
 
-```json
-{"$error": "invalid key. Verify the spelling of your key by accessing the Research Hub",
- "$code": 401}
-```
+- Without a key, every path — the real one, `selfserve/58f/999999999` and
+  `nonsense/path` — returns `401 Missing API key. Supply the x-apikey header`.
+  That proves the host and the auth scheme, **not** the survey path.
+- With the key on file (`Dwh/credentials.yml`), every endpoint returns
+  `401 API user account is not valid: account disabled`. The key is well formed;
+  the Forsta user that owns it has been disabled.
 
-The route resolves and the survey path is correct — the API rejects only the
-missing key. Nothing else about the connection is unknown.
+So the one thing standing between us and live data is an enabled API user.
+The survey path is confirmed the first time a datamap comes back.
 
 ---
 
@@ -98,6 +99,7 @@ regardless. If the layout changes, one function is affected.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `401 invalid key` | key missing, mistyped, or revoked | re-issue in Portal → API Access |
+| `401 account disabled` | the key's owning user is disabled (the state on 29 Sep 2026) | re-enable the user, or issue a key on an active service account |
 | `403` | key valid, account lacks rights on directory `58f` | grant view/export on the directory |
 | `401` only from the scheduled host | key is IP-restricted | add the ETL host's outbound IP |
 | Connection timeout | our egress firewall blocks `se1.decipherinc.com:443` | open outbound HTTPS |

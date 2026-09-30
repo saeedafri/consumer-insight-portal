@@ -135,15 +135,15 @@ def execute_many(sql: str, rows: Sequence[dict], role: str = "etl", chunk: int =
     return total
 
 
-def run_sql_file(path: str, role: str = "etl") -> None:
-    """Apply a .sql migration. On SQLite the MySQL DDL is converted on the fly
-    (see sqlite_compat) so there is only one schema file to maintain."""
-    raw = open(path, "r", encoding="utf-8").read()
+def apply_sql(path, engine: Engine) -> int:
+    """Apply one .sql file to `engine`. On SQLite the MySQL DDL is converted on
+    the fly (see sqlite_compat) so there is only one schema file to maintain."""
+    raw = Path(path).read_text(encoding="utf-8")
     statements = sqlite_compat.split_statements(raw)
-    is_sqlite = dialect(role) == "sqlite"
+    is_sqlite = engine.dialect.name == "sqlite"
 
     applied = 0
-    with get_engine(role).begin() as conn:
+    with engine.begin() as conn:
         for stmt in statements:
             for out in (sqlite_compat.convert_ddl(stmt) if is_sqlite else [stmt]):
                 if not out:
@@ -156,6 +156,12 @@ def run_sql_file(path: str, role: str = "etl") -> None:
                 applied += 1
     logger.info("Applied %s (%d statements, dialect=%s)",
                 path, applied, "sqlite" if is_sqlite else "mysql")
+    return applied
+
+
+def run_sql_file(path: str, role: str = "etl") -> None:
+    """Apply a .sql migration with the engine for `role`."""
+    apply_sql(path, get_engine(role))
 
 
 def healthcheck(role: str = "app") -> tuple[bool, str]:

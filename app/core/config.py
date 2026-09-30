@@ -121,7 +121,9 @@ class Config:
 
     def database(self, role: str = "app") -> DatabaseConfig:
         """role='app' -> read-only account; role='etl' -> writer account."""
-        if self.is_local:
+        # LOCAL runs against the STG (dwh_stg) database, like the Market Data
+        # Portal's local launcher, unless a SQLite file or a local MySQL is named.
+        if self.is_local and (_env("LOCAL_SQLITE_PATH") or _env("LOCAL_DB_HOST")):
             sqlite_path = _env("LOCAL_SQLITE_PATH")
             if sqlite_path:
                 return DatabaseConfig(

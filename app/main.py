@@ -32,6 +32,7 @@ PAGES = [
     ("Analysis Builder", "pages/3_Analysis.py",          "analysis"),
     ("Cross-tabs",       "pages/4_Crosstabs.py",         "crosstabs"),
     ("Trends",           "pages/5_Trends.py",            "trends"),
+    ("Mappings",         "pages/7_Mappings.py",          "mappings"),
     ("Data Health",      "pages/6_Data_Health.py",       "data-health"),
 ]
 

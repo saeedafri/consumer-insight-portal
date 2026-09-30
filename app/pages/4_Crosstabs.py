@@ -30,10 +30,9 @@ if surveys.empty:
     st.info("No survey waves loaded yet.")
     st.stop()
 
-labels = {int(r.survey_id): f"{r.survey_family or 'Survey'} · {r.wave_label or r.survey_id}"
-          for r in surveys.itertuples()}
+labels = repo.wave_names(surveys)
 
-f1, f2, f3 = st.columns(3)
+f1, f2, f3 = st.columns([3, 2, 2])
 with f1:
     survey_id = st.selectbox("Wave", list(labels), format_func=lambda k: labels[k])
 catalog = repo.question_catalog(survey_id)
@@ -79,8 +78,11 @@ if not matrix.empty:
     # Shade by absolute magnitude across the whole table, on a fixed 0..max
     # scale. Shading per row turns a two-column table into pure black and
     # white and implies a ranking that two numbers cannot support.
-    styled = styled.background_gradient(
-        cmap="Reds", axis=None, vmin=0, vmax=float(matrix.max(numeric_only=True).max() or 1)
+    top = float(matrix.max(numeric_only=True).max() or 1)
+    # Coresight red at an opacity proportional to the value (no matplotlib needed)
+    styled = styled.map(
+        lambda v: "" if pd.isna(v) else f"background-color: rgba(214, 46, 47, {0.85 * v / top:.2f})"
+        + ("; color: #ffffff" if v / top > 0.6 else "")
     )
 st.dataframe(styled, width="stretch")
 

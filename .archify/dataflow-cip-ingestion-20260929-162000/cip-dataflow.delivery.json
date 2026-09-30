@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "4ea18ded-81ca-4b5d-9d0e-8ed63151a410",
+  "status": "current",
+  "command": "deliver",
+  "type": "dataflow",
+  "input": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-cip-ingestion-20260929-162000/candidate.json",
+  "output": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-cip-ingestion-20260929-162000/cip-dataflow.html",
+  "specification": {
+    "sha256": "3e87823d3a39a765aebdfc9b9259d530ac17b6aa16f77004624284b5be83db87",
+    "bytes": 5788
+  },
+  "artifact": {
+    "sha256": "78abe6dbc4237099ed00d69e4cf024511085df9303ca6f7b93e5974542b472f0",
+    "bytes": 760470
+  }
+}

@@ -13,6 +13,7 @@ TTL = 900  # 15 minutes
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def list_surveys() -> pd.DataFrame:
+    # A wave mid-load has definitions but no respondents yet: counts are 0, not NaN.
     return query_df(
         """
         SELECT s.survey_id, s.title, s.survey_family, s.wave_label, s.wave_date,
@@ -22,7 +23,54 @@ def list_surveys() -> pd.DataFrame:
           LEFT JOIN v_csi_survey_health h ON h.survey_id = s.survey_id
          ORDER BY s.wave_date DESC, s.survey_id DESC
         """
+    ).fillna({"total_records": 0, "qualified_n": 0})
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def mapping_queue() -> pd.DataFrame:
+    """Harmoniser proposals waiting for an analyst (short TTL: decisions clear it)."""
+    return query_df("SELECT * FROM v_csi_mapping_queue ORDER BY wave_label, qcode, item_id")
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def mapping_summary() -> pd.DataFrame:
+    return query_df(
+        """
+        SELECT s.wave_label, m.status, COUNT(*) AS units
+          FROM csi_concept_map m JOIN csi_survey s ON s.survey_id = m.survey_id
+         WHERE m.concept_option_id IS NULL
+         GROUP BY s.wave_label, m.status
+         ORDER BY s.wave_label, m.status
+        """
     )
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def concept_choice(concept_id: int) -> pd.DataFrame:
+    return query_df(
+        "SELECT option_label, sort_order FROM csi_concept_option"
+        " WHERE concept_id = :cid ORDER BY sort_order", {"cid": concept_id})
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def concept_list(qtype: str, survey_id: Optional[int] = None) -> pd.DataFrame:
+    """Concepts a unit of this type could map to — minus those another
+    question of the same wave already uses (one wave, one question per concept)."""
+    return query_df(
+        """
+        SELECT c.concept_id, c.concept_code, c.concept_name FROM csi_concept c
+         WHERE c.qtype = :qtype
+           AND NOT EXISTS (SELECT 1 FROM csi_concept_map m
+                            WHERE m.concept_id = c.concept_id AND m.survey_id = :sid
+                              AND m.concept_option_id IS NULL AND m.status <> 'rejected')
+         ORDER BY c.concept_code
+        """, {"qtype": qtype, "sid": -1 if survey_id is None else survey_id})
+
+
+def wave_names(surveys: pd.DataFrame) -> dict[int, str]:
+    """'2026-09-28 · Shopping and Spending - inc Beauty + Holiday + …' — the
+    modules differ every week, so the week alone doesn't say what was asked."""
+    return {int(r.survey_id): f"{r.wave_label} · {r.title}" for r in surveys.itertuples()}
 
 
 @st.cache_data(ttl=TTL, show_spinner=False)
@@ -199,7 +247,22 @@ def dimension_values(survey_id: int, dimension: str) -> list[str]:
 @st.cache_data(ttl=TTL, show_spinner=False)
 def question_choices(survey_id: int, question_id: int) -> pd.DataFrame:
     """The selectable answers for a question — items for a multi-punch,
-    answer options for a single-punch. Used to build filter criteria."""
+    answer options for a single-punch, "item — rating" pairs for a grid.
+    Used to build filter criteria."""
+    meta = query_df("SELECT qtype, is_multi FROM csi_question WHERE question_id = :qid",
+                    {"qid": question_id})
+    if not meta.empty and str(meta.qtype.iloc[0]).startswith("grid") and not meta.is_multi.iloc[0]:
+        rows = query_df(
+            "SELECT item_id, item_label FROM csi_item WHERE question_id = :qid ORDER BY sort_order",
+            {"qid": question_id})
+        scale = query_df(
+            "SELECT value_code, value_label FROM csi_option WHERE question_id = :qid ORDER BY sort_order",
+            {"qid": question_id})
+        pairs = rows.merge(scale, how="cross")
+        # ponytail: item and code packed into one int; fine while scales stay under 1000 points
+        return pd.DataFrame({"id": pairs.item_id * GRID_KEY + pairs.value_code,
+                             "label": pairs.item_label + " — " + pairs.value_label,
+                             "kind": "grid"})
     items = query_df(
         """
         SELECT i.item_id AS id, i.item_label AS label, 'item' AS kind
@@ -220,6 +283,9 @@ def question_choices(survey_id: int, question_id: int) -> pd.DataFrame:
         """,
         {"qid": question_id},
     )
+
+
+GRID_KEY = 1000
 
 
 def _cohort_sql(criteria: list[dict]) -> tuple[str, dict]:
@@ -270,6 +336,21 @@ def _cohort_sql(criteria: list[dict]) -> tuple[str, dict]:
                                AND f{n}.question_id = :cq{n}
                                AND a{n}.value_code IN ({placeholders}))"""
             )
+        elif kind == "grid":
+            ids = crit.get("ids") or []
+            if not ids:
+                continue
+            ors = []
+            for i, packed in enumerate(ids):
+                item, code = divmod(int(packed), GRID_KEY)
+                params.update({f"gi{n}_{i}": item, f"gc{n}_{i}": code})
+                ors.append(f"(f{n}.item_id = :gi{n}_{i} AND a{n}.value_code = :gc{n}_{i})")
+            clauses.append(
+                f"""EXISTS (SELECT 1 FROM csi_answer a{n}
+                              JOIN csi_field f{n} ON f{n}.field_id = a{n}.field_id
+                             WHERE a{n}.respondent_id = r.respondent_id
+                               AND ({" OR ".join(ors)}))"""
+            )
     return (" AND ".join(clauses) if clauses else "1=1"), params
 
 
@@ -317,6 +398,8 @@ def analyse(
     if meta.empty:
         return pd.DataFrame()
     is_multi = bool(meta["is_multi"].iloc[0])
+    # A grid rates several items on one scale; each item is its own distribution.
+    is_grid = str(meta["qtype"].iloc[0]).startswith("grid") and not is_multi
 
     if is_multi:
         sql = f"""
@@ -336,6 +419,8 @@ def analyse(
     else:
         sql = f"""
             SELECT {seg_select}
+                   COALESCE(i.item_label, '') AS item,
+                   COALESCE(i.sort_order, 0) AS item_order,
                    COALESCE(o.value_label, a.value_label) AS answer,
                    COALESCE(o.sort_order, a.value_code) AS answer_order,
                    COUNT(*) AS n,
@@ -344,10 +429,12 @@ def analyse(
               LEFT JOIN csi_profile p ON p.respondent_id = r.respondent_id
               JOIN csi_answer a ON a.respondent_id = r.respondent_id
               JOIN csi_field  f ON f.field_id = a.field_id AND f.question_id = :qid
+              LEFT JOIN csi_item i ON i.item_id = f.item_id
               LEFT JOIN csi_option o ON o.question_id = :qid AND o.value_code = a.value_code
              WHERE r.survey_id = :sid AND r.is_qualified = 1 AND {where}
                AND a.value_code IS NOT NULL
-             GROUP BY {seg_group}, COALESCE(o.value_label, a.value_label),
+             GROUP BY {seg_group}, COALESCE(i.item_label, ''), COALESCE(i.sort_order, 0),
+                      COALESCE(o.value_label, a.value_label),
                       COALESCE(o.sort_order, a.value_code)
         """
 
@@ -355,9 +442,31 @@ def analyse(
     if df.empty:
         return df
 
-    if not is_multi:
-        # base for a single-punch is everyone in the segment who answered
-        df["base_n"] = df.groupby("segment")["n"].transform("sum")
+    if is_multi:
+        # Forsta's "Total Answering": everyone who answered the question, not
+        # only those shown a given item. Items routed away from someone count
+        # as not chosen — BT8 shows cosmetics only to cosmetics buyers.
+        answered = query_df(
+            f"""
+            SELECT {seg_select} COUNT(DISTINCT r.respondent_id) AS answered_n
+              FROM csi_respondent r
+              LEFT JOIN csi_profile p ON p.respondent_id = r.respondent_id
+              JOIN csi_answer a ON a.respondent_id = r.respondent_id
+              JOIN csi_field  f ON f.field_id = a.field_id AND f.question_id = :qid
+             WHERE r.survey_id = :sid AND r.is_qualified = 1 AND {where}
+               AND a.value_code IS NOT NULL
+             GROUP BY {seg_group}
+            """,
+            params,
+        )
+        df["base_n"] = df["segment"].map(dict(zip(answered["segment"], answered["answered_n"])))
+    else:
+        # base for a single-punch is everyone in the segment who answered —
+        # per grid row, since only a retailer's own shoppers rate it
+        df["base_n"] = df.groupby(["segment", "item"])["n"].transform("sum")
+        if is_grid:
+            df["answer"] = df["item"] + " — " + df["answer"]
+        df["answer_order"] = df["item_order"] * 1000 + df["answer_order"]
 
     df["pct"] = df["n"] / df["base_n"].replace(0, pd.NA)
     df = df.sort_values(["segment", "answer_order"]).reset_index(drop=True)

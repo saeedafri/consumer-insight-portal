@@ -1,7 +1,7 @@
 """Trends across more than one wave.
 
-We only have one real wave, so this test builds a SECOND, SYNTHETIC wave in a
-throwaway database. The numbers in it are invented and exist purely to prove
+The demo database may hold one real wave or several; this test adds one more,
+SYNTHETIC wave in a throwaway copy so there are always at least two. The numbers in it are invented and exist purely to prove
 the trend code path works; nothing here touches the real data or the demo
 database, and nothing synthetic is ever loaded into dwh_stg.
 """
@@ -102,15 +102,15 @@ def test_trend_joins_two_waves(two_wave_db):
 
     surveys = repo.list_surveys()
     csi = surveys[surveys.survey_family == "CSI-US"]
-    assert len(csi) == 2, "the fixture must produce two waves"
+    assert len(csi) >= 2, "the fixture must produce at least two waves"
 
     trend = repo.trend("CSI-US", "q1")
     assert not trend.empty
-    assert trend.wave_label.nunique() == 2, "both waves must appear in the trend"
+    assert trend.wave_label.nunique() == len(csi), "every wave must appear in the trend"
 
     # each wave keeps its own base — the whole reason the page warns about it
     bases = trend.groupby("wave_label")["base_n"].max()
-    assert bases.nunique() == 2, "the synthetic wave has half the respondents"
+    assert bases.nunique() >= 2, "the synthetic wave has half the respondents"
     assert bases.min() < bases.max()
 
 
