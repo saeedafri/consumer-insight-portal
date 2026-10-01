@@ -167,3 +167,11 @@ income_midpoints_k:
   "$100,000 - $149,999": 124.9995
   "$150,000 - $199,999": 174.9995
   "$200,000 or greater": 225
+  "$200,000+": 225                # SurveyMonkey panel spelling
+
+# US Census divisions → regions (SurveyMonkey Audience reports the division).
+census_divisions:
+  Northeast: [New England, Middle Atlantic]
+  Midwest:   [East North Central, West North Central]
+  South:     [South Atlantic, East South Central, West South Central]
+  West:      [Mountain, Pacific]

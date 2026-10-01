@@ -86,15 +86,45 @@ Over the VPN a wave takes 20–60 s; all 141 take about an hour.
 ```bash
 python -m etl.legacy_dwh --all                     # every Qualtrics-era wave, oldest first
 python -m etl.legacy_dwh --id SV_0IHGTy1GPAlUsGa   # one wave (Feb 2025 Beauty)
+python -m etl.legacy_dwh --all --era surveymonkey # the SurveyMonkey years, 2018 – 2022
 python -m etl.qualtrics_export --wave 2025-05-12 \
     --file "Shopping and Spending - inc Beauty + Inflation + Tariffs_May 20, 2025_08.00 1.xlsx"
 python scripts/reconcile.py                        # Forsta cells + every legacy wave vs its source
 ```
 
+SurveyMonkey waves bring two extras: matrix questions load as grids (each cell is the column id plus its "<row> | <column>" text), and SurveyMonkey Audience's panel demographics (age, gender, income, Census division) fill the profile wherever no question did. A wave that fails is logged and skipped; `--all` carries on and exits 1 with the list to rerun with `--id`.
+
 Both are safe to re-run: a wave's answers are replaced, not duplicated, and
 concept decisions are kept. Load the Excel export **after** the legacy waves —
 its answers take their order from the concepts those waves create (the export
 itself records answers in the order respondents happened to give them).
+
+## Cohorts and the cube (Phase 4)
+
+A **cohort** is a named rule over questions (`config/cohorts.yml`), applied the
+same way to every wave. The **cube** (`csi_agg_cell`) pre-counts every answer
+by the standard cuts, for everyone and each cohort, so standard views are one
+indexed read. Every load builds its wave's cube; after editing
+`config/cohorts.yml`, or to rebuild everything:
+
+```bash
+python -m app.data.cohorts --sync      # define/version the cohorts, derive every wave
+python -m app.data.cube --all          # rebuild every wave's cube (~35 s a wave over the VPN)
+python scripts/perf_check.py           # P95 of the three speed targets
+```
+
+Confirming a mapping on `/mappings` re-derives that wave's cohorts and
+rebuilds only the cohort cells whose membership changed.
+
+## Publications (Phase 5)
+
+A delivered table is published from the **Publications** page (or
+`app.data.publications.publish`) and frozen with its definition. Re-check every
+publication against today's data — run it after any load or mapping change:
+
+```bash
+python -m app.data.publications --drift    # exit 1 if any published number moved
+```
 
 ## What local mode does not test
 

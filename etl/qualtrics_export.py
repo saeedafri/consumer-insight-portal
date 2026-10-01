@@ -25,7 +25,7 @@ import openpyxl
 from sqlalchemy import text
 
 from app.core.database import get_engine
-from app.data import harmonise
+from app.data import cube, harmonise
 from etl import excel_parsers as xp
 from etl.loaders import finish_run, load_definitions, start_run, upsert_survey
 
@@ -154,6 +154,7 @@ def ingest_export(path, wave: str, family: str = "CSI-US") -> int:
     _rebuild_question_bases(survey_id)
     log.info("%s -> survey_id=%s: %d respondents; harmonised %s", Path(path).name, survey_id, loaded,
              harmonise.harmonise_survey(survey_id))
+    log.info("Cube: %d cells", cube.refresh_wave(survey_id))
     return survey_id
 
 

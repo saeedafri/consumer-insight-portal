@@ -40,6 +40,9 @@ COLUMNS: list[tuple[str, str, str]] = [
     ("csi_load_log", "archive_uri", "VARCHAR(1000) NULL"),
     ("csi_load_log", "archive_sha256", "CHAR(64) NULL"),
     ("csi_concept", "match_text", "VARCHAR(2000) NULL"),
+    ("csi_agg_cell", "map_key", "VARCHAR(40) NULL"),
+    ("csi_agg_cell", "n_age_mid", "INT NULL"),
+    ("csi_agg_cell", "n_income_mid", "INT NULL"),
 ]
 
 # v1 waves all came from Forsta: their path is their source reference.
@@ -55,6 +58,7 @@ INDEXES: list[tuple[str, str, str, str]] = [
     ("csi_respondent", "ix_respondent_key", "INDEX", "survey_id, respondent_key"),
     ("csi_answer", "ix_answer_cover", "INDEX", "survey_id, field_id, value_code, respondent_id"),
     ("csi_answer", "ft_answer_text", "FULLTEXT", "value_text"),
+    ("csi_agg_cell", "ix_agg_map", "INDEX", "survey_id, map_key, cohort_id, dim"),
 ]
 
 

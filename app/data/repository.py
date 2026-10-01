@@ -21,6 +21,7 @@ def list_surveys() -> pd.DataFrame:
                h.first_complete, h.last_complete
           FROM csi_survey s
           LEFT JOIN v_csi_survey_health h ON h.survey_id = s.survey_id
+         WHERE s.load_status = 'verified'          -- a wave mid-load or failed is not shown
          ORDER BY s.wave_date DESC, s.survey_id DESC
         """
     ).fillna({"total_records": 0, "qualified_n": 0})
@@ -336,6 +337,22 @@ def _cohort_sql(criteria: list[dict]) -> tuple[str, dict]:
                                AND f{n}.question_id = :cq{n}
                                AND a{n}.value_code IN ({placeholders}))"""
             )
+        elif kind == "cohort":
+            # by code, so a saved view follows the cohort to its current version
+            if crit.get("cohort_code"):
+                params[f"ck{n}"] = str(crit["cohort_code"])
+                clauses.append(
+                    f"""EXISTS (SELECT 1 FROM csi_respondent_cohort rc{n}
+                                  JOIN csi_cohort_def d{n} ON d{n}.cohort_id = rc{n}.cohort_id
+                                   AND d{n}.is_current = 1 AND d{n}.cohort_code = :ck{n}
+                                 WHERE rc{n}.respondent_id = r.respondent_id)"""
+                )
+            elif crit.get("cohort_id"):
+                params[f"ck{n}"] = int(crit["cohort_id"])
+                clauses.append(
+                    f"""EXISTS (SELECT 1 FROM csi_respondent_cohort rc{n}
+                                 WHERE rc{n}.respondent_id = r.respondent_id AND rc{n}.cohort_id = :ck{n})"""
+                )
         elif kind == "grid":
             ids = crit.get("ids") or []
             if not ids:
@@ -383,6 +400,20 @@ def analyse(
     number in the cohort who ANSWERED this question — routed questions keep
     their own denominator even after filtering.
     """
+    # Cube first: everyone or one defined cohort, by a standard cut (or none).
+    from app.data.cube import CUBE_DIMS
+    kinds = [c.get("kind") for c in criteria]
+    if kinds in ([], ["cohort"]) and (break_dimension or "total") in CUBE_DIMS:
+        cohort_id = None
+        if criteria:
+            from app.data.cohorts import current_id
+            code = criteria[0].get("cohort_code")
+            cohort_id = current_id(code) if code else criteria[0].get("cohort_id")
+        if not criteria or cohort_id:
+            frame = analyse_cube(survey_id, question_id, cohort_id, break_dimension)
+            if not frame.empty:
+                return frame
+
     where, params = _cohort_sql(list(criteria))
     params.update({"sid": survey_id, "qid": question_id})
 
@@ -441,6 +472,9 @@ def analyse(
     df = query_df(sql, params)
     if df.empty:
         return df
+    # A respondent with no value for the cut is a segment too; pandas drops
+    # None keys from groupby and map, which left that row with no base.
+    df["segment"] = df["segment"].fillna("")
 
     if is_multi:
         # Forsta's "Total Answering": everyone who answered the question, not
@@ -459,7 +493,7 @@ def analyse(
             """,
             params,
         )
-        df["base_n"] = df["segment"].map(dict(zip(answered["segment"], answered["answered_n"])))
+        df["base_n"] = df["segment"].map(dict(zip(answered["segment"].fillna(""), answered["answered_n"])))
     else:
         # base for a single-punch is everyone in the segment who answered —
         # per grid row, since only a retailer's own shoppers rate it
@@ -468,9 +502,142 @@ def analyse(
             df["answer"] = df["item"] + " — " + df["answer"]
         df["answer_order"] = df["item_order"] * 1000 + df["answer_order"]
 
+    df["segment"] = df["segment"].replace("", None)
     df["pct"] = df["n"] / df["base_n"].replace(0, pd.NA)
     df = df.sort_values(["segment", "answer_order"]).reset_index(drop=True)
     return df[["segment", "answer", "n", "base_n", "pct"]]
+
+
+def analyse_cube(survey_id: int, question_id: int, cohort_id: Optional[int] = None,
+                 break_dimension: Optional[str] = None) -> pd.DataFrame:
+    """analyse() read from the cube: the same frame, one indexed read."""
+    df = query_df(
+        """
+        SELECT c.dim_value AS segment, c.n, c.base_n, i.item_label,
+               COALESCE(i.sort_order, 0) AS item_order, o.value_label, o.sort_order AS option_order,
+               q.qtype, q.is_multi
+          FROM csi_agg_cell c
+          JOIN csi_question q ON q.question_id = c.question_id
+          LEFT JOIN csi_item i ON i.item_id = c.item_id
+          LEFT JOIN csi_option o ON o.option_id = c.option_id
+         WHERE c.survey_id = :sid AND c.question_id = :qid AND c.dim = :dim
+           AND COALESCE(c.cohort_id, 0) = :coh
+        """,
+        {"sid": survey_id, "qid": question_id, "dim": break_dimension or "total", "coh": cohort_id or 0},
+    )
+    if df.empty:
+        return df
+    meta = df.iloc[:1]
+    if bool(meta["is_multi"].iloc[0]):
+        df["answer"], df["answer_order"] = df["item_label"], df["item_order"]
+    else:
+        is_grid = str(meta["qtype"].iloc[0]).startswith("grid")
+        df["answer"] = (df["item_label"] + " — " + df["value_label"]) if is_grid else df["value_label"]
+        df["answer_order"] = df["item_order"] * 1000 + df["option_order"]
+    df["segment"] = df["segment"].replace("", None)
+    df["pct"] = df["n"] / df["base_n"].replace(0, pd.NA)
+    df = df.sort_values(["segment", "answer_order"]).reset_index(drop=True)
+    return df[["segment", "answer", "n", "base_n", "pct"]]
+
+
+_CONCEPT_CELLS = """
+    FROM csi_concept_option co
+    JOIN csi_concept_map m ON m.concept_option_id = co.concept_option_id AND m.status = 'confirmed'
+    JOIN csi_agg_cell c ON c.survey_id = m.survey_id AND c.map_key = m.map_key
+         AND c.dim = :dim AND COALESCE(c.cohort_id, 0) = :coh
+    JOIN csi_survey s ON s.survey_id = m.survey_id AND s.load_status = 'verified'
+   WHERE co.concept_id = :cid
+"""
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def concept_trend(concept_id: int, cohort_id: Optional[int] = None) -> pd.DataFrame:
+    """One concept across every wave and platform that has it confirmed —
+    joined through csi_concept_map, so a mapping confirmed today shows today."""
+    df = query_df(
+        f"""
+        SELECT s.survey_id, s.wave_label, s.wave_date, s.platform, co.option_label AS answer,
+               co.sort_order AS answer_order, c.n, c.base_n
+        {_CONCEPT_CELLS}
+        """,
+        {"cid": concept_id, "coh": cohort_id or 0, "dim": "total"},
+    )
+    if df.empty:
+        return df
+    df[["n", "base_n"]] = df[["n", "base_n"]].apply(pd.to_numeric)
+    # One point per wave label: two panels fielded the same week (Dec 2023
+    # Last Mile + RIWI) add up, and each survey's base counts once.
+    base = (df.groupby(["survey_id", "wave_label"])["base_n"].max()
+              .groupby("wave_label").sum())
+    out = (df.groupby(["wave_label", "wave_date", "answer", "answer_order"], as_index=False)
+             .agg(n=("n", "sum"), platform=("platform", lambda p: ", ".join(sorted(set(p))))))
+    out["base_n"] = out["wave_label"].map(base)
+    out["pct"] = out["n"] / out["base_n"].replace(0, pd.NA)
+    return out.sort_values(["wave_date", "answer_order"]).reset_index(drop=True)
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def concept_pooled(concept_id: int, survey_ids: Sequence[int], cohort_id: Optional[int] = None,
+                   dim: str = "total") -> pd.DataFrame:
+    """Waves stacked (the workbook's "Five Waves Combined"): counts add, each
+    wave's base adds once, averages use range midpoints over those who gave one."""
+    ids = [int(x) for x in survey_ids]
+    if not ids:
+        return pd.DataFrame()
+    marks = ", ".join(f":w{i}" for i in range(len(ids)))
+    df = query_df(
+        f"""
+        SELECT c.survey_id, c.dim_value AS segment, co.option_label AS answer, co.sort_order AS answer_order,
+               c.n, c.base_n, c.sum_age_mid, c.n_age_mid, c.sum_income_mid_k, c.n_income_mid
+        {_CONCEPT_CELLS} AND c.survey_id IN ({marks})
+        """,
+        {"cid": concept_id, "coh": cohort_id or 0, "dim": dim, **{f"w{i}": v for i, v in enumerate(ids)}},
+    )
+    if df.empty:
+        return df
+    for col in ("n", "base_n", "sum_age_mid", "n_age_mid", "sum_income_mid_k", "n_income_mid"):
+        df[col] = pd.to_numeric(df[col])
+    base = df.groupby(["survey_id", "segment"])["base_n"].max().groupby("segment").sum()
+    out = (df.groupby(["segment", "answer", "answer_order"], as_index=False)
+             [["n", "sum_age_mid", "n_age_mid", "sum_income_mid_k", "n_income_mid"]].sum())
+    out["base_n"] = out["segment"].map(base)
+    out["pct"] = out["n"] / out["base_n"].replace(0, pd.NA)
+    out["avg_age"] = out["sum_age_mid"] / out["n_age_mid"].replace(0, pd.NA)
+    out["avg_income_k"] = out["sum_income_mid_k"] / out["n_income_mid"].replace(0, pd.NA)
+    out["segment"] = out["segment"].replace("", None)
+    out = out.sort_values(["segment", "answer_order"]).reset_index(drop=True)
+    return out[["segment", "answer", "n", "base_n", "pct", "avg_age", "avg_income_k"]]
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def concept_catalog() -> pd.DataFrame:
+    """Concepts confirmed in at least one wave, the most-asked first."""
+    return query_df(
+        """
+        SELECT c.concept_id, c.concept_code, c.concept_name, c.qtype,
+               COUNT(DISTINCT m.survey_id) AS waves
+          FROM csi_concept c
+          JOIN csi_concept_map m ON m.concept_id = c.concept_id AND m.status = 'confirmed'
+               AND m.concept_option_id IS NULL
+         GROUP BY c.concept_id, c.concept_code, c.concept_name, c.qtype
+         ORDER BY waves DESC, c.concept_name
+        """
+    )
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def cohort_list() -> pd.DataFrame:
+    return query_df(
+        """
+        SELECT d.cohort_id, d.cohort_code, d.cohort_name, d.version, d.base_note,
+               COUNT(rc.respondent_id) AS members
+          FROM csi_cohort_def d
+          LEFT JOIN csi_respondent_cohort rc ON rc.cohort_id = d.cohort_id
+         WHERE d.is_current = 1
+         GROUP BY d.cohort_id, d.cohort_code, d.cohort_name, d.version, d.base_note
+         ORDER BY d.cohort_name
+        """
+    )
 
 
 @st.cache_data(ttl=TTL, show_spinner=False)

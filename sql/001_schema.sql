@@ -563,6 +563,7 @@ CREATE TABLE IF NOT EXISTS csi_agg_cell (
   item_id           INT UNSIGNED    NULL,
   option_id         INT UNSIGNED    NULL,
   concept_option_id INT UNSIGNED    NULL,
+  map_key           VARCHAR(40)     NULL     COMMENT 'question:item:option — joins csi_concept_map at read time',
   cohort_id         INT UNSIGNED    NULL     COMMENT 'NULL = all qualified respondents',
   scheme_id         INT UNSIGNED    NULL     COMMENT 'NULL = unweighted',
   dim               VARCHAR(30)     NOT NULL COMMENT 'total, gender, age_band, …',
@@ -572,12 +573,15 @@ CREATE TABLE IF NOT EXISTS csi_agg_cell (
   n_weighted        DECIMAL(14,4)   NULL,
   base_weighted     DECIMAL(14,4)   NULL,
   sum_age_mid       DECIMAL(14,4)   NULL,
+  n_age_mid         INT             NULL     COMMENT 'respondents in n with an age midpoint',
   sum_income_mid_k  DECIMAL(16,4)   NULL,
+  n_income_mid      INT             NULL,
   built_at          TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (cell_id),
   UNIQUE KEY uq_agg_cell (survey_id, cell_key),
   KEY ix_agg_concept (concept_option_id, cohort_id, dim, survey_id),
   KEY ix_agg_question (survey_id, question_id, dim),
+  KEY ix_agg_map (survey_id, map_key, cohort_id, dim),
   CONSTRAINT fk_agg_survey FOREIGN KEY (survey_id)
     REFERENCES csi_survey (survey_id) ON DELETE CASCADE,
   CONSTRAINT fk_agg_question FOREIGN KEY (question_id)

@@ -16,7 +16,7 @@ from app.components.header import page_title, render_header
 from app.core import auth
 from app.core.config import config
 from app.core.database import healthcheck
-from app.data import harmonise
+from app.data import cube, harmonise
 from app.data import repository as repo
 
 ok, status = healthcheck("app")
@@ -36,9 +36,16 @@ def decide(action, *args) -> None:
         action(*args)
     except (ValueError, DBAPIError) as exc:     # already settled, e.g. by a colleague
         st.warning(str(exc))
+    else:
+        try:                                   # args[0] is the decided row's survey_id
+            cube.refresh_cohorts(args[0])
+        except DBAPIError as exc:              # the decision stands; the cohort numbers wait
+            st.warning(f"Saved. Cohort figures for this wave could not be refreshed yet: {exc.orig}")
     repo.mapping_queue.clear()
     repo.mapping_summary.clear()
     repo.concept_list.clear()           # a decision changes which concepts a wave has used
+    for cached in (repo.concept_trend, repo.concept_pooled, repo.concept_catalog, repo.cohort_list, repo.analyse):
+        cached.clear()                  # trends and cohort numbers read the mappings
     st.rerun()
 
 

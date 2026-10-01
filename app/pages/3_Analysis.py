@@ -91,8 +91,24 @@ st.caption("Criteria are combined with AND. Values inside one criterion are OR."
 with st.expander("Add a criterion", expanded=not st.session_state.an_criteria):
     c1, c2, c3 = st.columns([1, 2, 2])
     with c1:
-        source = st.radio("From", ["Demographic", "An answer"], key="an_src")
-    if source == "Demographic":
+        source = st.radio("From", ["Demographic", "An answer", "Defined cohort"], key="an_src")
+    if source == "Defined cohort":
+        defined = repo.cohort_list()
+        with c2:
+            picked_cohort = st.selectbox(
+                "Cohort", defined.cohort_id.tolist(), key="an_cohort",
+                format_func=lambda k: defined.set_index("cohort_id").loc[k, "cohort_name"],
+                help="A named rule over questions, applied the same way to every wave.")
+        with c3:
+            if not defined.empty and picked_cohort is not None:
+                st.caption(defined.set_index("cohort_id").loc[picked_cohort, "base_note"] or "")
+        if st.button("Add criterion", type="primary", disabled=defined.empty):
+            name = defined.set_index("cohort_id").loc[picked_cohort, "cohort_name"]
+            st.session_state.an_criteria.append(
+                {"kind": "cohort", "label": f"Cohort: {name}",
+                 "cohort_code": str(defined.set_index("cohort_id").loc[picked_cohort, "cohort_code"])})
+            st.rerun()
+    elif source == "Demographic":
         with c2:
             dim = st.selectbox("Cut", list(repo.PROFILE_DIMENSIONS),
                                format_func=lambda d: repo.PROFILE_DIMENSIONS[d], key="an_dim")

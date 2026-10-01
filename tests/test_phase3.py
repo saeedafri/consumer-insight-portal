@@ -161,7 +161,7 @@ def test_legacy_types_are_inferred_from_the_data_not_the_family_label():
     assert legacy_dwh.legacy_qtype("multiple_choice", "Where? Select all that apply", 1, 3) == "multi"
     assert legacy_dwh.legacy_qtype("multiple_choice", "Which do you use?", 2, 3) == "multi"
     assert legacy_dwh.legacy_qtype("single_choice", "How do you feel about each?", None, 5) is None
-    assert legacy_dwh.legacy_qtype("matrix", "Rate each", 3, 5) is None
+    assert legacy_dwh.legacy_qtype("matrix", "Rate each", 3, 5) == "grid"          # Phase 6: matrices load
 
 
 def test_study_family_and_type_come_from_the_title():
@@ -397,3 +397,22 @@ def test_mapping_lookups_are_cached_so_a_page_of_25_rows_is_not_50_round_trips()
     source = Path(repository.__file__).read_text()
     for name in ("concept_choice", "concept_list"):
         assert re.search(rf"@st\.cache_data\([^)]*\)\ndef {name}\(", source), name
+
+
+def test_waves_without_sort_columns_take_order_and_codes_from_the_qualtrics_qid(legacy):
+    """The three Aug 2022 waves have srt1/srt2 NULL; ids sort QID1, QID11, QID2."""
+    with legacy.begin() as conn:
+        conn.execute(sa.text("INSERT INTO dwh_smsurveydetail VALUES ('SV_OLD', 'Shopping and Spending', '2022-08-01', 1, 1)"))
+        for qid, title in [("SV_OLDQID1", "First?"), ("SV_OLDQID11", "Eleventh?"), ("SV_OLDQID2", "Second?")]:
+            conn.execute(sa.text("INSERT INTO dwh_smquestion VALUES (:q, 'multiple_choice', :t, NULL, NULL, 'SV_OLD')"),
+                         {"q": qid, "t": title})
+            conn.execute(sa.text("INSERT INTO dwh_smanswer VALUES (:a, 0, 'Yes', :q, 'SV_OLD')"), {"a": qid + "A1", "q": qid})
+            conn.execute(sa.text("INSERT INTO dwh_smresponseqa (answer_text, question_text, answer_othertext,"
+                                 " question_id, response_id, answer_id, survey_id) VALUES ('Yes', '', NULL, :q, 'R_old', :a, 'SV_OLD')"),
+                         {"q": qid, "a": qid + "A1"})
+        conn.execute(sa.text("INSERT INTO dwh_smresponse VALUES ('R_old', 'completed', '2022-08-02', 60, 'SV_OLD')"))
+    sid = legacy_dwh.load_legacy("SV_OLD")
+    with legacy.connect() as conn:
+        codes = [tuple(r) for r in conn.execute(sa.text(
+            "SELECT qcode, qtext FROM csi_question WHERE survey_id = :s ORDER BY sort_order"), {"s": sid})]
+    assert codes == [("Q1", "First?"), ("Q2", "Second?"), ("Q11", "Eleventh?")]

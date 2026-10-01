@@ -144,7 +144,7 @@ _RANGE = [
     (re.compile(r"^(\d+)\s*-\s*(\d+)$"), lambda a, b: (int(a), int(b))),
     (re.compile(r"^(?:over|>)\s*(\d+)$"), lambda a: (int(a) + 1, 200)),
     (re.compile(r"^(\d+)\s*(?:\+|or (?:more|above|over|older))$"), lambda a: (int(a), 200)),
-    (re.compile(r"^(?:under|below|less than)\s*(\d+)$"), lambda a: (18, int(a) - 1)),
+    (re.compile(r"^(?:under|below|less than|<)\s*(\d+)$"), lambda a: (18, int(a) - 1)),
 ]
 
 
@@ -179,8 +179,25 @@ def classify_age(label: Optional[str]) -> dict:
     return {"age": age, "band": age_band(age), "gen": generation(age), "mid": age}
 
 def income_mid_k(label: Optional[str]) -> Optional[float]:
+    """Midpoint in $000. The analysts' table first; otherwise a closed range's
+    (low + high) / 2 — their own convention ($25,000 - $49,999 → 37.4995), which
+    also covers SurveyMonkey's "$25,000-$49,999" spellings."""
+    value = " ".join(str(label or "").split()).lower()
     table = {k.lower(): v for k, v in (load_config().get("income_midpoints_k") or {}).items()}
-    return table.get(" ".join(str(label or "").split()).lower())
+    if value in table:
+        return table[value]
+    m = re.match(r"^\$([\d,]+)\s*-\s*\$([\d,]+)$", value)
+    if m:
+        low, high = (int(x.replace(",", "")) for x in m.groups())
+        return round((low + high) / 2 / 1000, 4)
+    return None
+
+
+def census_region_of_division(division: Optional[str]) -> Optional[str]:
+    """SurveyMonkey's panel gives the Census division; the portal cuts by region."""
+    divisions = load_config().get("census_divisions") or {}
+    return next((region for region, names in divisions.items()
+                 if str(division or "").strip().lower() in {n.lower() for n in names}), None)
 
 @lru_cache(maxsize=1)
 def _region_index() -> dict[str, str]:

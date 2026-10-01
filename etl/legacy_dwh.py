@@ -21,10 +21,10 @@ import logging
 import re
 from typing import Optional
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
-from app.data import harmonise
+from app.data import cube, harmonise
 from etl import excel_parsers as xp
 from etl.loaders import finish_run, load_definitions, start_run, upsert_survey
 
@@ -38,8 +38,10 @@ _TRACKER = re.compile(r"^\s*shopping(,| and)\s+spending", re.I)
 
 def legacy_qtype(family: Optional[str], title: str, max_per_response: Optional[int],
                  n_answers: int) -> Optional[str]:
-    if max_per_response is None or family == "matrix":
+    if max_per_response is None:
         return None
+    if family == "matrix":
+        return "grid"
     if n_answers == 0:
         return "text"
     if max_per_response > 1 or _MULTI_WORDING.search(title or ""):
@@ -70,11 +72,19 @@ def legacy_surveys(conn, era: str = "qualtrics") -> list[dict]:
     return [{"id": i, "title": t, "first": f, "completes": n} for i, t, f, n in rows]
 
 
+def _qid_number(question_id: str) -> int:
+    m = re.search(r"QID(\d+)$", str(question_id))
+    return int(m.group(1)) if m else 0
+
+
 def _definitions(conn, legacy_id: str):
     """-> (ParsedQuestions, answer map rows, skipped question count)."""
     questions = conn.execute(text(
         "SELECT id, family, title, srt1, srt2 FROM dwh_smquestion WHERE survey_id = :lid"
         " ORDER BY srt1, srt2, id"), {"lid": legacy_id}).all()
+    # The Aug 2022 waves have no srt1/srt2: order and number by Qualtrics' own
+    # QID<n> (as text, QID11 would sort before QID2).
+    questions = sorted(questions, key=lambda q: (q[3] is None, q[3] or 0, q[4] or 0, _qid_number(q[0]), q[0]))
     most = dict(conn.execute(text("""
         SELECT question_id, MAX(n) FROM (
             SELECT question_id, response_id, COUNT(*) AS n FROM dwh_smresponseqa
@@ -105,10 +115,24 @@ def _definitions(conn, legacy_id: str):
         if qtype is None:
             skipped += 1
             continue
-        qcode = f"Q{(srt1 or 0) + 1}" + (f"_{srt2}" if srt2 else "")
+        qcode = (f"Q{srt1 + 1}" + (f"_{srt2}" if srt2 else "") if srt1 is not None
+                 else f"Q{_qid_number(qid)}")
         while qcode in seen:
             qcode += "b"
         seen.add(qcode)
+        if qtype == "grid":
+            question, cells = _matrix(conn, qid, qcode, title, opts)
+            if question.rows and most.get(qid, 0) <= len(question.rows):
+                parsed.append(question)
+                amap += cells
+                continue
+            if question.rows or sum(1 for _, label in opts if not label) != 1:
+                # a checkbox matrix, or one whose rows cannot be read: skipped,
+                # counted, and flagged by reconcile — never guessed
+                skipped += 1
+                continue
+            # one blank row: the answers carry no "<row> | " — a plain single choice
+            qtype, opts = "single", [(aid, label) for aid, label in opts if label]
         if qtype == "multi":
             rows = [(f"{qcode}r{i}", label) for i, (_, label) in enumerate(opts, start=1)]
             parsed.append(xp.ParsedQuestion(qcode=qcode, qtext=title, qtype="multi",
@@ -126,6 +150,34 @@ def _definitions(conn, legacy_id: str):
     return parsed, amap, skipped
 
 
+def _matrix(conn, qid: str, qcode: str, title: str, opts: list):
+    """A SurveyMonkey matrix: dwh_smanswer lists the row labels and the scale
+    columns together; each response row stores "<row> | <column>" in
+    answer_text with the COLUMN's id in answer_id. Rows are the labels seen
+    before " | "; the rest of the answers are the scale, in srt order."""
+    texts = conn.execute(text(
+        "SELECT DISTINCT answer_id, answer_text FROM dwh_smresponseqa WHERE question_id = :q"
+        " AND answer_text IS NOT NULL"), {"q": qid}).all()
+    row_of = {raw: xp.clean_text(raw.rsplit(" | ", 1)[0]) for _, raw in texts if " | " in raw}
+    labels = {label for _, label in opts}
+    row_labels = [label for _, label in opts if label in set(row_of.values())]
+    row_labels += sorted(set(row_of.values()) - labels)          # a row not listed in dwh_smanswer
+    # the scale is the columns respondents actually chose — a row nobody
+    # answered is still listed in dwh_smanswer and is NOT a scale point
+    used = {aid for aid, raw in texts if raw in row_of}
+    scale = [(aid, label) for aid, label in opts if aid in used]
+    rows = [(f"{qcode}r{i}", label) for i, label in enumerate(row_labels, start=1)]
+    field_of = {label: code for code, label in rows}
+    code_of = {aid: n for n, (aid, _) in enumerate(scale, start=1)}
+    question = xp.ParsedQuestion(qcode=qcode, qtext=title, qtype="grid_single", value_min=1,
+                                 value_max=len(scale), rows=rows,
+                                 options=[(n, label) for n, (_, label) in enumerate(scale, start=1)])
+    cells = [{"aid": aid, "qid": qid, "qcode": qcode, "field": field_of[row_of[raw]], "code": code_of[aid],
+              "label": dict(scale)[aid], "match": raw}
+             for aid, raw in texts if raw in row_of and aid in code_of]
+    return question, cells
+
+
 def _move_answers(conn, survey_id: int, legacy_id: str, rows: list[dict]) -> int:
     """Replace the wave's answers from dwh_smresponseqa, inside MySQL.
 
@@ -134,15 +186,15 @@ def _move_answers(conn, survey_id: int, legacy_id: str, rows: list[dict]) -> int
     comparing the two directly fails with "Illegal mix of collations"."""
     conn.execute(text("CREATE TEMPORARY TABLE IF NOT EXISTS csi_tmp_answer_map AS"
                       " SELECT id AS answer_id, CAST(0 AS SIGNED) AS field_id, CAST(0 AS SIGNED) AS value_code,"
-                      " title AS value_label FROM dwh_smanswer WHERE 1 = 0"))
+                      " title AS value_label, title AS match_text FROM dwh_smanswer WHERE 1 = 0"))
     conn.execute(text("CREATE TEMPORARY TABLE IF NOT EXISTS csi_tmp_response_map AS"
                       " SELECT id AS response_id, CAST(0 AS SIGNED) AS respondent_id"
                       " FROM dwh_smresponse WHERE 1 = 0"))
     conn.execute(text("DELETE FROM csi_tmp_answer_map"))
     conn.execute(text("DELETE FROM csi_tmp_response_map"))
     if rows:
-        conn.execute(text("INSERT INTO csi_tmp_answer_map (answer_id, field_id, value_code, value_label)"
-                          " VALUES (:aid, :fid, :code, :label)"), rows)
+        conn.execute(text("INSERT INTO csi_tmp_answer_map (answer_id, field_id, value_code, value_label, match_text)"
+                          " VALUES (:aid, :fid, :code, :label, :match)"), rows)
     conn.execute(text("INSERT INTO csi_tmp_response_map (response_id, respondent_id)"
                       " SELECT forsta_uuid, respondent_id FROM csi_respondent WHERE survey_id = :sid"),
                  {"sid": survey_id})
@@ -153,6 +205,8 @@ def _move_answers(conn, survey_id: int, legacy_id: str, rows: list[dict]) -> int
         SELECT rm.respondent_id, :sid, m.field_id, MIN(m.value_code), MIN(m.value_label)
           FROM dwh_smresponseqa x
           JOIN csi_tmp_answer_map m ON m.answer_id = x.answer_id
+               -- a matrix cell is its column id AND its "<row> | <column>" text
+               AND (m.match_text IS NULL OR m.match_text = x.answer_text)
           JOIN csi_tmp_response_map rm ON rm.response_id = x.response_id
          WHERE x.survey_id = :lid
          GROUP BY rm.respondent_id, m.field_id"""), {"sid": survey_id, "lid": legacy_id})
@@ -173,6 +227,59 @@ def _move_answers(conn, survey_id: int, legacy_id: str, rows: list[dict]) -> int
         {"sid": survey_id})
     return conn.execute(text("SELECT COUNT(*) FROM csi_answer WHERE survey_id = :sid"),
                         {"sid": survey_id}).scalar()
+
+
+def _panel_profiles(survey_id: int, legacy_id: str) -> int:
+    """SurveyMonkey Audience supplied age, gender, income and Census division
+    per response (dwh_smdemography), not as questions. They fill the profile
+    where no question did — a respondent's own answer is never overwritten.
+    About 2,000 responses have the row twice; one per response is used."""
+    from etl import survey_map
+
+    eng = get_engine("etl")
+    with eng.connect() as conn:
+        # matched in Python: the legacy ids and csi_respondent use different
+        # collations, and MySQL refuses to compare them ("Illegal mix")
+        respondent = dict(conn.execute(text(
+            "SELECT forsta_uuid, respondent_id FROM csi_respondent WHERE survey_id = :sid"), {"sid": survey_id}).all())
+        panel = conn.execute(text("""
+            SELECT response_id, MIN(age), MIN(gender), MIN(income), MIN(region) FROM dwh_smdemography
+             WHERE survey_id = :lid GROUP BY response_id"""), {"lid": legacy_id}).all()
+        own = {r[0]: dict(r._mapping) for r in conn.execute(text(
+            "SELECT respondent_id, gender, age_years, age_band, generation, age_mid, income_band, income_mid_k,"
+            " census_region FROM csi_profile WHERE survey_id = :sid"), {"sid": survey_id})}
+    rows = []
+    for response_id, age, gender, income, division in panel:
+        rid = respondent.get(str(response_id))
+        if rid is None:
+            continue
+        a = survey_map.classify_age(age)
+        have = own.get(rid, {})
+        row = {"respondent_id": rid, **{k: have.get(k) for k in (
+            "gender", "age_years", "age_band", "generation", "age_mid", "income_band", "income_mid_k", "census_region")}}
+        # a whole group comes from one source: an answered income question keeps
+        # its "Prefer not to say" and never gains the panel's midpoint
+        if row["gender"] is None:
+            row["gender"] = gender
+        if all(row[k] is None for k in ("age_years", "age_band", "age_mid")):
+            row.update(age_years=a["age"], age_band=a["band"], generation=a["gen"], age_mid=a["mid"])
+        if row["income_band"] is None:
+            row.update(income_band=income, income_mid_k=survey_map.income_mid_k(income))
+        if row["census_region"] is None:
+            row["census_region"] = survey_map.census_region_of_division(division)
+        rows.append({**row, "sid": survey_id})
+    if rows:
+        with eng.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO csi_profile (respondent_id, survey_id, gender, age_years, age_band, generation,
+                                         age_mid, income_band, income_mid_k, census_region)
+                VALUES (:respondent_id, :sid, :gender, :age_years, :age_band, :generation, :age_mid,
+                        :income_band, :income_mid_k, :census_region)
+                ON DUPLICATE KEY UPDATE
+                    gender = VALUES(gender), age_years = VALUES(age_years), age_band = VALUES(age_band),
+                    generation = VALUES(generation), age_mid = VALUES(age_mid), income_band = VALUES(income_band),
+                    income_mid_k = VALUES(income_mid_k), census_region = VALUES(census_region)"""), rows)
+    return len(rows)
 
 
 def load_legacy(legacy_id: str) -> int:
@@ -219,16 +326,21 @@ def load_legacy(legacy_id: str) -> int:
                     status_label = VALUES(status_label), is_qualified = VALUES(is_qualified),
                     completed_at = VALUES(completed_at), interview_secs = VALUES(interview_secs),
                     respondent_key = VALUES(respondent_key), load_id = VALUES(load_id)"""), respondents)
-        rows = [{"aid": m["aid"], "fid": fields[m["field"]], "code": m["code"], "label": m["label"][:500]}
-                for m in amap if m["field"] in fields]
+        rows = [{"aid": m["aid"], "fid": fields[m["field"]], "code": m["code"], "label": m["label"][:500],
+                 "match": m.get("match")} for m in amap if m["field"] in fields]
         loaded = _move_answers(conn, survey_id, legacy_id, rows)
 
+    with eng.begin() as conn:                   # profiles are rebuilt, never patched
+        conn.execute(text("DELETE FROM csi_profile WHERE survey_id = :sid"), {"sid": survey_id})
     _rebuild_profiles(survey_id, None, family)
+    if platform == "surveymonkey":
+        _panel_profiles(survey_id, legacy_id)
     _rebuild_question_bases(survey_id)
     finish_run(run, len(responses), len(responses))
     log.info("%s -> survey_id=%s wave=%s: %d completes, %d answers, %d questions without answer "
              "rows skipped; harmonised %s", legacy_id, survey_id, wave, completes, loaded, skipped,
              harmonise.harmonise_survey(survey_id))
+    log.info("Cube: %d cells", cube.refresh_wave(survey_id))
     return survey_id
 
 
@@ -252,6 +364,13 @@ def reconcile_legacy(survey_id: int) -> tuple[int, list[str]]:
               JOIN dwh_smresponse r ON r.id = x.response_id AND r.response_status = 'completed'
              WHERE x.survey_id = :lid GROUP BY x.question_id, x.answer_id"""), {"lid": legacy_id}).all()
         source = {aid: n for _, aid, n in by_answer}
+        grids = sorted({m["qid"] for m in amap if m.get("match")})
+        if grids:                                    # a matrix cell = column id + "<row> | <column>"
+            source.update({(aid, raw): n for aid, raw, n in conn.execute(text("""
+                SELECT x.answer_id, x.answer_text, COUNT(DISTINCT x.response_id) FROM dwh_smresponseqa x
+                  JOIN dwh_smresponse r ON r.id = x.response_id AND r.response_status = 'completed'
+                 WHERE x.survey_id = :lid AND x.question_id IN :g GROUP BY x.answer_id, x.answer_text""")
+                .bindparams(bindparam("g", expanding=True)), {"lid": legacy_id, "g": grids})})
         qualified = conn.execute(text(
             "SELECT COUNT(*) FROM csi_respondent WHERE survey_id = :s AND is_qualified = 1"),
             {"s": survey_id}).scalar()
@@ -259,15 +378,30 @@ def reconcile_legacy(survey_id: int) -> tuple[int, list[str]]:
             "SELECT COUNT(*) FROM dwh_smresponse WHERE survey_id = :lid AND response_status = 'completed'"),
             {"lid": legacy_id}).scalar()
     problems = [] if qualified == completes else [f"completes: ours {qualified}, source {completes}"]
-    checked = 0
+    # One expected count per loaded cell: a matrix cell's text variants
+    # ("Amazon | Good", "Amazon  | Good") are one cell, so their counts add.
+    expected: dict[tuple, int] = {}
+    label_of: dict[tuple, str] = {}
     for m in amap:
         if m["field"] not in fields:
             problems.append(f"{m['qcode']} '{m['label'][:50]}': in the source, not loaded")
             continue
-        checked += 1
-        got, want = ours.get((fields[m["field"]], m["code"]), 0), source.get(m["aid"], 0)
-        if got != want:
-            problems.append(f"{m['qcode']} '{m['label'][:50]}': ours {got}, source {want}")
+        cell = (fields[m["field"]], m["code"])
+        key = (m["aid"], m["match"]) if m.get("match") else m["aid"]
+        expected[cell] = expected.get(cell, 0) + source.get(key, 0)
+        label_of[cell] = f"{m['qcode']} '{m['label'][:50]}'"
+    checked = len(expected)
+    problems += [f"{label_of[cell]}: ours {ours.get(cell, 0)}, source {want}"
+                 for cell, want in expected.items() if ours.get(cell, 0) != want]
+    # a choice question with answers in the source but nothing loaded at all
+    with get_engine("etl").connect() as conn:
+        listed = {r[0] for r in conn.execute(text(
+            "SELECT DISTINCT question_id FROM dwh_smanswer WHERE survey_id = :lid"), {"lid": legacy_id})}
+    answered = {}
+    for qid, _, n in by_answer:
+        answered[qid] = answered.get(qid, 0) + n
+    problems += [f"question {qid}: {n} source answers, not loaded"
+                 for qid, n in sorted(answered.items()) if qid in listed and qid not in {m["qid"] for m in amap}]
     # completed source rows of a loaded question whose answer nothing maps
     loaded, mapped = {m["qid"] for m in amap}, {m["aid"] for m in amap}
     problems += [f"unmapped source answer {aid} of question {qid}: {n} completes"
@@ -279,17 +413,25 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Load legacy (dwh_sm*) surveys into CSI")
     group = ap.add_mutually_exclusive_group(required=True)
     group.add_argument("--id", help="one legacy survey id")
-    group.add_argument("--all", action="store_true", help="every Qualtrics-era wave, oldest first")
+    group.add_argument("--all", action="store_true", help="every wave of the era, oldest first")
+    ap.add_argument("--era", choices=("qualtrics", "surveymonkey"), default="qualtrics")
     args = ap.parse_args()
     if args.id:
         load_legacy(args.id)
         return 0
     with get_engine("etl").connect() as conn:
-        surveys = legacy_surveys(conn)
+        surveys = legacy_surveys(conn, era=args.era)
+    failed = []
     for n, s in enumerate(surveys, start=1):
         log.info("[%d/%d] %s %s", n, len(surveys), s["id"], s["title"][:60])
-        load_legacy(s["id"])
-    return 0
+        try:
+            load_legacy(s["id"])
+        except Exception:                        # one bad wave must not stop the other 144
+            log.exception("%s failed — continuing; rerun it with --id", s["id"])
+            failed.append(s["id"])
+    if failed:
+        log.error("%d of %d waves failed: %s", len(failed), len(surveys), ", ".join(failed))
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

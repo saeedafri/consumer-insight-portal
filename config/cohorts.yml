@@ -1,0 +1,26 @@
+# Named respondent groups, applied the same way to every wave.
+#
+# Rules are written over concepts (the Mappings page links each wave's
+# question to one), so a cohort follows its question across Qualtrics and
+# Forsta. Editing a rule makes a new version; the old one stops being read.
+#
+#   python -m app.data.cohorts --sync      # apply this file to every wave
+#
+# Concept codes: BT1_A88981 = "Have you purchased any beauty products (whether
+# for men or women) in the past three months?"; BT15_0F74BA = "How much did you
+# spend on beauty products in the past three months?".
+cohorts:
+  - code: BEAUTY_SHOPPER
+    name: Beauty shoppers
+    # The analysts' rule, proven against Beauty Shopper Profiles ("Collated
+    # Four Waves", matched respondent by respondent): everyone in a wave that
+    # asked the beauty question who did not answer "No" — respondents the
+    # survey routed past it count as shoppers. Reproduces 1,200 shoppers,
+    # bands 255/353/330/262, average age 44.94375, income 93.1132 exactly.
+    base_note: >-
+      Asked about beauty purchases in the past three months and did not answer
+      "No". Waves that never asked are not counted.
+    rule:
+      all:
+        - {concept: BT1_A88981, asked: true}
+        - not: {concept: BT1_A88981, option: "no"}

@@ -25,6 +25,7 @@ NAV: tuple[tuple[str, str, str], ...] = (
     ("Cross-tabs", "crosstabs", "/crosstabs"),
     ("Trends", "trends", "/trends"),
     ("Mappings", "mappings", "/mappings"),
+    ("Publications", "publications", "/publications"),
     ("Data Health", "data-health", "/data-health"),
 )
 

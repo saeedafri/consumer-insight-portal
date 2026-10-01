@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, Optional
 
@@ -20,7 +20,7 @@ from sqlalchemy import bindparam, text
 
 from app.core.config import config
 from app.core.database import execute_many, get_engine
-from app.data import harmonise
+from app.data import cube, harmonise
 from etl import excel_parsers as xp
 from etl import survey_map
 from etl.loaders import finish_run, load_definitions, start_run, upsert_survey
@@ -73,6 +73,7 @@ def ingest_excel(raw_path: str, crosstab_path: Optional[str], wave: str,
         ingest_crosstabs(survey_id, crosstab_path)
 
     log.info("Harmonised: %s", harmonise.harmonise_survey(survey_id))
+    log.info("Cube: %d cells", cube.refresh_wave(survey_id))
 
 
 def _code_lookup(survey_id: int) -> dict[int, dict[str, int]]:
@@ -483,43 +484,115 @@ def _banner_code(name: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-def ingest_api(wave: str, family: str = "CSI-US", full: bool = False) -> None:
+def wave_from_records(records: list[dict]) -> str:
+    """A weekly wave is labelled by the Monday of its first fielding day
+    (the Excel exports: 2026-09-21, 2026-09-28)."""
+    days = []
+    for rec in records:
+        stamp = _dt(rec.get("date"))
+        if stamp:
+            days.append(stamp.date())
+    if not days:
+        raise ValueError("no record carries a date — pass --wave explicitly")
+    first = min(days)
+    return (first - timedelta(days=first.weekday())).isoformat()
+
+
+def verify_api_load(survey_id: int, records: list[dict]) -> list[str]:
+    """Unattended loads prove themselves: every record the API sent is a
+    respondent, and every field has exactly as many answers as the payload."""
+    with get_engine("etl").connect() as conn:
+        uuids = {str(u) for (u,) in conn.execute(text(
+            "SELECT forsta_uuid FROM csi_respondent WHERE survey_id = :s"), {"s": survey_id})}
+        fields = {name for (name,) in conn.execute(text(
+            "SELECT field_name FROM csi_field WHERE survey_id = :s"), {"s": survey_id})}
+        sent_ids = sorted({str(r.get("uuid")) for r in records}) or ["-"]
+        # only the respondents this payload brought — an incremental run adds
+        # to a wave that already holds earlier records
+        stored = dict(conn.execute(text(
+            "SELECT f.field_name, COUNT(*) FROM csi_answer a JOIN csi_field f ON f.field_id = a.field_id"
+            " JOIN csi_respondent r ON r.respondent_id = a.respondent_id"
+            " WHERE a.survey_id = :s AND r.forsta_uuid IN :u GROUP BY f.field_name")
+            .bindparams(bindparam("u", expanding=True)), {"s": survey_id, "u": sent_ids}).all())
+    problems = [f"record {r.get('record')} ({r.get('uuid')}) not loaded"
+                for r in records if str(r.get("uuid")) not in uuids]
+    sent: dict[str, int] = {}
+    for rec in records:
+        for key, value in rec.items():
+            if key in fields and value is not None:
+                sent[key] = sent.get(key, 0) + 1
+    problems += [f"{field}: {n} in the payload, {stored.get(field, 0)} loaded"
+                 for field, n in sorted(sent.items()) if stored.get(field, 0) != n]
+    return problems
+
+
+def ingest_api(wave: str, family: str = "CSI-US", full: bool = False, client=None) -> int:
+    """Load one wave from the Forsta API. The API's codes are turned into the
+    label records the Excel path loads (etl/forsta_api.py), so both paths give
+    the same answers. `wave="auto"` = Monday of the first fielding day."""
+    from etl import forsta_api
     from etl.forsta_client import ForstaClient
 
     fc = config.forsta
-    if not fc.is_configured:
-        raise SystemExit(
-            "Forsta is not configured. Set FORSTA_HOST, FORSTA_API_KEY and "
-            "FORSTA_SURVEY_PATH in .env — see docs/04-it-requirements-checklist.md."
-        )
-    client = ForstaClient(fc.host, fc.api_key, fc.survey_path, fc.timeout, fc.max_retries)
+    if client is None:
+        if not fc.is_configured:
+            raise SystemExit(
+                "Forsta is not configured. Set FORSTA_HOST, FORSTA_API_KEY and "
+                "FORSTA_SURVEY_PATH in .env — see docs/04-it-requirements-checklist.md."
+            )
+        client = ForstaClient(fc.host, fc.api_key, fc.survey_path, fc.timeout, fc.max_retries)
 
     log.info("Fetching datamap from %s", client.base_url)
     datamap = client.datamap()
-    questions = _questions_from_api_datamap(datamap)
+    questions = forsta_api.questions_from_datamap(datamap)
+    raw = list(client.iter_records(cond=config.ingest_cond, layout=fc.layout_id))
+    records = [forsta_api.to_record(r, questions) for r in raw]
+    wave = wave_from_records(records) if wave == "auto" else wave
 
     survey_id = upsert_survey(
-        host=fc.host, path=fc.survey_path,
+        host=client.host, path=client.survey_path,
         title=f"{family} {wave}", survey_family=family,
         wave_label=wave, wave_date=_wave_date(wave),
         datamap_payload=datamap,
     )
-    run = start_run(survey_id, "api", "datamap", f"{client.base_url}/surveys/{fc.survey_path}/datamap")
+    _set_status(survey_id, "loading")             # invisible until it verifies
+    run = start_run(survey_id, "api", "datamap", f"{client.base_url}/surveys/{client.survey_path}/datamap")
     var_map = load_definitions(survey_id, questions, family)
     finish_run(run, len(questions), len(var_map))
+    unmapped = sorted({str(v.get("label")) for q in datamap.get("questions", []) for v in q.get("variables") or []
+                       if v.get("label")} - set(var_map))
 
     watermark = None if full else _watermark(survey_id)
+    if watermark:
+        since = _dt(watermark) or _dt(str(watermark)[:19])
+        # >= : a record completed in the watermark's own minute is re-sent, and the upsert makes that safe
+        records = [r for r in records if (_dt(r.get("date")) or since) >= since]
     code_map = _code_lookup(survey_id)
-    run = start_run(survey_id, "api", "data", f"{client.base_url}/surveys/{fc.survey_path}/data")
-    read = loaded = 0
-    for rec in client.iter_records(cond=config.ingest_cond, start=watermark, layout=fc.layout_id):
-        read += 1
-        loaded += _load_one_respondent(survey_id, rec, var_map, run, code_map)
-    finish_run(run, read, loaded)
+    run = start_run(survey_id, "api", "data", f"{client.base_url}/surveys/{client.survey_path}/data")
+    try:
+        loaded = sum(_load_one_respondent(survey_id, rec, var_map, run, code_map) for rec in records)
+        problems = [f"datamap variable {v} has no field" for v in unmapped] + verify_api_load(survey_id, records)
+    except Exception as exc:
+        finish_run(run, len(records), 0, error=str(exc)[:2000])
+        _set_status(survey_id, "failed")
+        raise
+    finish_run(run, len(records), loaded, error="; ".join(problems)[:2000] if problems else None)
+    if problems:
+        _set_status(survey_id, "failed")
+        raise RuntimeError(f"the API load of {wave} does not match its payload: {problems[:5]}")
     _rebuild_profiles(survey_id, questions, family)
     _rebuild_question_bases(survey_id)
     log.info("API ingest complete: %d records", loaded)
     log.info("Harmonised: %s", harmonise.harmonise_survey(survey_id))
+    log.info("Cube: %d cells", cube.refresh_wave(survey_id))
+    _set_status(survey_id, "verified")
+    return survey_id
+
+
+def _set_status(survey_id: int, status: str) -> None:
+    with get_engine("etl").begin() as conn:
+        conn.execute(text("UPDATE csi_survey SET load_status = :st WHERE survey_id = :s"),
+                     {"st": status, "s": survey_id})
 
 
 def _watermark(survey_id: int) -> Optional[str]:
@@ -528,38 +601,7 @@ def _watermark(survey_id: int) -> Optional[str]:
             text("SELECT MAX(completed_at) FROM csi_respondent WHERE survey_id = :sid"),
             {"sid": survey_id},
         ).scalar()
-    return ts.strftime("%Y-%m-%d %H:%M:%S") if ts else None
-
-
-def _questions_from_api_datamap(payload: dict) -> list:
-    """Adapt the JSON datamap to the same shape the Excel parser produces."""
-    questions: list[xp.ParsedQuestion] = []
-    for var in payload.get("variables", payload.get("questions", [])):
-        q = xp.ParsedQuestion(
-            qcode=str(var.get("label") or var.get("qlabel") or var.get("title") or "")[:50],
-            qtext=str(var.get("qtitle") or var.get("title") or var.get("text") or ""),
-            qtype=_api_type(var.get("type")),
-        )
-        for v in var.get("values", []) or []:
-            try:
-                q.options.append((int(v.get("value")), str(v.get("title") or v.get("label") or "")))
-            except (TypeError, ValueError):
-                continue
-        if q.options:
-            codes = [c for c, _ in q.options]
-            q.value_min, q.value_max = min(codes), max(codes)
-        for r in var.get("rows", []) or []:
-            q.rows.append((str(r.get("label") or ""), str(r.get("title") or r.get("text") or "")))
-        if q.qcode:
-            questions.append(q)
-    return questions
-
-
-def _api_type(t: Any) -> str:
-    return {
-        "single": "single", "multiple": "multi", "number": "numeric",
-        "text": "text", "float": "numeric", "date": "datetime",
-    }.get(str(t or "").lower(), "single")
+    return str(ts)[:19] if ts else None          # MySQL gives a datetime, SQLite a string
 
 
 # ── coercion helpers ───────────────────────────────────────────────────────

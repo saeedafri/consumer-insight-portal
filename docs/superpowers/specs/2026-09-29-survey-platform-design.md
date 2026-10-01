@@ -1,6 +1,6 @@
 # Consumer Insight Portal — Survey Platform Design (Schema v2)
 
-**Status:** approved 29 Sep 2026. Phase 1 (schema v2) and Phase 2 (harmoniser + Mappings page) are live in `dwh_stg` — plans `docs/superpowers/plans/2026-09-29-schema-v2-phase1.md`, `docs/superpowers/plans/2026-09-30-harmoniser-phase2.md`.
+**Status:** approved 29 Sep 2026. Phase 1 (schema v2) and Phase 2 (harmoniser + Mappings page) Phase 3 (Qualtrics history Aug 2022 – May 2025: 142 waves, reconciled against source) Phase 4 (cohorts, cube, cube-first repository; P95 targets met) Phase 5 (publications + drift report; a Beauty chart published and re-verified after a reload) are live. Phase 7 (Forsta API adapter + unattended weekly run) is built and proven against the Excel path; its live exit test waits on a working API key in `dwh_stg` — plans `docs/superpowers/plans/2026-09-29-schema-v2-phase1.md`, `docs/superpowers/plans/2026-09-30-harmoniser-phase2.md`, `docs/superpowers/plans/2026-09-30-legacy-history-phase3.md`, `docs/superpowers/plans/2026-10-01-cohorts-and-cube-phase4.md`, `docs/superpowers/plans/2026-10-01-publications-phase5.md`, `docs/superpowers/plans/2026-10-01-surveymonkey-phase6.md`, `docs/superpowers/plans/2026-10-01-forsta-api-phase7.md`.
 **Date:** 29 September 2026
 **Scope:** every survey Coresight delivers — Forsta (Aug 2025 →), Qualtrics
 (2022 – Apr 2025) and SurveyMonkey (2018 – 2022) — in one schema in `dwh_stg`.
@@ -214,8 +214,11 @@ banner column.)
   indexed read returning tens of rows, not thousands (the MDP lesson: cost is
   rows fetched).
 - Averages come from the stored sums: `sum_age_mid / base_n`.
-- Rebuilt per wave on load, on a confirmed mapping change, on a cohort
-  version change. Size: ~50k rows per wave.
+- Rebuilt per wave on load and on a cohort version change. Cells store the
+  answer's `map_key` (question:item:option), not its concept, and join
+  `csi_concept_map` when read — so a confirmed mapping change needs no
+  rebuild; only the cohorts whose membership it changes are re-derived
+  (`cube.refresh_cohorts`). Size: ~50k rows per wave.
 - Anything not in the cube (a cohort built from prior answers, an unusual
   break) falls back to respondent-level SQL on `csi_answer` — correct, just
   slower.

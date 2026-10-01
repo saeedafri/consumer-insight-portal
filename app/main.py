@@ -33,6 +33,7 @@ PAGES = [
     ("Cross-tabs",       "pages/4_Crosstabs.py",         "crosstabs"),
     ("Trends",           "pages/5_Trends.py",            "trends"),
     ("Mappings",         "pages/7_Mappings.py",          "mappings"),
+    ("Publications",     "pages/8_Publications.py",      "publications"),
     ("Data Health",      "pages/6_Data_Health.py",       "data-health"),
 ]
 
