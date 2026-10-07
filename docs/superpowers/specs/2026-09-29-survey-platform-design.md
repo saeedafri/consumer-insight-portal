@@ -95,9 +95,9 @@ Each unit has one job and one interface:
 | **Platform adapter** | reads one source shape | file / API / legacy tables → **Wave Package** | nothing in the core |
 | **Wave Package** | the contract between sources and core | survey meta, questions, items, options, fields, records | — |
 | **Loader** | writes a package idempotently | Wave Package → `csi_` definition + data tables | schema |
-| **Harmoniser** | proposes concept matches, auto-confirms exact ones | new questions → `csi_concept_map` rows (proposed / confirmed) | concepts |
-| **Deriver** | profile, bands, midpoints, cohort membership | answers + rules → `csi_profile`, `csi_respondent_cohort` | concept map, config |
-| **Aggregator** | pre-computes standard cells | answers × standard dimensions → `csi_agg_cell` | deriver |
+| **Harmoniser** | proposes concept matches, auto-confirms exact ones | new questions → `cip_concept_map` rows (proposed / confirmed) | concepts |
+| **Deriver** | profile, bands, midpoints, cohort membership | answers + rules → `cip_profile`, `cip_respondent_cohort` | concept map, config |
+| **Aggregator** | pre-computes standard cells | answers × standard dimensions → `cip_agg_cell` | deriver |
 | **Reconciler** | proves the wave | computed vs published → pass / fail, per cell | aggregator, published tables |
 | **Repository** | the only SQL the portal runs | question + cohort + break → tidy frame | cube, answers |
 
@@ -137,12 +137,12 @@ no v1 column is dropped or renamed.
 
 | Table | Status | Purpose / key columns |
 |---|---|---|
-| `csi_survey` | changed | one row per wave. **+ `platform`** (`forsta`·`qualtrics`·`surveymonkey`), **+ `source_ref`**, **+ `study_type`** (`tracker`·`annual`·`adhoc`), **+ `load_status`** (`loading`·`verified`·`failed`·`superseded`), **+ `language`**. Unique `(platform, source_ref, wave_label)` |
-| `csi_topic` | kept | editorial modules (Beauty, Tariffs, …) |
-| `csi_question` | kept | per-wave question with its answering base and routing note |
-| `csi_item` | kept | list items / grid rows |
-| `csi_option` | kept | code → label per question |
-| `csi_field` | kept | source column → question / item |
+| `cip_survey` | changed | one row per wave. **+ `platform`** (`forsta`·`qualtrics`·`surveymonkey`), **+ `source_ref`**, **+ `study_type`** (`tracker`·`annual`·`adhoc`), **+ `load_status`** (`loading`·`verified`·`failed`·`superseded`), **+ `language`**. Unique `(platform, source_ref, wave_label)` |
+| `cip_topic` | kept | editorial modules (Beauty, Tariffs, …) |
+| `cip_question` | kept | per-wave question with its answering base and routing note |
+| `cip_item` | kept | list items / grid rows |
+| `cip_option` | kept | code → label per question |
+| `cip_field` | kept | source column → question / item |
 
 `load_status` defaults to `verified` until the Phase 3 loader sets `loading` → `verified`.
 
@@ -150,9 +150,9 @@ no v1 column is dropped or renamed.
 
 | Table | Purpose / key columns |
 |---|---|
-| `csi_concept` | canonical question: `concept_code` (`BEAUTY_RETAILER_3M`), `concept_name`, `topic_id`, `qtype`, `description` |
-| `csi_concept_option` | canonical answer: `concept_id`, `option_code` (`amazon`), `option_label`, `sort_order`, `midpoint` (bands: age 23.5, income 74.9995), `net_group` (`TOP2`, `ANY_DRUGSTORE`) |
-| `csi_concept_map` | wave object → canonical: `survey_id`, `question_id`, `item_id` / `option_id` → `concept_id`, `concept_option_id`; `status` (`proposed`·`confirmed`·`rejected`), `method` (`exact_text`·`similar_text`·`manual`), `confidence`, `reviewed_by`, `reviewed_at` |
+| `cip_concept` | canonical question: `concept_code` (`BEAUTY_RETAILER_3M`), `concept_name`, `topic_id`, `qtype`, `description` |
+| `cip_concept_option` | canonical answer: `concept_id`, `option_code` (`amazon`), `option_label`, `sort_order`, `midpoint` (bands: age 23.5, income 74.9995), `net_group` (`TOP2`, `ANY_DRUGSTORE`) |
+| `cip_concept_map` | wave object → canonical: `survey_id`, `question_id`, `item_id` / `option_id` → `concept_id`, `concept_option_id`; `status` (`proposed`·`confirmed`·`rejected`), `method` (`exact_text`·`similar_text`·`manual`), `confidence`, `reviewed_by`, `reviewed_at` |
 
 Rules:
 - The Harmoniser normalises text (whitespace incl. non-breaking spaces,
@@ -160,9 +160,9 @@ Rules:
   apply") before matching.
 - A grid is stored as one concept per grid row; rows of one grid share
   `concept_group`.
-- Unique keys use a computed `map_key` (and, in `csi_agg_cell`, `cell_key`)
+- Unique keys use a computed `map_key` (and, in `cip_agg_cell`, `cell_key`)
   because MySQL allows repeated NULLs in unique indexes.
-- `csi_concept.match_text` (≤ 2,000 chars) holds the normalised wording matched
+- `cip_concept.match_text` (≤ 2,000 chars) holds the normalised wording matched
   on; `concept_name` is the display label, truncated to 255.
 - A unit with no exact or similar candidate becomes a new, confirmed concept —
   creating a concept claims no trend. Answers a wave drops do not block an
@@ -179,18 +179,18 @@ Rules:
 
 | Table | Status | Purpose / key columns |
 |---|---|---|
-| `csi_respondent` | changed | one per interview. **+ `respondent_key`** (sha256 of the panel/respondent ID), **+ `quality_flag`**. No IP, geo, e-mail, user agent |
-| `csi_profile` | changed | flattened demographics per respondent. **+ `age_mid`**, **+ `income_mid_k`** from concept midpoints, so averages are `AVG()` |
-| `csi_answer` | changed | the fact table, one row per respondent × field; **+ FULLTEXT on `value_text`**. Not partitioned: InnoDB forbids foreign keys on partitioned tables, and a wave's rows are already physically adjacent because a wave is loaded in one pass (auto-increment clustered key). The covering index below keeps reads within one wave |
-| `csi_weight_scheme` | **new** | named weighting per wave: `scheme_code`, `survey_id`, `method`, `targets` (JSON), `created_at` |
-| `csi_weight` | **new** | `respondent_id`, `scheme_id` (foreign key to `csi_weight_scheme`), `weight` |
+| `cip_respondent` | changed | one per interview. **+ `respondent_key`** (sha256 of the panel/respondent ID), **+ `quality_flag`**. No IP, geo, e-mail, user agent |
+| `cip_profile` | changed | flattened demographics per respondent. **+ `age_mid`**, **+ `income_mid_k`** from concept midpoints, so averages are `AVG()` |
+| `cip_answer` | changed | the fact table, one row per respondent × field; **+ FULLTEXT on `value_text`**. Not partitioned: InnoDB forbids foreign keys on partitioned tables, and a wave's rows are already physically adjacent because a wave is loaded in one pass (auto-increment clustered key). The covering index below keeps reads within one wave |
+| `cip_weight_scheme` | **new** | named weighting per wave: `scheme_code`, `survey_id`, `method`, `targets` (JSON), `created_at` |
+| `cip_weight` | **new** | `respondent_id`, `scheme_id` (foreign key to `cip_weight_scheme`), `weight` |
 
 ### 5.4 Derived — analyst rules made data (new)
 
 | Table | Purpose / key columns |
 |---|---|
-| `csi_cohort_def` | a named, versioned respondent rule over concepts: `cohort_code` (`BEAUTY_SHOPPER`), `name`, `rule_json`, `base_note`, `version`, `owner` |
-| `csi_respondent_cohort` | materialised membership: `cohort_id` (identifies code + version), `respondent_id`, `survey_id` |
+| `cip_cohort_def` | a named, versioned respondent rule over concepts: `cohort_code` (`BEAUTY_SHOPPER`), `name`, `rule_json`, `base_note`, `version`, `owner` |
+| `cip_respondent_cohort` | materialised membership: `cohort_id` (identifies code + version), `respondent_id`, `survey_id` |
 
 Example — the workbook's beauty shopper, stored once and applied to every wave:
 ```json
@@ -200,14 +200,14 @@ Example — the workbook's beauty shopper, stored once and applied to every wave
            {"concept": "BEAUTY_SPEND_3M",     "answered": true}]}
 ]}
 ```
-(Named `cohort`, not `segment`, because `csi_segment` already means a Forsta
+(Named `cohort`, not `segment`, because `cip_segment` already means a Forsta
 banner column.)
 
 ### 5.5 Aggregates — the speed layer (new)
 
 | Table | Purpose / key columns |
 |---|---|
-| `csi_agg_cell` | pre-computed at load: `survey_id`, `concept_option_id` (or `option_id` when unmapped), `cohort_code` (`ALL` or a cohort), `dim` (`total`·`gender`·`age_band`·`generation`·`income_band`·`region`·`urbanicity`·…), `dim_value`, `n`, `base_n`, `n_weighted`, `base_weighted`, `sum_age_mid`, `sum_income_mid_k`, `built_at` |
+| `cip_agg_cell` | pre-computed at load: `survey_id`, `concept_option_id` (or `option_id` when unmapped), `cohort_code` (`ALL` or a cohort), `dim` (`total`·`gender`·`age_band`·`generation`·`income_band`·`region`·`urbanicity`·…), `dim_value`, `n`, `base_n`, `n_weighted`, `base_weighted`, `sum_age_mid`, `sum_income_mid_k`, `built_at` |
 
 - Covers every "one question × one standard cut × one cohort" view — the
   Beauty pivots, Men Beauty, the bubble chart, Cross-Check — as a single
@@ -216,16 +216,16 @@ banner column.)
 - Averages come from the stored sums: `sum_age_mid / base_n`.
 - Rebuilt per wave on load and on a cohort version change. Cells store the
   answer's `map_key` (question:item:option), not its concept, and join
-  `csi_concept_map` when read — so a confirmed mapping change needs no
+  `cip_concept_map` when read — so a confirmed mapping change needs no
   rebuild; only the cohorts whose membership it changes are re-derived
   (`cube.refresh_cohorts`). Size: ~50k rows per wave.
 - Anything not in the cube (a cohort built from prior answers, an unusual
-  break) falls back to respondent-level SQL on `csi_answer` — correct, just
+  break) falls back to respondent-level SQL on `cip_answer` — correct, just
   slower.
 
 ### 5.6 Published — Forsta's own tables (kept)
 
-`csi_banner`, `csi_segment`, `csi_crosstab_run`, `csi_crosstab` — the
+`cip_banner`, `cip_segment`, `cip_crosstab_run`, `cip_crosstab` — the
 cross-tabs exactly as delivered, both bases kept. These are what the
 Reconciler proves against.
 
@@ -233,8 +233,8 @@ Reconciler proves against.
 
 | Table | Purpose / key columns |
 |---|---|
-| `csi_publication` | a delivered chart/table: `name`, `owner`, `version`, `published_at`, `definition` (JSON: waves, concepts, cohort, break, weight scheme, min base), `footnote`, `destination` (e.g. SharePoint URL), `status` |
-| `csi_publication_cell` | the frozen numbers: `publication_id`, `row_key`, `col_key`, `n`, `base_n`, `value` |
+| `cip_publication` | a delivered chart/table: `name`, `owner`, `version`, `published_at`, `definition` (JSON: waves, concepts, cohort, break, weight scheme, min base), `footnote`, `destination` (e.g. SharePoint URL), `status` |
+| `cip_publication_cell` | the frozen numbers: `publication_id`, `row_key`, `col_key`, `n`, `base_n`, `value` |
 
 On any reload / remap / cohort change the portal recomputes the publication's
 definition and flags cells whose value moved — the drift report replaces the
@@ -242,28 +242,28 @@ manual Cross-Check tab.
 
 ### 5.8 Operations (kept)
 
-`csi_load_log` (+ `archive_uri`, `archive_sha256`), `csi_load_error`,
-`csi_load_state`, `csi_profile_map`, `csi_auth_session`, `csi_saved_view`.
+`cip_load_log` (+ `archive_uri`, `archive_sha256`), `cip_load_error`,
+`cip_load_state`, `cip_profile_map`, `cip_auth_session`, `cip_saved_view`.
 
 ### Relationships
 
 ```
-csi_survey 1─< csi_question 1─< csi_item
-     │               │      1─< csi_option
-     │               └────────< csi_field >── csi_item
+cip_survey 1─< cip_question 1─< cip_item
+     │               │      1─< cip_option
+     │               └────────< cip_field >── cip_item
      │
-     ├─< csi_respondent 1─1 csi_profile
-     │        │ 1─< csi_answer >── csi_field
-     │        │ 1─< csi_weight >── csi_weight_scheme >── csi_survey
-     │        └ 1─< csi_respondent_cohort >── csi_cohort_def
+     ├─< cip_respondent 1─1 cip_profile
+     │        │ 1─< cip_answer >── cip_field
+     │        │ 1─< cip_weight >── cip_weight_scheme >── cip_survey
+     │        └ 1─< cip_respondent_cohort >── cip_cohort_def
      │
-     ├─< csi_concept_map >── csi_concept_option >── csi_concept >── csi_topic
+     ├─< cip_concept_map >── cip_concept_option >── cip_concept >── cip_topic
      │         (question / item / option of this wave)
-     ├─< csi_agg_cell >── csi_concept_option
-     ├─< csi_banner 1─< csi_segment ;  csi_crosstab_run 1─< csi_crosstab
-     └─< csi_load_log 1─< csi_load_error
+     ├─< cip_agg_cell >── cip_concept_option
+     ├─< cip_banner 1─< cip_segment ;  cip_crosstab_run 1─< cip_crosstab
+     └─< cip_load_log 1─< cip_load_error
 
-csi_publication 1─< csi_publication_cell
+cip_publication 1─< cip_publication_cell
 ```
 
 ### Views (the portal reads these)
@@ -271,19 +271,19 @@ csi_publication 1─< csi_publication_cell
 | View | Returns |
 |---|---|
 | `v_csi_concept_answers` | respondent × concept option × wave with profile — any set of waves stacked (replaces "Five Waves Combined") |
-| `v_csi_concept_cells` | `csi_agg_cell` joined to labels, with % and averages computed |
-| `v_csi_mapping_queue` | proposed mappings awaiting review, with the evidence |
+| `v_csi_concept_cells` | `cip_agg_cell` joined to labels, with % and averages computed |
+| `v_cip_mapping_queue` | proposed mappings awaiting review, with the evidence |
 | existing `v_csi_*` | unchanged |
 
 ### Indexes that carry the load
-- `csi_answer (survey_id, field_id, value_code, respondent_id)` covering — item incidence without touching the base row.
-- `csi_agg_cell (concept_option_id, cohort_code, dim, survey_id)` — trend across waves for one answer.
-- `csi_concept_map (survey_id, question_id)` and `(concept_option_id)`.
-- `csi_respondent_cohort (cohort_code, survey_id, respondent_id)`.
+- `cip_answer (survey_id, field_id, value_code, respondent_id)` covering — item incidence without touching the base row.
+- `cip_agg_cell (concept_option_id, cohort_code, dim, survey_id)` — trend across waves for one answer.
+- `cip_concept_map (survey_id, question_id)` and `(concept_option_id)`.
+- `cip_respondent_cohort (cohort_code, survey_id, respondent_id)`.
 
 ### Volume
 
-| | Waves | `csi_answer` rows | `csi_agg_cell` rows |
+| | Waves | `cip_answer` rows | `cip_agg_cell` rows |
 |---|---|---|---|
 | Forsta, per year | ~52 | ~8M | ~2.6M |
 | Qualtrics history (B) | 149 | ~20M | ~7M |
@@ -291,7 +291,7 @@ csi_publication 1─< csi_publication_cell
 
 Tens of millions of long rows is ordinary for InnoDB when every read leads
 with `survey_id`; the portal's hot path reads the cube. Partitioning is the
-upgrade path if `csi_answer` passes ~100M rows (it would mean moving
+upgrade path if `cip_answer` passes ~100M rows (it would mean moving
 integrity checks from foreign keys into the loader).
 
 ---
@@ -302,7 +302,7 @@ integrity checks from foreign keys into the loader).
    untouched original goes to Blob; its sha256 is logged.
 2. **Package.** Adapter emits a Wave Package; schema checks (every field
    mapped, every option ordered, respondent keys unique).
-3. **Load.** `csi_survey.load_status = loading`. Definitions and answers are
+3. **Load.** `cip_survey.load_status = loading`. Definitions and answers are
    upserted. Personal fields are dropped here, never written.
 4. **Harmonise.** Exact matches confirmed; the rest queued for review.
 5. **Derive.** Profiles, midpoints, cohort membership.
@@ -314,7 +314,7 @@ integrity checks from foreign keys into the loader).
    0.0005 on proportions; exact on counts. Known source defects are listed,
    not failed (e.g. Forsta's region banner omitting MD/MO).
 8. **Publish the wave.** Pass → `verified`, visible in the portal.
-   Fail → `failed`, invisible, errors in `csi_load_error`, alert.
+   Fail → `failed`, invisible, errors in `cip_load_error`, alert.
 9. **Drift check.** Publications that use the wave are recomputed; moved
    cells are flagged.
 
@@ -336,7 +336,7 @@ Re-running any step is safe: every write is an upsert keyed on source identity.
 ## 7. Serving — how the portal answers
 
 - **Cube first.** The repository asks: is this view (question/concept ×
-  standard dim × cohort × waves) in `csi_agg_cell`? If yes, one indexed read.
+  standard dim × cohort × waves) in `cip_agg_cell`? If yes, one indexed read.
 - **Respondent-level fallback** for everything else, always aggregated in SQL
   (`GROUP BY`), never rows to Python.
 - **Every result carries its base** (unweighted n, and weighted n when a
@@ -354,8 +354,8 @@ Re-running any step is safe: every write is an upsert keyed on source identity.
 
 | Failure | Behaviour |
 |---|---|
-| Source unreachable / 401 | load not started; `csi_load_log` failed with the source's message (e.g. "account disabled") |
-| Package invalid (unmapped field, missing option order) | wave `failed`; the exact fields listed in `csi_load_error` |
+| Source unreachable / 401 | load not started; `cip_load_log` failed with the source's message (e.g. "account disabled") |
+| Package invalid (unmapped field, missing option order) | wave `failed`; the exact fields listed in `cip_load_error` |
 | Partial write | wave stays `loading` → never visible; next run resumes by upsert |
 | Reconciliation mismatch | wave `failed`, per-cell differences stored; portal shows nothing from it |
 | Unconfirmed mapping | wave visible on its own; excluded from cross-wave trends until confirmed |

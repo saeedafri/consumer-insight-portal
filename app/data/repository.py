@@ -1,12 +1,13 @@
 """Read-only query layer. Every page goes through here — no SQL in pages."""
 from __future__ import annotations
 
+import re
 from typing import Optional, Sequence
 
 import pandas as pd
 import streamlit as st
 
-from app.core.database import query_df
+from app.core.database import dialect, query_df
 
 TTL = 900  # 15 minutes
 
@@ -19,8 +20,8 @@ def list_surveys() -> pd.DataFrame:
         SELECT s.survey_id, s.title, s.survey_family, s.wave_label, s.wave_date,
                h.total_records, h.qualified_n, h.avg_loi_minutes,
                h.first_complete, h.last_complete
-          FROM csi_survey s
-          LEFT JOIN v_csi_survey_health h ON h.survey_id = s.survey_id
+          FROM cip_survey s
+          LEFT JOIN v_cip_survey_health h ON h.survey_id = s.survey_id
          WHERE s.load_status = 'verified'          -- a wave mid-load or failed is not shown
          ORDER BY s.wave_date DESC, s.survey_id DESC
         """
@@ -30,7 +31,7 @@ def list_surveys() -> pd.DataFrame:
 @st.cache_data(ttl=60, show_spinner=False)
 def mapping_queue() -> pd.DataFrame:
     """Harmoniser proposals waiting for an analyst (short TTL: decisions clear it)."""
-    return query_df("SELECT * FROM v_csi_mapping_queue ORDER BY wave_label, qcode, item_id")
+    return query_df("SELECT * FROM v_cip_mapping_queue ORDER BY wave_label, qcode, item_id")
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -38,7 +39,7 @@ def mapping_summary() -> pd.DataFrame:
     return query_df(
         """
         SELECT s.wave_label, m.status, COUNT(*) AS units
-          FROM csi_concept_map m JOIN csi_survey s ON s.survey_id = m.survey_id
+          FROM cip_concept_map m JOIN cip_survey s ON s.survey_id = m.survey_id
          WHERE m.concept_option_id IS NULL
          GROUP BY s.wave_label, m.status
          ORDER BY s.wave_label, m.status
@@ -49,7 +50,7 @@ def mapping_summary() -> pd.DataFrame:
 @st.cache_data(ttl=60, show_spinner=False)
 def concept_choice(concept_id: int) -> pd.DataFrame:
     return query_df(
-        "SELECT option_label, sort_order FROM csi_concept_option"
+        "SELECT option_label, sort_order FROM cip_concept_option"
         " WHERE concept_id = :cid ORDER BY sort_order", {"cid": concept_id})
 
 
@@ -59,9 +60,9 @@ def concept_list(qtype: str, survey_id: Optional[int] = None) -> pd.DataFrame:
     question of the same wave already uses (one wave, one question per concept)."""
     return query_df(
         """
-        SELECT c.concept_id, c.concept_code, c.concept_name FROM csi_concept c
+        SELECT c.concept_id, c.concept_code, c.concept_name FROM cip_concept c
          WHERE c.qtype = :qtype
-           AND NOT EXISTS (SELECT 1 FROM csi_concept_map m
+           AND NOT EXISTS (SELECT 1 FROM cip_concept_map m
                             WHERE m.concept_id = c.concept_id AND m.survey_id = :sid
                               AND m.concept_option_id IS NULL AND m.status <> 'rejected')
          ORDER BY c.concept_code
@@ -82,13 +83,69 @@ def question_catalog(survey_id: int) -> pd.DataFrame:
                q.is_multi, q.base_n, q.base_desc,
                g.topic_code, g.topic_name, g.sort_order AS group_order,
                q.sort_order
-          FROM csi_question q
-          LEFT JOIN csi_topic g ON g.topic_id = q.topic_id
-         WHERE q.survey_id = :sid AND q.is_technical = 0
+          FROM cip_question q
+          LEFT JOIN cip_topic g ON g.topic_id = q.topic_id
+         WHERE q.survey_id = :sid AND q.is_technical = 0 AND q.is_virtual = 0
          ORDER BY g.sort_order, q.sort_order
         """,
         {"sid": survey_id},
     )
+
+
+# InnoDB's default FULLTEXT stopwords: required ("+from") they match nothing.
+INNODB_STOPWORDS = set("a about an are as at be by com de en for from how i in is it la of on or that the this to"
+                       " was what when where who will with und www".split())
+_SEARCH_COLUMNS = """
+    SELECT x.kind, x.survey_id, x.question_id, x.concept_id, x.wave_label, x.waves, x.title, x.body
+      FROM cip_search x LEFT JOIN cip_survey s ON s.survey_id = x.survey_id
+     WHERE (x.survey_id IS NULL OR s.load_status = 'verified')"""
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def search(words: str, limit: int = 40) -> pd.DataFrame:
+    """Waves, questions and concepts matching every word — one FULLTEXT read
+    on MySQL; LIKE where FULLTEXT is missing (SQLite) or the words are shorter
+    than InnoDB indexes (3 characters: a code such as "D5")."""
+    terms = re.findall(r"\w+", words or "")
+    if len("".join(terms)) < 2:
+        return pd.DataFrame(columns=["kind", "survey_id", "question_id", "concept_id", "wave_label", "waves", "title", "body"])
+    required = [t for t in terms if t.lower() not in INNODB_STOPWORDS]
+    if dialect("app") == "mysql" and required and all(len(t) >= 3 for t in required):
+        return query_df(_SEARCH_COLUMNS + " AND MATCH(x.title, x.body) AGAINST (:q IN BOOLEAN MODE)"
+                        " ORDER BY MATCH(x.title, x.body) AGAINST (:q IN BOOLEAN MODE) DESC, x.wave_label DESC"
+                        f" LIMIT {int(limit)}", {"q": " ".join(f"+{t}*" for t in required)})
+    like = " AND ".join(f"CONCAT(x.title, ' ', COALESCE(x.body, '')) LIKE :t{i}" for i in range(len(terms)))
+    return query_df(_SEARCH_COLUMNS + f" AND {like} ORDER BY x.wave_label DESC LIMIT {int(limit)}",
+                    {f"t{i}": f"%{t}%" for i, t in enumerate(terms)})
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def wave_report(survey_id: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Everything the survey report charts, in three reads: the cube's total
+    cells (single, grid, multi), the numeric answers and the verbatims —
+    qualified respondents only, technical and virtual questions left out."""
+    cells = query_df(
+        """
+        SELECT c.question_id, c.n, c.base_n, i.item_label, i.left_label, i.right_label,
+               COALESCE(i.sort_order, 0) AS item_order, o.value_label, COALESCE(o.sort_order, 0) AS option_order
+          FROM cip_agg_cell c
+          JOIN cip_question q ON q.question_id = c.question_id AND q.is_virtual = 0
+          LEFT JOIN cip_item i ON i.item_id = c.item_id
+          LEFT JOIN cip_option o ON o.option_id = c.option_id
+         WHERE c.survey_id = :sid AND c.dim = 'total' AND c.cohort_id IS NULL
+        """, {"sid": survey_id})
+    cells["pct"] = cells["n"] / cells["base_n"].where(cells["base_n"] > 0)
+    answers = """
+        SELECT f.question_id, a.{column} AS value
+          FROM cip_answer a
+          JOIN cip_field f ON f.field_id = a.field_id
+          JOIN cip_question q ON q.question_id = f.question_id AND q.qtype = :qtype
+               AND q.is_technical = 0 AND q.is_virtual = 0
+          JOIN cip_respondent r ON r.respondent_id = a.respondent_id AND r.is_qualified = 1
+         WHERE a.survey_id = :sid AND a.{column} IS NOT NULL"""
+    numbers = query_df(answers.format(column="value_number"), {"sid": survey_id, "qtype": "numeric"})
+    texts = query_df(answers.format(column="value_text"), {"sid": survey_id, "qtype": "text"})
+    return cells, numbers, texts
 
 
 @st.cache_data(ttl=TTL, show_spinner=False)
@@ -96,7 +153,7 @@ def item_incidence(survey_id: int, question_id: int) -> pd.DataFrame:
     return query_df(
         """
         SELECT item_label, pct, selected_n, base_n, is_exclusive
-          FROM v_csi_item_incidence
+          FROM v_cip_item_incidence
          WHERE survey_id = :sid AND question_id = :qid
          ORDER BY pct DESC
         """,
@@ -109,7 +166,7 @@ def single_distribution(survey_id: int, question_id: int) -> pd.DataFrame:
     return query_df(
         """
         SELECT value_code, answer_label AS value_label, n, pct, base_n, is_nonresponse
-          FROM v_csi_single_distribution
+          FROM v_cip_single_distribution
          WHERE survey_id = :sid AND question_id = :qid
          ORDER BY value_code
         """,
@@ -118,41 +175,11 @@ def single_distribution(survey_id: int, question_id: int) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=TTL, show_spinner=False)
-def crosstab(survey_id: int, qcode: str, banner_name: Optional[str] = None) -> pd.DataFrame:
-    sql = """
-        SELECT item_label, stub_label, stub_type, banner_name, seg_letter, seg_label,
-               segment_size_n, denominator_n, low_base, pct, count_n, sig_letters
-          FROM v_csi_crosstab
-         WHERE survey_id = :sid AND qcode = :qcode
-    """
-    params: dict = {"sid": survey_id, "qcode": qcode}
-    if banner_name:
-        sql += " AND banner_name = :banner"
-        params["banner"] = banner_name
-    return query_df(sql + " ORDER BY stub_label, seg_label", params)
-
-
-@st.cache_data(ttl=TTL, show_spinner=False)
-def banners(survey_id: int) -> pd.DataFrame:
-    return query_df(
-        """
-        SELECT b.banner_id, b.banner_name, COUNT(s.segment_id) AS n_segments
-          FROM csi_banner b
-          LEFT JOIN csi_segment s ON s.banner_id = b.banner_id
-         WHERE b.survey_id = :sid
-         GROUP BY b.banner_id, b.banner_name
-         ORDER BY b.sort_order
-        """,
-        {"sid": survey_id},
-    )
-
-
-@st.cache_data(ttl=TTL, show_spinner=False)
 def trend(survey_family: str, qcode: str) -> pd.DataFrame:
     return query_df(
         """
         SELECT wave_label, wave_date, item_label, pct, base_n
-          FROM v_csi_trend
+          FROM v_cip_trend
          WHERE survey_family = :fam AND qcode = :qcode
          ORDER BY wave_date, item_label
         """,
@@ -172,8 +199,8 @@ def profile_counts(survey_id: int, dimension: str) -> pd.DataFrame:
         f"""
         SELECT {dimension} AS label, COUNT(*) AS n,
                COUNT(*) * 1.0 / SUM(COUNT(*)) OVER () AS pct
-          FROM csi_profile p
-          JOIN csi_respondent r ON r.respondent_id = p.respondent_id
+          FROM cip_profile p
+          JOIN cip_respondent r ON r.respondent_id = p.respondent_id
          WHERE p.survey_id = :sid AND r.is_qualified = 1 AND {dimension} IS NOT NULL
          GROUP BY {dimension}
          ORDER BY n DESC
@@ -189,7 +216,7 @@ def ingest_history(limit: int = 25) -> pd.DataFrame:
         SELECT load_id, survey_id, source_type, object_type, source_ref,
                rows_read, rows_loaded, rows_bad, status,
                started_at, finished_at
-          FROM csi_load_log
+          FROM cip_load_log
          ORDER BY started_at DESC
          LIMIT :lim
         """,
@@ -234,8 +261,8 @@ def dimension_values(survey_id: int, dimension: str) -> list[str]:
     df = query_df(
         f"""
         SELECT {dimension} AS v, COUNT(*) AS n
-          FROM csi_profile p
-          JOIN csi_respondent r ON r.respondent_id = p.respondent_id
+          FROM cip_profile p
+          JOIN cip_respondent r ON r.respondent_id = p.respondent_id
          WHERE p.survey_id = :sid AND r.is_qualified = 1 AND {dimension} IS NOT NULL
          GROUP BY {dimension}
          ORDER BY n DESC
@@ -250,14 +277,14 @@ def question_choices(survey_id: int, question_id: int) -> pd.DataFrame:
     """The selectable answers for a question — items for a multi-punch,
     answer options for a single-punch, "item — rating" pairs for a grid.
     Used to build filter criteria."""
-    meta = query_df("SELECT qtype, is_multi FROM csi_question WHERE question_id = :qid",
+    meta = query_df("SELECT qtype, is_multi FROM cip_question WHERE question_id = :qid",
                     {"qid": question_id})
     if not meta.empty and str(meta.qtype.iloc[0]).startswith("grid") and not meta.is_multi.iloc[0]:
         rows = query_df(
-            "SELECT item_id, item_label FROM csi_item WHERE question_id = :qid ORDER BY sort_order",
+            "SELECT item_id, item_label FROM cip_item WHERE question_id = :qid ORDER BY sort_order",
             {"qid": question_id})
         scale = query_df(
-            "SELECT value_code, value_label FROM csi_option WHERE question_id = :qid ORDER BY sort_order",
+            "SELECT value_code, value_label FROM cip_option WHERE question_id = :qid ORDER BY sort_order",
             {"qid": question_id})
         pairs = rows.merge(scale, how="cross")
         # ponytail: item and code packed into one int; fine while scales stay under 1000 points
@@ -267,7 +294,7 @@ def question_choices(survey_id: int, question_id: int) -> pd.DataFrame:
     items = query_df(
         """
         SELECT i.item_id AS id, i.item_label AS label, 'item' AS kind
-          FROM csi_item i
+          FROM cip_item i
          WHERE i.question_id = :qid AND i.is_other = 0
          ORDER BY i.sort_order
         """,
@@ -278,7 +305,7 @@ def question_choices(survey_id: int, question_id: int) -> pd.DataFrame:
     return query_df(
         """
         SELECT o.value_code AS id, o.value_label AS label, 'code' AS kind
-          FROM csi_option o
+          FROM cip_option o
          WHERE o.question_id = :qid
          ORDER BY o.sort_order
         """,
@@ -315,8 +342,8 @@ def _cohort_sql(criteria: list[dict]) -> tuple[str, dict]:
             placeholders = ", ".join(f":{key}_{i}" for i in range(len(ids)))
             params.update({f"{key}_{i}": v for i, v in enumerate(ids)})
             clauses.append(
-                f"""EXISTS (SELECT 1 FROM csi_answer a{n}
-                              JOIN csi_field f{n} ON f{n}.field_id = a{n}.field_id
+                f"""EXISTS (SELECT 1 FROM cip_answer a{n}
+                              JOIN cip_field f{n} ON f{n}.field_id = a{n}.field_id
                              WHERE a{n}.respondent_id = r.respondent_id
                                AND f{n}.item_id IN ({placeholders})
                                AND a{n}.value_code = 1)"""
@@ -331,8 +358,8 @@ def _cohort_sql(criteria: list[dict]) -> tuple[str, dict]:
             params.update({f"{key}_{i}": v for i, v in enumerate(ids)})
             params[f"cq{n}"] = qid
             clauses.append(
-                f"""EXISTS (SELECT 1 FROM csi_answer a{n}
-                              JOIN csi_field f{n} ON f{n}.field_id = a{n}.field_id
+                f"""EXISTS (SELECT 1 FROM cip_answer a{n}
+                              JOIN cip_field f{n} ON f{n}.field_id = a{n}.field_id
                              WHERE a{n}.respondent_id = r.respondent_id
                                AND f{n}.question_id = :cq{n}
                                AND a{n}.value_code IN ({placeholders}))"""
@@ -342,15 +369,15 @@ def _cohort_sql(criteria: list[dict]) -> tuple[str, dict]:
             if crit.get("cohort_code"):
                 params[f"ck{n}"] = str(crit["cohort_code"])
                 clauses.append(
-                    f"""EXISTS (SELECT 1 FROM csi_respondent_cohort rc{n}
-                                  JOIN csi_cohort_def d{n} ON d{n}.cohort_id = rc{n}.cohort_id
+                    f"""EXISTS (SELECT 1 FROM cip_respondent_cohort rc{n}
+                                  JOIN cip_cohort_def d{n} ON d{n}.cohort_id = rc{n}.cohort_id
                                    AND d{n}.is_current = 1 AND d{n}.cohort_code = :ck{n}
                                  WHERE rc{n}.respondent_id = r.respondent_id)"""
                 )
             elif crit.get("cohort_id"):
                 params[f"ck{n}"] = int(crit["cohort_id"])
                 clauses.append(
-                    f"""EXISTS (SELECT 1 FROM csi_respondent_cohort rc{n}
+                    f"""EXISTS (SELECT 1 FROM cip_respondent_cohort rc{n}
                                  WHERE rc{n}.respondent_id = r.respondent_id AND rc{n}.cohort_id = :ck{n})"""
                 )
         elif kind == "grid":
@@ -363,8 +390,8 @@ def _cohort_sql(criteria: list[dict]) -> tuple[str, dict]:
                 params.update({f"gi{n}_{i}": item, f"gc{n}_{i}": code})
                 ors.append(f"(f{n}.item_id = :gi{n}_{i} AND a{n}.value_code = :gc{n}_{i})")
             clauses.append(
-                f"""EXISTS (SELECT 1 FROM csi_answer a{n}
-                              JOIN csi_field f{n} ON f{n}.field_id = a{n}.field_id
+                f"""EXISTS (SELECT 1 FROM cip_answer a{n}
+                              JOIN cip_field f{n} ON f{n}.field_id = a{n}.field_id
                              WHERE a{n}.respondent_id = r.respondent_id
                                AND ({" OR ".join(ors)}))"""
             )
@@ -378,8 +405,8 @@ def cohort_size(survey_id: int, criteria: tuple) -> int:
     df = query_df(
         f"""
         SELECT COUNT(*) AS n
-          FROM csi_respondent r
-          LEFT JOIN csi_profile p ON p.respondent_id = r.respondent_id
+          FROM cip_respondent r
+          LEFT JOIN cip_profile p ON p.respondent_id = r.respondent_id
          WHERE r.survey_id = :sid AND r.is_qualified = 1 AND {where}
         """,
         params,
@@ -423,7 +450,7 @@ def analyse(
     seg_group = f"p.{break_dimension}" if break_dimension else "'Total'"
 
     meta = query_df(
-        "SELECT qtype, is_multi FROM csi_question WHERE question_id = :qid",
+        "SELECT qtype, is_multi FROM cip_question WHERE question_id = :qid",
         {"qid": question_id},
     )
     if meta.empty:
@@ -439,11 +466,11 @@ def analyse(
                    i.sort_order AS answer_order,
                    SUM(CASE WHEN a.value_code = 1 THEN 1 ELSE 0 END) AS n,
                    COUNT(*) AS base_n
-              FROM csi_respondent r
-              LEFT JOIN csi_profile p ON p.respondent_id = r.respondent_id
-              JOIN csi_answer a ON a.respondent_id = r.respondent_id
-              JOIN csi_field  f ON f.field_id = a.field_id AND f.question_id = :qid
-              JOIN csi_item   i ON i.item_id = f.item_id
+              FROM cip_respondent r
+              LEFT JOIN cip_profile p ON p.respondent_id = r.respondent_id
+              JOIN cip_answer a ON a.respondent_id = r.respondent_id
+              JOIN cip_field  f ON f.field_id = a.field_id AND f.question_id = :qid
+              JOIN cip_item   i ON i.item_id = f.item_id
              WHERE r.survey_id = :sid AND r.is_qualified = 1 AND {where}
              GROUP BY {seg_group}, i.item_label, i.sort_order
         """
@@ -456,12 +483,12 @@ def analyse(
                    COALESCE(o.sort_order, a.value_code) AS answer_order,
                    COUNT(*) AS n,
                    0 AS base_n
-              FROM csi_respondent r
-              LEFT JOIN csi_profile p ON p.respondent_id = r.respondent_id
-              JOIN csi_answer a ON a.respondent_id = r.respondent_id
-              JOIN csi_field  f ON f.field_id = a.field_id AND f.question_id = :qid
-              LEFT JOIN csi_item i ON i.item_id = f.item_id
-              LEFT JOIN csi_option o ON o.question_id = :qid AND o.value_code = a.value_code
+              FROM cip_respondent r
+              LEFT JOIN cip_profile p ON p.respondent_id = r.respondent_id
+              JOIN cip_answer a ON a.respondent_id = r.respondent_id
+              JOIN cip_field  f ON f.field_id = a.field_id AND f.question_id = :qid
+              LEFT JOIN cip_item i ON i.item_id = f.item_id
+              LEFT JOIN cip_option o ON o.question_id = :qid AND o.value_code = a.value_code
              WHERE r.survey_id = :sid AND r.is_qualified = 1 AND {where}
                AND a.value_code IS NOT NULL
              GROUP BY {seg_group}, COALESCE(i.item_label, ''), COALESCE(i.sort_order, 0),
@@ -483,10 +510,10 @@ def analyse(
         answered = query_df(
             f"""
             SELECT {seg_select} COUNT(DISTINCT r.respondent_id) AS answered_n
-              FROM csi_respondent r
-              LEFT JOIN csi_profile p ON p.respondent_id = r.respondent_id
-              JOIN csi_answer a ON a.respondent_id = r.respondent_id
-              JOIN csi_field  f ON f.field_id = a.field_id AND f.question_id = :qid
+              FROM cip_respondent r
+              LEFT JOIN cip_profile p ON p.respondent_id = r.respondent_id
+              JOIN cip_answer a ON a.respondent_id = r.respondent_id
+              JOIN cip_field  f ON f.field_id = a.field_id AND f.question_id = :qid
              WHERE r.survey_id = :sid AND r.is_qualified = 1 AND {where}
                AND a.value_code IS NOT NULL
              GROUP BY {seg_group}
@@ -516,10 +543,10 @@ def analyse_cube(survey_id: int, question_id: int, cohort_id: Optional[int] = No
         SELECT c.dim_value AS segment, c.n, c.base_n, i.item_label,
                COALESCE(i.sort_order, 0) AS item_order, o.value_label, o.sort_order AS option_order,
                q.qtype, q.is_multi
-          FROM csi_agg_cell c
-          JOIN csi_question q ON q.question_id = c.question_id
-          LEFT JOIN csi_item i ON i.item_id = c.item_id
-          LEFT JOIN csi_option o ON o.option_id = c.option_id
+          FROM cip_agg_cell c
+          JOIN cip_question q ON q.question_id = c.question_id
+          LEFT JOIN cip_item i ON i.item_id = c.item_id
+          LEFT JOIN cip_option o ON o.option_id = c.option_id
          WHERE c.survey_id = :sid AND c.question_id = :qid AND c.dim = :dim
            AND COALESCE(c.cohort_id, 0) = :coh
         """,
@@ -541,11 +568,11 @@ def analyse_cube(survey_id: int, question_id: int, cohort_id: Optional[int] = No
 
 
 _CONCEPT_CELLS = """
-    FROM csi_concept_option co
-    JOIN csi_concept_map m ON m.concept_option_id = co.concept_option_id AND m.status = 'confirmed'
-    JOIN csi_agg_cell c ON c.survey_id = m.survey_id AND c.map_key = m.map_key
+    FROM cip_concept_option co
+    JOIN cip_concept_map m ON m.concept_option_id = co.concept_option_id AND m.status = 'confirmed'
+    JOIN cip_agg_cell c ON c.survey_id = m.survey_id AND c.map_key = m.map_key
          AND c.dim = :dim AND COALESCE(c.cohort_id, 0) = :coh
-    JOIN csi_survey s ON s.survey_id = m.survey_id AND s.load_status = 'verified'
+    JOIN cip_survey s ON s.survey_id = m.survey_id AND s.load_status = 'verified'
    WHERE co.concept_id = :cid
 """
 
@@ -553,7 +580,7 @@ _CONCEPT_CELLS = """
 @st.cache_data(ttl=TTL, show_spinner=False)
 def concept_trend(concept_id: int, cohort_id: Optional[int] = None) -> pd.DataFrame:
     """One concept across every wave and platform that has it confirmed —
-    joined through csi_concept_map, so a mapping confirmed today shows today."""
+    joined through cip_concept_map, so a mapping confirmed today shows today."""
     df = query_df(
         f"""
         SELECT s.survey_id, s.wave_label, s.wave_date, s.platform, co.option_label AS answer,
@@ -616,8 +643,8 @@ def concept_catalog() -> pd.DataFrame:
         """
         SELECT c.concept_id, c.concept_code, c.concept_name, c.qtype,
                COUNT(DISTINCT m.survey_id) AS waves
-          FROM csi_concept c
-          JOIN csi_concept_map m ON m.concept_id = c.concept_id AND m.status = 'confirmed'
+          FROM cip_concept c
+          JOIN cip_concept_map m ON m.concept_id = c.concept_id AND m.status = 'confirmed'
                AND m.concept_option_id IS NULL
          GROUP BY c.concept_id, c.concept_code, c.concept_name, c.qtype
          ORDER BY waves DESC, c.concept_name
@@ -631,8 +658,8 @@ def cohort_list() -> pd.DataFrame:
         """
         SELECT d.cohort_id, d.cohort_code, d.cohort_name, d.version, d.base_note,
                COUNT(rc.respondent_id) AS members
-          FROM csi_cohort_def d
-          LEFT JOIN csi_respondent_cohort rc ON rc.cohort_id = d.cohort_id
+          FROM cip_cohort_def d
+          LEFT JOIN cip_respondent_cohort rc ON rc.cohort_id = d.cohort_id
          WHERE d.is_current = 1
          GROUP BY d.cohort_id, d.cohort_code, d.cohort_name, d.version, d.base_note
          ORDER BY d.cohort_name
@@ -647,8 +674,8 @@ def question_lookup(survey_id: int) -> pd.DataFrame:
         """
         SELECT q.question_id, q.qcode, q.qtext, q.qtext_short, q.qtype,
                q.is_multi, q.base_n, t.topic_name
-          FROM csi_question q
-          LEFT JOIN csi_topic t ON t.topic_id = q.topic_id
+          FROM cip_question q
+          LEFT JOIN cip_topic t ON t.topic_id = q.topic_id
          WHERE q.survey_id = :sid AND q.is_technical = 0
            AND q.qtype IN ('single', 'multi', 'grid_single', 'grid_multi')
          ORDER BY t.sort_order, q.sort_order
@@ -678,7 +705,7 @@ def list_views(survey_id: int, user_email: str) -> pd.DataFrame:
         """
         SELECT view_id, view_name, owner_email, is_shared, description,
                definition, updated_at
-          FROM csi_saved_view
+          FROM cip_saved_view
          WHERE survey_id = :sid AND (owner_email = :email OR is_shared = 1)
          ORDER BY is_shared, view_name
         """,
@@ -692,7 +719,7 @@ def save_view(survey_id: int, name: str, owner_email: str, definition: dict,
 
     execute(
         """
-        INSERT INTO csi_saved_view
+        INSERT INTO cip_saved_view
             (survey_id, view_name, owner_email, is_shared, definition, description)
         VALUES (:sid, :name, :email, :shared, :definition, :description)
         ON DUPLICATE KEY UPDATE
@@ -711,7 +738,7 @@ def delete_view(view_id: int, owner_email: str) -> None:
     from app.core.database import execute
 
     execute(
-        "DELETE FROM csi_saved_view WHERE view_id = :vid AND owner_email = :email",
+        "DELETE FROM cip_saved_view WHERE view_id = :vid AND owner_email = :email",
         {"vid": view_id, "email": (owner_email or "").lower()},
     )
 

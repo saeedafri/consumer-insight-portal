@@ -88,8 +88,8 @@ def test_a_changed_answer_is_flagged_moved_and_a_vanished_one_missing(wave):  # 
     cube.build_cube(sid)
     pid = publications.publish("BEAUTY_BOUGHT", "Bought beauty", definition(b1))
     with engine.begin() as conn:            # R_3's "No" is withdrawn from the data
-        conn.execute(sa.text("DELETE FROM csi_answer WHERE survey_id = :s AND value_code = 2 AND field_id ="
-                             " (SELECT field_id FROM csi_field WHERE survey_id = :s AND field_name = 'Q1')"), {"s": sid})
+        conn.execute(sa.text("DELETE FROM cip_answer WHERE survey_id = :s AND value_code = 2 AND field_id ="
+                             " (SELECT field_id FROM cip_field WHERE survey_id = :s AND field_name = 'Q1')"), {"s": sid})
     cube.build_cube(sid)
     report = publications.drift(pid)
     moved = report.set_index(["row_key", "col_key"]).loc[("Yes", "Total|pct")]
@@ -102,7 +102,7 @@ def test_a_cell_that_did_not_exist_when_published_is_new(wave):  # noqa: F811
     cube.build_cube(sid)
     pid = publications.publish("BEAUTY_BOUGHT", "Bought beauty", definition(b1))
     with engine.begin() as conn:
-        conn.execute(sa.text("DELETE FROM csi_publication_cell WHERE publication_id = :p AND row_key = 'No'"), {"p": pid})
+        conn.execute(sa.text("DELETE FROM cip_publication_cell WHERE publication_id = :p AND row_key = 'No'"), {"p": pid})
     assert status(publications.drift(pid))[("No", "Total|pct")] == "new"
 
 
@@ -118,7 +118,7 @@ def test_drift_reports_a_definition_that_no_longer_resolves(wave):  # noqa: F811
     cube.build_cube(sid)
     pid = publications.publish("BEAUTY_BOUGHT", "Bought beauty", definition(b1))
     with engine.begin() as conn:
-        conn.execute(sa.text("UPDATE csi_survey SET wave_label = '2025-02-18' WHERE survey_id = :s"), {"s": sid})
+        conn.execute(sa.text("UPDATE cip_survey SET wave_label = '2025-02-18' WHERE survey_id = :s"), {"s": sid})
     report = publications.drift(pid)
     assert list(report.status) == ["error"] and "2025-02-17" in report.detail.iloc[0]
 
@@ -150,8 +150,8 @@ def test_an_unchanged_cell_shows_no_change_not_float_noise(wave):  # noqa: F811
 # ── final-review fixes ─────────────────────────────────────────────────────
 def rename_option(engine, concept_code, old, new):
     with engine.begin() as conn:
-        conn.execute(sa.text("UPDATE csi_concept_option SET option_label = :new WHERE option_label = :old AND concept_id ="
-                             " (SELECT concept_id FROM csi_concept WHERE concept_code = :c)"),
+        conn.execute(sa.text("UPDATE cip_concept_option SET option_label = :new WHERE option_label = :old AND concept_id ="
+                             " (SELECT concept_id FROM cip_concept WHERE concept_code = :c)"),
                      {"new": new, "old": old, "c": concept_code})
 
 
@@ -174,7 +174,7 @@ def test_two_answers_with_the_same_label_are_refused_by_name(wave):  # noqa: F81
 def test_a_monthly_wave_label_still_gets_a_footnote(wave):  # noqa: F811
     engine, sid, b1, _ = wave
     with engine.begin() as conn:
-        conn.execute(sa.text("UPDATE csi_survey SET wave_label = '2025-02' WHERE survey_id = :s"), {"s": sid})
+        conn.execute(sa.text("UPDATE cip_survey SET wave_label = '2025-02' WHERE survey_id = :s"), {"s": sid})
     cube.build_cube(sid)
     assert "surveyed February 2025" in publications.footnote(definition(b1, waves=["2025-02"]))
 

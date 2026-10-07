@@ -1,29 +1,20 @@
-"""CSI ingestion pipeline.
+"""Loader steps shared by the Forsta, legacy and Qualtrics pipelines:
+respondent upserts, profiles, question bases and the wave label.
 
-    python -m etl.run_pipeline --source api    --wave 2026-10-05
-    python -m etl.run_pipeline --source excel  --raw "Raw Data 09_21_26.xlsx" \
-                               --crosstab "Cross Tabs 09_21_26.xlsx" --wave 2026-09-21
-
-Both sources produce the same rows. `api` is the target state; `excel` is the
-bridge that works today, before the Forsta API key is issued.
+Forsta loads run through etl/forsta_etl.py.
 """
 from __future__ import annotations
 
-import argparse
 import logging
-import sys
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, Optional
 
 from sqlalchemy import bindparam, text
 
-from app.core.config import config
 from app.core.database import execute_many, get_engine
-from app.data import cube, harmonise
-from etl import excel_parsers as xp
+from etl import records as xp
 from etl import survey_map
-from etl.loaders import finish_run, load_definitions, start_run, upsert_survey
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s"
@@ -34,48 +25,6 @@ STATUS_MAP = {"Terminated": 1, "Overquota": 2, "Qualified": 3, "Partial": 4}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-def ingest_excel(raw_path: str, crosstab_path: Optional[str], wave: str,
-                 family: str = "CSI-US") -> None:
-    questions = xp.parse_datamap(raw_path)
-    log.info("Parsed %d question blocks from the datamap", len(questions))
-
-    title = f"{family} {wave}"
-    if crosstab_path:
-        title = xp.parse_crosstab_summary(crosstab_path)[0].get("Title") or title
-    survey_id = upsert_survey(
-        host=config.forsta.host,
-        path=config.forsta.survey_path or "excel",
-        title=title,
-        survey_family=family,
-        wave_label=wave,
-        wave_date=_wave_date(wave),
-    )
-    log.info("survey_id=%s", survey_id)
-
-    run = start_run(survey_id, "excel", "datamap", raw_path)
-    var_map = load_definitions(survey_id, questions, family)
-    finish_run(run, len(questions), len(var_map))
-    log.info("Loaded %d variables", len(var_map))
-
-    code_map = _code_lookup(survey_id)
-    run = start_run(survey_id, "excel", "data", raw_path)
-    read = loaded = 0
-    for record in xp.iter_raw_records(raw_path):
-        read += 1
-        loaded += _load_one_respondent(survey_id, record, var_map, run, code_map)
-    finish_run(run, read, loaded)
-    log.info("Loaded %d/%d respondents", loaded, read)
-
-    _rebuild_profiles(survey_id, questions, family)
-    _rebuild_question_bases(survey_id)
-
-    if crosstab_path:
-        ingest_crosstabs(survey_id, crosstab_path)
-
-    log.info("Harmonised: %s", harmonise.harmonise_survey(survey_id))
-    log.info("Cube: %d cells", cube.refresh_wave(survey_id))
-
-
 def _code_lookup(survey_id: int) -> dict[int, dict[str, int]]:
     """field_id -> {answer label: code}, for every question that is not a
     0/1 multi-punch.
@@ -91,9 +40,9 @@ def _code_lookup(survey_id: int) -> dict[int, dict[str, int]]:
             text(
                 """
                 SELECT f.field_id, o.value_label, o.value_code
-                  FROM csi_field  f
-                  JOIN csi_question q ON q.question_id = f.question_id
-                  JOIN csi_option   o ON o.question_id = q.question_id
+                  FROM cip_field  f
+                  JOIN cip_question q ON q.question_id = f.question_id
+                  JOIN cip_option   o ON o.question_id = q.question_id
                  WHERE f.survey_id = :sid AND q.is_multi = 0
                 """
             ),
@@ -113,7 +62,7 @@ def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str,
         res = conn.execute(
             text(
                 """
-                INSERT INTO csi_respondent
+                INSERT INTO cip_respondent
                     (survey_id, record_no, forsta_uuid, status_code, status_label,
                      is_qualified, completed_at, interview_secs, panel_source, sample_rid,
                      markers, device, os, browser, dropout_qcode,
@@ -148,7 +97,7 @@ def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str,
             },
         )
         respondent_id = conn.execute(
-            text("SELECT respondent_id FROM csi_respondent "
+            text("SELECT respondent_id FROM cip_respondent "
                  "WHERE survey_id = :sid AND record_no = :rec"),
             {"sid": survey_id, "rec": _int(rec.get("record")) or 0},
         ).scalar()
@@ -175,7 +124,7 @@ def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str,
             conn.execute(
                 text(
                     """
-                    INSERT INTO csi_answer
+                    INSERT INTO cip_answer
                         (respondent_id, survey_id, field_id, value_code,
                          value_label, value_number, value_text)
                     VALUES (:rid, :sid, :vid, :code, :label, :num, :txt)
@@ -191,11 +140,11 @@ def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str,
 
 def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
                       family: Optional[str] = None) -> None:
-    """Flatten the demographic questions into csi_profile.
+    """Flatten the demographic questions into cip_profile.
 
     Which question supplies which cut is resolved per survey — from
     config/survey_map.yml when the family is known, otherwise auto-detected
-    from the question wording. The decision is written to csi_profile_map so
+    from the question wording. The decision is written to cip_profile_map so
     it is visible, auditable and correctable without touching code.
 
     A dimension that cannot be resolved is simply absent: the column stays
@@ -206,7 +155,7 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
     if questions is None:
         with eng.connect() as conn:
             rows = conn.execute(
-                text("SELECT qcode, qtext FROM csi_question WHERE survey_id = :sid"),
+                text("SELECT qcode, qtext FROM cip_question WHERE survey_id = :sid"),
                 {"sid": survey_id},
             ).all()
         questions = [SimpleNamespace(qcode=r[0], qtext=r[1]) for r in rows]
@@ -223,7 +172,7 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
             conn.execute(
                 text(
                     """
-                    INSERT INTO csi_profile_map (survey_id, dimension, qcode, resolved_by)
+                    INSERT INTO cip_profile_map (survey_id, dimension, qcode, resolved_by)
                     VALUES (:sid, :dim, :qcode, :how)
                     ON DUPLICATE KEY UPDATE
                         qcode = VALUES(qcode), resolved_by = VALUES(resolved_by)
@@ -242,8 +191,8 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
             text(
                 """
                 SELECT a.respondent_id, f.field_name, a.value_label
-                  FROM csi_answer a
-                  JOIN csi_field f ON f.field_id = a.field_id
+                  FROM cip_answer a
+                  JOIN cip_field f ON f.field_id = a.field_id
                  WHERE a.survey_id = :sid AND f.field_name IN :names
                 """
             ).bindparams(bindparam("names", expanding=True)),
@@ -281,7 +230,7 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
     if payload:
         execute_many(
             """
-            INSERT INTO csi_profile
+            INSERT INTO cip_profile
                 (respondent_id, survey_id, gender, age_years, age_band, generation,
                  relationship, ethnicity, income_band, urbanicity, political,
                  state_name, census_region, outlook_income, outlook_economy,
@@ -305,7 +254,7 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
 
 
 def _rebuild_question_bases(survey_id: int) -> None:
-    """Set csi_question.base_n to the number of qualified respondents who
+    """Set cip_question.base_n to the number of qualified respondents who
     actually reached each question.
 
     This survey routes heavily — DP2-DP8 are asked only of department-store
@@ -317,170 +266,25 @@ def _rebuild_question_bases(survey_id: int) -> None:
         conn.execute(
             text(
                 """
-                UPDATE csi_question
+                UPDATE cip_question
                    SET base_n = (
                        SELECT COUNT(DISTINCT a.respondent_id)
-                         FROM csi_answer a
-                         JOIN csi_field f ON f.field_id = a.field_id
-                         JOIN csi_respondent r ON r.respondent_id = a.respondent_id
-                        WHERE f.question_id = csi_question.question_id
+                         FROM cip_answer a
+                         JOIN cip_field f ON f.field_id = a.field_id
+                         JOIN cip_respondent r ON r.respondent_id = a.respondent_id
+                        WHERE f.question_id = cip_question.question_id
                           AND r.is_qualified = 1
                           AND (a.value_code IS NOT NULL
                                OR a.value_label IS NOT NULL
                                OR a.value_number IS NOT NULL
                                OR a.value_text IS NOT NULL)
                    )
-                 WHERE csi_question.survey_id = :sid
+                 WHERE cip_question.survey_id = :sid
                 """
             ),
             {"sid": survey_id},
         )
     log.info("Rebuilt question bases for survey_id=%s", survey_id)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-def ingest_crosstabs(survey_id: int, path: str) -> None:
-    settings, defs = xp.parse_crosstab_summary(path)
-    banner_segments = xp.parse_banner(path)
-    definition_by_label = {d.label: d.definition for d in defs}
-    base_by_label = {d.label: d.base_n for d in defs}
-
-    run_id = start_run(survey_id, "excel", "crosstab", path)
-    eng = get_engine("etl")
-    with eng.begin() as conn:
-        conn.execute(
-            text("UPDATE csi_crosstab_run SET is_current = 0 WHERE survey_id = :sid"),
-            {"sid": survey_id},
-        )
-        res = conn.execute(
-            text(
-                """
-                INSERT INTO csi_crosstab_run
-                    (survey_id, run_label, respondent_base, extra_filter, table_set,
-                     pct_base, stat_test, source_type, source_file, is_current)
-                VALUES (:sid, :label, :resp, :filt, :ts, :pb, :stl, 'excel', :file, 1)
-                """
-            ),
-            {
-                "sid": survey_id,
-                "label": str(settings.get("Title", "Cross tabs"))[:255],
-                "resp": settings.get("Respondents"),
-                "filt": settings.get("Additional Filter"),
-                "ts": settings.get("Table Set"),
-                "pb": settings.get("Percentage Base"),
-                "stl": settings.get("Stat Test Levels"),
-                "file": path.split("/")[-1][:255],
-            },
-        )
-        ct_run = int(res.lastrowid)
-
-        seg_ids: dict[str, int] = {}
-        for order, seg in enumerate(banner_segments, start=1):
-            banner_name = seg.banner_name or "Total"
-            bcode = _banner_code(banner_name)
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO csi_banner (survey_id, banner_code, banner_name, sort_order)
-                    VALUES (:sid, :code, :name, :ord)
-                    ON DUPLICATE KEY UPDATE banner_name = VALUES(banner_name),
-                                            banner_id = LAST_INSERT_ID(banner_id)
-                    """
-                ),
-                {"sid": survey_id, "code": bcode, "name": banner_name[:500], "ord": order},
-            )
-            banner_id = conn.execute(
-                text("SELECT banner_id FROM csi_banner "
-                     "WHERE survey_id = :sid AND banner_code = :code"),
-                {"sid": survey_id, "code": bcode},
-            ).scalar()
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO csi_segment
-                        (banner_id, survey_id, seg_letter, seg_label, seg_definition,
-                         seg_base_n, is_total, low_base, sort_order)
-                    VALUES (:bid, :sid, :letter, :label, :defn, :base, :tot, :flag, :ord)
-                    ON DUPLICATE KEY UPDATE
-                        seg_letter = VALUES(seg_letter),
-                        seg_definition = COALESCE(VALUES(seg_definition), seg_definition),
-                        seg_base_n = VALUES(seg_base_n), low_base = VALUES(low_base),
-                        segment_id = LAST_INSERT_ID(segment_id)
-                    """
-                ),
-                {
-                    "bid": banner_id, "sid": survey_id, "letter": seg.letter,
-                    "label": seg.label[:255],
-                    "defn": definition_by_label.get(seg.label),
-                    "base": seg.base_n or base_by_label.get(seg.label),
-                    "tot": 1 if seg.label.lower() == "total" else 0,
-                    "flag": seg.low_base, "ord": order,
-                },
-            )
-            seg_ids[seg.label] = conn.execute(
-                text("SELECT segment_id FROM csi_segment "
-                     "WHERE banner_id = :bid AND seg_label = :label"),
-                {"bid": banner_id, "label": seg.label[:255]},
-            ).scalar()
-
-        qid_by_code = {
-            code: qid
-            for code, qid in conn.execute(
-                text("SELECT qcode, question_id FROM csi_question WHERE survey_id = :sid"),
-                {"sid": survey_id},
-            ).all()
-        }
-
-    cells, read, skipped = [], 0, {}
-    for cell in xp.iter_crosstab_cells(path, banner_segments):
-        read += 1
-        qid = qid_by_code.get(cell["qcode"])
-        sid_seg = seg_ids.get(cell["seg_label"])
-        if not qid or not sid_seg:
-            # Quota and terminate tables (vqtable*, voqtable*, vterm) are printed
-            # in the cross-tab but never appear in the datamap, so they have no
-            # question to attach to. Counted, not silently dropped.
-            skipped[cell["qcode"]] = skipped.get(cell["qcode"], 0) + 1
-            continue
-        item_label = cell.get("item_label")
-        cells.append(
-            {
-                "run": ct_run, "sid": survey_id, "qid": qid, "seg": sid_seg,
-                "item": item_label[:500] if item_label else None,
-                "key": f"{item_label or ''}|{cell['stub_label']}"[:600],
-                "stub": cell["stub_label"][:1000], "kind": cell["stub_type"],
-                "pct": cell["pct"], "cnt": cell["count_n"],
-                "base": cell["answer_base_n"],
-                "sig": cell["sig_letters"],
-            }
-        )
-
-    sql = """
-        INSERT INTO csi_crosstab
-            (run_id, survey_id, question_id, segment_id, item_label, stub_key,
-             stub_label, stub_type, pct, count_n, answer_base_n, sig_letters)
-        VALUES (:run, :sid, :qid, :seg, :item, :key, :stub, :kind,
-                :pct, :cnt, :base, :sig)
-        ON DUPLICATE KEY UPDATE
-            pct = VALUES(pct), count_n = VALUES(count_n),
-            answer_base_n = VALUES(answer_base_n), sig_letters = VALUES(sig_letters)
-    """
-    from app.core.database import execute_many
-
-    loaded = execute_many(sql, cells) if cells else 0
-    finish_run(run_id, read, loaded, rejected=sum(skipped.values()))
-    log.info("Loaded %d/%d cross-tab cells", loaded, read)
-    if skipped:
-        log.info("Skipped %d cells with no matching question: %s",
-                 sum(skipped.values()),
-                 ", ".join(f"{k}({v})" for k, v in sorted(skipped.items())))
-
-
-def _banner_code(name: str) -> str:
-    import re as _re
-
-    slug = _re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper()
-    return slug[:50] or "TOTAL"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -498,120 +302,7 @@ def wave_from_records(records: list[dict]) -> str:
     return (first - timedelta(days=first.weekday())).isoformat()
 
 
-def verify_api_load(survey_id: int, records: list[dict]) -> list[str]:
-    """Unattended loads prove themselves: every record the API sent is a
-    respondent, and every field has exactly as many answers as the payload."""
-    with get_engine("etl").connect() as conn:
-        uuids = {str(u) for (u,) in conn.execute(text(
-            "SELECT forsta_uuid FROM csi_respondent WHERE survey_id = :s"), {"s": survey_id})}
-        fields = {name for (name,) in conn.execute(text(
-            "SELECT field_name FROM csi_field WHERE survey_id = :s"), {"s": survey_id})}
-        sent_ids = sorted({str(r.get("uuid")) for r in records}) or ["-"]
-        # only the respondents this payload brought — an incremental run adds
-        # to a wave that already holds earlier records
-        stored = dict(conn.execute(text(
-            "SELECT f.field_name, COUNT(*) FROM csi_answer a JOIN csi_field f ON f.field_id = a.field_id"
-            " JOIN csi_respondent r ON r.respondent_id = a.respondent_id"
-            " WHERE a.survey_id = :s AND r.forsta_uuid IN :u GROUP BY f.field_name")
-            .bindparams(bindparam("u", expanding=True)), {"s": survey_id, "u": sent_ids}).all())
-    problems = [f"record {r.get('record')} ({r.get('uuid')}) not loaded"
-                for r in records if str(r.get("uuid")) not in uuids]
-    sent: dict[str, int] = {}
-    for rec in records:
-        for key, value in rec.items():
-            if key in fields and value is not None:
-                sent[key] = sent.get(key, 0) + 1
-    problems += [f"{field}: {n} in the payload, {stored.get(field, 0)} loaded"
-                 for field, n in sorted(sent.items()) if stored.get(field, 0) != n]
-    return problems
-
-
-def ingest_api(wave: str, family: str = "CSI-US", full: bool = False, client=None) -> int:
-    """Load one wave from the Forsta API. The API's codes are turned into the
-    label records the Excel path loads (etl/forsta_api.py), so both paths give
-    the same answers. `wave="auto"` = Monday of the first fielding day."""
-    from etl import forsta_api
-    from etl.forsta_client import ForstaClient
-
-    fc = config.forsta
-    if client is None:
-        if not fc.is_configured:
-            raise SystemExit(
-                "Forsta is not configured. Set FORSTA_HOST, FORSTA_API_KEY and "
-                "FORSTA_SURVEY_PATH in .env — see docs/04-it-requirements-checklist.md."
-            )
-        client = ForstaClient(fc.host, fc.api_key, fc.survey_path, fc.timeout, fc.max_retries)
-
-    log.info("Fetching datamap from %s", client.base_url)
-    datamap = client.datamap()
-    questions = forsta_api.questions_from_datamap(datamap)
-    raw = list(client.iter_records(cond=config.ingest_cond, layout=fc.layout_id))
-    records = [forsta_api.to_record(r, questions) for r in raw]
-    wave = wave_from_records(records) if wave == "auto" else wave
-
-    survey_id = upsert_survey(
-        host=client.host, path=client.survey_path,
-        title=f"{family} {wave}", survey_family=family,
-        wave_label=wave, wave_date=_wave_date(wave),
-        datamap_payload=datamap,
-    )
-    _set_status(survey_id, "loading")             # invisible until it verifies
-    run = start_run(survey_id, "api", "datamap", f"{client.base_url}/surveys/{client.survey_path}/datamap")
-    var_map = load_definitions(survey_id, questions, family)
-    finish_run(run, len(questions), len(var_map))
-    unmapped = sorted({str(v.get("label")) for q in datamap.get("questions", []) for v in q.get("variables") or []
-                       if v.get("label")} - set(var_map))
-
-    watermark = None if full else _watermark(survey_id)
-    if watermark:
-        since = _dt(watermark) or _dt(str(watermark)[:19])
-        # >= : a record completed in the watermark's own minute is re-sent, and the upsert makes that safe
-        records = [r for r in records if (_dt(r.get("date")) or since) >= since]
-    code_map = _code_lookup(survey_id)
-    run = start_run(survey_id, "api", "data", f"{client.base_url}/surveys/{client.survey_path}/data")
-    try:
-        loaded = sum(_load_one_respondent(survey_id, rec, var_map, run, code_map) for rec in records)
-        problems = [f"datamap variable {v} has no field" for v in unmapped] + verify_api_load(survey_id, records)
-    except Exception as exc:
-        finish_run(run, len(records), 0, error=str(exc)[:2000])
-        _set_status(survey_id, "failed")
-        raise
-    finish_run(run, len(records), loaded, error="; ".join(problems)[:2000] if problems else None)
-    if problems:
-        _set_status(survey_id, "failed")
-        raise RuntimeError(f"the API load of {wave} does not match its payload: {problems[:5]}")
-    _rebuild_profiles(survey_id, questions, family)
-    _rebuild_question_bases(survey_id)
-    log.info("API ingest complete: %d records", loaded)
-    log.info("Harmonised: %s", harmonise.harmonise_survey(survey_id))
-    log.info("Cube: %d cells", cube.refresh_wave(survey_id))
-    _set_status(survey_id, "verified")
-    return survey_id
-
-
-def _set_status(survey_id: int, status: str) -> None:
-    with get_engine("etl").begin() as conn:
-        conn.execute(text("UPDATE csi_survey SET load_status = :st WHERE survey_id = :s"),
-                     {"st": status, "s": survey_id})
-
-
-def _watermark(survey_id: int) -> Optional[str]:
-    with get_engine("etl").connect() as conn:
-        ts = conn.execute(
-            text("SELECT MAX(completed_at) FROM csi_respondent WHERE survey_id = :sid"),
-            {"sid": survey_id},
-        ).scalar()
-    return str(ts)[:19] if ts else None          # MySQL gives a datetime, SQLite a string
-
-
 # ── coercion helpers ───────────────────────────────────────────────────────
-def _wave_date(wave: str) -> Optional[str]:
-    """'2026-09-28' is a fielding week; '2026-09' a month."""
-    if len(wave) == 10:
-        return wave
-    return f"{wave}-01" if len(wave) == 7 else None
-
-
 def _int(v: Any) -> Optional[int]:
     try:
         return int(float(v))
@@ -645,27 +336,3 @@ def _dt(v: Any) -> Optional[datetime]:
         except ValueError:
             continue
     return None
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Consumer Insight Portal ingestion")
-    ap.add_argument("--source", choices=["api", "excel"], default="api")
-    ap.add_argument("--raw", help="path to the raw-data .xlsx (source=excel)")
-    ap.add_argument("--crosstab", help="path to the cross-tabs .xlsx (source=excel)")
-    ap.add_argument("--wave", required=True,
-                    help="fielding week, e.g. 2026-09-28 — each wave is its own survey row")
-    ap.add_argument("--family", default="CSI-US", help="survey family for trending")
-    ap.add_argument("--full", action="store_true", help="ignore the watermark; reload everything")
-    args = ap.parse_args()
-
-    if args.source == "excel":
-        if not args.raw:
-            ap.error("--raw is required when --source excel")
-        ingest_excel(args.raw, args.crosstab, args.wave, args.family)
-    else:
-        ingest_api(args.wave, args.family, args.full)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

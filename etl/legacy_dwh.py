@@ -25,8 +25,8 @@ from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
 from app.data import cube, harmonise
-from etl import excel_parsers as xp
-from etl.loaders import finish_run, load_definitions, start_run, upsert_survey
+from etl import records as xp
+from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey
 
 log = logging.getLogger("cip.legacy")
 
@@ -184,48 +184,48 @@ def _move_answers(conn, survey_id: int, legacy_id: str, rows: list[dict]) -> int
     The two maps are temp tables cloned from the legacy tables (WHERE 1 = 0)
     so their id columns carry the legacy collation — csi_* uses another, and
     comparing the two directly fails with "Illegal mix of collations"."""
-    conn.execute(text("CREATE TEMPORARY TABLE IF NOT EXISTS csi_tmp_answer_map AS"
+    conn.execute(text("CREATE TEMPORARY TABLE IF NOT EXISTS cip_tmp_answer_map AS"
                       " SELECT id AS answer_id, CAST(0 AS SIGNED) AS field_id, CAST(0 AS SIGNED) AS value_code,"
                       " title AS value_label, title AS match_text FROM dwh_smanswer WHERE 1 = 0"))
-    conn.execute(text("CREATE TEMPORARY TABLE IF NOT EXISTS csi_tmp_response_map AS"
+    conn.execute(text("CREATE TEMPORARY TABLE IF NOT EXISTS cip_tmp_response_map AS"
                       " SELECT id AS response_id, CAST(0 AS SIGNED) AS respondent_id"
                       " FROM dwh_smresponse WHERE 1 = 0"))
-    conn.execute(text("DELETE FROM csi_tmp_answer_map"))
-    conn.execute(text("DELETE FROM csi_tmp_response_map"))
+    conn.execute(text("DELETE FROM cip_tmp_answer_map"))
+    conn.execute(text("DELETE FROM cip_tmp_response_map"))
     if rows:
-        conn.execute(text("INSERT INTO csi_tmp_answer_map (answer_id, field_id, value_code, value_label, match_text)"
+        conn.execute(text("INSERT INTO cip_tmp_answer_map (answer_id, field_id, value_code, value_label, match_text)"
                           " VALUES (:aid, :fid, :code, :label, :match)"), rows)
-    conn.execute(text("INSERT INTO csi_tmp_response_map (response_id, respondent_id)"
-                      " SELECT forsta_uuid, respondent_id FROM csi_respondent WHERE survey_id = :sid"),
+    conn.execute(text("INSERT INTO cip_tmp_response_map (response_id, respondent_id)"
+                      " SELECT forsta_uuid, respondent_id FROM cip_respondent WHERE survey_id = :sid"),
                  {"sid": survey_id})
-    conn.execute(text("DELETE FROM csi_answer WHERE survey_id = :sid"), {"sid": survey_id})
+    conn.execute(text("DELETE FROM cip_answer WHERE survey_id = :sid"), {"sid": survey_id})
     # the answers people gave
     conn.execute(text("""
-        INSERT INTO csi_answer (respondent_id, survey_id, field_id, value_code, value_label)
+        INSERT INTO cip_answer (respondent_id, survey_id, field_id, value_code, value_label)
         SELECT rm.respondent_id, :sid, m.field_id, MIN(m.value_code), MIN(m.value_label)
           FROM dwh_smresponseqa x
-          JOIN csi_tmp_answer_map m ON m.answer_id = x.answer_id
+          JOIN cip_tmp_answer_map m ON m.answer_id = x.answer_id
                -- a matrix cell is its column id AND its "<row> | <column>" text
                AND (m.match_text IS NULL OR m.match_text = x.answer_text)
-          JOIN csi_tmp_response_map rm ON rm.response_id = x.response_id
+          JOIN cip_tmp_response_map rm ON rm.response_id = x.response_id
          WHERE x.survey_id = :lid
          GROUP BY rm.respondent_id, m.field_id"""), {"sid": survey_id, "lid": legacy_id})
     # multi-select items a respondent saw but did not choose -> 0, so the
     # "Total Answering" base counts everyone who answered the question
     conn.execute(text("""
-        INSERT INTO csi_answer (respondent_id, survey_id, field_id, value_code, value_label)
+        INSERT INTO cip_answer (respondent_id, survey_id, field_id, value_code, value_label)
         SELECT a.respondent_id, :sid, f.field_id, 0, i.item_label
           FROM (SELECT DISTINCT z.respondent_id, f2.question_id
-                  FROM csi_answer z
-                  JOIN csi_field f2 ON f2.field_id = z.field_id
-                  JOIN csi_question q ON q.question_id = f2.question_id
+                  FROM cip_answer z
+                  JOIN cip_field f2 ON f2.field_id = z.field_id
+                  JOIN cip_question q ON q.question_id = f2.question_id
                  WHERE z.survey_id = :sid AND q.is_multi = 1) a
-          JOIN csi_field f ON f.question_id = a.question_id AND f.item_id IS NOT NULL
-          JOIN csi_item i ON i.item_id = f.item_id
-         WHERE NOT EXISTS (SELECT 1 FROM csi_answer y
+          JOIN cip_field f ON f.question_id = a.question_id AND f.item_id IS NOT NULL
+          JOIN cip_item i ON i.item_id = f.item_id
+         WHERE NOT EXISTS (SELECT 1 FROM cip_answer y
                             WHERE y.respondent_id = a.respondent_id AND y.field_id = f.field_id)"""),
         {"sid": survey_id})
-    return conn.execute(text("SELECT COUNT(*) FROM csi_answer WHERE survey_id = :sid"),
+    return conn.execute(text("SELECT COUNT(*) FROM cip_answer WHERE survey_id = :sid"),
                         {"sid": survey_id}).scalar()
 
 
@@ -238,16 +238,16 @@ def _panel_profiles(survey_id: int, legacy_id: str) -> int:
 
     eng = get_engine("etl")
     with eng.connect() as conn:
-        # matched in Python: the legacy ids and csi_respondent use different
+        # matched in Python: the legacy ids and cip_respondent use different
         # collations, and MySQL refuses to compare them ("Illegal mix")
         respondent = dict(conn.execute(text(
-            "SELECT forsta_uuid, respondent_id FROM csi_respondent WHERE survey_id = :sid"), {"sid": survey_id}).all())
+            "SELECT forsta_uuid, respondent_id FROM cip_respondent WHERE survey_id = :sid"), {"sid": survey_id}).all())
         panel = conn.execute(text("""
             SELECT response_id, MIN(age), MIN(gender), MIN(income), MIN(region) FROM dwh_smdemography
              WHERE survey_id = :lid GROUP BY response_id"""), {"lid": legacy_id}).all()
         own = {r[0]: dict(r._mapping) for r in conn.execute(text(
             "SELECT respondent_id, gender, age_years, age_band, generation, age_mid, income_band, income_mid_k,"
-            " census_region FROM csi_profile WHERE survey_id = :sid"), {"sid": survey_id})}
+            " census_region FROM cip_profile WHERE survey_id = :sid"), {"sid": survey_id})}
     rows = []
     for response_id, age, gender, income, division in panel:
         rid = respondent.get(str(response_id))
@@ -271,7 +271,7 @@ def _panel_profiles(survey_id: int, legacy_id: str) -> int:
     if rows:
         with eng.begin() as conn:
             conn.execute(text("""
-                INSERT INTO csi_profile (respondent_id, survey_id, gender, age_years, age_band, generation,
+                INSERT INTO cip_profile (respondent_id, survey_id, gender, age_years, age_band, generation,
                                          age_mid, income_band, income_mid_k, census_region)
                 VALUES (:respondent_id, :sid, :gender, :age_years, :age_band, :generation, :age_mid,
                         :income_band, :income_mid_k, :census_region)
@@ -318,7 +318,7 @@ def load_legacy(legacy_id: str) -> int:
     with eng.begin() as conn:
         if respondents:
             conn.execute(text("""
-                INSERT INTO csi_respondent (survey_id, record_no, forsta_uuid, status_code, status_label,
+                INSERT INTO cip_respondent (survey_id, record_no, forsta_uuid, status_code, status_label,
                                             is_qualified, completed_at, interview_secs, respondent_key, load_id)
                 VALUES (:sid, :rec, :uuid, :sc, :sl, :qual, :done, :secs, :key, :run)
                 ON DUPLICATE KEY UPDATE
@@ -331,7 +331,7 @@ def load_legacy(legacy_id: str) -> int:
         loaded = _move_answers(conn, survey_id, legacy_id, rows)
 
     with eng.begin() as conn:                   # profiles are rebuilt, never patched
-        conn.execute(text("DELETE FROM csi_profile WHERE survey_id = :sid"), {"sid": survey_id})
+        conn.execute(text("DELETE FROM cip_profile WHERE survey_id = :sid"), {"sid": survey_id})
     _rebuild_profiles(survey_id, None, family)
     if platform == "surveymonkey":
         _panel_profiles(survey_id, legacy_id)
@@ -341,6 +341,7 @@ def load_legacy(legacy_id: str) -> int:
              "rows skipped; harmonised %s", legacy_id, survey_id, wave, completes, loaded, skipped,
              harmonise.harmonise_survey(survey_id))
     log.info("Cube: %d cells", cube.refresh_wave(survey_id))
+    index_survey(survey_id)
     return survey_id
 
 
@@ -349,14 +350,14 @@ def reconcile_legacy(survey_id: int) -> tuple[int, list[str]]:
     """Every loaded count must equal the legacy source: completes, and for each
     mapped answer, the completes who gave it. -> (answers checked, problems)."""
     with get_engine("etl").connect() as conn:
-        legacy_id = conn.execute(text("SELECT source_ref FROM csi_survey WHERE survey_id = :s"),
+        legacy_id = conn.execute(text("SELECT source_ref FROM cip_survey WHERE survey_id = :s"),
                                  {"s": survey_id}).scalar()
         _, amap, _ = _definitions(conn, legacy_id)
         fields = dict(conn.execute(text(
-            "SELECT field_name, field_id FROM csi_field WHERE survey_id = :s"), {"s": survey_id}).all())
+            "SELECT field_name, field_id FROM cip_field WHERE survey_id = :s"), {"s": survey_id}).all())
         ours = {(f, c): n for f, c, n in conn.execute(text("""
-            SELECT a.field_id, a.value_code, COUNT(*) FROM csi_answer a
-              JOIN csi_respondent r ON r.respondent_id = a.respondent_id AND r.is_qualified = 1
+            SELECT a.field_id, a.value_code, COUNT(*) FROM cip_answer a
+              JOIN cip_respondent r ON r.respondent_id = a.respondent_id AND r.is_qualified = 1
              WHERE a.survey_id = :s AND a.value_code > 0 GROUP BY a.field_id, a.value_code"""),
             {"s": survey_id})}
         by_answer = conn.execute(text("""
@@ -372,7 +373,7 @@ def reconcile_legacy(survey_id: int) -> tuple[int, list[str]]:
                  WHERE x.survey_id = :lid AND x.question_id IN :g GROUP BY x.answer_id, x.answer_text""")
                 .bindparams(bindparam("g", expanding=True)), {"lid": legacy_id, "g": grids})})
         qualified = conn.execute(text(
-            "SELECT COUNT(*) FROM csi_respondent WHERE survey_id = :s AND is_qualified = 1"),
+            "SELECT COUNT(*) FROM cip_respondent WHERE survey_id = :s AND is_qualified = 1"),
             {"s": survey_id}).scalar()
         completes = conn.execute(text(
             "SELECT COUNT(*) FROM dwh_smresponse WHERE survey_id = :lid AND response_status = 'completed'"),

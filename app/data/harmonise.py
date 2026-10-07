@@ -86,18 +86,18 @@ def _digest(value: str) -> str:
 
 def _units(conn, survey_id: int) -> list[Unit]:
     questions = conn.execute(text(
-        "SELECT question_id, qcode, qtext, qtype, topic_id FROM csi_question"
-        " WHERE survey_id = :sid AND is_technical = 0 ORDER BY sort_order"),
+        "SELECT question_id, qcode, qtext, qtype, topic_id FROM cip_question"
+        " WHERE survey_id = :sid AND is_technical = 0 AND is_virtual = 0 ORDER BY sort_order"),
         {"sid": survey_id}).all()
     items, options = defaultdict(list), defaultdict(list)
     for qid, iid, label, order in conn.execute(text(
-            "SELECT i.question_id, i.item_id, i.item_label, i.sort_order FROM csi_item i"
-            " JOIN csi_question q ON q.question_id = i.question_id"
+            "SELECT i.question_id, i.item_id, i.item_label, i.sort_order FROM cip_item i"
+            " JOIN cip_question q ON q.question_id = i.question_id"
             " WHERE q.survey_id = :sid ORDER BY i.sort_order"), {"sid": survey_id}):
         items[qid].append((iid, label, order))
     for qid, oid, label, nonresponse, order in conn.execute(text(
             "SELECT o.question_id, o.option_id, o.value_label, o.is_nonresponse, o.sort_order"
-            " FROM csi_option o JOIN csi_question q ON q.question_id = o.question_id"
+            " FROM cip_option o JOIN cip_question q ON q.question_id = o.question_id"
             " WHERE q.survey_id = :sid ORDER BY o.sort_order"), {"sid": survey_id}):
         options[qid].append((oid, label, nonresponse, order))
 
@@ -121,20 +121,20 @@ def _concepts(conn) -> dict[int, Concept]:
     concepts = {cid: Concept(cid, code, qtype, match or normalise_text(name))
                 for cid, code, qtype, match, name in conn.execute(text(
                     "SELECT concept_id, concept_code, qtype, match_text, concept_name"
-                    " FROM csi_concept ORDER BY concept_id"))}
+                    " FROM cip_concept ORDER BY concept_id"))}
     # The wording a concept was confirmed on is the truth. Re-normalising it
     # here means a change to normalise_text() applies to every existing
     # concept — stored match_text is only the fallback. Newest first, so the
     # earliest wording is the one left standing.
     for cid, qtext, row in conn.execute(text(
-            "SELECT m.concept_id, q.qtext, i.item_label FROM csi_concept_map m"
-            " JOIN csi_question q ON q.question_id = m.question_id"
-            " LEFT JOIN csi_item i ON i.item_id = m.item_id"
+            "SELECT m.concept_id, q.qtext, i.item_label FROM cip_concept_map m"
+            " JOIN cip_question q ON q.question_id = m.question_id"
+            " LEFT JOIN cip_item i ON i.item_id = m.item_id"
             " WHERE m.status = 'confirmed' AND m.concept_option_id IS NULL"
             " ORDER BY m.map_id DESC")):
         concepts[cid].match_text = normalise_text(f"{qtext} :: {row}" if row else qtext)
     for cid, coid, code, label in conn.execute(text(
-            "SELECT concept_id, concept_option_id, option_code, option_label FROM csi_concept_option")):
+            "SELECT concept_id, concept_option_id, option_code, option_label FROM cip_concept_option")):
         concepts[cid].options[normalise_text(label)] = coid
         concepts[cid].option_codes.add(code)
     return concepts
@@ -177,10 +177,10 @@ def _create_concepts(conn, units: list[Unit], concepts: dict[int, Concept]) -> l
         rows.append({"code": code, "name": unit.wording[:255], "grp": unit.group,
                      "topic": unit.topic_id, "qtype": unit.qtype, "match": unit.match_text[:2000]})
     conn.execute(text(
-        "INSERT INTO csi_concept (concept_code, concept_name, concept_group, topic_id, qtype, match_text)"
+        "INSERT INTO cip_concept (concept_code, concept_name, concept_group, topic_id, qtype, match_text)"
         " VALUES (:code, :name, :grp, :topic, :qtype, :match)"), rows)
     ids = dict(conn.execute(text(
-        "SELECT concept_code, concept_id FROM csi_concept WHERE concept_code IN :codes")
+        "SELECT concept_code, concept_id FROM cip_concept WHERE concept_code IN :codes")
         .bindparams(bindparam("codes", expanding=True)), {"codes": [r["code"] for r in rows]}).all())
     created = []
     for unit, row in zip(units, rows):
@@ -212,11 +212,11 @@ def _add_options(conn, pairs: list[tuple[Concept, Unit]]) -> None:
     if not new:
         return
     conn.execute(text(
-        "INSERT INTO csi_concept_option (concept_id, option_code, option_label, sort_order, is_nonresponse)"
+        "INSERT INTO cip_concept_option (concept_id, option_code, option_label, sort_order, is_nonresponse)"
         " VALUES (:cid, :code, :label, :ord, :nr)"), new)
     by_id = {c.concept_id: c for c, _ in pairs}
     for cid, coid, code in conn.execute(text(
-            "SELECT concept_id, concept_option_id, option_code FROM csi_concept_option"
+            "SELECT concept_id, concept_option_id, option_code FROM cip_concept_option"
             " WHERE concept_id IN :ids").bindparams(bindparam("ids", expanding=True)),
             {"ids": sorted(by_id)}):
         if (cid, code) in key_of:
@@ -227,7 +227,7 @@ def _map_units(conn, survey_id: int, rows: list[tuple]) -> None:
     """rows: (unit, concept, status, method, confidence, evidence)."""
     if rows:
         conn.execute(text(
-            "INSERT INTO csi_concept_map (survey_id, map_key, question_id, item_id, concept_id,"
+            "INSERT INTO cip_concept_map (survey_id, map_key, question_id, item_id, concept_id,"
             " status, method, confidence, evidence)"
             " VALUES (:sid, :key, :qid, :item, :cid, :status, :method, :conf, :evidence)"),
             [{"sid": survey_id, "key": u.key, "qid": u.question_id, "item": u.item_id,
@@ -246,7 +246,7 @@ def _map_choices(conn, survey_id: int, pairs: list[tuple[Concept, Unit]],
             for concept, unit in pairs for item, option, label, _, _ in unit.choices]
     if rows:
         conn.execute(text(
-            "INSERT INTO csi_concept_map (survey_id, map_key, question_id, item_id, option_id,"
+            "INSERT INTO cip_concept_map (survey_id, map_key, question_id, item_id, option_id,"
             " concept_id, concept_option_id, status, method, confidence, reviewed_by)"
             # every value a placeholder, or PyMySQL sends one round trip per row
             " VALUES (:sid, :key, :qid, :item, :option, :cid, :coid, :status, :method, :conf, :who)"),
@@ -264,7 +264,7 @@ def harmonise_survey(survey_id: int) -> dict[str, int]:
     with get_engine("etl").begin() as conn:
         concepts = _concepts(conn)
         mapped = conn.execute(text(
-            "SELECT map_key, concept_id FROM csi_concept_map WHERE survey_id = :sid"),
+            "SELECT map_key, concept_id FROM cip_concept_map WHERE survey_id = :sid"),
             {"sid": survey_id}).all()
         done, used = {k for k, _ in mapped}, {c for _, c in mapped}
         decisions = []                              # [unit, kind, concept, confidence, evidence]
@@ -297,7 +297,7 @@ def _open_unit(conn, survey_id: int, question_id: int, item_id: Optional[int]) -
     unit = next((u for u in _units(conn, survey_id)
                  if u.question_id == question_id and u.item_id == item_id), None)
     status = conn.execute(text(
-        "SELECT status FROM csi_concept_map WHERE survey_id = :sid AND map_key = :key"),
+        "SELECT status FROM cip_concept_map WHERE survey_id = :sid AND map_key = :key"),
         {"sid": survey_id, "key": f"{question_id}:{item_id or 0}:0"}).scalar()
     if unit is None or status != "proposed":
         raise ValueError(f"question {question_id} row {item_id} is not awaiting review")
@@ -311,7 +311,7 @@ def _claim(conn, survey_id: int, unit: Unit, status: str, reviewer: str,
     status check but finds nothing to update here (and on MySQL waits on our
     row lock first), so a decision can never be made twice."""
     claimed = conn.execute(text(
-        "UPDATE csi_concept_map SET status = :status, concept_id = COALESCE(:cid, concept_id),"
+        "UPDATE cip_concept_map SET status = :status, concept_id = COALESCE(:cid, concept_id),"
         " method = COALESCE(:method, method), reviewed_by = :who, reviewed_at = CURRENT_TIMESTAMP"
         " WHERE survey_id = :sid AND map_key = :key AND status = 'proposed'"),
         {"status": status, "cid": concept_id, "method": method, "who": reviewer,
@@ -329,7 +329,7 @@ def confirm(survey_id: int, question_id: int, item_id: Optional[int],
         if concept is None:
             raise ValueError(f"concept {concept_id} does not exist")
         clash = conn.execute(text(
-            "SELECT COUNT(*) FROM csi_concept_map WHERE survey_id = :sid AND concept_id = :cid"
+            "SELECT COUNT(*) FROM cip_concept_map WHERE survey_id = :sid AND concept_id = :cid"
             " AND map_key <> :key AND concept_option_id IS NULL AND status <> 'rejected'"),
             {"sid": survey_id, "cid": concept_id, "key": unit.key}).scalar()
         if clash:          # one wave, one question per concept — or its answers count twice
@@ -346,7 +346,7 @@ def keep_separate(survey_id: int, question_id: int, item_id: Optional[int], revi
         _claim(conn, survey_id, unit, "confirmed", reviewer, method="manual")
         concept = _create_concepts(conn, [unit], _concepts(conn))[0]
         conn.execute(text(
-            "UPDATE csi_concept_map SET concept_id = :cid WHERE survey_id = :sid AND map_key = :key"),
+            "UPDATE cip_concept_map SET concept_id = :cid WHERE survey_id = :sid AND map_key = :key"),
             {"cid": concept.concept_id, "sid": survey_id, "key": unit.key})
         _add_options(conn, [(concept, unit)])
         _map_choices(conn, survey_id, [(concept, unit)], reviewer)
@@ -364,7 +364,7 @@ def harmonise_all() -> dict[str, dict[str, int]]:
     """Every wave, oldest first — the earliest wording seeds each concept."""
     with get_engine("etl").connect() as conn:
         waves = conn.execute(text(
-            "SELECT survey_id, wave_label FROM csi_survey"
+            "SELECT survey_id, wave_label FROM cip_survey"
             " ORDER BY wave_date, wave_label, survey_id")).all()
     return {label: harmonise_survey(sid) for sid, label in waves}
 
@@ -381,7 +381,7 @@ def main() -> int:
         results = harmonise_all()
     else:
         with get_engine("etl").connect() as conn:
-            sid = conn.execute(text("SELECT survey_id FROM csi_survey WHERE wave_label = :w"),
+            sid = conn.execute(text("SELECT survey_id FROM cip_survey WHERE wave_label = :w"),
                                {"w": args.wave}).scalar()
         if sid is None:
             print(f"No wave labelled {args.wave}")

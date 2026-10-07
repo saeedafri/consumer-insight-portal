@@ -30,50 +30,50 @@ def two_wave_db(tmp_path):
     src.close()
 
     dst.execute(
-        "INSERT INTO csi_survey (forsta_host, forsta_path, title, survey_family,"
+        "INSERT INTO cip_survey (forsta_host, forsta_path, title, survey_family,"
         " wave_label, wave_date, status) VALUES"
         " ('synthetic', 'synthetic/test/wave2', 'SYNTHETIC TEST WAVE',"
         "  'CSI-US', '2026-10', '2026-10-01', 'closed')"
     )
-    new_id = dst.execute("SELECT MAX(survey_id) FROM csi_survey").fetchone()[0]
+    new_id = dst.execute("SELECT MAX(survey_id) FROM cip_survey").fetchone()[0]
 
     # clone the definition layer
-    dst.execute("INSERT INTO csi_question (survey_id, topic_id, qcode, qtext,"
+    dst.execute("INSERT INTO cip_question (survey_id, topic_id, qcode, qtext,"
                 " qtext_short, qtype, value_min, value_max, is_technical, is_multi,"
                 " base_n, sort_order)"
                 " SELECT ?, topic_id, qcode, qtext, qtext_short, qtype, value_min,"
                 " value_max, is_technical, is_multi, base_n, sort_order"
-                " FROM csi_question WHERE survey_id = 1", (new_id,))
-    dst.execute("INSERT INTO csi_item (question_id, item_code, item_label, item_short,"
+                " FROM cip_question WHERE survey_id = 1", (new_id,))
+    dst.execute("INSERT INTO cip_item (question_id, item_code, item_label, item_short,"
                 " is_exclusive, is_other, sort_order)"
                 " SELECT q2.question_id, i.item_code, i.item_label, i.item_short,"
                 " i.is_exclusive, i.is_other, i.sort_order"
-                " FROM csi_item i"
-                " JOIN csi_question q1 ON q1.question_id = i.question_id AND q1.survey_id = 1"
-                " JOIN csi_question q2 ON q2.qcode = q1.qcode AND q2.survey_id = ?", (new_id,))
-    dst.execute("INSERT INTO csi_field (survey_id, question_id, item_id, field_name, value_type)"
+                " FROM cip_item i"
+                " JOIN cip_question q1 ON q1.question_id = i.question_id AND q1.survey_id = 1"
+                " JOIN cip_question q2 ON q2.qcode = q1.qcode AND q2.survey_id = ?", (new_id,))
+    dst.execute("INSERT INTO cip_field (survey_id, question_id, item_id, field_name, value_type)"
                 " SELECT ?, q2.question_id, i2.item_id, f.field_name, f.value_type"
-                " FROM csi_field f"
-                " JOIN csi_question q1 ON q1.question_id = f.question_id AND q1.survey_id = 1"
-                " JOIN csi_question q2 ON q2.qcode = q1.qcode AND q2.survey_id = ?"
-                " LEFT JOIN csi_item i1 ON i1.item_id = f.item_id"
-                " LEFT JOIN csi_item i2 ON i2.question_id = q2.question_id"
+                " FROM cip_field f"
+                " JOIN cip_question q1 ON q1.question_id = f.question_id AND q1.survey_id = 1"
+                " JOIN cip_question q2 ON q2.qcode = q1.qcode AND q2.survey_id = ?"
+                " LEFT JOIN cip_item i1 ON i1.item_id = f.item_id"
+                " LEFT JOIN cip_item i2 ON i2.question_id = q2.question_id"
                 "        AND i2.item_code = i1.item_code", (new_id, new_id))
 
     # clone half the respondents, so the second wave has a different base
-    dst.execute("INSERT INTO csi_respondent (survey_id, record_no, status_code,"
+    dst.execute("INSERT INTO cip_respondent (survey_id, record_no, status_code,"
                 " status_label, is_qualified, completed_at)"
                 " SELECT ?, record_no, status_code, status_label, is_qualified,"
-                " completed_at FROM csi_respondent WHERE survey_id = 1"
+                " completed_at FROM cip_respondent WHERE survey_id = 1"
                 " AND record_no % 2 = 0", (new_id,))
-    dst.execute("INSERT INTO csi_answer (respondent_id, survey_id, field_id,"
+    dst.execute("INSERT INTO cip_answer (respondent_id, survey_id, field_id,"
                 " value_code, value_label)"
                 " SELECT r2.respondent_id, ?, f2.field_id, a.value_code, a.value_label"
-                " FROM csi_answer a"
-                " JOIN csi_respondent r1 ON r1.respondent_id = a.respondent_id AND r1.survey_id = 1"
-                " JOIN csi_respondent r2 ON r2.record_no = r1.record_no AND r2.survey_id = ?"
-                " JOIN csi_field f1 ON f1.field_id = a.field_id"
-                " JOIN csi_field f2 ON f2.field_name = f1.field_name AND f2.survey_id = ?",
+                " FROM cip_answer a"
+                " JOIN cip_respondent r1 ON r1.respondent_id = a.respondent_id AND r1.survey_id = 1"
+                " JOIN cip_respondent r2 ON r2.record_no = r1.record_no AND r2.survey_id = ?"
+                " JOIN cip_field f1 ON f1.field_id = a.field_id"
+                " JOIN cip_field f2 ON f2.field_name = f1.field_name AND f2.survey_id = ?",
                 (new_id, new_id, new_id))
     dst.commit()
     dst.close()

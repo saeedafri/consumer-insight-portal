@@ -6,21 +6,21 @@
 --
 -- 29 tables, simple names, in nine groups (schema v2):
 --
---   DEFINITION  csi_survey · csi_topic · csi_question · csi_item
---               csi_option · csi_field              — what was asked
---   DATA        csi_respondent · csi_profile · csi_answer
+--   DEFINITION  cip_survey · cip_topic · cip_question · cip_item
+--               cip_option · cip_field              — what was asked
+--   DATA        cip_respondent · cip_profile · cip_answer
 --                                                   — what people said
---   TABULATION  csi_banner · csi_segment · csi_crosstab_run · csi_crosstab
+--   TABULATION  cip_banner · cip_segment · cip_crosstab_run · cip_crosstab
 --                                                   — the published numbers
---   LOADING     csi_load_log · csi_load_error · csi_load_state
+--   LOADING     cip_load_log · cip_load_error · cip_load_state
 --                                                   — how it got here
---   HARMONISATION csi_concept · csi_concept_option · csi_concept_map
+--   HARMONISATION cip_concept · cip_concept_option · cip_concept_map
 --                                                   — the same question across waves
---   WEIGHTS     csi_weight_scheme · csi_weight
---   COHORTS     csi_cohort_def · csi_respondent_cohort
---   AGGREGATES  csi_agg_cell                        — the portal's speed layer
---   PUBLICATIONS csi_publication · csi_publication_cell
---   SUPPORT     csi_profile_map · csi_auth_session · csi_saved_view
+--   WEIGHTS     cip_weight_scheme · cip_weight
+--   COHORTS     cip_cohort_def · cip_respondent_cohort
+--   AGGREGATES  cip_agg_cell                        — the portal's speed layer
+--   PUBLICATIONS cip_publication · cip_publication_cell
+--   SUPPORT     cip_profile_map · cip_auth_session · cip_saved_view
 --
 -- Spec: docs/superpowers/specs/2026-09-29-survey-platform-design.md §5
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -32,7 +32,7 @@ SET NAMES utf8mb4;
 -- ───────────────────────────────────────────────────────────────────────────
 
 -- One row per survey wave.
-CREATE TABLE IF NOT EXISTS csi_survey (
+CREATE TABLE IF NOT EXISTS cip_survey (
   survey_id     INT UNSIGNED NOT NULL AUTO_INCREMENT,
   forsta_host   VARCHAR(100) NOT NULL              COMMENT 'se1.decipherinc.com',
   forsta_path   VARCHAR(255) NOT NULL              COMMENT 'selfserve/58f/260908',
@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS csi_survey (
   load_status   ENUM('loading','verified','failed','superseded') NOT NULL DEFAULT 'verified'
                                                    COMMENT 'only verified waves are shown',
   language      VARCHAR(10)  NOT NULL DEFAULT 'en',
+  sample_source VARCHAR(50)  NULL                  COMMENT 'Forsta sample source id (panel), e.g. 114',
+  total_n       INT          NULL                  COMMENT 'all respondents incl. terminates/overquota',
+  tags          VARCHAR(500) NULL                  COMMENT 'Forsta tags, e.g. Weekly consumer tracker',
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (survey_id),
@@ -62,12 +65,13 @@ CREATE TABLE IF NOT EXISTS csi_survey (
   -- first unique key, so both engines resolve a reload to the same row.
   UNIQUE KEY uq_survey_source (platform, source_ref, wave_label),
   UNIQUE KEY uq_survey (forsta_host, forsta_path, wave_label),
-  KEY ix_survey_family (survey_family, wave_date)
+  KEY ix_survey_family (survey_family, wave_date),
+  KEY ix_survey_pick (load_status, study_type, wave_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Survey waves.';
 
 -- Report modules: Department Stores, BNPL, GLP-1, Demographics, ...
-CREATE TABLE IF NOT EXISTS csi_topic (
+CREATE TABLE IF NOT EXISTS cip_topic (
   topic_id      SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
   topic_code    VARCHAR(40)  NOT NULL              COMMENT 'DEPT_STORES',
   topic_name    VARCHAR(150) NOT NULL              COMMENT 'Department Stores',
@@ -79,7 +83,7 @@ CREATE TABLE IF NOT EXISTS csi_topic (
   COMMENT='Editorial grouping of questions.';
 
 -- One row per question as an analyst names it: q1, DP7, BN3, CS1.
-CREATE TABLE IF NOT EXISTS csi_question (
+CREATE TABLE IF NOT EXISTS cip_question (
   question_id   INT UNSIGNED NOT NULL AUTO_INCREMENT,
   survey_id     INT UNSIGNED NOT NULL,
   topic_id      SMALLINT UNSIGNED NULL,
@@ -90,6 +94,7 @@ CREATE TABLE IF NOT EXISTS csi_question (
   value_min     INT          NULL,
   value_max     INT          NULL,
   is_technical  TINYINT(1)   NOT NULL DEFAULT 0,
+  is_virtual    TINYINT(1)   NOT NULL DEFAULT 0    COMMENT 'Forsta flag v: derived (vos, vbrowser…), not asked',
   is_multi      TINYINT(1)   NOT NULL DEFAULT 0    COMMENT '1 = respondent may pick several',
   -- ── routing: the reason this schema exists in the form it does ──────────
   -- Most questions in this survey are conditional. DP2 is asked only of
@@ -104,14 +109,14 @@ CREATE TABLE IF NOT EXISTS csi_question (
   UNIQUE KEY uq_question (survey_id, qcode),
   KEY ix_question_topic (topic_id),
   CONSTRAINT fk_question_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE,
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE,
   CONSTRAINT fk_question_topic FOREIGN KEY (topic_id)
-    REFERENCES csi_topic (topic_id) ON DELETE SET NULL
+    REFERENCES cip_topic (topic_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Questions, with their own answering base.';
 
 -- Statement rows inside a list or grid: q1r1, DP7r3.
-CREATE TABLE IF NOT EXISTS csi_item (
+CREATE TABLE IF NOT EXISTS cip_item (
   item_id       INT UNSIGNED  NOT NULL AUTO_INCREMENT,
   question_id   INT UNSIGNED  NOT NULL,
   item_code     VARCHAR(50)   NOT NULL             COMMENT 'q1r1, DP7r3',
@@ -119,16 +124,18 @@ CREATE TABLE IF NOT EXISTS csi_item (
   item_short    VARCHAR(255)  NULL                 COMMENT 'trimmed for axis ticks',
   is_exclusive  TINYINT(1)    NOT NULL DEFAULT 0   COMMENT '1 = "None of these" — drop from rankings',
   is_other      TINYINT(1)    NOT NULL DEFAULT 0   COMMENT '1 = Other (please specify)',
+  left_label    VARCHAR(500)  NULL                 COMMENT 'bipolar row: the statement code 1 means',
+  right_label   VARCHAR(500)  NULL                 COMMENT 'bipolar row: the statement code 2 means',
   sort_order    SMALLINT      NOT NULL DEFAULT 0,
   PRIMARY KEY (item_id),
   UNIQUE KEY uq_item (question_id, item_code),
   CONSTRAINT fk_item_question FOREIGN KEY (question_id)
-    REFERENCES csi_question (question_id) ON DELETE CASCADE
+    REFERENCES cip_question (question_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='List items and grid rows.';
 
 -- Code -> label dictionary. 0/1 for lists; 1-5 scales; 1-51 for state.
-CREATE TABLE IF NOT EXISTS csi_option (
+CREATE TABLE IF NOT EXISTS cip_option (
   option_id      INT UNSIGNED NOT NULL AUTO_INCREMENT,
   question_id    INT UNSIGNED NOT NULL,
   value_code     INT          NOT NULL,
@@ -139,13 +146,13 @@ CREATE TABLE IF NOT EXISTS csi_option (
   PRIMARY KEY (option_id),
   UNIQUE KEY uq_option (question_id, value_code),
   CONSTRAINT fk_option_question FOREIGN KEY (question_id)
-    REFERENCES csi_question (question_id) ON DELETE CASCADE
+    REFERENCES cip_question (question_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Answer codes and their labels.';
 
 -- One row per column in the Forsta flat export. 375 rows for the 09/21/26 wave,
 -- matching the export's 375 columns exactly. This is the loader's map.
-CREATE TABLE IF NOT EXISTS csi_field (
+CREATE TABLE IF NOT EXISTS cip_field (
   field_id     INT UNSIGNED NOT NULL AUTO_INCREMENT,
   survey_id    INT UNSIGNED NOT NULL,
   question_id  INT UNSIGNED NULL,
@@ -158,11 +165,11 @@ CREATE TABLE IF NOT EXISTS csi_field (
   KEY ix_field_question (question_id),
   KEY ix_field_item (item_id),
   CONSTRAINT fk_field_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE,
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE,
   CONSTRAINT fk_field_question FOREIGN KEY (question_id)
-    REFERENCES csi_question (question_id) ON DELETE CASCADE,
+    REFERENCES cip_question (question_id) ON DELETE CASCADE,
   CONSTRAINT fk_field_item FOREIGN KEY (item_id)
-    REFERENCES csi_item (item_id) ON DELETE CASCADE
+    REFERENCES cip_item (item_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Export column -> question/item map.';
 
@@ -171,7 +178,7 @@ CREATE TABLE IF NOT EXISTS csi_field (
 -- DATA
 -- ───────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS csi_respondent (
+CREATE TABLE IF NOT EXISTS cip_respondent (
   respondent_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   survey_id      INT UNSIGNED    NOT NULL,
   record_no      INT UNSIGNED    NOT NULL          COMMENT 'Forsta [record]',
@@ -199,13 +206,13 @@ CREATE TABLE IF NOT EXISTS csi_respondent (
   KEY ix_respondent_completed (survey_id, completed_at),
   KEY ix_respondent_key (survey_id, respondent_key),
   CONSTRAINT fk_respondent_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='One row per interview.';
 
 -- Demographics flattened out of D1-D8/CS1/CS2 so a filter is one indexed join
--- rather than eight lookups in csi_answer.
-CREATE TABLE IF NOT EXISTS csi_profile (
+-- rather than eight lookups in cip_answer.
+CREATE TABLE IF NOT EXISTS cip_profile (
   respondent_id     BIGINT UNSIGNED NOT NULL,
   survey_id         INT UNSIGNED    NOT NULL,
   gender            VARCHAR(40)   NULL             COMMENT 'D1',
@@ -228,16 +235,16 @@ CREATE TABLE IF NOT EXISTS csi_profile (
   KEY ix_profile_cuts (survey_id, generation, gender, income_band),
   KEY ix_profile_region (survey_id, census_region),
   CONSTRAINT fk_profile_respondent FOREIGN KEY (respondent_id)
-    REFERENCES csi_respondent (respondent_id) ON DELETE CASCADE,
+    REFERENCES cip_respondent (respondent_id) ON DELETE CASCADE,
   CONSTRAINT fk_profile_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Demographic cuts, one row per respondent.';
 
 -- The fact table. One row per respondent x field.
 -- Long rather than wide: the questionnaire changes every wave (375 fields this
 -- one), so new questions become new rows, never a schema migration.
-CREATE TABLE IF NOT EXISTS csi_answer (
+CREATE TABLE IF NOT EXISTS cip_answer (
   answer_id     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   respondent_id BIGINT UNSIGNED NOT NULL,
   survey_id     INT UNSIGNED    NOT NULL           COMMENT 'denormalised for filter speed',
@@ -248,14 +255,13 @@ CREATE TABLE IF NOT EXISTS csi_answer (
   value_text    TEXT            NULL               COMMENT 'open-ended verbatim',
   PRIMARY KEY (answer_id),
   UNIQUE KEY uq_answer (respondent_id, field_id),
-  KEY ix_answer_field (survey_id, field_id, value_code),
   KEY ix_answer_respondent (respondent_id),
   KEY ix_answer_cover (survey_id, field_id, value_code, respondent_id),
   FULLTEXT KEY ft_answer_text (value_text),
   CONSTRAINT fk_answer_respondent FOREIGN KEY (respondent_id)
-    REFERENCES csi_respondent (respondent_id) ON DELETE CASCADE,
+    REFERENCES cip_respondent (respondent_id) ON DELETE CASCADE,
   CONSTRAINT fk_answer_field FOREIGN KEY (field_id)
-    REFERENCES csi_field (field_id) ON DELETE CASCADE
+    REFERENCES cip_field (field_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Every answer, long format. ~151k rows per wave.';
 
@@ -264,7 +270,7 @@ CREATE TABLE IF NOT EXISTS csi_answer (
 -- TABULATION
 -- ───────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS csi_banner (
+CREATE TABLE IF NOT EXISTS cip_banner (
   banner_id   INT UNSIGNED NOT NULL AUTO_INCREMENT,
   survey_id   INT UNSIGNED NOT NULL,
   banner_code VARCHAR(50)  NOT NULL                COMMENT 'AGE, GENDER, INCOME',
@@ -274,11 +280,11 @@ CREATE TABLE IF NOT EXISTS csi_banner (
   PRIMARY KEY (banner_id),
   UNIQUE KEY uq_banner (survey_id, banner_code),
   CONSTRAINT fk_banner_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Cross-tab column groups.';
 
-CREATE TABLE IF NOT EXISTS csi_segment (
+CREATE TABLE IF NOT EXISTS cip_segment (
   segment_id     INT UNSIGNED  NOT NULL AUTO_INCREMENT,
   banner_id      INT UNSIGNED  NOT NULL,
   survey_id      INT UNSIGNED  NOT NULL,
@@ -293,21 +299,21 @@ CREATE TABLE IF NOT EXISTS csi_segment (
   UNIQUE KEY uq_segment (banner_id, seg_label),
   KEY ix_segment_survey (survey_id),
   CONSTRAINT fk_segment_banner FOREIGN KEY (banner_id)
-    REFERENCES csi_banner (banner_id) ON DELETE CASCADE,
+    REFERENCES cip_banner (banner_id) ON DELETE CASCADE,
   CONSTRAINT fk_segment_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Cross-tab columns with their Forsta definitions.';
 
 -- The Summary-sheet settings. A percentage without these is not defensible.
-CREATE TABLE IF NOT EXISTS csi_crosstab_run (
+CREATE TABLE IF NOT EXISTS cip_crosstab_run (
   run_id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
   survey_id       INT UNSIGNED NOT NULL,
   run_label       VARCHAR(255) NOT NULL,
   respondent_base VARCHAR(100) NULL                COMMENT '"Qualified Only"',
   extra_filter    VARCHAR(500) NULL,
   table_set       VARCHAR(100) NULL,
-  pct_base        VARCHAR(100) NULL                COMMENT '"Total Answering" — see csi_crosstab.answer_base_n',
+  pct_base        VARCHAR(100) NULL                COMMENT '"Total Answering" — see cip_crosstab.answer_base_n',
   stat_test       VARCHAR(100) NULL,
   date_from       DATE         NULL,
   date_to         DATE         NULL,
@@ -318,18 +324,18 @@ CREATE TABLE IF NOT EXISTS csi_crosstab_run (
   PRIMARY KEY (run_id),
   KEY ix_run_survey (survey_id, is_current),
   CONSTRAINT fk_run_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='One row per cross-tab export, with its base and filter settings.';
 
 -- Every cell of every cross-tab.
 --
 -- Two different bases live here and must never be confused:
---   seg_base_n    on csi_segment — how many people are in the column (404 Total)
+--   seg_base_n    on cip_segment — how many people are in the column (404 Total)
 --   answer_base_n here           — how many ANSWERED this question (222 for DP2)
 -- Forsta prints the first in the header and divides by the second. Storing
 -- only the printed one would overstate every routed question's base by up to 6x.
-CREATE TABLE IF NOT EXISTS csi_crosstab (
+CREATE TABLE IF NOT EXISTS cip_crosstab (
   crosstab_id   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   run_id        INT UNSIGNED    NOT NULL,
   survey_id     INT UNSIGNED    NOT NULL,
@@ -350,11 +356,11 @@ CREATE TABLE IF NOT EXISTS csi_crosstab (
   KEY ix_crosstab_lookup (survey_id, question_id, segment_id),
   KEY ix_crosstab_item (item_id),
   CONSTRAINT fk_crosstab_run FOREIGN KEY (run_id)
-    REFERENCES csi_crosstab_run (run_id) ON DELETE CASCADE,
+    REFERENCES cip_crosstab_run (run_id) ON DELETE CASCADE,
   CONSTRAINT fk_crosstab_question FOREIGN KEY (question_id)
-    REFERENCES csi_question (question_id) ON DELETE CASCADE,
+    REFERENCES cip_question (question_id) ON DELETE CASCADE,
   CONSTRAINT fk_crosstab_segment FOREIGN KEY (segment_id)
-    REFERENCES csi_segment (segment_id) ON DELETE CASCADE
+    REFERENCES cip_segment (segment_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Cross-tab cells: percentage, count, true base, significance.';
 
@@ -363,7 +369,7 @@ CREATE TABLE IF NOT EXISTS csi_crosstab (
 -- LOADING
 -- ───────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS csi_load_log (
+CREATE TABLE IF NOT EXISTS cip_load_log (
   load_id     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   survey_id   INT UNSIGNED    NULL,
   source_type ENUM('api','excel','manual') NOT NULL,
@@ -383,7 +389,7 @@ CREATE TABLE IF NOT EXISTS csi_load_log (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Audit trail. Nothing enters CSI without a row here.';
 
-CREATE TABLE IF NOT EXISTS csi_load_error (
+CREATE TABLE IF NOT EXISTS cip_load_error (
   error_id   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   load_id    BIGINT UNSIGNED NOT NULL,
   record_ref VARCHAR(200)    NULL                  COMMENT 'record number or sheet!cell',
@@ -392,11 +398,11 @@ CREATE TABLE IF NOT EXISTS csi_load_error (
   PRIMARY KEY (error_id),
   KEY ix_error_load (load_id),
   CONSTRAINT fk_error_load FOREIGN KEY (load_id)
-    REFERENCES csi_load_log (load_id) ON DELETE CASCADE
+    REFERENCES cip_load_log (load_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Rows that failed validation, kept for review.';
 
-CREATE TABLE IF NOT EXISTS csi_load_state (
+CREATE TABLE IF NOT EXISTS cip_load_state (
   feed_name      VARCHAR(100) NOT NULL,
   survey_id      INT UNSIGNED NULL,
   last_record    INT UNSIGNED NULL,
@@ -414,7 +420,7 @@ CREATE TABLE IF NOT EXISTS csi_load_state (
 -- A grid is stored as one concept per grid row, sharing a concept_group.
 -- ───────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS csi_concept (
+CREATE TABLE IF NOT EXISTS cip_concept (
   concept_id    INT UNSIGNED      NOT NULL AUTO_INCREMENT,
   concept_code  VARCHAR(80)       NOT NULL COMMENT 'BEAUTY_RETAILER_3M',
   concept_name  VARCHAR(255)      NOT NULL,
@@ -428,11 +434,11 @@ CREATE TABLE IF NOT EXISTS csi_concept (
   UNIQUE KEY uq_concept (concept_code),
   KEY ix_concept_group (concept_group),
   CONSTRAINT fk_concept_topic FOREIGN KEY (topic_id)
-    REFERENCES csi_topic (topic_id) ON DELETE SET NULL
+    REFERENCES cip_topic (topic_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Canonical questions, stable across waves and platforms.';
 
-CREATE TABLE IF NOT EXISTS csi_concept_option (
+CREATE TABLE IF NOT EXISTS cip_concept_option (
   concept_option_id INT UNSIGNED  NOT NULL AUTO_INCREMENT,
   concept_id        INT UNSIGNED  NOT NULL,
   option_code       VARCHAR(80)   NOT NULL COMMENT 'amazon',
@@ -444,11 +450,11 @@ CREATE TABLE IF NOT EXISTS csi_concept_option (
   PRIMARY KEY (concept_option_id),
   UNIQUE KEY uq_concept_option (concept_id, option_code),
   CONSTRAINT fk_coption_concept FOREIGN KEY (concept_id)
-    REFERENCES csi_concept (concept_id) ON DELETE CASCADE
+    REFERENCES cip_concept (concept_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Canonical answers, with band midpoints.';
 
-CREATE TABLE IF NOT EXISTS csi_concept_map (
+CREATE TABLE IF NOT EXISTS cip_concept_map (
   map_id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   survey_id         INT UNSIGNED    NOT NULL,
   map_key           VARCHAR(80)     NOT NULL COMMENT 'question_id:item_id:option_id, 0 when absent',
@@ -470,17 +476,17 @@ CREATE TABLE IF NOT EXISTS csi_concept_map (
   KEY ix_map_concept_option (concept_option_id),
   KEY ix_map_status (status),
   CONSTRAINT fk_map_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE,
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE,
   CONSTRAINT fk_map_question FOREIGN KEY (question_id)
-    REFERENCES csi_question (question_id) ON DELETE CASCADE,
+    REFERENCES cip_question (question_id) ON DELETE CASCADE,
   CONSTRAINT fk_map_item FOREIGN KEY (item_id)
-    REFERENCES csi_item (item_id) ON DELETE CASCADE,
+    REFERENCES cip_item (item_id) ON DELETE CASCADE,
   CONSTRAINT fk_map_option FOREIGN KEY (option_id)
-    REFERENCES csi_option (option_id) ON DELETE CASCADE,
+    REFERENCES cip_option (option_id) ON DELETE CASCADE,
   CONSTRAINT fk_map_concept FOREIGN KEY (concept_id)
-    REFERENCES csi_concept (concept_id) ON DELETE CASCADE,
+    REFERENCES cip_concept (concept_id) ON DELETE CASCADE,
   CONSTRAINT fk_map_coption FOREIGN KEY (concept_option_id)
-    REFERENCES csi_concept_option (concept_option_id) ON DELETE CASCADE
+    REFERENCES cip_concept_option (concept_option_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Wave question/item/option -> canonical concept, proposed or confirmed.';
 
@@ -488,7 +494,7 @@ CREATE TABLE IF NOT EXISTS csi_concept_map (
 -- WEIGHTS — supported, none applied yet
 -- ───────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS csi_weight_scheme (
+CREATE TABLE IF NOT EXISTS cip_weight_scheme (
   scheme_id   INT UNSIGNED NOT NULL AUTO_INCREMENT,
   survey_id   INT UNSIGNED NOT NULL,
   scheme_code VARCHAR(60)  NOT NULL COMMENT 'CENSUS_AGE_GENDER_REGION',
@@ -499,20 +505,20 @@ CREATE TABLE IF NOT EXISTS csi_weight_scheme (
   PRIMARY KEY (scheme_id),
   UNIQUE KEY uq_weight_scheme (survey_id, scheme_code),
   CONSTRAINT fk_wscheme_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Named weighting schemes, per wave.';
 
-CREATE TABLE IF NOT EXISTS csi_weight (
+CREATE TABLE IF NOT EXISTS cip_weight (
   respondent_id BIGINT UNSIGNED NOT NULL,
   scheme_id     INT UNSIGNED    NOT NULL,
   weight        DECIMAL(12,6)   NOT NULL,
   PRIMARY KEY (respondent_id, scheme_id),
   KEY ix_weight_scheme (scheme_id),
   CONSTRAINT fk_weight_respondent FOREIGN KEY (respondent_id)
-    REFERENCES csi_respondent (respondent_id) ON DELETE CASCADE,
+    REFERENCES cip_respondent (respondent_id) ON DELETE CASCADE,
   CONSTRAINT fk_weight_scheme FOREIGN KEY (scheme_id)
-    REFERENCES csi_weight_scheme (scheme_id) ON DELETE CASCADE
+    REFERENCES cip_weight_scheme (scheme_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='One weight per respondent per scheme.';
 
@@ -520,7 +526,7 @@ CREATE TABLE IF NOT EXISTS csi_weight (
 -- COHORTS — analyst rules made data ("Beauty shopper")
 -- ───────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS csi_cohort_def (
+CREATE TABLE IF NOT EXISTS cip_cohort_def (
   cohort_id   INT UNSIGNED      NOT NULL AUTO_INCREMENT,
   cohort_code VARCHAR(60)       NOT NULL COMMENT 'BEAUTY_SHOPPER',
   version     SMALLINT UNSIGNED NOT NULL DEFAULT 1,
@@ -535,7 +541,7 @@ CREATE TABLE IF NOT EXISTS csi_cohort_def (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Named, versioned respondent rules.';
 
-CREATE TABLE IF NOT EXISTS csi_respondent_cohort (
+CREATE TABLE IF NOT EXISTS cip_respondent_cohort (
   cohort_id     INT UNSIGNED    NOT NULL,
   respondent_id BIGINT UNSIGNED NOT NULL,
   survey_id     INT UNSIGNED    NOT NULL,
@@ -543,11 +549,11 @@ CREATE TABLE IF NOT EXISTS csi_respondent_cohort (
   KEY ix_rcohort_survey (cohort_id, survey_id),
   KEY ix_rcohort_respondent (respondent_id),
   CONSTRAINT fk_rcohort_cohort FOREIGN KEY (cohort_id)
-    REFERENCES csi_cohort_def (cohort_id) ON DELETE CASCADE,
+    REFERENCES cip_cohort_def (cohort_id) ON DELETE CASCADE,
   CONSTRAINT fk_rcohort_respondent FOREIGN KEY (respondent_id)
-    REFERENCES csi_respondent (respondent_id) ON DELETE CASCADE,
+    REFERENCES cip_respondent (respondent_id) ON DELETE CASCADE,
   CONSTRAINT fk_rcohort_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Materialised cohort membership.';
 
@@ -555,7 +561,7 @@ CREATE TABLE IF NOT EXISTS csi_respondent_cohort (
 -- AGGREGATES — pre-computed cells for the portal's standard views
 -- ───────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS csi_agg_cell (
+CREATE TABLE IF NOT EXISTS cip_agg_cell (
   cell_id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   survey_id         INT UNSIGNED    NOT NULL,
   cell_key          VARCHAR(200)    NOT NULL COMMENT 'question:item:option:cohort:scheme:dim:value',
@@ -563,7 +569,7 @@ CREATE TABLE IF NOT EXISTS csi_agg_cell (
   item_id           INT UNSIGNED    NULL,
   option_id         INT UNSIGNED    NULL,
   concept_option_id INT UNSIGNED    NULL,
-  map_key           VARCHAR(40)     NULL     COMMENT 'question:item:option — joins csi_concept_map at read time',
+  map_key           VARCHAR(40)     NULL     COMMENT 'question:item:option — joins cip_concept_map at read time',
   cohort_id         INT UNSIGNED    NULL     COMMENT 'NULL = all qualified respondents',
   scheme_id         INT UNSIGNED    NULL     COMMENT 'NULL = unweighted',
   dim               VARCHAR(30)     NOT NULL COMMENT 'total, gender, age_band, …',
@@ -583,9 +589,9 @@ CREATE TABLE IF NOT EXISTS csi_agg_cell (
   KEY ix_agg_question (survey_id, question_id, dim),
   KEY ix_agg_map (survey_id, map_key, cohort_id, dim),
   CONSTRAINT fk_agg_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE,
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE,
   CONSTRAINT fk_agg_question FOREIGN KEY (question_id)
-    REFERENCES csi_question (question_id) ON DELETE CASCADE
+    REFERENCES cip_question (question_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Pre-computed counts per wave x answer x cut x cohort.';
 
@@ -593,7 +599,7 @@ CREATE TABLE IF NOT EXISTS csi_agg_cell (
 -- PUBLICATIONS — frozen deliverables, with drift detection
 -- ───────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS csi_publication (
+CREATE TABLE IF NOT EXISTS cip_publication (
   publication_id INT UNSIGNED      NOT NULL AUTO_INCREMENT,
   pub_code       VARCHAR(80)       NOT NULL COMMENT 'BEAUTY_RETAILER_PROFILE',
   version        SMALLINT UNSIGNED NOT NULL DEFAULT 1,
@@ -610,7 +616,7 @@ CREATE TABLE IF NOT EXISTS csi_publication (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='A delivered chart or table, frozen at a version.';
 
-CREATE TABLE IF NOT EXISTS csi_publication_cell (
+CREATE TABLE IF NOT EXISTS cip_publication_cell (
   cell_id        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   publication_id INT UNSIGNED    NOT NULL,
   row_key        VARCHAR(250)    NOT NULL,
@@ -621,7 +627,7 @@ CREATE TABLE IF NOT EXISTS csi_publication_cell (
   PRIMARY KEY (cell_id),
   UNIQUE KEY uq_publication_cell (publication_id, row_key, col_key),
   CONSTRAINT fk_pcell_publication FOREIGN KEY (publication_id)
-    REFERENCES csi_publication (publication_id) ON DELETE CASCADE
+    REFERENCES cip_publication (publication_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='The frozen numbers of a publication.';
 
@@ -634,7 +640,7 @@ CREATE TABLE IF NOT EXISTS csi_publication_cell (
 -- decision here, and an analyst can correct it without touching Python.
 -- ───────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS csi_profile_map (
+CREATE TABLE IF NOT EXISTS cip_profile_map (
   survey_id   INT UNSIGNED NOT NULL,
   dimension   VARCHAR(40)  NOT NULL             COMMENT 'gender, age, income_band, ...',
   qcode       VARCHAR(50)  NOT NULL             COMMENT 'the question that supplies it',
@@ -642,7 +648,7 @@ CREATE TABLE IF NOT EXISTS csi_profile_map (
   updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (survey_id, dimension),
   CONSTRAINT fk_pmap_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Which question feeds each demographic cut, per wave. Auditable and editable.';
 
@@ -653,7 +659,7 @@ CREATE TABLE IF NOT EXISTS csi_profile_map (
 
 -- One row per sign-in. Gives an auditable record of who opened the portal and
 -- a way for an admin to revoke a session without waiting for it to expire.
-CREATE TABLE IF NOT EXISTS csi_auth_session (
+CREATE TABLE IF NOT EXISTS cip_auth_session (
   session_id   VARCHAR(64)  NOT NULL,
   user_email   VARCHAR(200) NOT NULL,
   user_name    VARCHAR(200) NULL,
@@ -670,7 +676,7 @@ CREATE TABLE IF NOT EXISTS csi_auth_session (
 -- A saved analysis: the filters, the questions and the break, as JSON.
 -- Storing the definition rather than the numbers means a saved view re-runs
 -- against the current data — which is the point of saving it.
-CREATE TABLE IF NOT EXISTS csi_saved_view (
+CREATE TABLE IF NOT EXISTS cip_saved_view (
   view_id     INT UNSIGNED NOT NULL AUTO_INCREMENT,
   survey_id   INT UNSIGNED NOT NULL,
   view_name   VARCHAR(160) NOT NULL,
@@ -684,6 +690,52 @@ CREATE TABLE IF NOT EXISTS csi_saved_view (
   UNIQUE KEY uq_saved_view (owner_email, view_name),
   KEY ix_saved_view_survey (survey_id, is_shared),
   CONSTRAINT fk_view_survey FOREIGN KEY (survey_id)
-    REFERENCES csi_survey (survey_id) ON DELETE CASCADE
+    REFERENCES cip_survey (survey_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Saved filter + question sets, re-run against current data.';
+
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Forsta register: every survey the API lists, and where the ETL is with it.
+-- One Forsta survey = one wave (selfserve/58f/YYMMNN). The ETL's to-do list:
+-- closed + readable + not loaded = due.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS cip_forsta_survey (
+  forsta_path  VARCHAR(255) NOT NULL              COMMENT 'selfserve/58f/260907',
+  title        VARCHAR(500) NOT NULL,
+  state        VARCHAR(30)  NOT NULL              COMMENT 'Forsta state: testing, live, closed',
+  hibernated   TINYINT(1)   NOT NULL DEFAULT 0    COMMENT '1 = Forsta answers 428 until reactivated',
+  tags         VARCHAR(500) NULL,
+  study_type   ENUM('tracker','annual','adhoc') NOT NULL DEFAULT 'adhoc',
+  created_on   DATETIME     NULL,
+  launched_at  DATETIME     NULL,
+  closed_at    DATETIME     NULL,
+  qualified_n  INT          NULL,
+  total_n      INT          NULL,
+  last_seen    DATETIME     NOT NULL,
+  load_state   ENUM('new','due','loaded','failed','hibernated','testing') NOT NULL DEFAULT 'new',
+  survey_id    INT UNSIGNED NULL                  COMMENT 'cip_survey row once loaded',
+  loaded_at    DATETIME     NULL,
+  last_error   VARCHAR(1000) NULL,
+  PRIMARY KEY (forsta_path),
+  KEY ix_forsta_due (load_state, closed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Search: one row per survey, question and concept, rebuilt after each load.
+-- The portal's search box is one FULLTEXT read of this table.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS cip_search (
+  search_id    INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  kind         ENUM('survey','question','concept') NOT NULL,
+  survey_id    INT UNSIGNED NULL,
+  question_id  INT UNSIGNED NULL,
+  concept_id   INT UNSIGNED NULL,
+  wave_label   VARCHAR(50)  NULL,
+  waves        INT          NULL                  COMMENT 'concept: waves it appears in',
+  title        VARCHAR(500) NOT NULL,
+  body         TEXT         NULL,
+  PRIMARY KEY (search_id),
+  KEY ix_search_kind (kind, wave_label),
+  FULLTEXT KEY ft_search (title, body)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

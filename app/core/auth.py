@@ -19,7 +19,7 @@ Sessions are cookie-backed. That is not a style choice: the header nav uses
 plain anchors (the same pattern as the Market Data Portal), so moving between
 pages is a full page load and a brand-new Streamlit session — anything kept
 only in `st.session_state` is gone by the time the next page renders. The
-cookie carries an opaque session id; the row in `csi_auth_session` carries
+cookie carries an opaque session id; the row in `cip_auth_session` carries
 everything else, so a sign-in survives navigation, every access is auditable,
 and an admin can revoke a session by updating one row.
 """
@@ -155,7 +155,7 @@ def _record_session(user: AuthUser, request_meta: str = "") -> None:
             conn.execute(
                 text(
                     """
-                    INSERT INTO csi_auth_session
+                    INSERT INTO cip_auth_session
                         (session_id, user_email, user_name, provider, expires_at, request_meta)
                     VALUES (:sid, :email, :name, :prov, :exp, :meta)
                     """
@@ -176,7 +176,7 @@ def _session_is_live(session_id: str) -> bool:
     try:
         with get_engine("app").connect() as conn:
             row = conn.execute(
-                text("SELECT revoked_at, expires_at FROM csi_auth_session "
+                text("SELECT revoked_at, expires_at FROM cip_auth_session "
                      "WHERE session_id = :sid"),
                 {"sid": session_id},
             ).first()
@@ -218,7 +218,7 @@ def _revoke(session_id: str) -> None:
     try:
         with get_engine("etl").begin() as conn:
             conn.execute(
-                text("UPDATE csi_auth_session SET revoked_at = CURRENT_TIMESTAMP "
+                text("UPDATE cip_auth_session SET revoked_at = CURRENT_TIMESTAMP "
                      "WHERE session_id = :sid"),
                 {"sid": session_id},
             )
@@ -236,7 +236,7 @@ def _load_session(session_id: str) -> Optional[AuthUser]:
         with get_engine("app").connect() as conn:
             row = conn.execute(
                 text("SELECT user_email, user_name, provider, expires_at, revoked_at "
-                     "FROM csi_auth_session WHERE session_id = :sid"),
+                     "FROM cip_auth_session WHERE session_id = :sid"),
                 {"sid": session_id},
             ).first()
     except Exception as exc:  # noqa: BLE001

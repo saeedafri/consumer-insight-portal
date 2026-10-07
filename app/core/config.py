@@ -80,17 +80,12 @@ class DatabaseConfig:
 class ForstaConfig:
     """Forsta Surveys (Decipher) REST API settings.
 
-    The three values that matter are the host, the 64-character API key and
-    the survey path. All are visible in the survey's portal URL except the key,
-    which is issued in Portal -> avatar -> API Access.
+    The host and the 64-character API key (Portal -> avatar -> API Access).
+    The pipeline discovers every survey the key can see, so no survey path.
     """
 
     host: str
     api_key: str
-    survey_path: str
-    layout_id: Optional[str] = None
-    report_path: Optional[str] = None
-    datafeed_name: Optional[str] = None
     timeout: int = 120
     max_retries: int = 4
 
@@ -100,7 +95,7 @@ class ForstaConfig:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.host and self.api_key and self.survey_path)
+        return bool(self.host and self.api_key)
 
 
 class Config:
@@ -164,17 +159,9 @@ class Config:
         return ForstaConfig(
             host=_env("FORSTA_HOST", "se1.decipherinc.com"),
             api_key=_env("FORSTA_API_KEY"),
-            survey_path=_env("FORSTA_SURVEY_PATH"),
-            layout_id=_env("FORSTA_DATA_LAYOUT_ID") or None,
-            report_path=_env("FORSTA_REPORT_PATH") or None,
-            datafeed_name=_env("FORSTA_DATAFEED_NAME") or None,
             timeout=_int_env("FORSTA_TIMEOUT_SECONDS", 120),
             max_retries=_int_env("FORSTA_MAX_RETRIES", 4),
         )
-
-    @property
-    def ingest_cond(self) -> str:
-        return _env("INGEST_COND", "qualified")
 
     @property
     def batch_size(self) -> int:

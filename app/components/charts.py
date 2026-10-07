@@ -4,6 +4,8 @@ One builder per job:
     magnitude across items        -> horizontal_bar
     composition of a whole        -> donut (<= 5 slices, else horizontal_bar)
     polarity on an ordered scale  -> diverging_stack
+    left vs right statement       -> butterfly
+    spread of a number            -> distribution
     change over time              -> trend_line
     one headline number           -> stat_tile
 
@@ -13,6 +15,7 @@ Never a dual-axis chart: two measures of different scale get two charts.
 """
 from __future__ import annotations
 
+import textwrap
 from typing import Optional, Sequence
 
 import pandas as pd
@@ -205,6 +208,69 @@ def heatmap(
     layout = base_layout(title, height=max(300, 28 * len(pivot.index) + 140))
     layout["xaxis"].update({"showgrid": False, "automargin": True})
     layout["yaxis"].update({"showgrid": False, "automargin": True})
+    fig.update_layout(**layout)
+    return fig
+
+
+def chart_kind(qtype: str, is_multi: bool, options: int, rows: int, bipolar: bool) -> str:
+    """The chart a question's shape calls for (spec §3.5)."""
+    if qtype == "numeric":
+        return "distribution"
+    if qtype == "text":
+        return "verbatims"
+    if is_multi:
+        return "ranked_bar"
+    if qtype == "grid_single" and rows > 1:
+        if bipolar:
+            return "butterfly"
+        return "diverging_stack" if options <= 7 else "heatmap"
+    return "donut" if options <= 5 else "bar"
+
+
+def butterfly(df: pd.DataFrame, title: str = "") -> go.Figure:
+    """A bipolar grid: per row, the share choosing the left statement (code 1)
+    to the left of zero, the right statement (code 2) to the right."""
+    rows = df.drop_duplicates("item_label")[["item_label", "left_label", "right_label"]]
+    wrap = lambda t: "<br>".join(textwrap.wrap(str(t), 42))
+    rows = rows.assign(left_label=rows.left_label.map(wrap), right_label=rows.right_label.map(wrap))
+    share = df.pivot_table(index="item_label", columns="option_order", values="pct", aggfunc="sum").reindex(rows.item_label)
+    left, right = share.get(1, pd.Series(0, index=share.index)).fillna(0), share.get(2, pd.Series(0, index=share.index)).fillna(0)
+    fig = go.Figure()
+    # rows are keyed by item: two rows may share a left statement
+    fig.add_bar(y=rows.item_label, x=-left.values, orientation="h", name="Left statement",
+                marker={"color": DIVERGING[0], "line": {"width": 0}}, text=[_pct(v) for v in left.values],
+                textposition="inside", customdata=list(zip(rows.left_label, left.values)),
+                hovertemplate="<b>%{customdata[0]}</b><br>%{customdata[1]:.1%}<extra></extra>")
+    fig.add_bar(y=rows.item_label, x=right.values, orientation="h", name="Right statement",
+                marker={"color": DIVERGING[-1], "line": {"width": 0}}, text=[_pct(v) for v in right.values],
+                textposition="inside", customdata=list(zip(rows.right_label, right.values)),
+                hovertemplate="<b>%{customdata[0]}</b><br>%{customdata[1]:.1%}<extra></extra>")
+    layout = base_layout(title, height=max(260, 60 * len(rows) + 120))
+    layout["barmode"] = "relative"
+    layout["xaxis"].update({"range": [-1, 1], "tickvals": [-1, -.5, 0, .5, 1],
+                            "ticktext": ["100%", "50%", "0", "50%", "100%"]})
+    layout["yaxis"].update({"automargin": True, "showgrid": False, "title": {"text": ""},
+                            "tickvals": list(rows.item_label), "ticktext": list(rows.left_label)})
+    layout["margin"]["r"] = 300                      # the right statements sit in the margin
+    fig.update_layout(**layout)
+    for item, right_text in zip(rows.item_label, rows.right_label):
+        fig.add_annotation(x=1.01, xref="paper", y=item, text=right_text, xanchor="left", showarrow=False,
+                           font={"size": 12, "color": INK_SECONDARY})
+    return fig
+
+
+def distribution(values: pd.Series, title: str = "") -> go.Figure:
+    """A numeric answer: histogram with the mean and the median marked."""
+    v = pd.to_numeric(values, errors="coerce").dropna()
+    fig = go.Figure(go.Histogram(x=v, marker={"color": BRAND_RED, "line": {"width": 0}},
+                                 hovertemplate="%{x}<br>%{y} respondents<extra></extra>"))
+    for name, at, dash in (("mean", v.mean(), "solid"), ("median", v.median(), "dot")):
+        if pd.notna(at):
+            fig.add_vline(x=at, line={"color": INK_PRIMARY, "width": 1, "dash": dash},
+                          annotation={"text": f"{name} {at:,.1f}", "font": {"size": 11, "color": INK_SECONDARY}})
+    layout = base_layout(title, height=320)
+    layout["xaxis"].update({"showgrid": False})
+    layout["yaxis"].update({"title": {"text": "respondents"}})
     fig.update_layout(**layout)
     return fig
 

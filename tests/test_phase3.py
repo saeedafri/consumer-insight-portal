@@ -24,7 +24,7 @@ def test_income_midpoints_match_the_analysts_workbook():
 
 import sqlalchemy as sa
 
-from etl import excel_parsers as xp
+from etl import records as xp
 from etl.loaders import load_definitions, upsert_survey
 
 
@@ -68,7 +68,7 @@ def test_upsert_survey_records_study_type(csi_db):
     sid = upsert_survey(host="h", path="p", title="Online Grocery 2025", wave_label="2025-03-25",
                         study_type="annual")
     with csi_db.connect() as conn:
-        assert conn.execute(sa.text("SELECT study_type FROM csi_survey WHERE survey_id = :s"),
+        assert conn.execute(sa.text("SELECT study_type FROM cip_survey WHERE survey_id = :s"),
                             {"s": sid}).scalar() == "annual"
 
 
@@ -146,8 +146,8 @@ def legacy(csi_db):
 def answers(engine, sid, field):
     with engine.connect() as conn:
         return sorted(tuple(r) for r in conn.execute(sa.text(
-            "SELECT r.forsta_uuid, a.value_code FROM csi_answer a JOIN csi_field f ON f.field_id = a.field_id"
-            " JOIN csi_respondent r ON r.respondent_id = a.respondent_id"
+            "SELECT r.forsta_uuid, a.value_code FROM cip_answer a JOIN cip_field f ON f.field_id = a.field_id"
+            " JOIN cip_respondent r ON r.respondent_id = a.respondent_id"
             " WHERE a.survey_id = :s AND f.field_name = :f"), {"s": sid, "f": field}))
 
 
@@ -174,12 +174,12 @@ def test_a_legacy_wave_loads_with_the_right_types_codes_and_zeros(legacy):
     sid = legacy_dwh.load_legacy("SV_T")
     with legacy.connect() as conn:
         survey = conn.execute(sa.text(
-            "SELECT platform, source_ref, wave_label, survey_family, study_type FROM csi_survey"
+            "SELECT platform, source_ref, wave_label, survey_family, study_type FROM cip_survey"
             " WHERE survey_id = :s"), {"s": sid}).one()
         types = dict(conn.execute(sa.text(
-            "SELECT qtext, qtype FROM csi_question WHERE survey_id = :s"), {"s": sid}).all())
+            "SELECT qtext, qtype FROM cip_question WHERE survey_id = :s"), {"s": sid}).all())
         qualified = conn.execute(sa.text(
-            "SELECT COUNT(*) FROM csi_respondent WHERE survey_id = :s AND is_qualified = 1"),
+            "SELECT COUNT(*) FROM cip_respondent WHERE survey_id = :s AND is_qualified = 1"),
             {"s": sid}).scalar()
     assert tuple(survey) == ("qualtrics", "SV_T", "2025-02-17", "CSI-US", "tracker")
     assert types["Have you purchased beauty products?"] == "single"
@@ -196,19 +196,19 @@ def test_banded_ages_reach_the_profile(legacy):
     sid = legacy_dwh.load_legacy("SV_T")
     with legacy.connect() as conn:
         rows = sorted(tuple(r) for r in conn.execute(sa.text(
-            "SELECT r.forsta_uuid, p.age_band, p.age_mid, p.generation FROM csi_profile p"
-            " JOIN csi_respondent r ON r.respondent_id = p.respondent_id WHERE p.survey_id = :s"),
+            "SELECT r.forsta_uuid, p.age_band, p.age_mid, p.generation FROM cip_profile p"
+            " JOIN cip_respondent r ON r.respondent_id = p.respondent_id WHERE p.survey_id = :s"),
             {"s": sid}))
     assert rows[:2] == [("R_1", "18-29", 23.5, None), ("R_2", "Over 60", 67.0, "Boomer")]
 
 
 def test_reloading_a_legacy_wave_replaces_not_duplicates(legacy):
     sid = legacy_dwh.load_legacy("SV_T")
-    before = count(legacy, f"SELECT COUNT(*) FROM csi_answer WHERE survey_id = {sid}")
-    maps_before = count(legacy, f"SELECT COUNT(*) FROM csi_concept_map WHERE survey_id = {sid}")
+    before = count(legacy, f"SELECT COUNT(*) FROM cip_answer WHERE survey_id = {sid}")
+    maps_before = count(legacy, f"SELECT COUNT(*) FROM cip_concept_map WHERE survey_id = {sid}")
     assert legacy_dwh.load_legacy("SV_T") == sid
-    assert count(legacy, f"SELECT COUNT(*) FROM csi_answer WHERE survey_id = {sid}") == before
-    assert count(legacy, f"SELECT COUNT(*) FROM csi_concept_map WHERE survey_id = {sid}") == maps_before
+    assert count(legacy, f"SELECT COUNT(*) FROM cip_answer WHERE survey_id = {sid}") == before
+    assert count(legacy, f"SELECT COUNT(*) FROM cip_concept_map WHERE survey_id = {sid}") == maps_before
 
 
 def test_a_loaded_legacy_wave_reconciles_and_a_tampered_one_does_not(legacy):
@@ -216,7 +216,7 @@ def test_a_loaded_legacy_wave_reconciles_and_a_tampered_one_does_not(legacy):
     checked, problems = legacy_dwh.reconcile_legacy(sid)
     assert checked == 7 and problems == []           # 2 + 3 + 2 mapped answers
     with legacy.begin() as conn:
-        conn.execute(sa.text("DELETE FROM csi_answer WHERE survey_id = :s AND value_code = 2"), {"s": sid})
+        conn.execute(sa.text("DELETE FROM cip_answer WHERE survey_id = :s AND value_code = 2"), {"s": sid})
     assert legacy_dwh.reconcile_legacy(sid)[1]
 
 
@@ -272,13 +272,13 @@ def test_qualtrics_export_parses_types_and_drops_personal_and_system_columns(tmp
 def test_qualtrics_export_loads_harmonises_and_finds_state_by_wording(csi_db, tmp_path):
     sid = qualtrics_export.ingest_export(qualtrics_file(tmp_path), "2025-05-12")
     with csi_db.connect() as conn:
-        assert tuple(conn.execute(sa.text("SELECT platform, wave_label FROM csi_survey WHERE survey_id = :s"),
+        assert tuple(conn.execute(sa.text("SELECT platform, wave_label FROM cip_survey WHERE survey_id = :s"),
                                   {"s": sid}).one()) == ("qualtrics", "2025-05-12")
-        assert conn.execute(sa.text("SELECT COUNT(*) FROM csi_respondent WHERE survey_id = :s"
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM cip_respondent WHERE survey_id = :s"
                                     " AND is_qualified = 1"), {"s": sid}).scalar() == 3
         states = {r[0] for r in conn.execute(sa.text(
-            "SELECT state_name FROM csi_profile WHERE survey_id = :s"), {"s": sid})}
-        assert conn.execute(sa.text("SELECT COUNT(*) FROM csi_concept_map WHERE survey_id = :s"),
+            "SELECT state_name FROM cip_profile WHERE survey_id = :s"), {"s": sid})}
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM cip_concept_map WHERE survey_id = :s"),
                             {"s": sid}).scalar() > 0
     assert states == {"NH", "MI", "PA"}
 
@@ -368,7 +368,7 @@ def test_orphan_selections_are_recovered_from_their_answer_text(legacy):
     sid = legacy_dwh.load_legacy("SV_T")
     with legacy.connect() as conn:
         items = [r[0] for r in conn.execute(sa.text(
-            "SELECT i.item_label FROM csi_item i JOIN csi_question q ON q.question_id = i.question_id"
+            "SELECT i.item_label FROM cip_item i JOIN cip_question q ON q.question_id = i.question_id"
             " WHERE q.survey_id = :s AND q.qcode = 'Q2' ORDER BY i.sort_order"), {"s": sid})]
     assert items[-1] == "Clubhouse"
     assert legacy_dwh.reconcile_legacy(sid)[1] == []
@@ -386,7 +386,7 @@ def test_qualtrics_options_follow_the_concept_order_not_first_appearance(legacy,
     sid = qualtrics_export.ingest_export(tmp_path / "order.xlsx", "2025-05-12")
     with legacy.connect() as conn:
         labels = [r[0] for r in conn.execute(sa.text(
-            "SELECT o.value_label FROM csi_option o JOIN csi_question q ON q.question_id = o.question_id"
+            "SELECT o.value_label FROM cip_option o JOIN cip_question q ON q.question_id = o.question_id"
             " WHERE q.survey_id = :s AND q.qcode = 'D2' ORDER BY o.value_code"), {"s": sid})]
     assert labels == ["18 - 29", "over 60"]
 
@@ -414,5 +414,10 @@ def test_waves_without_sort_columns_take_order_and_codes_from_the_qualtrics_qid(
     sid = legacy_dwh.load_legacy("SV_OLD")
     with legacy.connect() as conn:
         codes = [tuple(r) for r in conn.execute(sa.text(
-            "SELECT qcode, qtext FROM csi_question WHERE survey_id = :s ORDER BY sort_order"), {"s": sid})]
+            "SELECT qcode, qtext FROM cip_question WHERE survey_id = :s ORDER BY sort_order"), {"s": sid})]
     assert codes == [("Q1", "First?"), ("Q2", "Second?"), ("Q11", "Eleventh?")]
+
+
+def test_a_loaded_legacy_wave_is_searchable(legacy):
+    sid = legacy_dwh.load_legacy("SV_T")
+    assert count(legacy, f"SELECT COUNT(*) FROM cip_search WHERE survey_id = {sid} AND kind = 'question'") > 0

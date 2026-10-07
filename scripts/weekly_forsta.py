@@ -1,11 +1,12 @@
-"""The unattended weekly Forsta run: fetch → load → verify → harmonise → cube
-→ re-check every publication. One log line per step; the exit code says what
-happened, so a scheduler (cron, Azure WebJob) can alert on anything but 0.
+"""The unattended Forsta run: discover every survey → load each closed,
+readable, unloaded one (verify → harmonise → cube → search) → re-check every
+publication. One log line per step; the exit code says what happened, so a
+scheduler (cron, Azure WebJob) can alert on anything but 0.
 
-    python scripts/weekly_forsta.py            # the wave is detected from the fielding dates
+    python scripts/weekly_forsta.py            # daily 06:00 IST and Tuesday 06:00 IST
 
-Exit codes: 0 loaded and verified · 1 the load failed or does not match its
-payload · 2 Forsta rejected the key · 3 loaded, but a published number moved.
+Exit codes: 0 everything due loaded and verified · 1 a wave failed to load or
+verify · 2 Forsta rejected the key · 3 loaded, but a published number moved.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.config import config  # noqa: E402
-from etl import run_pipeline  # noqa: E402
+from etl import forsta_etl  # noqa: E402
 from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
 
 log = logging.getLogger("cip.weekly")
@@ -28,20 +29,20 @@ def run(client=None) -> int:
     if client is None:
         fc = config.forsta
         if not fc.is_configured:
-            log.error("Forsta is not configured (FORSTA_HOST, FORSTA_API_KEY, FORSTA_SURVEY_PATH)")
+            log.error("Forsta is not configured (FORSTA_HOST, FORSTA_API_KEY)")
             return 2
-        client = ForstaClient(fc.host, fc.api_key, fc.survey_path, fc.timeout, fc.max_retries)
+        client = ForstaClient(fc.host, fc.api_key, fc.timeout, fc.max_retries)
     try:
         client.whoami()
     except ForstaAuthError as exc:
         log.error("Forsta rejected the key: %s", exc)
         return 2
-    try:
-        survey_id = run_pipeline.ingest_api("auto", client=client)
-    except Exception as exc:                         # the load log keeps the detail
-        log.error("Load failed: %s", exc)
+    log.info("Register: %s", forsta_etl.discover(client))
+    result = forsta_etl.run_due(client)               # the register and the load log keep the detail
+    log.info("Loaded %d: %s", len(result["loaded"]), result["loaded"])
+    if result["failed"]:
+        log.error("Failed %d: %s", len(result["failed"]), result["failed"])
         return 1
-    log.info("Loaded and verified survey_id=%s", survey_id)
     drift = publications.drift_summary()
     moved = drift[(drift[["moved", "missing", "new", "error"]].sum(axis=1)) > 0] if not drift.empty else drift
     for row in moved.itertuples():

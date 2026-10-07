@@ -77,7 +77,7 @@ with right:
           demographics, and every answer given.<br><br>
           It is client-confidential and not anonymised beyond the panel's own
           identifiers, so access is per person and every sign-in is recorded in
-          <code>csi_auth_session</code>.
+          <code>cip_auth_session</code>.
         </div>
         """,
         unsafe_allow_html=True,

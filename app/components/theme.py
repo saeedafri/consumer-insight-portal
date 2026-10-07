@@ -109,4 +109,5 @@ def base_layout(title: str = "", height: int = 420) -> dict:
                        "font": {"color": INK_PRIMARY, "size": 12}},
         "bargap": 0.28,   # the 2px-equivalent surface gap between adjacent bars
         "separators": ".,",
+        "transition": {"duration": 350, "easing": "cubic-in-out"},
     }

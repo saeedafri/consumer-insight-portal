@@ -15,7 +15,7 @@ The bypass cannot switch on anywhere `APP_ENV` is not `LOCAL` — STG and PROD s
 `APP_ENV` in their App Settings.
 
 ```bash
-.venv/bin/streamlit run app/main.py          # local testing on dwh_stg, no sign-in
+.venv/bin/streamlit run app/main.py --server.port 8611   # local testing on dwh_stg, no sign-in
 ```
 
 The MySQL DDL in `sql/001_schema.sql` is the single source of truth. Local mode
@@ -25,33 +25,16 @@ ships.
 
 ---
 
-## Local (works right now, no credentials)
+## Offline (SQLite)
 
 ```bash
-bash scripts/run_local.sh
+bash scripts/run_local.sh                        # schema + portal on http://127.0.0.1:8611
+bash scripts/run_local.sh selfserve/58f/260907   # also load that wave from the Forsta API (GET only)
 ```
 
-Creates the venv, builds the schema, loads the 09/21/26 wave from
-`data/*.xlsx`, and opens the portal on <http://127.0.0.1:8501>.
-
-Verified run, 28 September 2026:
-
-```
-Parsed 93 question blocks from the datamap
-Loaded 375 variables
-Loaded 404/404 respondents
-Profile mapping for survey_id=1: age<-D2, ethnicity<-D4, gender<-D1,
-  income_band<-D5, outlook_economy<-CS2, outlook_income<-CS1, political<-D7,
-  relationship<-D3, state_name<-D8, urbanicity<-D6
-Rebuilt 404 profiles
-Rebuilt question bases
-Loaded 31800/33240 cross-tab cells
-Skipped 1440 cells with no matching question: voqtable1(160) … vterm(160)
-```
-
-Those 1,440 are the quota and terminate tables. Forsta prints them in the
-cross-tab but never puts them in the datamap, so they have no question to
-attach to. They are counted in `csi_load_log.rows_bad`, not silently dropped.
+Creates the venv, builds or upgrades the schema in `data/csi_local.db`, and
+starts the portal on port 8611 (8501/8503 belong to the Market Data Portal).
+The Excel route is retired: waves come from the Forsta API only.
 
 ## STG
 
@@ -89,20 +72,20 @@ python -m etl.legacy_dwh --id SV_0IHGTy1GPAlUsGa   # one wave (Feb 2025 Beauty)
 python -m etl.legacy_dwh --all --era surveymonkey # the SurveyMonkey years, 2018 – 2022
 python -m etl.qualtrics_export --wave 2025-05-12 \
     --file "Shopping and Spending - inc Beauty + Inflation + Tariffs_May 20, 2025_08.00 1.xlsx"
-python scripts/reconcile.py                        # Forsta cells + every legacy wave vs its source
+python scripts/reconcile.py                        # every Forsta wave vs the API, every legacy wave vs its source
 ```
 
 SurveyMonkey waves bring two extras: matrix questions load as grids (each cell is the column id plus its "<row> | <column>" text), and SurveyMonkey Audience's panel demographics (age, gender, income, Census division) fill the profile wherever no question did. A wave that fails is logged and skipped; `--all` carries on and exits 1 with the list to rerun with `--id`.
 
 Both are safe to re-run: a wave's answers are replaced, not duplicated, and
-concept decisions are kept. Load the Excel export **after** the legacy waves —
+concept decisions are kept. Load the Qualtrics export **after** the legacy waves —
 its answers take their order from the concepts those waves create (the export
 itself records answers in the order respondents happened to give them).
 
 ## Cohorts and the cube (Phase 4)
 
 A **cohort** is a named rule over questions (`config/cohorts.yml`), applied the
-same way to every wave. The **cube** (`csi_agg_cell`) pre-counts every answer
+same way to every wave. The **cube** (`cip_agg_cell`) pre-counts every answer
 by the standard cuts, for everyone and each cohort, so standard views are one
 indexed read. Every load builds its wave's cube; after editing
 `config/cohorts.yml`, or to rebuild everything:

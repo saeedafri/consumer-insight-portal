@@ -5,16 +5,15 @@ and authenticates with the `x-apikey` header. The key on file is rejected with
 
     {"$error": "API user account is not valid: account disabled", "$code": 401}
 
-so the owning Forsta user must be re-enabled (or a new key issued) before this
-client can pull. An unauthenticated call returns 401 for any path, so the survey
-path is only proven once a working key returns a datamap.
+(since replaced by a working key, Oct 2026). Every call is a GET: the client
+never changes a survey in Forsta.
 
 Reference: https://forstasurveys.zendesk.com/hc/en-us/articles/4409469957531
 """
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterator, Optional
+from typing import Any
 
 import requests
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -30,6 +29,10 @@ class ForstaAuthError(ForstaError):
     pass
 
 
+class ForstaBusy(ForstaError):
+    """429 or a 5xx: worth retrying."""
+
+
 class ForstaClient:
     """Wraps GET /api/v1/... with the x-apikey header, retries and paging."""
 
@@ -37,7 +40,6 @@ class ForstaClient:
         self,
         host: str,
         api_key: str,
-        survey_path: str,
         timeout: int = 120,
         max_retries: int = 4,
     ) -> None:
@@ -47,7 +49,6 @@ class ForstaClient:
                 "avatar -> API Access -> Create new API key (64 characters)."
             )
         self.host = host
-        self.survey_path = survey_path.strip("/")
         self.timeout = timeout
         self.max_retries = max_retries
         self.session = requests.Session()
@@ -61,7 +62,7 @@ class ForstaClient:
 
     # ── low level ──────────────────────────────────────────────────────────
     @retry(
-        retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout)),
+        retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout, ForstaBusy)),
         wait=wait_exponential(multiplier=2, min=2, max=60),
         stop=stop_after_attempt(4),
         reraise=True,
@@ -76,9 +77,10 @@ class ForstaClient:
             )
         if resp.status_code == 403:
             raise ForstaAuthError(
-                f"403 from {url} — the key is valid but the service account lacks "
-                f"access to directory '{self.survey_path.split('/')[1] if '/' in self.survey_path else '?'}'."
+                f"403 from {url} — the key is valid but the service account lacks access to this survey."
             )
+        if resp.status_code == 429 or resp.status_code >= 500:
+            raise ForstaBusy(f"{resp.status_code} from {url}: {resp.text[:400]}")
         if resp.status_code >= 400:
             raise ForstaError(f"{resp.status_code} from {url}: {resp.text[:400]}")
         used = resp.headers.get("x-usage-today")
@@ -87,72 +89,16 @@ class ForstaClient:
         return resp
 
     # ── survey endpoints ───────────────────────────────────────────────────
+    def surveys(self) -> list[dict]:
+        """Every survey the key can see: GET /api/v1/rh/companies/all/surveys."""
+        return self._get("rh/companies/all/surveys").json()
+
+    def survey_datamap(self, path: str) -> dict:
+        return self._get(f"surveys/{path.strip('/')}/datamap", format="json").json()
+
+    def survey_data(self, path: str, **params: Any) -> list[dict]:
+        return self._get(f"surveys/{path.strip('/')}/data", format="json", **params).json()
+
     def whoami(self) -> dict:
         """Cheapest call that proves the key works. Use in test_connection.py."""
         return self._get("rh/users/self").json()
-
-    def datamap(self, fmt: str = "json") -> dict:
-        """Survey definition: questions, rows, answer codes and labels.
-
-        GET /api/v1/surveys/<survey>/datamap?format=json
-        """
-        return self._get(f"surveys/{self.survey_path}/datamap", format=fmt).json()
-
-    def data(
-        self,
-        fmt: str = "json",
-        cond: Optional[str] = "qualified",
-        start: Optional[str] = None,
-        end: Optional[str] = None,
-        layout: Optional[str] = None,
-        fields: Optional[str] = None,
-    ) -> Any:
-        """Respondent-level data.
-
-        GET /api/v1/surveys/<survey>/data?format=json&cond=qualified&start=...
-
-        `cond` takes Forsta filter expressions ("qualified", "qualified and q3.r2").
-        `start`/`end` bound the completion datetime — this is how the nightly
-        incremental pull avoids re-reading the whole survey.
-        """
-        params: dict[str, Any] = {"format": fmt}
-        if cond:
-            params["cond"] = cond
-        if start:
-            params["start"] = start
-        if end:
-            params["end"] = end
-        if layout:
-            params["layout"] = layout
-        if fields:
-            params["fields"] = fields
-        resp = self._get(f"surveys/{self.survey_path}/data", **params)
-        return resp.json() if fmt == "json" else resp.text
-
-    def layouts(self) -> Any:
-        """Custom data layouts. A layout decides whether the export carries
-        codes or labels — the sample files we were given use labels."""
-        return self._get(f"surveys/{self.survey_path}/layouts").json()
-
-    def completions(self) -> Any:
-        """Field-progress counts — drives the 'survey health' page."""
-        return self._get(f"surveys/{self.survey_path}/summary/completions").json()
-
-    # ── incremental feed ───────────────────────────────────────────────────
-    def datafeed(self, feed_name: str) -> Any:
-        """GET /api/v1/datafeed/<feed> — returns only records not yet acked."""
-        return self._get(f"datafeed/{feed_name}").json()
-
-    def datafeed_ack(self, feed_name: str) -> Any:
-        url = f"{self.base_url}/datafeed/{feed_name}/ack"
-        resp = self.session.post(url, timeout=self.timeout)
-        if resp.status_code >= 400:
-            raise ForstaError(f"{resp.status_code} acking feed: {resp.text[:300]}")
-        return resp.json() if resp.content else {}
-
-    def iter_records(self, **kwargs: Any) -> Iterator[dict]:
-        payload = self.data(fmt="json", **kwargs)
-        if isinstance(payload, dict):
-            payload = payload.get("data", payload.get("records", []))
-        for row in payload or []:
-            yield row

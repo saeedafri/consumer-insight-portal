@@ -39,7 +39,7 @@ topics:
   - {family: "*", priority: 950, text_pattern: "\\b(gender|age|income|ethnicit|marital|relationship status|state|region|zip)\\b", topic: DEMOGRAPHICS}
 
 # Which question supplies each demographic cut. Auto-detected from the question
-# wording when a survey has no entry here, then written to csi_profile_map so
+# wording when a survey has no entry here, then written to cip_profile_map so
 # it is visible and editable per wave.
 profile:
   CSI-US:

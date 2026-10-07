@@ -26,40 +26,50 @@ SOURCE_REF = "VARCHAR(255) NOT NULL DEFAULT ''"
 
 # (table, column, MySQL definition) — the v2 columns on v1 tables
 COLUMNS: list[tuple[str, str, str]] = [
-    ("csi_survey", "platform",
+    ("cip_survey", "platform",
      "ENUM('forsta','qualtrics','surveymonkey') NOT NULL DEFAULT 'forsta'"),
-    ("csi_survey", "source_ref", SOURCE_REF),
-    ("csi_survey", "study_type", "ENUM('tracker','annual','adhoc') NOT NULL DEFAULT 'tracker'"),
-    ("csi_survey", "load_status",
+    ("cip_survey", "source_ref", SOURCE_REF),
+    ("cip_survey", "study_type", "ENUM('tracker','annual','adhoc') NOT NULL DEFAULT 'tracker'"),
+    ("cip_survey", "load_status",
      "ENUM('loading','verified','failed','superseded') NOT NULL DEFAULT 'verified'"),
-    ("csi_survey", "language", "VARCHAR(10) NOT NULL DEFAULT 'en'"),
-    ("csi_respondent", "respondent_key", "CHAR(64) NULL"),
-    ("csi_respondent", "quality_flag", "VARCHAR(40) NULL"),
-    ("csi_profile", "age_mid", "DECIMAL(6,2) NULL"),
-    ("csi_profile", "income_mid_k", "DECIMAL(10,4) NULL"),
-    ("csi_load_log", "archive_uri", "VARCHAR(1000) NULL"),
-    ("csi_load_log", "archive_sha256", "CHAR(64) NULL"),
-    ("csi_concept", "match_text", "VARCHAR(2000) NULL"),
-    ("csi_agg_cell", "map_key", "VARCHAR(40) NULL"),
-    ("csi_agg_cell", "n_age_mid", "INT NULL"),
-    ("csi_agg_cell", "n_income_mid", "INT NULL"),
+    ("cip_survey", "language", "VARCHAR(10) NOT NULL DEFAULT 'en'"),
+    ("cip_respondent", "respondent_key", "CHAR(64) NULL"),
+    ("cip_respondent", "quality_flag", "VARCHAR(40) NULL"),
+    ("cip_profile", "age_mid", "DECIMAL(6,2) NULL"),
+    ("cip_profile", "income_mid_k", "DECIMAL(10,4) NULL"),
+    ("cip_load_log", "archive_uri", "VARCHAR(1000) NULL"),
+    ("cip_load_log", "archive_sha256", "CHAR(64) NULL"),
+    ("cip_concept", "match_text", "VARCHAR(2000) NULL"),
+    ("cip_agg_cell", "map_key", "VARCHAR(40) NULL"),
+    ("cip_agg_cell", "n_age_mid", "INT NULL"),
+    ("cip_agg_cell", "n_income_mid", "INT NULL"),
+    ("cip_survey", "sample_source", "VARCHAR(50) NULL"),
+    ("cip_survey", "total_n", "INT NULL"),
+    ("cip_survey", "tags", "VARCHAR(500) NULL"),
+    ("cip_question", "is_virtual", "TINYINT(1) NOT NULL DEFAULT 0"),
+    ("cip_item", "left_label", "VARCHAR(500) NULL"),
+    ("cip_item", "right_label", "VARCHAR(500) NULL"),
 ]
 
 # v1 waves all came from Forsta: their path is their source reference.
 # Runs before the unique key below, so no row enters it with a NULL.
-BACKFILL = ["UPDATE csi_survey SET source_ref = forsta_path WHERE source_ref IS NULL OR source_ref = ''"]
+BACKFILL = ["UPDATE cip_survey SET source_ref = forsta_path WHERE source_ref IS NULL OR source_ref = ''"]
 
 # Columns that must be NOT NULL but may exist NULL-able from an earlier run.
-NOT_NULL: list[tuple[str, str, str]] = [("csi_survey", "source_ref", SOURCE_REF)]
+NOT_NULL: list[tuple[str, str, str]] = [("cip_survey", "source_ref", SOURCE_REF)]
 
 # (table, index, kind, columns)
 INDEXES: list[tuple[str, str, str, str]] = [
-    ("csi_survey", "uq_survey_source", "UNIQUE", "platform, source_ref, wave_label"),
-    ("csi_respondent", "ix_respondent_key", "INDEX", "survey_id, respondent_key"),
-    ("csi_answer", "ix_answer_cover", "INDEX", "survey_id, field_id, value_code, respondent_id"),
-    ("csi_answer", "ft_answer_text", "FULLTEXT", "value_text"),
-    ("csi_agg_cell", "ix_agg_map", "INDEX", "survey_id, map_key, cohort_id, dim"),
+    ("cip_survey", "uq_survey_source", "UNIQUE", "platform, source_ref, wave_label"),
+    ("cip_respondent", "ix_respondent_key", "INDEX", "survey_id, respondent_key"),
+    ("cip_answer", "ix_answer_cover", "INDEX", "survey_id, field_id, value_code, respondent_id"),
+    ("cip_answer", "ft_answer_text", "FULLTEXT", "value_text"),
+    ("cip_agg_cell", "ix_agg_map", "INDEX", "survey_id, map_key, cohort_id, dim"),
+    ("cip_survey", "ix_survey_pick", "INDEX", "load_status, study_type, wave_date"),
 ]
+
+# Indexes another one covers: each costs a write per answer row and serves nothing.
+DROP_INDEXES: list[tuple[str, str]] = [("cip_answer", "ix_answer_field")]   # ix_answer_cover leads the same way
 
 
 def plan(engine: Engine) -> list[str]:
@@ -77,7 +87,7 @@ def plan(engine: Engine) -> list[str]:
             defn = sqlite_compat.convert_column_def(definition) if is_sqlite else definition
             statements.append(f"ALTER TABLE {table} ADD COLUMN {column} {defn}")
 
-    if "csi_survey" in tables:
+    if "cip_survey" in tables:
         statements += BACKFILL
 
     nullable = {t: {c["name"]: c["nullable"] for c in insp.get_columns(t)}
@@ -95,6 +105,9 @@ def plan(engine: Engine) -> list[str]:
         else:
             key = {"UNIQUE": "UNIQUE KEY", "FULLTEXT": "FULLTEXT KEY"}.get(kind, "KEY")
             statements.append(f"ALTER TABLE {table} ADD {key} {name} ({cols})")
+    for table, name in DROP_INDEXES:
+        if table in tables and name in {i["name"] for i in insp.get_indexes(table)}:
+            statements.append(f"DROP INDEX {name}" if is_sqlite else f"ALTER TABLE {table} DROP INDEX {name}")
     return statements
 
 
@@ -109,23 +122,45 @@ def tighten_statements(nullable: dict[str, dict[str, bool]], is_sqlite: bool) ->
             if nullable.get(table, {}).get(column)]
 
 
+def rename_statements(engine: Engine) -> list[str]:
+    """The tables were csi_ (Consumer Survey Index) until Oct 2026; they are
+    the Consumer Insight Portal's, cip_. Old views go first (they name the old
+    tables and are recreated from 002_views.sql); MySQL renames every table in
+    one atomic, metadata-only statement — no data is copied."""
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+    old = sorted(t for t in tables if t.startswith("csi_") and "cip_" + t[4:] not in tables)
+    if not old:
+        return []
+    drops = [f"DROP VIEW IF EXISTS {v}" for v in insp.get_view_names() if v.startswith("v_csi_")]
+    if engine.dialect.name == "sqlite":
+        return drops + [f"ALTER TABLE {t} RENAME TO cip_{t[4:]}" for t in old]
+    return drops + ["RENAME TABLE " + ", ".join(f"{t} TO cip_{t[4:]}" for t in old)]
+
+
 def install(engine: Engine, dry_run: bool = False, force: bool = False) -> list[str]:
-    """Upgrade in place, then apply the schema files. Refuses while a load is
-    writing: DDL on csi_answer and a running load would block each other."""
-    if "csi_load_log" in inspect(engine).get_table_names() and not force:
+    """Rename csi_ → cip_ if needed, upgrade in place, then apply the schema
+    files. Refuses while a load is writing: DDL on cip_answer and a running
+    load would block each other."""
+    tables = inspect(engine).get_table_names()
+    log = next((t for t in ("cip_load_log", "csi_load_log") if t in tables), None)
+    if log and not force:
         with engine.connect() as conn:
-            running = conn.execute(text(
-                "SELECT COUNT(*) FROM csi_load_log WHERE status = 'running'")).scalar()
+            running = conn.execute(text(f"SELECT COUNT(*) FROM {log} WHERE status = 'running'")).scalar()
         if running:
             raise RuntimeError(
-                f"{running} load is running (csi_load_log.status = 'running'). "
+                f"{running} load is running ({log}.status = 'running'). "
                 "Wait for it, or mark a stale run failed, or pass --force.")
 
-    statements = plan(engine)
+    renames = rename_statements(engine)
     if dry_run:
-        return statements + [f"-- apply {p.name}" for p in SQL_FILES]
+        return renames + plan(engine) + [f"-- apply {p.name}" for p in SQL_FILES]
     with engine.begin() as conn:
-        for statement in statements:
+        for statement in renames:
+            conn.execute(text(statement))
+    statements = renames + plan(engine)
+    with engine.begin() as conn:
+        for statement in statements[len(renames):]:
             conn.execute(text(statement))
     for path in SQL_FILES:
         apply_sql(path, engine)

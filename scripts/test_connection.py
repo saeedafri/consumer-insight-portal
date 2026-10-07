@@ -34,7 +34,6 @@ def check_forsta() -> bool:
     print("\n── Forsta Surveys (Decipher) API ───────────────────────────")
     fc = config.forsta
     print(f"  host        {fc.host}")
-    print(f"  survey path {fc.survey_path or '(not set)'}")
     print(f"  api key     {'set (' + str(len(fc.api_key)) + ' chars)' if fc.api_key else '(not set)'}")
     if not fc.is_configured:
         print(f"  {CROSS} not configured — see docs/04-it-requirements-checklist.md")
@@ -44,12 +43,10 @@ def check_forsta() -> bool:
     try:
         from etl.forsta_client import ForstaClient
 
-        client = ForstaClient(fc.host, fc.api_key, fc.survey_path, fc.timeout)
+        client = ForstaClient(fc.host, fc.api_key, fc.timeout)
         who = client.whoami()
-        print(f"  {TICK} authenticated as {who.get('email', who)}")
-        dm = client.datamap()
-        n = len(dm.get("variables", dm.get("questions", [])))
-        print(f"  {TICK} datamap readable ({n} variables)")
+        print(f"  {TICK} authenticated as {who.get('login', '?')}")
+        print(f"  {TICK} {len(client.surveys())} surveys visible")
         return True
     except Exception as exc:  # noqa: BLE001
         print(f"  {CROSS} {exc}")
@@ -62,11 +59,7 @@ def main() -> int:
     forsta_ok = check_forsta()
     print("\n────────────────────────────────────────────────────────────")
     if db_ok and forsta_ok:
-        print("All good. `python -m etl.run_pipeline --source api --wave YYYY-MM`")
-        return 0
-    if db_ok and not forsta_ok:
-        print("Database is up; Forsta is not reachable yet. You can still load")
-        print("from Excel: `python -m etl.run_pipeline --source excel --raw ... --wave ...`")
+        print("All good. `python -m etl.forsta_etl --due`")
         return 0
     return 1
 

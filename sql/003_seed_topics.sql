@@ -1,7 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- CSI report modules, from the 09/21/26 and 09/28/26 questionnaires. Safe to re-run.
 -- ═══════════════════════════════════════════════════════════════════════════
-INSERT INTO csi_topic (topic_code, topic_name, is_technical, sort_order) VALUES
+INSERT INTO cip_topic (topic_code, topic_name, is_technical, sort_order) VALUES
   ('SHOPPING',     'Shopping and Spending',          0, 10),
   ('DEPT_STORES',  'Department Stores',              0, 20),
   ('DIAMONDS',     'Diamonds and Fine Jewelry',      0, 30),

@@ -129,7 +129,7 @@ def execute(sql: str, params: Optional[dict] = None, role: str = "etl") -> int:
 
 
 def execute_many(sql: str, rows: Sequence[dict], role: str = "etl", chunk: int = 1000) -> int:
-    """Batched executemany — the workhorse for loading csi_answer."""
+    """Batched executemany — the workhorse for loading cip_answer."""
     total = 0
     rows = list(rows)
     statement = text(_portable(sql, role))

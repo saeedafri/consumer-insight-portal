@@ -28,9 +28,8 @@ HERE = Path(__file__).parent
 PAGES = [
     ("Sign in",          "pages/0_Login.py",             "login"),
     ("Overview",         "pages/1_Overview.py",          "overview"),
-    ("Questions",        "pages/2_Question_Explorer.py", "questions"),
+    ("Survey report",    "pages/2_Survey_Report.py",     "report"),
     ("Analysis Builder", "pages/3_Analysis.py",          "analysis"),
-    ("Cross-tabs",       "pages/4_Crosstabs.py",         "crosstabs"),
     ("Trends",           "pages/5_Trends.py",            "trends"),
     ("Mappings",         "pages/7_Mappings.py",          "mappings"),
     ("Publications",     "pages/8_Publications.py",      "publications"),

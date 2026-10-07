@@ -2,9 +2,10 @@
 
 Coresight Research · survey analytics on the STG (DWH) database.
 
-CSI pulls consumer-survey data from the **Forsta Surveys** platform
-(`se1.decipherinc.com`, formerly Decipher) into MySQL and serves it through a
-Streamlit portal, replacing the Excel round-trip that analysis runs on today.
+CIP pulls consumer-survey data from the **Forsta Surveys** API
+(`se1.decipherinc.com`, formerly Decipher — read only, GET) into MySQL and
+serves it through a Streamlit portal. Every weekly tracker wave is its own
+Forsta survey; the pipeline discovers them and loads each one as it closes.
 
 ---
 
@@ -38,20 +39,12 @@ pip install -r requirements.txt
 python scripts/test_connection.py
 python scripts/init_db.py
 
-# load a wave from the Excel exports (works without the API key)
-python -m etl.run_pipeline --source excel \
-    --raw "Raw Data 09_21_26.xlsx" \
-    --crosstab "Cross Tabs 09_21_26.xlsx" \
-    --wave 2026-09-21 --family CSI-US
-python scripts/reconcile.py        # prove the load against the published cross-tab
+python -m etl.forsta_etl --discover   # register every survey the key can see (cip_forsta_survey)
+python -m etl.forsta_etl --due        # load every closed, readable, unloaded wave; verify; cube; search
+python scripts/reconcile.py           # re-read each wave from Forsta and compare every answer
+python scripts/weekly_forsta.py       # the scheduled run: discover → load due → drift (exit code = outcome)
 
-streamlit run app/main.py
-```
-
-Once the API key is in `.env`:
-
-```bash
-python -m etl.run_pipeline --source api --wave 2026-10-05 --family CSI-US
+streamlit run app/main.py --server.port 8611
 ```
 
 ---
@@ -66,16 +59,19 @@ consumer-insight-portal/
 │   ├── data/repository.py  every query the app makes, cached
 │   ├── components/         header nav, validated palette, Plotly builders, Excel export
 │   ├── data/harmonise.py   links each wave's questions to concepts (spec §5.2)
-│   └── pages/              Overview · Questions · Analysis Builder · Cross-tabs · Trends · Mappings · Health
+│   └── pages/              Overview · Survey report · Analysis Builder · Trends · Mappings · Publications · Health
 ├── config/survey_map.yml   topic rules and demographic detection — edit here, not in code
 ├── etl/
 │   ├── survey_map.py       resolves topics and cuts for a questionnaire it has never seen
-│   ├── forsta_client.py    Forsta REST client (x-apikey, retries, paging)
-│   ├── excel_parsers.py    parsers for both workbook formats
-│   ├── loaders.py          idempotent upserts
-│   └── run_pipeline.py     CLI — one command, two sources
+│   ├── forsta_client.py    Forsta REST client (x-apikey, retries; GET only)
+│   ├── forsta_api.py       datamap → questions (labels, bipolar grids, other-specify, flags)
+│   ├── forsta_etl.py       discover → load → verify → publish → harmonise / cube / search
+│   ├── records.py          shared parsed-question shape and text helpers
+│   ├── loaders.py          idempotent upserts, search index
+│   ├── legacy_dwh.py       Qualtrics / SurveyMonkey history from dwh_sm*
+│   └── run_pipeline.py     loader steps shared by every source
 ├── sql/                    001 schema · 002 views · 003 seed · 004 grants
-├── scripts/                init_db.py · test_connection.py · reconcile.py
+├── scripts/                init_db.py · test_connection.py · reconcile.py · weekly_forsta.py · perf_check.py
 ├── tests/
 └── docs/                   plan · schema · integration · IT checklist · data analysis
 ```
@@ -103,6 +99,6 @@ Matches `market-data-stg` and `SIP-Prod`: `APP_ENV` of `LOCAL`/`STAGING`/
 SQLAlchemy + PyMySQL with a pooled engine, Streamlit pinned to 1.55.0, Coresight
 red `#d62e2f`.
 
-All database objects are prefixed `csi_` (views `v_csi_`) so nothing collides
+All database objects are prefixed `cip_` (views `v_cip_`) so nothing collides
 with existing STG tables. The portal connects as a read-only account; only the
 ETL can write.

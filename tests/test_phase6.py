@@ -80,10 +80,10 @@ def test_matrix_answers_land_on_their_own_row(monkey):
     sid = legacy_dwh.load_legacy("900")
     with monkey.connect() as conn:
         qtype, rows, scale = conn.execute(sa.text(
-            "SELECT q.qtype, (SELECT COUNT(*) FROM csi_item i WHERE i.question_id = q.question_id),"
-            " (SELECT GROUP_CONCAT(value_label, ',') FROM (SELECT value_label FROM csi_option o"
+            "SELECT q.qtype, (SELECT COUNT(*) FROM cip_item i WHERE i.question_id = q.question_id),"
+            " (SELECT GROUP_CONCAT(value_label, ',') FROM (SELECT value_label FROM cip_option o"
             "   WHERE o.question_id = q.question_id ORDER BY o.value_code))"
-            " FROM csi_question q WHERE q.survey_id = :s AND q.qtext LIKE 'How do you rate%'"), {"s": sid}).one()
+            " FROM cip_question q WHERE q.survey_id = :s AND q.qtext LIKE 'How do you rate%'"), {"s": sid}).one()
     assert (qtype, rows, scale) == ("grid_single", 2, "Poor,Fair,Good")
     assert answers(monkey, sid, "Q2r1") == [("1001", 3), ("1002", 1)]          # Amazon
     assert answers(monkey, sid, "Q2r2") == [("1001", 1), ("1003", 2)]          # CVS
@@ -94,9 +94,9 @@ def test_matrix_waves_reconcile_cell_by_cell(monkey):
     checked, problems = legacy_dwh.reconcile_legacy(sid)
     assert problems == [] and checked >= 2 + 4
     with monkey.begin() as conn:                     # move one CVS rating to the Amazon row
-        conn.execute(sa.text("UPDATE csi_answer SET field_id = (SELECT field_id FROM csi_field WHERE survey_id = :s AND field_name = 'Q2r1')"
-                             " WHERE survey_id = :s AND respondent_id = (SELECT respondent_id FROM csi_respondent WHERE forsta_uuid = '1003')"
-                             " AND field_id = (SELECT field_id FROM csi_field WHERE survey_id = :s AND field_name = 'Q2r2')"), {"s": sid})
+        conn.execute(sa.text("UPDATE cip_answer SET field_id = (SELECT field_id FROM cip_field WHERE survey_id = :s AND field_name = 'Q2r1')"
+                             " WHERE survey_id = :s AND respondent_id = (SELECT respondent_id FROM cip_respondent WHERE forsta_uuid = '1003')"
+                             " AND field_id = (SELECT field_id FROM cip_field WHERE survey_id = :s AND field_name = 'Q2r2')"), {"s": sid})
     assert legacy_dwh.reconcile_legacy(sid)[1]
 
 
@@ -105,7 +105,7 @@ def profiles(engine, sid):
     with engine.connect() as conn:
         return {r[0]: tuple(r[1:]) for r in conn.execute(sa.text(
             "SELECT r.forsta_uuid, p.gender, p.age_band, p.age_mid, p.income_band, p.income_mid_k, p.census_region"
-            " FROM csi_profile p JOIN csi_respondent r ON r.respondent_id = p.respondent_id WHERE p.survey_id = :s"),
+            " FROM cip_profile p JOIN cip_respondent r ON r.respondent_id = p.respondent_id WHERE p.survey_id = :s"),
             {"s": sid})}
 
 
@@ -140,8 +140,8 @@ def test_a_one_row_matrix_loads_as_a_single_choice(monkey):
     sid = legacy_dwh.load_legacy("900")
     with monkey.connect() as conn:
         qtype, labels = conn.execute(sa.text(
-            "SELECT q.qtype, (SELECT GROUP_CONCAT(value_label, ',') FROM (SELECT value_label FROM csi_option o"
-            " WHERE o.question_id = q.question_id ORDER BY o.value_code)) FROM csi_question q"
+            "SELECT q.qtype, (SELECT GROUP_CONCAT(value_label, ',') FROM (SELECT value_label FROM cip_option o"
+            " WHERE o.question_id = q.question_id ORDER BY o.value_code)) FROM cip_question q"
             " WHERE q.survey_id = :s AND q.qtext LIKE 'How will your spending%'"), {"s": sid}).one()
     assert (qtype, labels) == ("single", "Much less,Same,Much more")
     assert legacy_dwh.reconcile_legacy(sid)[1] == []
@@ -181,7 +181,7 @@ def test_a_matrix_row_nobody_answered_is_not_a_scale_point(monkey):
     sid = legacy_dwh.load_legacy("900")
     with monkey.connect() as conn:
         scale = [r[0] for r in conn.execute(sa.text(
-            "SELECT o.value_label FROM csi_option o JOIN csi_question q ON q.question_id = o.question_id"
+            "SELECT o.value_label FROM cip_option o JOIN cip_question q ON q.question_id = o.question_id"
             " WHERE q.survey_id = :s AND q.qtext LIKE 'How do you rate%' ORDER BY o.value_code"), {"s": sid})]
     assert scale == ["Poor", "Fair", "Good"]
 
@@ -195,7 +195,7 @@ def test_a_matrix_with_plain_answers_and_several_row_labels_is_skipped_not_guess
                              " VALUES ('Agree', '', 'None', 'QX', '1001', 'XC', '900')"))
     sid = legacy_dwh.load_legacy("900")
     with monkey.connect() as conn:
-        assert conn.execute(sa.text("SELECT COUNT(*) FROM csi_question WHERE survey_id = :s AND qtext = 'Rate these'"),
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM cip_question WHERE survey_id = :s AND qtext = 'Rate these'"),
                             {"s": sid}).scalar() == 0
     assert any("not loaded" in p for p in legacy_dwh.reconcile_legacy(sid)[1])      # and reconcile says so
 

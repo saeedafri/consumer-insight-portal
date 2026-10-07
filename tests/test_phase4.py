@@ -12,8 +12,8 @@ def columns(engine, table):
 
 
 def test_cube_cells_carry_their_map_key_and_midpoint_counts(csi_db):
-    assert {"map_key", "n_age_mid", "n_income_mid"} <= columns(csi_db, "csi_agg_cell")
-    assert "ix_agg_map" in {i["name"] for i in sa.inspect(csi_db).get_indexes("csi_agg_cell")}
+    assert {"map_key", "n_age_mid", "n_income_mid"} <= columns(csi_db, "cip_agg_cell")
+    assert "ix_agg_map" in {i["name"] for i in sa.inspect(csi_db).get_indexes("cip_agg_cell")}
 
 
 import pytest
@@ -26,8 +26,8 @@ from tests.test_phase3 import legacy  # noqa: F401  (pytest fixture: the Phase 3
 def concept_code(engine, sid, qcode):
     with engine.connect() as conn:
         return conn.execute(sa.text(
-            "SELECT c.concept_code FROM csi_concept c JOIN csi_concept_map m ON m.concept_id = c.concept_id"
-            " JOIN csi_question q ON q.question_id = m.question_id"
+            "SELECT c.concept_code FROM cip_concept c JOIN cip_concept_map m ON m.concept_id = c.concept_id"
+            " JOIN cip_question q ON q.question_id = m.question_id"
             " WHERE m.survey_id = :s AND q.qcode = :q AND m.concept_option_id IS NULL"), {"s": sid, "q": qcode}).scalar()
 
 
@@ -41,7 +41,7 @@ def wave(legacy):  # noqa: F811
 def members(engine, cohort_id):
     with engine.connect() as conn:
         return sorted(r[0] for r in conn.execute(sa.text(
-            "SELECT r.forsta_uuid FROM csi_respondent_cohort c JOIN csi_respondent r"
+            "SELECT r.forsta_uuid FROM cip_respondent_cohort c JOIN cip_respondent r"
             " ON r.respondent_id = c.respondent_id WHERE c.cohort_id = :c"), {"c": cohort_id}))
 
 
@@ -75,8 +75,8 @@ def test_a_wave_that_never_asked_falls_to_the_not_asked_branch(wave):
     cid = cohorts.define_cohort("NOT_ASKED", "x", rule)
     assert cohorts.derive(cid) == 0                       # asked here
     with engine.begin() as conn:                          # now pretend B1 was never linked in this wave
-        conn.execute(sa.text("UPDATE csi_concept_map SET status = 'rejected' WHERE survey_id = :s AND concept_id ="
-                             " (SELECT concept_id FROM csi_concept WHERE concept_code = :c)"), {"s": sid, "c": b1})
+        conn.execute(sa.text("UPDATE cip_concept_map SET status = 'rejected' WHERE survey_id = :s AND concept_id ="
+                             " (SELECT concept_id FROM cip_concept WHERE concept_code = :c)"), {"s": sid, "c": b1})
     assert members(engine, cid) == [] and cohorts.derive(cid) == 2   # R_1, R_2 answered B10
 
 
@@ -111,7 +111,7 @@ def engine_frame(sid, qid, dim, criteria=()):
 def reportable(engine, sid):
     with engine.connect() as conn:
         return [r[0] for r in conn.execute(sa.text(
-            "SELECT question_id FROM csi_question WHERE survey_id = :s AND is_technical = 0"
+            "SELECT question_id FROM cip_question WHERE survey_id = :s AND is_technical = 0"
             " AND qtype IN ('single', 'multi', 'grid_single')"), {"s": sid})]
 
 
@@ -151,8 +151,8 @@ def test_cube_keeps_midpoint_sums_and_counts(wave):
     cube.build_cube(sid)
     with engine.connect() as conn:
         row = conn.execute(sa.text(
-            "SELECT c.n, c.sum_age_mid, c.n_age_mid FROM csi_agg_cell c JOIN csi_question q ON q.question_id = c.question_id"
-            " JOIN csi_option o ON o.option_id = c.option_id"
+            "SELECT c.n, c.sum_age_mid, c.n_age_mid FROM cip_agg_cell c JOIN cip_question q ON q.question_id = c.question_id"
+            " JOIN cip_option o ON o.option_id = c.option_id"
             " WHERE c.survey_id = :s AND q.qcode = 'Q1' AND o.value_label = 'Yes' AND c.dim = 'total'"
             " AND c.cohort_id IS NULL"), {"s": sid}).one()
     assert (row.n, float(row.sum_age_mid), row.n_age_mid) == (2, 23.5 + 67.0, 2)
@@ -163,7 +163,7 @@ def test_rebuilding_a_wave_replaces_its_cells(wave):
     first = cube.build_cube(sid)
     assert first > 0 and cube.build_cube(sid) == first
     with engine.connect() as conn:
-        assert conn.execute(sa.text("SELECT COUNT(*) FROM csi_agg_cell WHERE survey_id = :s"), {"s": sid}).scalar() == first
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM cip_agg_cell WHERE survey_id = :s"), {"s": sid}).scalar() == first
 
 
 def question_id(sid, qcode):
@@ -173,7 +173,7 @@ def question_id(sid, qcode):
 
 def concept_id(engine, code):
     with engine.connect() as conn:
-        return conn.execute(sa.text("SELECT concept_id FROM csi_concept WHERE concept_code = :c"), {"c": code}).scalar()
+        return conn.execute(sa.text("SELECT concept_id FROM cip_concept WHERE concept_code = :c"), {"c": code}).scalar()
 
 
 def test_analyse_answers_from_the_cube_when_it_can(wave):
@@ -185,7 +185,7 @@ def test_analyse_answers_from_the_cube_when_it_can(wave):
     sa.event.listen(engine, "before_cursor_execute", listener)
     frame = strip(repository.analyse)(sid, qid, (), "age_band")
     sa.event.remove(engine, "before_cursor_execute", listener)
-    assert any("csi_agg_cell" in s for s in reads) and not any("csi_answer" in s for s in reads)
+    assert any("cip_agg_cell" in s for s in reads) and not any("cip_answer" in s for s in reads)
     assert not frame.empty
 
 
@@ -222,7 +222,7 @@ def test_concept_pooled_stacks_waves_and_averages_midpoints(wave):
 def test_loading_a_wave_builds_its_cube(legacy):  # noqa: F811
     sid = legacy_dwh.load_legacy("SV_T")
     with legacy.connect() as conn:
-        assert conn.execute(sa.text("SELECT COUNT(*) FROM csi_agg_cell WHERE survey_id = :s"), {"s": sid}).scalar() > 0
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM cip_agg_cell WHERE survey_id = :s"), {"s": sid}).scalar() > 0
 
 
 def test_loading_an_export_builds_its_cube(csi_db, tmp_path):
@@ -230,7 +230,7 @@ def test_loading_an_export_builds_its_cube(csi_db, tmp_path):
     from tests.test_phase3 import qualtrics_file
     sid = qualtrics_export.ingest_export(qualtrics_file(tmp_path), "2025-05-12")
     with csi_db.connect() as conn:
-        assert conn.execute(sa.text("SELECT COUNT(*) FROM csi_agg_cell WHERE survey_id = :s"), {"s": sid}).scalar() > 0
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM cip_agg_cell WHERE survey_id = :s"), {"s": sid}).scalar() > 0
 
 
 def test_a_mapping_decision_refreshes_only_the_cohorts_of_that_wave(wave):
@@ -241,8 +241,8 @@ def test_a_mapping_decision_refreshes_only_the_cohorts_of_that_wave(wave):
     before_all = everyone()
     assert count_cells(engine, sid, f"= {cid}") > 0
     with engine.begin() as conn:                           # an analyst un-links B1 in this wave
-        conn.execute(sa.text("UPDATE csi_concept_map SET status = 'rejected' WHERE survey_id = :s AND concept_id ="
-                             " (SELECT concept_id FROM csi_concept WHERE concept_code = :c)"), {"s": sid, "c": b1})
+        conn.execute(sa.text("UPDATE cip_concept_map SET status = 'rejected' WHERE survey_id = :s AND concept_id ="
+                             " (SELECT concept_id FROM cip_concept WHERE concept_code = :c)"), {"s": sid, "c": b1})
     cube.refresh_cohorts(sid)
     assert members(engine, cid) == [] and count_cells(engine, sid, f"= {cid}") == 0
     assert everyone() == before_all
@@ -250,7 +250,7 @@ def test_a_mapping_decision_refreshes_only_the_cohorts_of_that_wave(wave):
 
 def count_cells(engine, sid, cohort_clause):
     with engine.connect() as conn:
-        return conn.execute(sa.text(f"SELECT COUNT(*) FROM csi_agg_cell WHERE survey_id = :s AND cohort_id {cohort_clause}"),
+        return conn.execute(sa.text(f"SELECT COUNT(*) FROM cip_agg_cell WHERE survey_id = :s AND cohort_id {cohort_clause}"),
                             {"s": sid}).scalar()
 
 
@@ -259,7 +259,7 @@ def test_a_decision_that_leaves_a_cohort_unchanged_does_not_rebuild_its_cells(wa
     cid = cohorts.define_cohort("BEAUTY_YES", "Bought beauty", {"concept": b1, "option": "yes"})
     cube.refresh_wave(sid)
     ids = lambda: sorted(r[0] for r in engine.connect().execute(sa.text(
-        "SELECT cell_id FROM csi_agg_cell WHERE survey_id = :s AND cohort_id = :c"), {"s": sid, "c": cid}))
+        "SELECT cell_id FROM cip_agg_cell WHERE survey_id = :s AND cohort_id = :c"), {"s": sid, "c": cid}))
     before = ids()
     assert cube.refresh_cohorts(sid) == 0 and ids() == before
 
@@ -291,8 +291,8 @@ def test_a_failed_cohort_rebuild_leaves_memberships_and_cells_consistent(wave, m
     cid = cohorts.define_cohort("BEAUTY_YES", "Bought beauty", {"concept": b1, "option": "yes"})
     cube.refresh_wave(sid)
     with engine.begin() as conn:
-        conn.execute(sa.text("UPDATE csi_concept_map SET status = 'rejected' WHERE survey_id = :s AND concept_id ="
-                             " (SELECT concept_id FROM csi_concept WHERE concept_code = :c)"), {"s": sid, "c": b1})
+        conn.execute(sa.text("UPDATE cip_concept_map SET status = 'rejected' WHERE survey_id = :s AND concept_id ="
+                             " (SELECT concept_id FROM cip_concept WHERE concept_code = :c)"), {"s": sid, "c": b1})
     real = cube._single_sql
     monkeypatch.setattr(cube, "_single_sql", lambda *a: (_ for _ in ()).throw(RuntimeError("VPN dropped")))
     with pytest.raises(RuntimeError):
@@ -318,8 +318,8 @@ def test_answered_on_a_grid_row_means_that_row(csi_db, tmp_path):
     sid = qualtrics_export.ingest_export(qualtrics_file(tmp_path), "2025-05-12")
     with csi_db.connect() as conn:
         cvs_row = conn.execute(sa.text(
-            "SELECT c.concept_code FROM csi_concept c JOIN csi_concept_map m ON m.concept_id = c.concept_id"
-            " JOIN csi_item i ON i.item_id = m.item_id WHERE m.survey_id = :s AND i.item_label = 'CVS'"
+            "SELECT c.concept_code FROM cip_concept c JOIN cip_concept_map m ON m.concept_id = c.concept_id"
+            " JOIN cip_item i ON i.item_id = m.item_id WHERE m.survey_id = :s AND i.item_label = 'CVS'"
             " AND m.concept_option_id IS NULL"), {"s": sid}).scalar()
     cid = cohorts.define_cohort("RATED_CVS", "Rated CVS", {"concept": cvs_row, "answered": True})
     cohorts.derive(cid)
@@ -332,11 +332,11 @@ def test_a_mapping_confirmed_after_the_cube_was_built_joins_the_trend(wave):
     cells = count_cells(engine, sid, "IS NULL")
     concept = concept_id(engine, b1)
     with engine.begin() as conn:                           # turn B1 back into a waiting proposal
-        qid = conn.execute(sa.text("SELECT question_id FROM csi_question WHERE survey_id = :s AND qcode = 'Q1'"),
+        qid = conn.execute(sa.text("SELECT question_id FROM cip_question WHERE survey_id = :s AND qcode = 'Q1'"),
                            {"s": sid}).scalar()
-        conn.execute(sa.text("DELETE FROM csi_concept_map WHERE survey_id = :s AND question_id = :q"
+        conn.execute(sa.text("DELETE FROM cip_concept_map WHERE survey_id = :s AND question_id = :q"
                              " AND concept_option_id IS NOT NULL"), {"s": sid, "q": qid})
-        conn.execute(sa.text("UPDATE csi_concept_map SET status = 'proposed' WHERE survey_id = :s AND question_id = :q"),
+        conn.execute(sa.text("UPDATE cip_concept_map SET status = 'proposed' WHERE survey_id = :s AND question_id = :q"),
                      {"s": sid, "q": qid})
     assert strip(repository.concept_trend)(concept).empty
     harmonise.confirm(sid, qid, None, concept, "analyst@coresight.com")

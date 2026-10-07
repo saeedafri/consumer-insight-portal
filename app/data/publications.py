@@ -39,13 +39,13 @@ def _fresh(fn):
 def _resolve(definition: dict) -> tuple[int, dict[int, str], Optional[int], dict[int, date]]:
     """-> (concept_id, {survey_id: wave_label}, cohort_id, {survey_id: wave_date});
     refuses what does not exist."""
-    concept = query_df("SELECT concept_id FROM csi_concept WHERE concept_code = :c",
+    concept = query_df("SELECT concept_id FROM cip_concept WHERE concept_code = :c",
                        {"c": definition.get("concept")})
     if concept.empty:
         raise ValueError(f"publication names concept {definition.get('concept')!r}, which does not exist")
     labels = list(definition.get("waves") or [])
     with get_engine("app").connect() as conn:
-        rows = conn.execute(text("SELECT survey_id, wave_label, wave_date FROM csi_survey WHERE wave_label IN :w")
+        rows = conn.execute(text("SELECT survey_id, wave_label, wave_date FROM cip_survey WHERE wave_label IN :w")
                             .bindparams(bindparam("w", expanding=True)), {"w": labels or ["-"]}).all()
     waves = {sid: label for sid, label, _ in rows}
     dates = {sid: day for sid, _, day in rows}
@@ -115,7 +115,7 @@ def footnote(definition: dict, cells: Optional[list] = None) -> str:
     _, waves, cohort_id, dates = _resolve(definition)
     cells = compute(definition) if cells is None else cells
     with get_engine("app").connect() as conn:
-        n = conn.execute(text("SELECT COUNT(*) FROM csi_respondent WHERE is_qualified = 1 AND survey_id IN :s")
+        n = conn.execute(text("SELECT COUNT(*) FROM cip_respondent WHERE is_qualified = 1 AND survey_id IN :s")
                          .bindparams(bindparam("s", expanding=True)), {"s": sorted(waves)}).scalar()
     months = sorted({date.fromisoformat(str(d)[:10]).strftime("%Y-%m") for d in dates.values() if d})
     name = lambda ym: date.fromisoformat(ym + "-01").strftime("%B %Y")
@@ -127,7 +127,7 @@ def footnote(definition: dict, cells: Optional[list] = None) -> str:
             bases[column] = max(bases.get(column, 0), c["base_n"])
     who = ""
     if cohort_id:
-        who = query_df("SELECT cohort_name FROM csi_cohort_def WHERE cohort_id = :c",
+        who = query_df("SELECT cohort_name FROM cip_cohort_def WHERE cohort_id = :c",
                        {"c": cohort_id}).cohort_name.iloc[0].lower() + " "
     note = f"Base: {n:,} US respondents aged 18+, surveyed {period}; {sum(bases.values()):,} {who}answered."
     if definition.get("pooled", True):
@@ -141,26 +141,26 @@ def publish(code: str, name: str, definition: dict, owner: Optional[str] = None,
     code = (code or "").strip()
     if not code:
         raise ValueError("a publication needs a code (letters or digits in its name)")
-    taken = query_df("SELECT DISTINCT pub_name FROM csi_publication WHERE pub_code = :c", {"c": code})
+    taken = query_df("SELECT DISTINCT pub_name FROM cip_publication WHERE pub_code = :c", {"c": code})
     if not taken.empty and name[:255] not in set(taken.pub_name):
         raise ValueError(f"code {code} is already used by {taken.pub_name.iloc[0]!r} — choose another name")
     cells = compute(definition)
     note = note or footnote(definition, cells)
     with get_engine("etl").begin() as conn:
-        version = (conn.execute(text("SELECT MAX(version) FROM csi_publication WHERE pub_code = :c"),
+        version = (conn.execute(text("SELECT MAX(version) FROM cip_publication WHERE pub_code = :c"),
                                 {"c": code}).scalar() or 0) + 1
         conn.execute(text(
-            "INSERT INTO csi_publication (pub_code, version, pub_name, owner_email, definition, footnote,"
+            "INSERT INTO cip_publication (pub_code, version, pub_name, owner_email, definition, footnote,"
             " destination, status, published_at)"
             " VALUES (:code, :v, :name, :owner, :definition, :note, :dest, :status, CURRENT_TIMESTAMP)"),
             {"code": code, "v": version, "name": name[:255], "owner": owner,
              "definition": json.dumps(definition, sort_keys=True), "note": note[:2000],
              "dest": (destination or None) and destination[:1000], "status": "published"})
-        pid = int(conn.execute(text("SELECT publication_id FROM csi_publication WHERE pub_code = :c AND version = :v"),
+        pid = int(conn.execute(text("SELECT publication_id FROM cip_publication WHERE pub_code = :c AND version = :v"),
                                {"c": code, "v": version}).scalar())
         if cells:
             conn.execute(text(
-                "INSERT INTO csi_publication_cell (publication_id, row_key, col_key, n, base_n, value)"
+                "INSERT INTO cip_publication_cell (publication_id, row_key, col_key, n, base_n, value)"
                 " VALUES (:pid, :row_key, :col_key, :n, :base_n, :value)"),
                 [{"pid": pid, **c} for c in cells])
     log.info("Published %s v%d: %d cells", code, version, len(cells))
@@ -172,8 +172,8 @@ def list_publications() -> pd.DataFrame:
         """
         SELECT p.publication_id, p.pub_code, p.version, p.pub_name, p.owner_email, p.definition,
                p.footnote, p.destination, p.status, p.published_at,
-               (SELECT COUNT(*) FROM csi_publication_cell c WHERE c.publication_id = p.publication_id) AS cells
-          FROM csi_publication p
+               (SELECT COUNT(*) FROM cip_publication_cell c WHERE c.publication_id = p.publication_id) AS cells
+          FROM cip_publication p
          ORDER BY p.pub_code, p.version
         """
     )
@@ -181,7 +181,7 @@ def list_publications() -> pd.DataFrame:
 
 def cells(publication_id: int) -> pd.DataFrame:
     return query_df(
-        "SELECT row_key, col_key, n, base_n, value FROM csi_publication_cell"
+        "SELECT row_key, col_key, n, base_n, value FROM cip_publication_cell"
         " WHERE publication_id = :p ORDER BY cell_id", {"p": publication_id})
 
 
@@ -189,7 +189,7 @@ def drift(publication_id: int) -> pd.DataFrame:
     """Frozen cells vs today, cell by cell: same, moved, missing or new.
     A definition that no longer resolves is reported, not raised."""
     columns = ["row_key", "col_key", "published", "now", "delta", "published_n", "now_n", "status", "detail"]
-    raw = query_df("SELECT definition FROM csi_publication WHERE publication_id = :p", {"p": publication_id})
+    raw = query_df("SELECT definition FROM cip_publication WHERE publication_id = :p", {"p": publication_id})
     stored = raw.definition.iloc[0]
     definition = json.loads(stored) if isinstance(stored, str) else stored
     try:

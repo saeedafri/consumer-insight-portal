@@ -2,7 +2,7 @@
 
     python scripts/init_db.py            # upgrade in place, then apply schema + views + seed
     python scripts/init_db.py --dry-run  # print what would run
-    python scripts/init_db.py --force    # run even though csi_load_log shows a running load
+    python scripts/init_db.py --force    # run even though cip_load_log shows a running load
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--force", action="store_true",
-                    help="ignore a csi_load_log row stuck in 'running'")
+                    help="ignore a cip_load_log row stuck in 'running'")
     args = ap.parse_args()
 
     print(f"Environment: {config.environment.value}")

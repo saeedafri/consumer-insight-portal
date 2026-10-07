@@ -26,8 +26,8 @@ from sqlalchemy import text
 
 from app.core.database import get_engine
 from app.data import cube, harmonise
-from etl import excel_parsers as xp
-from etl.loaders import finish_run, load_definitions, start_run, upsert_survey
+from etl import records as xp
+from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey
 
 log = logging.getLogger("cip.qualtrics")
 
@@ -120,7 +120,7 @@ def order_like_concepts(questions: list) -> None:
     order; answers it does not know keep their place after the known ones."""
     with get_engine("etl").connect() as conn:
         concepts = harmonise._concepts(conn)
-        position = dict(conn.execute(text("SELECT concept_option_id, sort_order FROM csi_concept_option")).all())
+        position = dict(conn.execute(text("SELECT concept_option_id, sort_order FROM cip_concept_option")).all())
     order = {c.match_text: {label: position[coid] for label, coid in c.options.items()}
              for c in concepts.values() if c.qtype == "single" or c.qtype.startswith("grid")}
     for q in questions:
@@ -155,6 +155,7 @@ def ingest_export(path, wave: str, family: str = "CSI-US") -> int:
     log.info("%s -> survey_id=%s: %d respondents; harmonised %s", Path(path).name, survey_id, loaded,
              harmonise.harmonise_survey(survey_id))
     log.info("Cube: %d cells", cube.refresh_wave(survey_id))
+    index_survey(survey_id)
     return survey_id
 
 

@@ -2,38 +2,37 @@
 
 Technical reference for the Forsta Surveys (Decipher) side. The credentials
 checklist for IT is a separate document: `04-it-requirements-checklist.md`.
+Design and investigation: `superpowers/specs/2026-10-07-cip-forsta-etl-and-ui-design.md`.
 
 ---
 
-## What the survey URL tells us
-
-```
-https://se1.decipherinc.com/apps/lumos/58f/260908:edit
-        └──── host ─────┘ └─app─┘ └┬┘ └──┬──┘
-                                   │     └── project number
-                                   └──────── company directory
-```
-
-That decomposes into everything the API needs except the key:
+## The connection
 
 | Setting | Value |
 |---|---|
 | API host | `se1.decipherinc.com` |
 | API base | `https://se1.decipherinc.com/api/v1/` |
-| Survey path | `selfserve/58f/260908` |
-| Auth header | `x-apikey: <64-char key>` |
+| Auth header | `x-apikey: <64-char key>` (`FORSTA_API_KEY` in `.env`, never printed) |
+| Surveys | discovered — every survey the key can see; no survey path is configured |
 
-**Re-checked live on 29 September 2026.**
+Working since 7 October 2026 (user 879, company 86, directory "Coresight Research").
 
-- Without a key, every path — the real one, `selfserve/58f/999999999` and
-  `nonsense/path` — returns `401 Missing API key. Supply the x-apikey header`.
-  That proves the host and the auth scheme, **not** the survey path.
-- With the key on file (`Dwh/credentials.yml`), every endpoint returns
-  `401 API user account is not valid: account disabled`. The key is well formed;
-  the Forsta user that owns it has been disabled.
+**Read only.** Every call is a `GET`. The pipeline never reactivates, edits or
+deletes a survey, and never changes its status.
 
-So the one thing standing between us and live data is an enabled API user.
-The survey path is confirmed the first time a datamap comes back.
+---
+
+## How Forsta publishes the tracker
+
+- **One survey per wave**: `selfserve/58f/YYMMNN` (e.g. 260907 = wave 2026-09-28).
+- Launched Monday 12–13 UTC, closed the same night (median 12.8 h), ~400
+  qualified / ~500 total, sample source 114.
+- Tags: `Weekly consumer tracker`, `annual tracker` (Holiday, Amazon Apparel,
+  Online Grocery, Back-to-school), untagged client studies.
+- **Hibernation**: after ~3–4 months a survey answers `428` until someone
+  reactivates it in Forsta. Hibernated waves are left alone.
+- **Deletion**: Forsta deletes a survey 365 days after creation — the warehouse
+  is the record, so every wave is loaded as soon as it closes.
 
 ---
 
@@ -41,56 +40,40 @@ The survey path is confirmed the first time a datamap comes back.
 
 | Method | Endpoint | Used for |
 |---|---|---|
-| GET | `rh/users/self` | cheap auth check in `scripts/test_connection.py` |
-| GET | `surveys/<path>/datamap?format=json` | questions, rows, codes, labels |
-| GET | `surveys/<path>/data?format=json&cond=qualified` | respondent-level data |
-| GET | `surveys/<path>/layouts` | discover a codes-format layout, if one exists |
-| GET | `surveys/<path>/summary/completions` | field progress for the health page |
-| GET | `datafeed/<feed>` | optional incremental feed |
-| POST | `datafeed/<feed>/ack` | acknowledge a feed batch |
-
-All read-only. `data/edit` is never called, and the key should be scoped to
-exclude it.
-
-### Useful parameters on `/data`
-
-| Parameter | Effect |
-|---|---|
-| `cond` | Forsta filter expression — `qualified`, or `qualified and q3.r2` |
-| `start` / `end` | bound completion datetime; this is how incremental pulls work |
-| `layout` | custom data layout ID (codes vs labels) |
-| `fields` | restrict to named variables |
-| `format` | `json`, `csv`, `tab`, `spss`, `xlsx`, … |
-
-Responses carry an `x-usage-today` header. Forsta documents no hard rate limit
-today but reserves the right to add one, so the client logs it.
+| GET | `rh/users/self` | auth check (`scripts/test_connection.py`, weekly run) |
+| GET | `rh/companies/all/surveys` | discovery: path, title, state, hibernated, tags, dates, counts |
+| GET | `surveys/<path>/datamap?format=json` | questions, variables, codes, labels, flags |
+| GET | `surveys/<path>/data?format=json` | every respondent, **all statuses** (no `cond`) |
 
 ---
 
-## Incremental loading
+## The pipeline (`etl/forsta_etl.py`)
 
-Two options, in order of preference:
+```
+discover ─► load (one survey = one wave) ─► verify ─► publish ─► harmonise ─► cohorts/cube ─► search
+```
 
-1. **Datafeed** (if Forsta will create one). `GET /api/v1/datafeed/<feed>`
-   returns only records not yet acknowledged; `POST .../ack` confirms receipt.
-   No watermark bookkeeping, no risk of a boundary gap.
-2. **Date window** (works today, no setup). The pipeline reads
-   `MAX(completed_at)` from `csi_respondent` and passes it as `?start=`.
-   `csi_load_state` stores the watermark.
+```bash
+python -m etl.forsta_etl --discover          # refresh the register (cip_forsta_survey)
+python -m etl.forsta_etl --due               # discover, then load every closed, readable, unloaded wave
+python -m etl.forsta_etl --survey selfserve/58f/260907
+python -m etl.forsta_etl --reconcile         # every loaded Forsta wave vs the API
+python -m etl.forsta_etl --reindex           # rebuild the search index of every verified wave
+```
 
-Either way every write is an upsert keyed on `(survey_id, record_no)` and
-`(respondent_id, field_id)`, so re-running a load is always safe. `--full`
-ignores the watermark and reloads the wave from scratch.
-
----
-
-## Why the loader is layout-agnostic
-
-The exports we have today carry **labels**, with unselected multi-punch items
-written `NO TO: <label>`. A codes layout would be cleaner. Rather than depend on
-which one we get, `excel_parsers.normalise_label_cell()` recovers the code from
-either form in one place, and the datamap supplies the code→label dictionary
-regardless. If the layout changes, one function is affected.
+- **Register** `cip_forsta_survey`: one row per Forsta survey with its
+  `load_state` — `due` (closed, readable, not loaded), `loaded`, `failed`,
+  `hibernated`, `testing`.
+- **Load**: the wave is `loading` (invisible) until it verifies. Codes are
+  written as codes; labels come from the question *or* its variables; bipolar
+  grids keep their left/right statements on `cip_item`; other-specify text is
+  its own text question; flags `t`/`v` mark technical and virtual questions.
+- **Personal data**: `userAgent`, `url`, `session`, `dcua`, `ipAddress` are
+  never stored; the panel id (`RID`) only as a sha256 `respondent_key`.
+- **Verify**: every record a respondent, every datamap variable a field, every
+  field exactly as many answers as the payload. A mismatch → `failed`, recorded
+  in the register and `cip_load_log`; the run carries on with the next wave.
+- **Idempotent**: a reload replaces the wave's answers; nothing duplicates.
 
 ---
 
@@ -98,22 +81,36 @@ regardless. If the layout changes, one function is affected.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `401 invalid key` | key missing, mistyped, or revoked | re-issue in Portal → API Access |
-| `401 account disabled` | the key's owning user is disabled (the state on 29 Sep 2026) | re-enable the user, or issue a key on an active service account |
-| `403` | key valid, account lacks rights on directory `58f` | grant view/export on the directory |
-| `401` only from the scheduled host | key is IP-restricted | add the ETL host's outbound IP |
-| Connection timeout | our egress firewall blocks `se1.decipherinc.com:443` | open outbound HTTPS |
-| `datamap_hash` changed | questionnaire edited between waves | expected — review the diff before loading |
-| Row counts drop suddenly | `cond` filter or a quota change | check `csi_load_log`, compare to `summary/completions` |
+| `401` | key missing, mistyped, revoked or its user disabled | re-issue in Portal → API Access |
+| `403` | key valid, account lacks rights on the survey | grant view/export on directory `58f` |
+| `428` | survey hibernated | reactivate in Forsta (a change in Forsta — not done by the pipeline) |
+| connection timeout | egress firewall blocks `se1.decipherinc.com:443` | open outbound HTTPS |
+| register row `failed` | the load did not match its payload, or the API errored | `last_error` in `cip_forsta_survey`; rerun `--due` |
 
-`scripts/test_connection.py` distinguishes the first four automatically.
+---
+
+## The scheduled run
+
+```bash
+python scripts/weekly_forsta.py       # auth check → discover → load due → drift
+```
+
+Exit codes: 0 everything due loaded and verified · 1 a wave failed · 2 Forsta
+rejected the key or it is not configured · 3 loaded, but a published number
+moved (see `/publications`).
+
+Not installed by the portal (a standing job is IT's call). Daily 06:00 IST, so
+a Monday wave is in by Tuesday morning:
+
+```cron
+30 0 * * *  cd /home/site/wwwroot && APP_ENV=staging python scripts/weekly_forsta.py >> /home/logs/forsta-weekly.log 2>&1
+```
 
 ---
 
 ## Security posture
 
-- Read-only key, scoped to five endpoints.
-- Service account, not a person's login, so the Forsta audit log stays meaningful.
+- Read-only use: GET only, five endpoints.
 - Key lives in the environment (Key Vault or a locked-down `.env`), never in the
   repo — `.gitignore` excludes `.env`.
 - Two MySQL accounts: the portal physically cannot write to the warehouse.
@@ -122,44 +119,5 @@ regardless. If the layout changes, one function is affected.
 ## Sources
 
 - [Forsta Surveys REST API](https://forstasurveys.zendesk.com/hc/en-us/articles/4409469957531-Forsta-Surveys-REST-API)
-- [How To retrieve a survey datamap using the Forsta Surveys API](https://forstasurveys.zendesk.com/hc/en-us/articles/4409461412251-How-to-Retrieve-a-Survey-Datamap-Using-the-Forsta-Surveys-API)
+- [Decipher OpenAPI specification](https://docs.developer.focusvision.com/static/media/decipher-api.yaml)
 - [Decipher API endpoint reference](https://release.decipherinc.com/s/local/api.html)
-- [`decipher` Python package (official beacon client)](https://pypi.org/project/decipher/)
-
-
-## The weekly API run (Phase 7) — ready, waiting on a working key
-
-`etl/forsta_api.py` turns the API's JSON into exactly the records the Excel
-path loads, so an API wave gives the same numbers as an Excel wave — proven on
-the 09/21/26 export re-expressed as API JSON (every answer identical,
-`tests/test_phase7.py`). Three defects in the first API path were fixed on the
-way: the datamap was read per *variable* (every checkbox row a question), the
-numeric status (3 = qualified) was not mapped (nobody would have counted as
-qualified), and codes were resolved as labels (single choices would have
-loaded empty).
-
-**First live run** — once IT's key is in `.env` as `FORSTA_API_KEY=`:
-
-```bash
-python scripts/test_connection.py     # proves the key (never prints it)
-python scripts/weekly_forsta.py       # fetch → load → verify → harmonise → cube → drift
-```
-
-The first call is also where the assumed Decipher JSON shapes (datamap
-`questions[].variables[]/values[]`, data records keyed by variable with codes)
-are confirmed; `etl/forsta_api.py` is the one place to adjust if they differ.
-
-**Exit codes** (for the scheduler to alert on): 0 loaded and verified · 1 the
-load failed or does not match its payload (the load log has the detail) ·
-2 Forsta rejected the key or it is not configured · 3 loaded, but a published
-number moved (see `/publications`).
-
-**Scheduling** — not installed by the portal (a standing job is IT's call).
-Weekly, after the wave closes, e.g. Monday 06:00 IST:
-
-```cron
-0 6 * * 1  cd /home/site/wwwroot && APP_ENV=staging python scripts/weekly_forsta.py >> /home/logs/forsta-weekly.log 2>&1
-```
-
-or an Azure App Service WebJob (triggered, `0 30 0 * * 1` UTC) running the same
-command. The wave label is detected (Monday of the first fielding day).

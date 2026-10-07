@@ -20,9 +20,8 @@ BAR_BG = "#f2f2f2"
 # The default page is served at "/" and its url_path 404s, so Overview links home.
 NAV: tuple[tuple[str, str, str], ...] = (
     ("Overview", "overview", "/"),
-    ("Questions", "questions", "/questions"),
+    ("Survey report", "report", "/report"),
     ("Analysis Builder", "analysis", "/analysis"),
-    ("Cross-tabs", "crosstabs", "/crosstabs"),
     ("Trends", "trends", "/trends"),
     ("Mappings", "mappings", "/mappings"),
     ("Publications", "publications", "/publications"),

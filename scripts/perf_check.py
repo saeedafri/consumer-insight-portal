@@ -1,9 +1,11 @@
-"""Time the three speed targets of the survey platform design (§1 goal 4),
+"""Time the speed targets of the survey platform design (§1 goal 4) and the report (§3.5),
 P95 over repeated uncached runs, against whatever database .env points at:
 
     standard view       one question × one standard cut, one wave     < 1 s
     ad-hoc cohort       two arbitrary criteria, one wave (engine)     < 3 s
     five-wave stack     one concept pooled over five waves            < 5 s
+    search              one FULLTEXT read over cip_search             < 2 s
+    survey report       every question of the latest Forsta wave      < 2 s
 
     python scripts/perf_check.py [--runs 20]
 
@@ -49,25 +51,30 @@ def main() -> int:
     ap.add_argument("--runs", type=int, default=20)
     runs = ap.parse_args().runs
 
-    concept = int(query_df("SELECT concept_id FROM csi_concept WHERE concept_code = :c",
+    concept = int(query_df("SELECT concept_id FROM cip_concept WHERE concept_code = :c",
                            {"c": BEAUTY_BOUGHT}).concept_id.iloc[0])
     waves = query_df(
-        "SELECT DISTINCT m.survey_id, s.wave_label FROM csi_concept_map m JOIN csi_survey s ON s.survey_id = m.survey_id"
+        "SELECT DISTINCT m.survey_id, s.wave_label FROM cip_concept_map m JOIN cip_survey s ON s.survey_id = m.survey_id"
         " WHERE m.concept_id = :c AND m.status = 'confirmed' AND m.concept_option_id IS NULL ORDER BY s.wave_label", {"c": concept})
     stack = waves[waves.wave_label.isin(BEAUTY_WAVES)].survey_id.astype(int).tolist()
     one = int(waves[waves.wave_label == "2025-02-17"].survey_id.iloc[0])
     question = int(query_df(
-        "SELECT m.question_id FROM csi_concept_map m WHERE m.survey_id = :s AND m.concept_id = :c"
+        "SELECT m.question_id FROM cip_concept_map m WHERE m.survey_id = :s AND m.concept_id = :c"
         " AND m.concept_option_id IS NULL AND m.status = 'confirmed'", {"s": one, "c": concept}).question_id.iloc[0])
     target_multi = int(query_df(
-        "SELECT question_id FROM csi_question WHERE survey_id = :s AND is_multi = 1 AND is_technical = 0"
+        "SELECT question_id FROM cip_question WHERE survey_id = :s AND is_multi = 1 AND is_technical = 0"
         " ORDER BY sort_order LIMIT 1", {"s": one}).question_id.iloc[0])
-    item = int(query_df("SELECT item_id FROM csi_item WHERE question_id = :q ORDER BY sort_order LIMIT 1",
+    item = int(query_df("SELECT item_id FROM cip_item WHERE question_id = :q ORDER BY sort_order LIMIT 1",
                         {"q": target_multi}).item_id.iloc[0])
     adhoc = ({"kind": "profile", "dimension": "gender", "values": ["Female"]},
              {"kind": "item", "ids": [item]})
 
+    latest = int(query_df("SELECT survey_id FROM cip_survey WHERE platform = 'forsta' AND load_status = 'verified'"
+                          " ORDER BY wave_date DESC, survey_id DESC LIMIT 1").survey_id.iloc[0])
     checks = [
+        ("search (FULLTEXT)", 2.0, lambda: uncached(repo.search)("holiday budget")),
+        ("survey report, whole Forsta wave", 2.0,
+         lambda: (uncached(repo.question_catalog)(latest), uncached(repo.wave_report)(latest))),
         ("standard view (cube, age-band break)", 1.0,
          lambda: uncached(repo.analyse)(one, question, (), "age_band")),
         ("ad-hoc cohort, one wave (engine)", 3.0,

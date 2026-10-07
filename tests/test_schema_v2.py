@@ -41,17 +41,17 @@ SEED = REPO / "sql" / "003_seed_topics.sql"
 SCHEMA_V1 = REPO / "tests" / "fixtures" / "schema_v1.sql"
 
 NEW_TABLES = {
-    "csi_concept", "csi_concept_option", "csi_concept_map",
-    "csi_weight_scheme", "csi_weight",
-    "csi_cohort_def", "csi_respondent_cohort",
-    "csi_agg_cell",
-    "csi_publication", "csi_publication_cell",
+    "cip_concept", "cip_concept_option", "cip_concept_map",
+    "cip_weight_scheme", "cip_weight",
+    "cip_cohort_def", "cip_respondent_cohort",
+    "cip_agg_cell",
+    "cip_publication", "cip_publication_cell",
 }
 NEW_COLUMNS = {
-    "csi_survey": {"platform", "source_ref", "study_type", "load_status", "language"},
-    "csi_respondent": {"respondent_key", "quality_flag"},
-    "csi_profile": {"age_mid", "income_mid_k"},
-    "csi_load_log": {"archive_uri", "archive_sha256"},
+    "cip_survey": {"platform", "source_ref", "study_type", "load_status", "language"},
+    "cip_respondent": {"respondent_key", "quality_flag"},
+    "cip_profile": {"age_mid", "income_mid_k"},
+    "cip_load_log": {"archive_uri", "archive_sha256"},
 }
 
 
@@ -65,7 +65,7 @@ def sqlite_engine(tmp_path, name: str) -> sa.Engine:
 def columns(engine: sa.Engine) -> dict[str, set[str]]:
     insp = sa.inspect(engine)
     return {t: {c["name"] for c in insp.get_columns(t)}
-            for t in insp.get_table_names() if t.startswith("csi_")}
+            for t in insp.get_table_names() if t.startswith("cip_")}
 
 
 def test_fresh_v2_schema_has_every_table_and_column(tmp_path):
@@ -73,7 +73,7 @@ def test_fresh_v2_schema_has_every_table_and_column(tmp_path):
     for path in (SCHEMA, VIEWS, SEED):
         apply_sql(path, engine)
     cols = columns(engine)
-    assert len(cols) == 29
+    assert len(cols) == 31            # + cip_forsta_survey, cip_search (Oct 2026)
     assert NEW_TABLES <= set(cols)
     for table, wanted in NEW_COLUMNS.items():
         assert wanted <= cols[table], f"{table} missing {wanted - cols[table]}"
@@ -85,7 +85,7 @@ def v1_database(tmp_path, name: str = "v1.db") -> sa.Engine:
     apply_sql(SCHEMA_V1, engine)
     with engine.begin() as conn:
         conn.execute(sa.text(
-            "INSERT INTO csi_survey (forsta_host, forsta_path, title, wave_label, status)"
+            "INSERT INTO cip_survey (forsta_host, forsta_path, title, wave_label, status)"
             " VALUES ('se1.decipherinc.com', 'selfserve/58f/260908', 'Shopping and Spending',"
             " '2026-09-21', 'closed')"))
     return engine
@@ -101,7 +101,7 @@ def test_install_upgrades_v1_to_exactly_v2(tmp_path):
     assert columns(upgraded) == columns(fresh)
     with upgraded.connect() as conn:
         row = conn.execute(sa.text(
-            "SELECT platform, source_ref, load_status, study_type FROM csi_survey")).one()
+            "SELECT platform, source_ref, load_status, study_type FROM cip_survey")).one()
     assert tuple(row) == ("forsta", "selfserve/58f/260908", "verified", "tracker")
 
 
@@ -121,19 +121,19 @@ def test_install_refuses_while_a_load_is_running(tmp_path):
     engine = v1_database(tmp_path)
     with engine.begin() as conn:
         conn.execute(sa.text(
-            "INSERT INTO csi_load_log (source_type, object_type, status)"
+            "INSERT INTO cip_load_log (source_type, object_type, status)"
             " VALUES ('excel', 'data', 'running')"))
     with pytest.raises(RuntimeError, match="load is running"):
         schema_upgrade.install(engine)
     schema_upgrade.install(engine, force=True)          # the operator's override
-    assert "platform" in columns(engine)["csi_survey"]
+    assert "platform" in columns(engine)["cip_survey"]
 
 
 def test_dry_run_writes_nothing(tmp_path):
     engine = v1_database(tmp_path)
     planned = schema_upgrade.install(engine, dry_run=True)
     assert any("ADD COLUMN platform" in s for s in planned)
-    assert "platform" not in columns(engine)["csi_survey"]
+    assert "platform" not in columns(engine)["cip_survey"]
 
 
 def test_upsert_survey_records_platform_and_updates_in_place(tmp_path, monkeypatch):
@@ -154,7 +154,7 @@ def test_upsert_survey_records_platform_and_updates_in_place(tmp_path, monkeypat
     assert first == again != legacy
     with engine.connect() as conn:
         rows = conn.execute(sa.text(
-            "SELECT survey_id, platform, source_ref, title FROM csi_survey ORDER BY survey_id")).all()
+            "SELECT survey_id, platform, source_ref, title FROM cip_survey ORDER BY survey_id")).all()
     assert [tuple(r)[1:] for r in rows] == [
         ("forsta", "selfserve/58f/260908", "Shopping and Spending (retitled)"),
         ("qualtrics", "SV_0IHGTy1GPAlUsGa", "Beauty + Shrink"),
@@ -176,7 +176,7 @@ def test_same_wave_from_a_different_host_updates_the_same_row(tmp_path, monkeypa
                           title="Shopping and Spending", wave_label="2026-09-28")
     assert moved == first
     with engine.connect() as conn:
-        assert conn.execute(sa.text("SELECT COUNT(*), MAX(forsta_host) FROM csi_survey")).one() \
+        assert conn.execute(sa.text("SELECT COUNT(*), MAX(forsta_host) FROM cip_survey")).one() \
             == (1, "se2.decipherinc.com")
 
 
@@ -185,7 +185,7 @@ def test_source_ref_cannot_be_null_so_uniqueness_always_holds(tmp_path):
     upsert_survey must still collide, not create a silent duplicate wave."""
     engine = sqlite_engine(tmp_path, "notnull.db")
     schema_upgrade.install(engine)
-    insert = sa.text("INSERT INTO csi_survey (forsta_host, forsta_path, title, wave_label)"
+    insert = sa.text("INSERT INTO cip_survey (forsta_host, forsta_path, title, wave_label)"
                      " VALUES (:host, 'p', 't', '2026-10-05')")
     with engine.begin() as conn:
         conn.execute(insert, {"host": "a"})
@@ -198,9 +198,31 @@ def test_upgrade_tightens_a_nullable_source_ref_on_mysql():
     """dwh_stg received source_ref as NULL-able before this rule; the upgrade
     backfills it, then makes it NOT NULL. SQLite cannot alter nullability in
     place, so its copies get the rule from 001 when rebuilt."""
-    nullable = {"csi_survey": {"source_ref": True}}
+    nullable = {"cip_survey": {"source_ref": True}}
     assert schema_upgrade.tighten_statements(nullable, is_sqlite=False) == [
-        "ALTER TABLE csi_survey MODIFY COLUMN source_ref VARCHAR(255) NOT NULL DEFAULT ''"]
+        "ALTER TABLE cip_survey MODIFY COLUMN source_ref VARCHAR(255) NOT NULL DEFAULT ''"]
     assert schema_upgrade.tighten_statements(nullable, is_sqlite=True) == []
-    assert schema_upgrade.tighten_statements({"csi_survey": {"source_ref": False}},
+    assert schema_upgrade.tighten_statements({"cip_survey": {"source_ref": False}},
                                              is_sqlite=False) == []
+
+
+def test_csi_tables_are_renamed_to_cip_keeping_their_data(tmp_path):
+    """The portal's tables were csi_ (Consumer Survey Index) until Oct 2026;
+    install() renames them to cip_ in place — data, keys and all."""
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'old.db'}", future=True)
+    schema_upgrade.install(engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text("INSERT INTO cip_survey (forsta_host, forsta_path, title, wave_label)"
+                             " VALUES ('h', 'p', 'Shopping and Spending', '2026-09-21')"))
+        for view in [v for v in sa.inspect(engine).get_view_names() if v.startswith("v_cip_")]:
+            conn.execute(sa.text(f"DROP VIEW {view}"))
+        for table in [t for t in sa.inspect(engine).get_table_names() if t.startswith("cip_")]:
+            conn.execute(sa.text(f"ALTER TABLE {table} RENAME TO {'csi_' + table[4:]}"))
+    assert "csi_survey" in sa.inspect(engine).get_table_names()
+    schema_upgrade.install(engine)
+    insp = sa.inspect(sa.create_engine(f"sqlite:///{tmp_path / 'old.db'}", future=True))
+    assert not [t for t in insp.get_table_names() if t.startswith("csi_")]
+    assert "v_cip_survey_health" in insp.get_view_names() and not [v for v in insp.get_view_names() if "csi" in v]
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT title FROM cip_survey")).scalar() == "Shopping and Spending"
+    assert not [s for s in schema_upgrade.plan(engine) if "RENAME" in s.upper()]
