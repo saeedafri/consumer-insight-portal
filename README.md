@@ -43,6 +43,7 @@ python -m etl.forsta_etl --discover   # register every survey the key can see (c
 python -m etl.forsta_etl --due        # load every closed, readable, unloaded wave; verify; cube; search
 python scripts/reconcile.py           # re-read each wave from Forsta and compare every answer
 python scripts/weekly_forsta.py       # the scheduled run: discover → load due → drift (exit code = outcome)
+python -m etl.tracker_line --compare "Weekly Line-By-Line Survey Data.xlsx"   # ETL vs the team's file
 
 streamlit run app/main.py --server.port 8611
 ```

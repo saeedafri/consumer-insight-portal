@@ -1,0 +1,318 @@
+{
+ "schema_version": 1,
+ "diagram_type": "dataflow",
+ "meta": {
+  "title": "CIP Forsta ETL — Connect, Extract, Transform, Load, Derive",
+  "output": ".archify/dataflow-forsta-etl-20261008/forsta-etl.html",
+  "quality_profile": "showcase",
+  "viewBox": [
+   1500,
+   660
+  ]
+ },
+ "stages": [
+  {
+   "label": "Connect"
+  },
+  {
+   "label": "Extract"
+  },
+  {
+   "label": "Transform"
+  },
+  {
+   "label": "Load + verify"
+  },
+  {
+   "label": "Derive (server-side)"
+  }
+ ],
+ "nodes": [
+  {
+   "id": "scheduler",
+   "type": "backend",
+   "label": "launchd schedule",
+   "sublabel": "weekly_forsta.py",
+   "stage": 0,
+   "row": 0,
+   "tag": "daily + Tue/Wed",
+   "width": 150,
+   "height": 64
+  },
+  {
+   "id": "forsta",
+   "type": "external",
+   "label": "Forsta API",
+   "sublabel": "x-apikey · GET only",
+   "stage": 0,
+   "row": 1,
+   "tag": "se1.decipherinc.com",
+   "width": 150,
+   "height": 64
+  },
+  {
+   "id": "discover",
+   "type": "backend",
+   "label": "Discover",
+   "sublabel": "→ cip_forsta_survey",
+   "stage": 1,
+   "row": 0,
+   "tag": "due / loaded / failed",
+   "width": 150,
+   "height": 64
+  },
+  {
+   "id": "fetch",
+   "type": "backend",
+   "label": "Fetch wave",
+   "sublabel": "datamap + all records",
+   "stage": 1,
+   "row": 1,
+   "tag": "1 survey = 1 wave",
+   "width": 150,
+   "height": 64
+  },
+  {
+   "id": "shape",
+   "type": "backend",
+   "label": "Datamap → questions",
+   "sublabel": "shapes, labels, bipolar",
+   "stage": 2,
+   "row": 0,
+   "tag": "flags t / v",
+   "width": 150,
+   "height": 64
+  },
+  {
+   "id": "records",
+   "type": "security",
+   "label": "Records → answers",
+   "sublabel": "codes, numbers, text",
+   "stage": 2,
+   "row": 1,
+   "tag": "PII dropped, RID hashed",
+   "width": 150,
+   "height": 64
+  },
+  {
+   "id": "verify",
+   "type": "security",
+   "label": "Verify gate",
+   "sublabel": "payload = stored",
+   "stage": 3,
+   "row": 0,
+   "tag": "loading → verified",
+   "width": 150,
+   "height": 64
+  },
+  {
+   "id": "load",
+   "type": "database",
+   "label": "Wave tables",
+   "sublabel": "question · respondent · answer",
+   "stage": 3,
+   "row": 1,
+   "tag": "one transaction",
+   "width": 170,
+   "height": 64
+  },
+  {
+   "id": "derive",
+   "type": "backend",
+   "label": "Profiles + concepts",
+   "sublabel": "bands, generation, harmonise",
+   "stage": 4,
+   "row": 0,
+   "tag": "team rules",
+   "width": 170,
+   "height": 64
+  },
+  {
+   "id": "cube",
+   "type": "database",
+   "label": "cip_agg_cell",
+   "sublabel": "answer × cut × cohort",
+   "stage": 4,
+   "row": 1,
+   "tag": "1 indexed read",
+   "width": 170,
+   "height": 64
+  },
+  {
+   "id": "line",
+   "type": "database",
+   "label": "cip_tracker_line",
+   "sublabel": "team's line-by-line rows",
+   "stage": 4,
+   "row": 2,
+   "tag": "qualified only",
+   "width": 170,
+   "height": 64
+  },
+  {
+   "id": "search",
+   "type": "database",
+   "label": "cip_search",
+   "sublabel": "FULLTEXT waves + questions",
+   "stage": 4,
+   "row": 3,
+   "tag": "search box",
+   "width": 170,
+   "height": 64
+  }
+ ],
+ "flows": [
+  {
+   "id": "run",
+   "from": "scheduler",
+   "to": "discover",
+   "label": "start run",
+   "classification": "exit code 0-3",
+   "variant": "emphasis"
+  },
+  {
+   "id": "list",
+   "from": "forsta",
+   "to": "discover",
+   "label": "GET surveys",
+   "classification": "metadata"
+  },
+  {
+   "id": "due",
+   "from": "discover",
+   "to": "fetch",
+   "label": "due waves",
+   "classification": "oldest first",
+   "variant": "dashed",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "route": "straight"
+  },
+  {
+   "id": "pull",
+   "from": "forsta",
+   "to": "fetch",
+   "label": "GET datamap + data",
+   "classification": "JSON, all statuses",
+   "variant": "emphasis"
+  },
+  {
+   "id": "datamap",
+   "from": "fetch",
+   "to": "shape",
+   "label": "datamap",
+   "classification": "per question"
+  },
+  {
+   "id": "rows",
+   "from": "fetch",
+   "to": "records",
+   "label": "records",
+   "classification": "~500 / wave",
+   "variant": "emphasis"
+  },
+  {
+   "id": "definitions",
+   "from": "shape",
+   "to": "load",
+   "label": "definitions",
+   "classification": "upsert"
+  },
+  {
+   "id": "answers",
+   "from": "records",
+   "to": "load",
+   "label": "answers",
+   "classification": "5,000-row batches",
+   "variant": "emphasis"
+  },
+  {
+   "id": "check",
+   "from": "load",
+   "to": "verify",
+   "label": "counts",
+   "classification": "per field",
+   "variant": "security",
+   "fromSide": "top",
+   "toSide": "bottom",
+   "route": "straight"
+  },
+  {
+   "id": "publish",
+   "from": "verify",
+   "to": "derive",
+   "label": "verified",
+   "classification": "visible",
+   "variant": "emphasis"
+  },
+  {
+   "id": "cells",
+   "from": "verify",
+   "to": "cube",
+   "label": "cells",
+   "classification": "pre-computed"
+  },
+  {
+   "id": "lines",
+   "from": "verify",
+   "to": "line",
+   "label": "lines",
+   "classification": "team format"
+  },
+  {
+   "id": "index",
+   "from": "verify",
+   "to": "search",
+   "label": "index",
+   "classification": "per wave"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "cyan",
+   "title": "1 · Connect",
+   "items": [
+    "launchd runs scripts/weekly_forsta.py daily at 09:00 IST, plus Tue/Wed 14:00 and 23:30 IST: waves launch Monday 12–13 UTC and close Mon 20:00 – Wed 23:00 IST (median 13 h)",
+    "HTTPS to se1.decipherinc.com/api/v1 with the x-apikey header from .env; the key is never printed",
+    "GET only: rh/users/self (auth check), rh/companies/all/surveys, surveys/{path}/datamap, surveys/{path}/data. Retries connection errors, timeouts, 429 and 5xx"
+   ]
+  },
+  {
+   "dot": "violet",
+   "title": "2 · Extract",
+   "items": [
+    "Discover lists every survey and sets its state: due (closed, readable, not loaded), loaded, failed, hibernated (428), testing; a reopened survey becomes due again",
+    "Each due wave: datamap?format=json and data?format=json with no cond filter — every status, so dropout and terminates are kept; analysis uses qualified only",
+    "One survey = one wave: selfserve/58f/YYMMNN, labelled by the Monday of its first qualified completion"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "3 · Transform",
+   "items": [
+    "Datamap read per question: single, multi, grid, bipolar (left/right statements), numeric, text; answer labels from the question or its variables; 'other (specify)' text becomes its own question; flags t (technical) and v (virtual, incl. '- NORMALIZED' copies)",
+    "Records: codes stay codes, numbers become finite decimals, text is kept as text, long strings are cut to the column size",
+    "userAgent, url, session, dcua and ipAddress are never stored; RID is kept only as sha256 respondent_key"
+   ]
+  },
+  {
+   "dot": "emerald",
+   "title": "4 · Load",
+   "items": [
+    "The wave is 'loading' (invisible) while it loads. Definitions are upserted; respondents are upserted in one batch; answers are replaced in 5,000-row batches in one transaction; respondents Forsta removed are deleted",
+    "Verify: every record is a respondent, every datamap variable is a field, every field holds exactly as many answers as the payload. Pass → verified; fail → failed, retried next run",
+    "A failed reload never hides a verified wave whose data did not change"
+   ]
+  },
+  {
+   "dot": "rose",
+   "title": "5 · Derive — nothing left for the UI",
+   "items": [
+    "Profiles: age band 18-29 / 30-44 / 45-60 / over 60; generation GenZ 18-28, Millennial 29-44, GenX 45-60, Boomer 61+; age and income midpoints for averages",
+    "Harmonise: questions linked to concepts across waves and platforms; cohorts derived; cube cells for every answer × standard cut × cohort",
+    "cip_tracker_line rebuilds the data team's 'Weekly Line-By-Line' rows; checked against their file: 16 waves, identical except 3 defects in the file",
+    "cip_search indexed per wave; publications re-checked for drift"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "A Forsta Wave in the ETL Register (cip_forsta_survey)",
+    "output": ".archify/lifecycle-forsta-wave-20261008/forsta-wave.html",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "main", "label": "Normal path" },
+    { "id": "recovery", "label": "Retry" },
+    { "id": "waiting", "label": "Forsta side" },
+    { "id": "terminal", "label": "Gone" }
+  ],
+  "states": [
+    { "id": "testing", "type": "start", "label": "Testing", "sublabel": "fielding in Forsta", "lane": "main", "col": 0, "step": "01", "tag": "Mon 12-13 UTC" },
+    { "id": "due", "type": "waiting", "label": "Due", "sublabel": "closed, readable", "lane": "main", "col": 1, "step": "02", "tag": "next run" },
+    { "id": "loading", "type": "active", "label": "Loading", "sublabel": "invisible to the portal", "lane": "main", "col": 2, "step": "03", "tag": "one transaction" },
+    { "id": "verifying", "type": "decision", "label": "Verifying", "sublabel": "payload = stored", "lane": "main", "col": 3, "step": "04", "tag": "gate" },
+    { "id": "loaded", "type": "success", "label": "Loaded", "sublabel": "verified + derived", "lane": "main", "col": 4, "step": "05", "tag": "visible" },
+    { "id": "failed", "type": "failure", "label": "Failed", "sublabel": "last_error kept", "lane": "recovery", "col": 3, "tag": "retried" },
+    { "id": "hibernated", "type": "waiting", "label": "Hibernated", "sublabel": "API answers 428", "lane": "waiting", "col": 1, "tag": "after 3-4 months" },
+    { "id": "deleted", "type": "failure", "label": "Deleted", "sublabel": "by Forsta", "lane": "terminal", "col": 1, "tag": "365 days" }
+  ],
+  "transitions": [
+    { "from": "testing", "to": "due", "label": "closed" },
+    { "from": "due", "to": "loading", "label": "run" },
+    { "from": "loading", "to": "verifying" },
+    { "from": "verifying", "to": "loaded", "label": "match" },
+    { "from": "verifying", "to": "failed", "variant": "security", "label": "mismatch" },
+    { "from": "failed", "to": "due", "label": "next run", "variant": "dashed" },
+    { "from": "loaded", "to": "due", "label": "reopened", "variant": "dashed" },
+    { "from": "due", "to": "hibernated", "variant": "security", "label": "not loaded in time" },
+    { "from": "hibernated", "to": "due", "label": "reactivated", "variant": "dashed" },
+    { "from": "hibernated", "to": "deleted", "variant": "security" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Cadence found in Forsta", "items": [
+      "Weekly consumer tracker: one new survey per wave (selfserve/58f/YYMMNN), 69 waves since June 2025, launched Monday 12-13 UTC, ~400 qualified of ~500",
+      "Closes between Monday 20:00 and Wednesday 23:00 IST (66 waves, median 13 h); annual trackers (Holiday ~2,000) and client studies arrive the same way",
+      "Core every wave: q1-q5 activities and purchases, CS1-CS2 outlook, D1-D8 demographics; rotating modules: beauty, tariffs, holiday, inflation, GLP-1, apparel and more" ] },
+    { "dot": "emerald", "title": "Schedule (launchd: com.coresight.cip-forsta-etl)", "items": [
+      "Daily 09:00 IST: discover every survey, load whatever is due, retry failures, reload reopened surveys",
+      "Tuesday and Wednesday 14:00 and 23:30 IST: pick each wave up within hours of closing",
+      "An idle run costs one survey-list GET; exit code 0 ok, 1 a wave failed, 2 key rejected, 3 a published number moved" ] },
+    { "dot": "amber", "title": "Why speed matters", "items": [
+      "Forsta hibernates a survey after ~3-4 months and deletes it after 365 days; the warehouse is the record",
+      "51 surveys are hibernated today; the pipeline never reactivates one (reactivation is a change in Forsta, made by a person)" ] }
+  ]
+}

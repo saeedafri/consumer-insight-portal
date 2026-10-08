@@ -284,10 +284,11 @@ def finish_run(run_id: int, read: int, loaded: int, rejected: int = 0, error: Op
         )
 
 
-def index_survey(survey_id: int) -> None:
-    """Rebuild this wave's rows in cip_search, and the concept rows."""
+def index_survey(survey_id: int, concepts: bool = True) -> None:
+    """Rebuild this wave's rows in cip_search, and (unless told not to — a
+    reindex of every wave does them once at the end) the concept rows."""
     with get_engine("etl").begin() as conn:
-        conn.execute(text("DELETE FROM cip_search WHERE survey_id = :s OR kind = 'concept'"), {"s": survey_id})
+        conn.execute(text("DELETE FROM cip_search WHERE survey_id = :s"), {"s": survey_id})
         wave, title, fam, tags, ref = conn.execute(text(
             "SELECT wave_label, title, survey_family, tags, source_ref FROM cip_survey WHERE survey_id = :s"),
             {"s": survey_id}).one()
@@ -301,6 +302,9 @@ def index_survey(survey_id: int) -> None:
             SELECT 'question', q.survey_id, q.question_id, s.wave_label, SUBSTR(q.qtext, 1, 500), q.qcode
               FROM cip_question q JOIN cip_survey s ON s.survey_id = q.survey_id
              WHERE q.survey_id = :s AND q.is_technical = 0 AND q.is_virtual = 0"""), {"s": survey_id})
+        if not concepts:
+            return
+        conn.execute(text("DELETE FROM cip_search WHERE kind = 'concept'"))
         conn.execute(text("""
             INSERT INTO cip_search (kind, concept_id, waves, title, body)
             SELECT 'concept', c.concept_id, COUNT(DISTINCT m.survey_id), SUBSTR(c.concept_name, 1, 500), c.concept_code

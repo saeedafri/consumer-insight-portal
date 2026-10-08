@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "cd0137f8-2626-42a2-9e97-d52f0a10036f",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/architecture-forsta-etl-20261008/candidate.json",
+  "output": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/architecture-forsta-etl-20261008/forsta-etl.html",
+  "specification": {
+    "sha256": "584da184426a990814db2ddf7f4f84b13adf8054ebd7e3ba5960b13765eacd90",
+    "bytes": 7390
+  },
+  "artifact": {
+    "sha256": "cbbe105f85cafc26018dfe2a73fa77eb22761b584af520fbc5571a87317dca3d",
+    "bytes": 773294
+  }
+}

@@ -92,19 +92,60 @@ python -m etl.forsta_etl --reindex           # rebuild the search index of every
 ## The scheduled run
 
 ```bash
-python scripts/weekly_forsta.py       # auth check → discover → load due → drift
+python scripts/weekly_forsta.py       # auth check → schema check → discover → load due → drift
 ```
 
 Exit codes: 0 everything due loaded and verified · 1 a wave failed · 2 Forsta
-rejected the key or it is not configured · 3 loaded, but a published number
-moved (see `/publications`).
+rejected the key, it is not configured, or the schema is behind the code (run
+`scripts/init_db.py`) · 3 loaded, but a published number moved (see `/publications`).
 
-Not installed by the portal (a standing job is IT's call). Daily 06:00 IST, so
-a Monday wave is in by Tuesday morning:
+**When it runs** — set from the 66 tracker waves' own timestamps: launched Monday
+12–13 UTC, closed between Monday 20:00 and Wednesday 23:00 IST (median 13 h,
+90th percentile 49 h). Installed on this Mac as the launchd agent
+`com.coresight.cip-forsta-etl` (`scripts/launchd/`, same pattern as the other
+Coresight ETLs; launchd runs a missed slot after the laptop wakes):
+
+| When (IST) | Why |
+|---|---|
+| daily 09:00 | discover, load anything due, retry failures, reload reopened surveys |
+| Tue + Wed 14:00 and 23:30 | each wave within hours of closing |
+
+Log: `logs/forsta-etl.log`. On a server the same slots in cron:
 
 ```cron
-30 0 * * *  cd /home/site/wwwroot && APP_ENV=staging python scripts/weekly_forsta.py >> /home/logs/forsta-weekly.log 2>&1
+0 9 * * *          cd /home/site/wwwroot && APP_ENV=staging python scripts/weekly_forsta.py >> /home/logs/forsta-etl.log 2>&1
+0 14 * * 2,3       cd /home/site/wwwroot && APP_ENV=staging python scripts/weekly_forsta.py >> /home/logs/forsta-etl.log 2>&1
+30 23 * * 2,3      cd /home/site/wwwroot && APP_ENV=staging python scripts/weekly_forsta.py >> /home/logs/forsta-etl.log 2>&1
 ```
+
+---
+
+## The data team's line-by-line table
+
+The team built "Weekly Line-By-Line Survey Data.xlsx" by hand: each week's raw
+export pasted under one header row (36 waves, Feb–Sep 2026, qualified only,
+q1–q5 + CS1–CS2 + D1–D8 as labelled columns, plus Month, Age Range, Generation).
+The ETL now builds the same rows for every tracker wave (`cip_tracker_line`,
+`etl/tracker_line.py`, columns in `config/tracker_line.yml`) — the panel
+`session` id excepted, which is personal data and never stored.
+
+```bash
+python -m etl.tracker_line --compare "Weekly Line-By-Line Survey Data.xlsx"   # reads only
+python -m etl.tracker_line --rebuild                                          # every verified tracker wave
+```
+
+Checked on 8 Oct 2026 against the 16 waves both hold (≈6,400 respondents,
+≈90 columns): same respondents per wave and the same count of every value in
+every column, except three defects in the team's file:
+
+| Defect in the file | Evidence |
+|---|---|
+| July's `Month` is typed 2026-07-26 | 1,608 rows (4 waves) |
+| "Under 18" respondents banded `over 60` / `Boomer` | 1 per wave in 8 waves; the ETL leaves them unbanded |
+| "Gone to a movie theater/cinema" and "Gone to a live performance" have no column | 10 waves, so those answers were dropped |
+
+Cosmetic only: the file stores `&amp;` for `&` in retailer names and a header
+spells "baby Toiletries".
 
 ---
 

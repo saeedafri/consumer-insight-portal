@@ -1,0 +1,35 @@
+# The data team's "Weekly Line-By-Line Survey Data" (Raw Data tab), rebuilt by
+# the ETL for every weekly tracker wave: one row per QUALIFIED respondent, the
+# core questions under the team's own headers, in the team's order.
+#
+#   multi  → one column per item, "<prefix><item label>"; the label when chosen, blank when not
+#   single → the answer label ("Age" becomes a number when it is one: 34, but "70 or more")
+#   from   → derived: wave_month (1st of the wave's month), completed_at ("MM/DD/YYYY HH:MM"),
+#            age_band and generation (config/survey_map.yml cuts)
+#
+# Not carried: D7 (the team leaves it out) and the panel `session` id (personal data, spec D7).
+family: CSI-US
+columns:
+  - {header: Month, from: wave_month}
+  - {header: date, from: completed_at}
+  - {qcode: q1, prefix: "Activities: "}
+  - {qcode: q2, prefix: "Purchased In-store: "}
+  - {qcode: q3, prefix: "Purchased Online: "}
+  - {qcode: q4, prefix: "Food: "}
+  - {qcode: q5, prefix: "Non-food: "}
+  - {qcode: CS1, header: Household Situation}
+  - {qcode: CS2, header: Economic Situation}
+  - {qcode: D1, header: Gender}
+  - {qcode: D2, header: Age}
+  - {qcode: D3, header: Relationship Status}
+  - {qcode: D4, header: Ethnicity}
+  - {qcode: D5, header: Household Income}
+  - {qcode: D6, header: Primary Residence}
+  - {qcode: D8, header: State}
+  - {qcode: start_date, header: start_date}
+  - {header: Age Range, from: age_band}
+  - {header: Generation, from: generation}
+# The team's spellings of our derived labels.
+labels:
+  Over 60: over 60
+  Millennial: Millenial

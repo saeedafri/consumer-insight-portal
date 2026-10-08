@@ -426,3 +426,13 @@ def test_the_butterfly_keeps_rows_with_the_same_left_statement_apart():
     grid = pd.DataFrame({"item_label": ["a", "a", "b", "b"], "left_label": ["Same"] * 4, "right_label": ["X", "X", "Y", "Y"],
                          "item_order": [1, 1, 2, 2], "option_order": [1, 2, 1, 2], "pct": [.6, .4, .3, .7]})
     assert len(set(charts.butterfly(grid).data[0].y)) == 2
+
+
+def test_a_wave_loaded_another_way_on_the_same_path_is_never_reused(csi_db):
+    from etl.loaders import upsert_survey
+    old = upsert_survey(host="se1.decipherinc.com", path="selfserve/58f/260907", title="Excel-era copy",
+                        survey_family="CSI-US", wave_label="2026-09-14", wave_date="2026-09-14",
+                        platform="forsta", source_ref="selfserve/58f/260907")
+    sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
+    assert sid != old
+    assert loaded(csi_db, "SELECT wave_label FROM cip_survey WHERE survey_id = :s", s=old)[0][0] == "2026-09-14"

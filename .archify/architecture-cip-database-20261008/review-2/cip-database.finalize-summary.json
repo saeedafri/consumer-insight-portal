@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/architecture-cip-database-20261008/candidate.json",
+    "sha256": "ccac361f5c5468fe41a05da0af9ca47bf36ae381dbf60b221edf738beb4f8d94",
+    "bytes": 7768
+  },
+  "artifact": {
+    "path": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/architecture-cip-database-20261008/cip-database.html",
+    "sha256": "f1d37c6a7647b1320fa5a1d04dae6e94ea976935fdc5777459c3658fc1e7c63e",
+    "bytes": 781813
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/architecture-cip-database-20261008/review-2/cip-database.finalize.json",
+    "summaryReceipt": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/architecture-cip-database-20261008/review-2/cip-database.finalize-summary.json",
+    "browserCheckReceipt": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/architecture-cip-database-20261008/review-2/cip-database.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.0.1",
+    "availableVersion": "3.0.1",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-08T09:52:54.866Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 1724,
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "resolvedCrossovers": 1,
+      "routesOverSuggestedBends": 1
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [
+        {
+          "left": {
+            "id": "rows",
+            "from": "question",
+            "to": "item",
+            "label": "rows",
+            "collectionIndex": 3,
+            "artifactIndex": 4
+          },
+          "right": {
+            "id": "codes",
+            "from": "question",
+            "to": "option",
+            "label": "codes",
+            "collectionIndex": 4,
+            "artifactIndex": 5
+          },
+          "point": [
+            640,
+            184
+          ],
+          "sharedNode": "question"
+        }
+      ],
+      "detours": [
+        {
+          "relationship": {
+            "id": "codes",
+            "from": "question",
+            "to": "option",
+            "label": "codes",
+            "collectionIndex": 4,
+            "artifactIndex": 5
+          },
+          "bends": 3,
+          "stretch": 1
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "question → item and question → option cross next to question: move node item or option so the two reach question from different sides (for example one level with it, one directly above or below it).",
+      "question → option needs 3 bends: move node question or option so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

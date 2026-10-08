@@ -739,3 +739,18 @@ CREATE TABLE IF NOT EXISTS cip_search (
   KEY ix_search_kind (kind, wave_label),
   FULLTEXT KEY ft_search (title, body)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- The weekly tracker's line-by-line table (the data team's "Weekly Line-By-
+-- Line Survey Data"): one row per qualified respondent of each tracker wave,
+-- the core questions under the team's headers, as JSON in the team's order.
+-- Rebuilt by the ETL after every load (etl/tracker_line.py).
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS cip_tracker_line (
+  respondent_id BIGINT UNSIGNED NOT NULL,
+  survey_id     INT UNSIGNED    NOT NULL,
+  wave_date     DATE            NOT NULL,
+  line          JSON            NOT NULL COMMENT 'header -> value, config/tracker_line.yml order',
+  PRIMARY KEY (respondent_id),
+  KEY ix_line_wave (wave_date, survey_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "f96d406c-e9dc-420a-8e4b-7cd20d5df153",
+  "status": "current",
+  "command": "deliver",
+  "type": "lifecycle",
+  "input": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/lifecycle-forsta-wave-20261008/candidate.json",
+  "output": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/lifecycle-forsta-wave-20261008/forsta-wave.html",
+  "specification": {
+    "sha256": "6163b0ab162cce1239805f5e1a31ea7080c3724eb852226696f5ca9f31568d70",
+    "bytes": 3763
+  },
+  "artifact": {
+    "sha256": "2dfa2400a9c1f2a98128c2c6e21931e7a11958c4bc0a090f8ec1469f8445a5dc",
+    "bytes": 763576
+  }
+}

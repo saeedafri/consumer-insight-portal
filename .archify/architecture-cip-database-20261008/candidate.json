@@ -1,0 +1,401 @@
+{
+ "schema_version": 1,
+ "diagram_type": "architecture",
+ "meta": {
+  "title": "CIP Database Design (dwh_stg, cip_ tables)",
+  "output": ".archify/architecture-cip-database-20261008/cip-database.html",
+  "quality_profile": "showcase"
+ },
+ "components": [
+  {
+   "id": "loadlog",
+   "type": "cloud",
+   "label": "cip_load_log",
+   "sublabel": "every run: rows, errors",
+   "pos": [
+    300,
+    60
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "status per run"
+  },
+  {
+   "id": "item",
+   "type": "database",
+   "label": "cip_item",
+   "sublabel": "grid / checkbox rows",
+   "pos": [
+    560,
+    60
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "left / right labels"
+  },
+  {
+   "id": "option",
+   "type": "database",
+   "label": "cip_option",
+   "sublabel": "code → label",
+   "pos": [
+    820,
+    60
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "per question"
+  },
+  {
+   "id": "register",
+   "type": "cloud",
+   "label": "cip_forsta_survey",
+   "sublabel": "path → load state",
+   "pos": [
+    40,
+    220
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "PK forsta_path"
+  },
+  {
+   "id": "survey",
+   "type": "database",
+   "label": "cip_survey",
+   "sublabel": "one row per wave",
+   "pos": [
+    300,
+    220
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "platform + ref + wave"
+  },
+  {
+   "id": "question",
+   "type": "database",
+   "label": "cip_question",
+   "sublabel": "wording, type, flags",
+   "pos": [
+    560,
+    220
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "technical / virtual"
+  },
+  {
+   "id": "field",
+   "type": "database",
+   "label": "cip_field",
+   "sublabel": "one per Forsta variable",
+   "pos": [
+    820,
+    220
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "value type"
+  },
+  {
+   "id": "profile",
+   "type": "database",
+   "label": "cip_profile",
+   "sublabel": "bands, generation, mids",
+   "pos": [
+    40,
+    380
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "1 per respondent"
+  },
+  {
+   "id": "respondent",
+   "type": "security",
+   "label": "cip_respondent",
+   "sublabel": "status, completed_at",
+   "pos": [
+    300,
+    380
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "sha256 key, no PII"
+  },
+  {
+   "id": "answer",
+   "type": "database",
+   "label": "cip_answer",
+   "sublabel": "long fact: 14.3 M rows",
+   "pos": [
+    820,
+    380
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "covering index"
+  },
+  {
+   "id": "search",
+   "type": "frontend",
+   "label": "cip_search",
+   "sublabel": "FULLTEXT title + body",
+   "pos": [
+    1080,
+    380
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "search box"
+  },
+  {
+   "id": "concept",
+   "type": "backend",
+   "label": "cip_concept",
+   "sublabel": "one question, all waves",
+   "pos": [
+    1340,
+    380
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "canonical"
+  },
+  {
+   "id": "line",
+   "type": "frontend",
+   "label": "cip_tracker_line",
+   "sublabel": "team line-by-line, JSON",
+   "pos": [
+    560,
+    540
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "qualified only"
+  },
+  {
+   "id": "cube",
+   "type": "frontend",
+   "label": "cip_agg_cell",
+   "sublabel": "answer × cut × cohort",
+   "pos": [
+    820,
+    540
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "1.4 M cells"
+  },
+  {
+   "id": "map",
+   "type": "backend",
+   "label": "cip_concept_map",
+   "sublabel": "wave unit → concept",
+   "pos": [
+    1080,
+    540
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "confirmed / proposed"
+  },
+  {
+   "id": "conceptopt",
+   "type": "backend",
+   "label": "cip_concept_option",
+   "sublabel": "canonical answers",
+   "pos": [
+    1340,
+    540
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "band midpoints"
+  }
+ ],
+ "connections": [
+  {
+   "id": "runs",
+   "from": "loadlog",
+   "to": "survey",
+   "label": "per run"
+  },
+  {
+   "id": "registered",
+   "from": "register",
+   "to": "survey",
+   "label": "survey_id"
+  },
+  {
+   "id": "questions",
+   "from": "survey",
+   "to": "question",
+   "label": "1 : n"
+  },
+  {
+   "id": "rows",
+   "from": "question",
+   "to": "item",
+   "label": "rows"
+  },
+  {
+   "id": "codes",
+   "from": "question",
+   "to": "option",
+   "label": "codes"
+  },
+  {
+   "id": "variables",
+   "from": "question",
+   "to": "field",
+   "label": "variables"
+  },
+  {
+   "id": "people",
+   "from": "survey",
+   "to": "respondent",
+   "label": "1 : n"
+  },
+  {
+   "id": "profiled",
+   "from": "respondent",
+   "to": "profile",
+   "label": "1 : 1"
+  },
+  {
+   "id": "answered",
+   "from": "answer",
+   "to": "respondent",
+   "label": "respondent_id",
+   "variant": "emphasis"
+  },
+  {
+   "id": "fielded",
+   "from": "field",
+   "to": "answer",
+   "label": "field_id",
+   "variant": "emphasis"
+  },
+  {
+   "id": "cubed",
+   "from": "answer",
+   "to": "cube",
+   "label": "cube build",
+   "variant": "dashed"
+  },
+  {
+   "id": "lined",
+   "from": "respondent",
+   "to": "line",
+   "label": "one row each",
+   "variant": "dashed"
+  },
+  {
+   "id": "mapkey",
+   "from": "cube",
+   "to": "map",
+   "label": "map_key",
+   "variant": "emphasis"
+  },
+  {
+   "id": "maps",
+   "from": "map",
+   "to": "conceptopt",
+   "label": "maps to"
+  },
+  {
+   "id": "options",
+   "from": "conceptopt",
+   "to": "concept",
+   "label": "option of"
+  },
+  {
+   "id": "indexed",
+   "from": "concept",
+   "to": "search",
+   "label": "indexed",
+   "variant": "dashed"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "cyan",
+   "title": "Long, not wide",
+   "items": [
+    "One row per respondent × variable in cip_answer, so the schema never changes when weekly modules rotate (BT, TF, HX, IN …)",
+    "Definitions (question, item, option, field) are per wave: Forsta codes are not stable across waves, so waves are linked by wording through concepts, never by code",
+    "Every table is prefixed cip_ (views v_cip_) so nothing collides with other dwh_stg tables"
+   ]
+  },
+  {
+   "dot": "emerald",
+   "title": "Serving layer — nothing left for the UI",
+   "items": [
+    "cip_agg_cell: every answer × standard cut (gender, age band, generation, income, region, urbanicity) × cohort, counted once per load; a standard view is one indexed read",
+    "cip_tracker_line: the data team's line-by-line rows for each tracker wave, in their column order",
+    "cip_search: one FULLTEXT read for the search box; concept trends join cip_concept_map at read time, so confirming a mapping needs no rebuild"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "Indexes",
+   "items": [
+    "cip_answer (survey_id, field_id, value_code, respondent_id) covering, plus unique (respondent_id, field_id) for upserts; the duplicate ix_answer_field was dropped",
+    "cip_agg_cell (survey_id, map_key, cohort_id, dim) and (survey_id, question_id, dim)",
+    "cip_survey (load_status, study_type, wave_date) for wave pickers; cip_forsta_survey (load_state, closed_at) for the due list"
+   ]
+  },
+  {
+   "dot": "rose",
+   "title": "Partitioning — decided by measurement",
+   "items": [
+    "Applied: logical partitioning by wave. survey_id leads every hot index, a wave loads and verifies as one unit, and reads hit the pre-computed cube instead of raw answers",
+    "Not applied: MySQL PARTITION on cip_answer. InnoDB cannot partition a table with foreign keys or a FULLTEXT index, and cip_answer has both. At 14.3 M rows (1.3 GB data + 2.9 GB index), reads already measure 0.25 s P95",
+    "Trigger: above 100 M answer rows, PARTITION BY HASH(survey_id), with integrity moved to the loader's verify step and verbatim search to cip_search"
+   ]
+  },
+  {
+   "dot": "violet",
+   "title": "Privacy",
+   "items": [
+    "No browser string, link, session, fingerprint or IP is stored; the panel RID only as sha256 respondent_key",
+    "The portal connects with a read-only account; only the ETL writes"
+   ]
+  }
+ ]
+}

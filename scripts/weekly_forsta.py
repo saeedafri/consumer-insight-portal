@@ -6,7 +6,7 @@ scheduler (cron, Azure WebJob) can alert on anything but 0.
     python scripts/weekly_forsta.py            # daily 06:00 IST and Tuesday 06:00 IST
 
 Exit codes: 0 everything due loaded and verified · 1 a wave failed to load or
-verify · 2 Forsta rejected the key · 3 loaded, but a published number moved.
+verify · 2 Forsta rejected the key or the schema is behind the code · 3 loaded, but a published number moved.
 """
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from sqlalchemy import inspect  # noqa: E402
+
 from app.core.config import config  # noqa: E402
+from app.core.database import get_engine  # noqa: E402
 from etl import forsta_etl  # noqa: E402
 from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
 
@@ -36,6 +39,10 @@ def run(client=None) -> int:
         client.whoami()
     except ForstaAuthError as exc:
         log.error("Forsta rejected the key: %s", exc)
+        return 2
+    missing = {"cip_forsta_survey", "cip_search", "cip_tracker_line"} - set(inspect(get_engine("etl")).get_table_names())
+    if missing:                                        # never load into a schema older than the code
+        log.error("Schema is behind the code (missing %s): run scripts/init_db.py first", sorted(missing))
         return 2
     log.info("Register: %s", forsta_etl.discover(client))
     result = forsta_etl.run_due(client)               # the register and the load log keep the detail

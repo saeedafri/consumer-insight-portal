@@ -1,0 +1,1523 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "dataflow",
+  "quality": "showcase",
+  "startedAt": "2026-10-08T09:53:45.668Z",
+  "specification": {
+    "path": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-forsta-etl-20261008/candidate.json",
+    "sha256": "f9aa4b2c1667bc71dbde2c96bca225fa2064bd3e2f4251c1b84d185e9356888b",
+    "bytes": 7848
+  },
+  "artifact": {
+    "path": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-forsta-etl-20261008/forsta-etl.html"
+  },
+  "stages": {
+    "validate": {
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": null,
+      "command": [
+        "/opt/homebrew/Cellar/node/25.9.0_2/bin/node",
+        "/Users/mohdsaeedafri/.claude/skills/archify/bin/archify.mjs",
+        "deliver",
+        "dataflow",
+        "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-forsta-etl-20261008/candidate.json",
+        "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-forsta-etl-20261008/forsta-etl.html",
+        "--quality",
+        "showcase",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "deliver",
+        "receiptId": "7b5dd518-aaf6-4f8c-bdb2-2a8dccb699a3",
+        "stage": "render",
+        "type": "dataflow",
+        "input": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-forsta-etl-20261008/candidate.json",
+        "output": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-forsta-etl-20261008/forsta-etl.html",
+        "error": "Data-flow layout validation failed:\n- [composition/micro-segment] showcase dataflow flows[0] id \"run\" \"scheduler\" -> \"discover\" has a 7px interior segment 1 [207.5, 160] -> [207.5, 153] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.\n- [composition/micro-segment] showcase dataflow flows[3] id \"pull\" \"forsta\" -> \"fetch\" has a 7px interior segment 1 [207.5, 281] -> [207.5, 274] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.\n- [composition/micro-segment] showcase dataflow flows[5] id \"rows\" \"fetch\" -> \"records\" has a 7px interior segment 1 [422.5, 281] -> [422.5, 274] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.\n- [composition/micro-segment] showcase dataflow flows[7] id \"answers\" \"records\" -> \"load\" has a 7px interior segment 1 [632.5, 274] -> [632.5, 281] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.\n- Label \"start run\" overlaps node \"scheduler\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [170, 136, 76, 27]\n  node \"scheduler\" rect: [25, 128, 150, 64]\n  Suggested fix: set labelAt [208, 207] or set labelDx 1 with labelDy 61 (below); or set labelAt [208, 108] or set labelDx 1 with labelDy -38 (above)\n- Label \"start run\" overlaps node \"discover\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [170, 136, 76, 27]\n  node \"discover\" rect: [240, 128, 150, 64]\n  Suggested fix: set labelAt [208, 207] or set labelDx 1 with labelDy 61 (below); or set labelAt [208, 108] or set labelDx 1 with labelDy -38 (above)\n- Label \"due waves\" overlaps node \"discover\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [280, 171, 71, 27]\n  node \"discover\" rect: [240, 128, 150, 64]\n  Suggested fix: set labelAt [315, 207] or set labelDy 25 (below); or set labelAt [315, 108] or set labelDy -74 (above)\n- Label \"GET datamap + data\" overlaps node \"forsta\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [157, 257, 100, 27]\n  node \"forsta\" rect: [25, 242, 150, 64]\n  Suggested fix: set labelAt [208, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [208, 222] or set labelDx 1 with labelDy -45 (above)\n- Label \"GET datamap + data\" overlaps node \"fetch\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [157, 257, 100, 27]\n  node \"fetch\" rect: [240, 242, 150, 64]\n  Suggested fix: set labelAt [208, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [208, 222] or set labelDx 1 with labelDy -45 (above)\n- Label \"answers\" overlaps node \"records\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [585, 257, 95, 27]\n  node \"records\" rect: [455, 242, 150, 64]\n  Suggested fix: set labelAt [633, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [633, 222] or set labelDx 1 with labelDy -45 (above)\n- Label \"answers\" overlaps node \"load\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [585, 257, 95, 27]\n  node \"load\" rect: [660, 242, 170, 64]\n  Suggested fix: set labelAt [633, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [633, 222] or set labelDx 1 with labelDy -45 (above)\n- Label \"counts\" overlaps node \"load\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [717, 221, 56, 27]\n  node \"load\" rect: [660, 242, 170, 64]\n  Suggested fix: set labelAt [745, 321] or set labelDy 89 (below); or set labelAt [745, 222] or set labelDy -10 (above)\n- Label \"lines\" overlaps node \"load\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [815, 256, 66, 27]\n  node \"load\" rect: [660, 242, 170, 64]\n  Suggested fix: set labelAt [848, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [848, 222] or set labelDx 1 with labelDy -45 (above)\n- Label \"lines\" overlaps node \"cube\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [815, 256, 66, 27]\n  node \"cube\" rect: [875, 242, 170, 64]\n  Suggested fix: set labelAt [848, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [848, 222] or set labelDx 1 with labelDy -45 (above)\n- [composition/label-route-clearance] showcase dataflow label \"GET datamap + data\" on flows[3] id \"pull\" \"forsta\" -> \"fetch\" label \"GET datamap + data\" is 0px from flows[1] id \"list\" \"forsta\" -> \"discover\" label \"GET surveys\" segment 0 [175, 267] -> [207.5, 267] (label rect [157, 257, 100, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.\n- [composition/label-route-clearance] showcase dataflow label \"records\" on flows[5] id \"rows\" \"fetch\" -> \"records\" label \"records\" is 0px from flows[4] id \"datamap\" \"fetch\" -> \"shape\" label \"datamap\" segment 0 [390, 267] -> [422.5, 267] (label rect [390, 257, 66, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.\n- [composition/label-route-clearance] showcase dataflow label \"answers\" on flows[7] id \"answers\" \"records\" -> \"load\" label \"answers\" is 0px from flows[6] id \"definitions\" \"shape\" -> \"load\" label \"definitions\" segment 1 [632.5, 160] -> [632.5, 267] (label rect [585, 257, 95, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.\n- [composition/label-route-clearance] showcase dataflow label \"verified\" on flows[9] id \"publish\" \"verify\" -> \"derive\" label \"verified\" is 0px from flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" segment 0 [820, 154.7] -> [847.5, 154.7] (label rect [822, 131, 51, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.\n- [composition/label-route-clearance] showcase dataflow label \"cells\" on flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" is 0px from flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" segment 1 [847.5, 165.3] -> [847.5, 388] (label rect [812, 193, 71, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.\n- [composition/label-route-clearance] showcase dataflow label \"cells\" on flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" is 0px from flows[12] id \"index\" \"verify\" -> \"search\" label \"index\" segment 1 [847.5, 176] -> [847.5, 502] (label rect [812, 193, 71, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.\n- [composition/label-route-clearance] showcase dataflow label \"lines\" on flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" is 0px from flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" segment 1 [847.5, 154.7] -> [847.5, 274] (label rect [815, 256, 66, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.\n- [composition/label-route-clearance] showcase dataflow label \"lines\" on flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" is 0px from flows[12] id \"index\" \"verify\" -> \"search\" label \"index\" segment 1 [847.5, 176] -> [847.5, 502] (label rect [815, 256, 66, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.\n- [composition/label-route-clearance] showcase dataflow label \"index\" on flows[12] id \"index\" \"verify\" -> \"search\" label \"index\" is 0px from flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" segment 1 [847.5, 165.3] -> [847.5, 388] (label rect [822, 318, 51, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+        "diagnostics": [
+          {
+            "code": "composition/micro-segment",
+            "severity": "error",
+            "message": "[composition/micro-segment] showcase dataflow flows[0] id \"run\" \"scheduler\" -> \"discover\" has a 7px interior segment 1 [207.5, 160] -> [207.5, 153] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 0,
+              "id": "run",
+              "from": "scheduler",
+              "to": "discover"
+            },
+            "evidence": {
+              "segmentIndex": 1,
+              "position": "interior",
+              "lengthPx": 7,
+              "minimumPx": 8,
+              "from": [
+                207.5,
+                160
+              ],
+              "to": [
+                207.5,
+                153
+              ]
+            },
+            "supportedFixes": [
+              "adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor"
+            ]
+          },
+          {
+            "code": "composition/micro-segment",
+            "severity": "error",
+            "message": "[composition/micro-segment] showcase dataflow flows[3] id \"pull\" \"forsta\" -> \"fetch\" has a 7px interior segment 1 [207.5, 281] -> [207.5, 274] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 3,
+              "id": "pull",
+              "from": "forsta",
+              "to": "fetch"
+            },
+            "evidence": {
+              "segmentIndex": 1,
+              "position": "interior",
+              "lengthPx": 7,
+              "minimumPx": 8,
+              "from": [
+                207.5,
+                281
+              ],
+              "to": [
+                207.5,
+                274
+              ]
+            },
+            "supportedFixes": [
+              "adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor"
+            ]
+          },
+          {
+            "code": "composition/micro-segment",
+            "severity": "error",
+            "message": "[composition/micro-segment] showcase dataflow flows[5] id \"rows\" \"fetch\" -> \"records\" has a 7px interior segment 1 [422.5, 281] -> [422.5, 274] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 5,
+              "id": "rows",
+              "from": "fetch",
+              "to": "records"
+            },
+            "evidence": {
+              "segmentIndex": 1,
+              "position": "interior",
+              "lengthPx": 7,
+              "minimumPx": 8,
+              "from": [
+                422.5,
+                281
+              ],
+              "to": [
+                422.5,
+                274
+              ]
+            },
+            "supportedFixes": [
+              "adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor"
+            ]
+          },
+          {
+            "code": "composition/micro-segment",
+            "severity": "error",
+            "message": "[composition/micro-segment] showcase dataflow flows[7] id \"answers\" \"records\" -> \"load\" has a 7px interior segment 1 [632.5, 274] -> [632.5, 281] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 7,
+              "id": "answers",
+              "from": "records",
+              "to": "load"
+            },
+            "evidence": {
+              "segmentIndex": 1,
+              "position": "interior",
+              "lengthPx": 7,
+              "minimumPx": 8,
+              "from": [
+                632.5,
+                274
+              ],
+              "to": [
+                632.5,
+                281
+              ]
+            },
+            "supportedFixes": [
+              "adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor"
+            ]
+          },
+          {
+            "code": "composition/label-route-clearance",
+            "severity": "error",
+            "message": "[composition/label-route-clearance] showcase dataflow label \"GET datamap + data\" on flows[3] id \"pull\" \"forsta\" -> \"fetch\" label \"GET datamap + data\" is 0px from flows[1] id \"list\" \"forsta\" -> \"discover\" label \"GET surveys\" segment 0 [175, 267] -> [207.5, 267] (label rect [157, 257, 100, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 3,
+              "id": "pull",
+              "from": "forsta",
+              "to": "fetch"
+            },
+            "evidence": {
+              "label": "GET datamap + data",
+              "otherRelationship": {
+                "diagramType": "dataflow",
+                "collection": "flows",
+                "index": 1,
+                "id": "list",
+                "from": "forsta",
+                "to": "discover"
+              },
+              "segmentIndex": 0,
+              "clearancePx": 0,
+              "minimumPx": 4,
+              "labelRect": {
+                "relation": {
+                  "id": "pull",
+                  "from": "forsta",
+                  "to": "fetch",
+                  "label": "GET datamap + data",
+                  "classification": "JSON, all statuses",
+                  "variant": "emphasis"
+                },
+                "relationIndex": 3,
+                "label": "GET datamap + data",
+                "x": 157.4,
+                "y": 256.5,
+                "width": 100.2,
+                "height": 27,
+                "lx": 207.5,
+                "ly": 267.5
+              },
+              "from": [
+                175,
+                267
+              ],
+              "to": [
+                207.5,
+                267
+              ]
+            },
+            "supportedFixes": [
+              "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+            ]
+          },
+          {
+            "code": "composition/label-route-clearance",
+            "severity": "error",
+            "message": "[composition/label-route-clearance] showcase dataflow label \"records\" on flows[5] id \"rows\" \"fetch\" -> \"records\" label \"records\" is 0px from flows[4] id \"datamap\" \"fetch\" -> \"shape\" label \"datamap\" segment 0 [390, 267] -> [422.5, 267] (label rect [390, 257, 66, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 5,
+              "id": "rows",
+              "from": "fetch",
+              "to": "records"
+            },
+            "evidence": {
+              "label": "records",
+              "otherRelationship": {
+                "diagramType": "dataflow",
+                "collection": "flows",
+                "index": 4,
+                "id": "datamap",
+                "from": "fetch",
+                "to": "shape"
+              },
+              "segmentIndex": 0,
+              "clearancePx": 0,
+              "minimumPx": 4,
+              "labelRect": {
+                "relation": {
+                  "id": "rows",
+                  "from": "fetch",
+                  "to": "records",
+                  "label": "records",
+                  "classification": "~500 / wave",
+                  "variant": "emphasis"
+                },
+                "relationIndex": 5,
+                "label": "records",
+                "x": 389.55,
+                "y": 256.5,
+                "width": 65.9,
+                "height": 27,
+                "lx": 422.5,
+                "ly": 267.5
+              },
+              "from": [
+                390,
+                267
+              ],
+              "to": [
+                422.5,
+                267
+              ]
+            },
+            "supportedFixes": [
+              "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+            ]
+          },
+          {
+            "code": "composition/label-route-clearance",
+            "severity": "error",
+            "message": "[composition/label-route-clearance] showcase dataflow label \"answers\" on flows[7] id \"answers\" \"records\" -> \"load\" label \"answers\" is 0px from flows[6] id \"definitions\" \"shape\" -> \"load\" label \"definitions\" segment 1 [632.5, 160] -> [632.5, 267] (label rect [585, 257, 95, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 7,
+              "id": "answers",
+              "from": "records",
+              "to": "load"
+            },
+            "evidence": {
+              "label": "answers",
+              "otherRelationship": {
+                "diagramType": "dataflow",
+                "collection": "flows",
+                "index": 6,
+                "id": "definitions",
+                "from": "shape",
+                "to": "load"
+              },
+              "segmentIndex": 1,
+              "clearancePx": 0,
+              "minimumPx": 4,
+              "labelRect": {
+                "relation": {
+                  "id": "answers",
+                  "from": "records",
+                  "to": "load",
+                  "label": "answers",
+                  "classification": "5,000-row batches",
+                  "variant": "emphasis"
+                },
+                "relationIndex": 7,
+                "label": "answers",
+                "x": 584.85,
+                "y": 256.5,
+                "width": 95.3,
+                "height": 27,
+                "lx": 632.5,
+                "ly": 267.5
+              },
+              "from": [
+                632.5,
+                160
+              ],
+              "to": [
+                632.5,
+                267
+              ]
+            },
+            "supportedFixes": [
+              "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+            ]
+          },
+          {
+            "code": "composition/label-route-clearance",
+            "severity": "error",
+            "message": "[composition/label-route-clearance] showcase dataflow label \"verified\" on flows[9] id \"publish\" \"verify\" -> \"derive\" label \"verified\" is 0px from flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" segment 0 [820, 154.7] -> [847.5, 154.7] (label rect [822, 131, 51, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 9,
+              "id": "publish",
+              "from": "verify",
+              "to": "derive"
+            },
+            "evidence": {
+              "label": "verified",
+              "otherRelationship": {
+                "diagramType": "dataflow",
+                "collection": "flows",
+                "index": 10,
+                "id": "cells",
+                "from": "verify",
+                "to": "cube"
+              },
+              "segmentIndex": 0,
+              "clearancePx": 0,
+              "minimumPx": 4,
+              "labelRect": {
+                "relation": {
+                  "id": "publish",
+                  "from": "verify",
+                  "to": "derive",
+                  "label": "verified",
+                  "classification": "visible",
+                  "variant": "emphasis"
+                },
+                "relationIndex": 9,
+                "label": "verified",
+                "x": 821.9,
+                "y": 131,
+                "width": 51.2,
+                "height": 27,
+                "lx": 847.5,
+                "ly": 142
+              },
+              "from": [
+                820,
+                154.66666666666666
+              ],
+              "to": [
+                847.5,
+                154.66666666666666
+              ]
+            },
+            "supportedFixes": [
+              "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+            ]
+          },
+          {
+            "code": "composition/label-route-clearance",
+            "severity": "error",
+            "message": "[composition/label-route-clearance] showcase dataflow label \"cells\" on flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" is 0px from flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" segment 1 [847.5, 165.3] -> [847.5, 388] (label rect [812, 193, 71, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 10,
+              "id": "cells",
+              "from": "verify",
+              "to": "cube"
+            },
+            "evidence": {
+              "label": "cells",
+              "otherRelationship": {
+                "diagramType": "dataflow",
+                "collection": "flows",
+                "index": 11,
+                "id": "lines",
+                "from": "verify",
+                "to": "line"
+              },
+              "segmentIndex": 1,
+              "clearancePx": 0,
+              "minimumPx": 4,
+              "labelRect": {
+                "relation": {
+                  "id": "cells",
+                  "from": "verify",
+                  "to": "cube",
+                  "label": "cells",
+                  "classification": "pre-computed"
+                },
+                "relationIndex": 10,
+                "label": "cells",
+                "x": 812.1,
+                "y": 193.33333333333331,
+                "width": 70.8,
+                "height": 27,
+                "lx": 847.5,
+                "ly": 204.33333333333331
+              },
+              "from": [
+                847.5,
+                165.33333333333334
+              ],
+              "to": [
+                847.5,
+                388
+              ]
+            },
+            "supportedFixes": [
+              "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+            ]
+          },
+          {
+            "code": "composition/label-route-clearance",
+            "severity": "error",
+            "message": "[composition/label-route-clearance] showcase dataflow label \"cells\" on flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" is 0px from flows[12] id \"index\" \"verify\" -> \"search\" label \"index\" segment 1 [847.5, 176] -> [847.5, 502] (label rect [812, 193, 71, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 10,
+              "id": "cells",
+              "from": "verify",
+              "to": "cube"
+            },
+            "evidence": {
+              "label": "cells",
+              "otherRelationship": {
+                "diagramType": "dataflow",
+                "collection": "flows",
+                "index": 12,
+                "id": "index",
+                "from": "verify",
+                "to": "search"
+              },
+              "segmentIndex": 1,
+              "clearancePx": 0,
+              "minimumPx": 4,
+              "labelRect": {
+                "relation": {
+                  "id": "cells",
+                  "from": "verify",
+                  "to": "cube",
+                  "label": "cells",
+                  "classification": "pre-computed"
+                },
+                "relationIndex": 10,
+                "label": "cells",
+                "x": 812.1,
+                "y": 193.33333333333331,
+                "width": 70.8,
+                "height": 27,
+                "lx": 847.5,
+                "ly": 204.33333333333331
+              },
+              "from": [
+                847.5,
+                176
+              ],
+              "to": [
+                847.5,
+                502
+              ]
+            },
+            "supportedFixes": [
+              "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+            ]
+          },
+          {
+            "code": "composition/label-route-clearance",
+            "severity": "error",
+            "message": "[composition/label-route-clearance] showcase dataflow label \"lines\" on flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" is 0px from flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" segment 1 [847.5, 154.7] -> [847.5, 274] (label rect [815, 256, 66, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 11,
+              "id": "lines",
+              "from": "verify",
+              "to": "line"
+            },
+            "evidence": {
+              "label": "lines",
+              "otherRelationship": {
+                "diagramType": "dataflow",
+                "collection": "flows",
+                "index": 10,
+                "id": "cells",
+                "from": "verify",
+                "to": "cube"
+              },
+              "segmentIndex": 1,
+              "clearancePx": 0,
+              "minimumPx": 4,
+              "labelRect": {
+                "relation": {
+                  "id": "lines",
+                  "from": "verify",
+                  "to": "line",
+                  "label": "lines",
+                  "classification": "team format"
+                },
+                "relationIndex": 11,
+                "label": "lines",
+                "x": 814.55,
+                "y": 255.66666666666669,
+                "width": 65.9,
+                "height": 27,
+                "lx": 847.5,
+                "ly": 266.6666666666667
+              },
+              "from": [
+                847.5,
+                154.66666666666666
+              ],
+              "to": [
+                847.5,
+                274
+              ]
+            },
+            "supportedFixes": [
+              "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+            ]
+          },
+          {
+            "code": "composition/label-route-clearance",
+            "severity": "error",
+            "message": "[composition/label-route-clearance] showcase dataflow label \"lines\" on flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" is 0px from flows[12] id \"index\" \"verify\" -> \"search\" label \"index\" segment 1 [847.5, 176] -> [847.5, 502] (label rect [815, 256, 66, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 11,
+              "id": "lines",
+              "from": "verify",
+              "to": "line"
+            },
+            "evidence": {
+              "label": "lines",
+              "otherRelationship": {
+                "diagramType": "dataflow",
+                "collection": "flows",
+                "index": 12,
+                "id": "index",
+                "from": "verify",
+                "to": "search"
+              },
+              "segmentIndex": 1,
+              "clearancePx": 0,
+              "minimumPx": 4,
+              "labelRect": {
+                "relation": {
+                  "id": "lines",
+                  "from": "verify",
+                  "to": "line",
+                  "label": "lines",
+                  "classification": "team format"
+                },
+                "relationIndex": 11,
+                "label": "lines",
+                "x": 814.55,
+                "y": 255.66666666666669,
+                "width": 65.9,
+                "height": 27,
+                "lx": 847.5,
+                "ly": 266.6666666666667
+              },
+              "from": [
+                847.5,
+                176
+              ],
+              "to": [
+                847.5,
+                502
+              ]
+            },
+            "supportedFixes": [
+              "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+            ]
+          },
+          {
+            "code": "composition/label-route-clearance",
+            "severity": "error",
+            "message": "[composition/label-route-clearance] showcase dataflow label \"index\" on flows[12] id \"index\" \"verify\" -> \"search\" label \"index\" is 0px from flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" segment 1 [847.5, 165.3] -> [847.5, 388] (label rect [822, 318, 51, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+            "subject": {
+              "diagramType": "dataflow",
+              "collection": "flows",
+              "index": 12,
+              "id": "index",
+              "from": "verify",
+              "to": "search"
+            },
+            "evidence": {
+              "label": "index",
+              "otherRelationship": {
+                "diagramType": "dataflow",
+                "collection": "flows",
+                "index": 11,
+                "id": "lines",
+                "from": "verify",
+                "to": "line"
+              },
+              "segmentIndex": 1,
+              "clearancePx": 0,
+              "minimumPx": 4,
+              "labelRect": {
+                "relation": {
+                  "id": "index",
+                  "from": "verify",
+                  "to": "search",
+                  "label": "index",
+                  "classification": "per wave"
+                },
+                "relationIndex": 12,
+                "label": "index",
+                "x": 821.9,
+                "y": 318,
+                "width": 51.2,
+                "height": 27,
+                "lx": 847.5,
+                "ly": 329
+              },
+              "from": [
+                847.5,
+                165.33333333333334
+              ],
+              "to": [
+                847.5,
+                388
+              ]
+            },
+            "supportedFixes": [
+              "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+            ]
+          },
+          {
+            "code": "layout/constraint",
+            "severity": "error",
+            "message": "Label \"start run\" overlaps node \"scheduler\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [170, 136, 76, 27]\n  node \"scheduler\" rect: [25, 128, 150, 64]\n  Suggested fix: set labelAt [208, 207] or set labelDx 1 with labelDy 61 (below); or set labelAt [208, 108] or set labelDx 1 with labelDy -38 (above)",
+            "subject": {
+              "diagramType": "dataflow"
+            },
+            "evidence": {},
+            "supportedFixes": []
+          },
+          {
+            "code": "layout/constraint",
+            "severity": "error",
+            "message": "Label \"start run\" overlaps node \"discover\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [170, 136, 76, 27]\n  node \"discover\" rect: [240, 128, 150, 64]\n  Suggested fix: set labelAt [208, 207] or set labelDx 1 with labelDy 61 (below); or set labelAt [208, 108] or set labelDx 1 with labelDy -38 (above)",
+            "subject": {
+              "diagramType": "dataflow"
+            },
+            "evidence": {},
+            "supportedFixes": []
+          },
+          {
+            "code": "layout/constraint",
+            "severity": "error",
+            "message": "Label \"due waves\" overlaps node \"discover\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [280, 171, 71, 27]\n  node \"discover\" rect: [240, 128, 150, 64]\n  Suggested fix: set labelAt [315, 207] or set labelDy 25 (below); or set labelAt [315, 108] or set labelDy -74 (above)",
+            "subject": {
+              "diagramType": "dataflow"
+            },
+            "evidence": {},
+            "supportedFixes": []
+          },
+          {
+            "code": "layout/constraint",
+            "severity": "error",
+            "message": "Label \"GET datamap + data\" overlaps node \"forsta\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [157, 257, 100, 27]\n  node \"forsta\" rect: [25, 242, 150, 64]\n  Suggested fix: set labelAt [208, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [208, 222] or set labelDx 1 with labelDy -45 (above)",
+            "subject": {
+              "diagramType": "dataflow"
+            },
+            "evidence": {},
+            "supportedFixes": []
+          },
+          {
+            "code": "layout/constraint",
+            "severity": "error",
+            "message": "Label \"GET datamap + data\" overlaps node \"fetch\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [157, 257, 100, 27]\n  node \"fetch\" rect: [240, 242, 150, 64]\n  Suggested fix: set labelAt [208, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [208, 222] or set labelDx 1 with labelDy -45 (above)",
+            "subject": {
+              "diagramType": "dataflow"
+            },
+            "evidence": {},
+            "supportedFixes": []
+          },
+          {
+            "code": "layout/constraint",
+            "severity": "error",
+            "message": "Label \"answers\" overlaps node \"records\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [585, 257, 95, 27]\n  node \"records\" rect: [455, 242, 150, 64]\n  Suggested fix: set labelAt [633, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [633, 222] or set labelDx 1 with labelDy -45 (above)",
+            "subject": {
+              "diagramType": "dataflow"
+            },
+            "evidence": {},
+            "supportedFixes": []
+          },
+          {
+            "code": "layout/constraint",
+            "severity": "error",
+            "message": "Label \"answers\" overlaps node \"load\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [585, 257, 95, 27]\n  node \"load\" rect: [660, 242, 170, 64]\n  Suggested fix: set labelAt [633, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [633, 222] or set labelDx 1 with labelDy -45 (above)",
+            "subject": {
+              "diagramType": "dataflow"
+            },
+            "evidence": {},
+            "supportedFixes": []
+          },
+          {
+            "code": "layout/constraint",
+            "severity": "error",
+            "message": "Label \"counts\" overlaps node \"load\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [717, 221, 56, 27]\n  node \"load\" rect: [660, 242, 170, 64]\n  Suggested fix: set labelAt [745, 321] or set labelDy 89 (below); or set labelAt [745, 222] or set labelDy -10 (above)",
+            "subject": {
+              "diagramType": "dataflow"
+            },
+            "evidence": {},
+            "supportedFixes": []
+          },
+          {
+            "code": "layout/constraint",
+            "severity": "error",
+            "message": "Label \"lines\" overlaps node \"load\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [815, 256, 66, 27]\n  node \"load\" rect: [660, 242, 170, 64]\n  Suggested fix: set labelAt [848, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [848, 222] or set labelDx 1 with labelDy -45 (above)",
+            "subject": {
+              "diagramType": "dataflow"
+            },
+            "evidence": {},
+            "supportedFixes": []
+          },
+          {
+            "code": "layout/constraint",
+            "severity": "error",
+            "message": "Label \"lines\" overlaps node \"cube\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [815, 256, 66, 27]\n  node \"cube\" rect: [875, 242, 170, 64]\n  Suggested fix: set labelAt [848, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [848, 222] or set labelDx 1 with labelDy -45 (above)",
+            "subject": {
+              "diagramType": "dataflow"
+            },
+            "evidence": {},
+            "supportedFixes": []
+          }
+        ],
+        "provenance": "absent",
+        "update": {
+          "status": "unavailable",
+          "installedVersion": null,
+          "availableVersion": null,
+          "releaseNotes": null,
+          "checkedAt": null,
+          "source": null,
+          "noticeRequired": false,
+          "noticeText": null,
+          "reason": "disabled"
+        }
+      },
+      "execution": "embedded-in-deliver"
+    },
+    "deliver": {
+      "status": "not-run",
+      "execution": "blocked-by-validate"
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "composition/micro-segment",
+      "severity": "error",
+      "message": "[composition/micro-segment] showcase dataflow flows[0] id \"run\" \"scheduler\" -> \"discover\" has a 7px interior segment 1 [207.5, 160] -> [207.5, 153] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 0,
+        "id": "run",
+        "from": "scheduler",
+        "to": "discover"
+      },
+      "evidence": {
+        "segmentIndex": 1,
+        "position": "interior",
+        "lengthPx": 7,
+        "minimumPx": 8,
+        "from": [
+          207.5,
+          160
+        ],
+        "to": [
+          207.5,
+          153
+        ]
+      },
+      "supportedFixes": [
+        "adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor"
+      ]
+    },
+    {
+      "code": "composition/micro-segment",
+      "severity": "error",
+      "message": "[composition/micro-segment] showcase dataflow flows[3] id \"pull\" \"forsta\" -> \"fetch\" has a 7px interior segment 1 [207.5, 281] -> [207.5, 274] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 3,
+        "id": "pull",
+        "from": "forsta",
+        "to": "fetch"
+      },
+      "evidence": {
+        "segmentIndex": 1,
+        "position": "interior",
+        "lengthPx": 7,
+        "minimumPx": 8,
+        "from": [
+          207.5,
+          281
+        ],
+        "to": [
+          207.5,
+          274
+        ]
+      },
+      "supportedFixes": [
+        "adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor"
+      ]
+    },
+    {
+      "code": "composition/micro-segment",
+      "severity": "error",
+      "message": "[composition/micro-segment] showcase dataflow flows[5] id \"rows\" \"fetch\" -> \"records\" has a 7px interior segment 1 [422.5, 281] -> [422.5, 274] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 5,
+        "id": "rows",
+        "from": "fetch",
+        "to": "records"
+      },
+      "evidence": {
+        "segmentIndex": 1,
+        "position": "interior",
+        "lengthPx": 7,
+        "minimumPx": 8,
+        "from": [
+          422.5,
+          281
+        ],
+        "to": [
+          422.5,
+          274
+        ]
+      },
+      "supportedFixes": [
+        "adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor"
+      ]
+    },
+    {
+      "code": "composition/micro-segment",
+      "severity": "error",
+      "message": "[composition/micro-segment] showcase dataflow flows[7] id \"answers\" \"records\" -> \"load\" has a 7px interior segment 1 [632.5, 274] -> [632.5, 281] that is below the 8px micro-segment floor — adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 7,
+        "id": "answers",
+        "from": "records",
+        "to": "load"
+      },
+      "evidence": {
+        "segmentIndex": 1,
+        "position": "interior",
+        "lengthPx": 7,
+        "minimumPx": 8,
+        "from": [
+          632.5,
+          274
+        ],
+        "to": [
+          632.5,
+          281
+        ]
+      },
+      "supportedFixes": [
+        "adjust route/via or channelX/channelY so each turn uses a clear inter-stage corridor"
+      ]
+    },
+    {
+      "code": "composition/label-route-clearance",
+      "severity": "error",
+      "message": "[composition/label-route-clearance] showcase dataflow label \"GET datamap + data\" on flows[3] id \"pull\" \"forsta\" -> \"fetch\" label \"GET datamap + data\" is 0px from flows[1] id \"list\" \"forsta\" -> \"discover\" label \"GET surveys\" segment 0 [175, 267] -> [207.5, 267] (label rect [157, 257, 100, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 3,
+        "id": "pull",
+        "from": "forsta",
+        "to": "fetch"
+      },
+      "evidence": {
+        "label": "GET datamap + data",
+        "otherRelationship": {
+          "diagramType": "dataflow",
+          "collection": "flows",
+          "index": 1,
+          "id": "list",
+          "from": "forsta",
+          "to": "discover"
+        },
+        "segmentIndex": 0,
+        "clearancePx": 0,
+        "minimumPx": 4,
+        "labelRect": {
+          "relation": {
+            "id": "pull",
+            "from": "forsta",
+            "to": "fetch",
+            "label": "GET datamap + data",
+            "classification": "JSON, all statuses",
+            "variant": "emphasis"
+          },
+          "relationIndex": 3,
+          "label": "GET datamap + data",
+          "x": 157.4,
+          "y": 256.5,
+          "width": 100.2,
+          "height": 27,
+          "lx": 207.5,
+          "ly": 267.5
+        },
+        "from": [
+          175,
+          267
+        ],
+        "to": [
+          207.5,
+          267
+        ]
+      },
+      "supportedFixes": [
+        "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+      ]
+    },
+    {
+      "code": "composition/label-route-clearance",
+      "severity": "error",
+      "message": "[composition/label-route-clearance] showcase dataflow label \"records\" on flows[5] id \"rows\" \"fetch\" -> \"records\" label \"records\" is 0px from flows[4] id \"datamap\" \"fetch\" -> \"shape\" label \"datamap\" segment 0 [390, 267] -> [422.5, 267] (label rect [390, 257, 66, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 5,
+        "id": "rows",
+        "from": "fetch",
+        "to": "records"
+      },
+      "evidence": {
+        "label": "records",
+        "otherRelationship": {
+          "diagramType": "dataflow",
+          "collection": "flows",
+          "index": 4,
+          "id": "datamap",
+          "from": "fetch",
+          "to": "shape"
+        },
+        "segmentIndex": 0,
+        "clearancePx": 0,
+        "minimumPx": 4,
+        "labelRect": {
+          "relation": {
+            "id": "rows",
+            "from": "fetch",
+            "to": "records",
+            "label": "records",
+            "classification": "~500 / wave",
+            "variant": "emphasis"
+          },
+          "relationIndex": 5,
+          "label": "records",
+          "x": 389.55,
+          "y": 256.5,
+          "width": 65.9,
+          "height": 27,
+          "lx": 422.5,
+          "ly": 267.5
+        },
+        "from": [
+          390,
+          267
+        ],
+        "to": [
+          422.5,
+          267
+        ]
+      },
+      "supportedFixes": [
+        "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+      ]
+    },
+    {
+      "code": "composition/label-route-clearance",
+      "severity": "error",
+      "message": "[composition/label-route-clearance] showcase dataflow label \"answers\" on flows[7] id \"answers\" \"records\" -> \"load\" label \"answers\" is 0px from flows[6] id \"definitions\" \"shape\" -> \"load\" label \"definitions\" segment 1 [632.5, 160] -> [632.5, 267] (label rect [585, 257, 95, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 7,
+        "id": "answers",
+        "from": "records",
+        "to": "load"
+      },
+      "evidence": {
+        "label": "answers",
+        "otherRelationship": {
+          "diagramType": "dataflow",
+          "collection": "flows",
+          "index": 6,
+          "id": "definitions",
+          "from": "shape",
+          "to": "load"
+        },
+        "segmentIndex": 1,
+        "clearancePx": 0,
+        "minimumPx": 4,
+        "labelRect": {
+          "relation": {
+            "id": "answers",
+            "from": "records",
+            "to": "load",
+            "label": "answers",
+            "classification": "5,000-row batches",
+            "variant": "emphasis"
+          },
+          "relationIndex": 7,
+          "label": "answers",
+          "x": 584.85,
+          "y": 256.5,
+          "width": 95.3,
+          "height": 27,
+          "lx": 632.5,
+          "ly": 267.5
+        },
+        "from": [
+          632.5,
+          160
+        ],
+        "to": [
+          632.5,
+          267
+        ]
+      },
+      "supportedFixes": [
+        "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+      ]
+    },
+    {
+      "code": "composition/label-route-clearance",
+      "severity": "error",
+      "message": "[composition/label-route-clearance] showcase dataflow label \"verified\" on flows[9] id \"publish\" \"verify\" -> \"derive\" label \"verified\" is 0px from flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" segment 0 [820, 154.7] -> [847.5, 154.7] (label rect [822, 131, 51, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 9,
+        "id": "publish",
+        "from": "verify",
+        "to": "derive"
+      },
+      "evidence": {
+        "label": "verified",
+        "otherRelationship": {
+          "diagramType": "dataflow",
+          "collection": "flows",
+          "index": 10,
+          "id": "cells",
+          "from": "verify",
+          "to": "cube"
+        },
+        "segmentIndex": 0,
+        "clearancePx": 0,
+        "minimumPx": 4,
+        "labelRect": {
+          "relation": {
+            "id": "publish",
+            "from": "verify",
+            "to": "derive",
+            "label": "verified",
+            "classification": "visible",
+            "variant": "emphasis"
+          },
+          "relationIndex": 9,
+          "label": "verified",
+          "x": 821.9,
+          "y": 131,
+          "width": 51.2,
+          "height": 27,
+          "lx": 847.5,
+          "ly": 142
+        },
+        "from": [
+          820,
+          154.66666666666666
+        ],
+        "to": [
+          847.5,
+          154.66666666666666
+        ]
+      },
+      "supportedFixes": [
+        "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+      ]
+    },
+    {
+      "code": "composition/label-route-clearance",
+      "severity": "error",
+      "message": "[composition/label-route-clearance] showcase dataflow label \"cells\" on flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" is 0px from flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" segment 1 [847.5, 165.3] -> [847.5, 388] (label rect [812, 193, 71, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 10,
+        "id": "cells",
+        "from": "verify",
+        "to": "cube"
+      },
+      "evidence": {
+        "label": "cells",
+        "otherRelationship": {
+          "diagramType": "dataflow",
+          "collection": "flows",
+          "index": 11,
+          "id": "lines",
+          "from": "verify",
+          "to": "line"
+        },
+        "segmentIndex": 1,
+        "clearancePx": 0,
+        "minimumPx": 4,
+        "labelRect": {
+          "relation": {
+            "id": "cells",
+            "from": "verify",
+            "to": "cube",
+            "label": "cells",
+            "classification": "pre-computed"
+          },
+          "relationIndex": 10,
+          "label": "cells",
+          "x": 812.1,
+          "y": 193.33333333333331,
+          "width": 70.8,
+          "height": 27,
+          "lx": 847.5,
+          "ly": 204.33333333333331
+        },
+        "from": [
+          847.5,
+          165.33333333333334
+        ],
+        "to": [
+          847.5,
+          388
+        ]
+      },
+      "supportedFixes": [
+        "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+      ]
+    },
+    {
+      "code": "composition/label-route-clearance",
+      "severity": "error",
+      "message": "[composition/label-route-clearance] showcase dataflow label \"cells\" on flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" is 0px from flows[12] id \"index\" \"verify\" -> \"search\" label \"index\" segment 1 [847.5, 176] -> [847.5, 502] (label rect [812, 193, 71, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 10,
+        "id": "cells",
+        "from": "verify",
+        "to": "cube"
+      },
+      "evidence": {
+        "label": "cells",
+        "otherRelationship": {
+          "diagramType": "dataflow",
+          "collection": "flows",
+          "index": 12,
+          "id": "index",
+          "from": "verify",
+          "to": "search"
+        },
+        "segmentIndex": 1,
+        "clearancePx": 0,
+        "minimumPx": 4,
+        "labelRect": {
+          "relation": {
+            "id": "cells",
+            "from": "verify",
+            "to": "cube",
+            "label": "cells",
+            "classification": "pre-computed"
+          },
+          "relationIndex": 10,
+          "label": "cells",
+          "x": 812.1,
+          "y": 193.33333333333331,
+          "width": 70.8,
+          "height": 27,
+          "lx": 847.5,
+          "ly": 204.33333333333331
+        },
+        "from": [
+          847.5,
+          176
+        ],
+        "to": [
+          847.5,
+          502
+        ]
+      },
+      "supportedFixes": [
+        "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+      ]
+    },
+    {
+      "code": "composition/label-route-clearance",
+      "severity": "error",
+      "message": "[composition/label-route-clearance] showcase dataflow label \"lines\" on flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" is 0px from flows[10] id \"cells\" \"verify\" -> \"cube\" label \"cells\" segment 1 [847.5, 154.7] -> [847.5, 274] (label rect [815, 256, 66, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 11,
+        "id": "lines",
+        "from": "verify",
+        "to": "line"
+      },
+      "evidence": {
+        "label": "lines",
+        "otherRelationship": {
+          "diagramType": "dataflow",
+          "collection": "flows",
+          "index": 10,
+          "id": "cells",
+          "from": "verify",
+          "to": "cube"
+        },
+        "segmentIndex": 1,
+        "clearancePx": 0,
+        "minimumPx": 4,
+        "labelRect": {
+          "relation": {
+            "id": "lines",
+            "from": "verify",
+            "to": "line",
+            "label": "lines",
+            "classification": "team format"
+          },
+          "relationIndex": 11,
+          "label": "lines",
+          "x": 814.55,
+          "y": 255.66666666666669,
+          "width": 65.9,
+          "height": 27,
+          "lx": 847.5,
+          "ly": 266.6666666666667
+        },
+        "from": [
+          847.5,
+          154.66666666666666
+        ],
+        "to": [
+          847.5,
+          274
+        ]
+      },
+      "supportedFixes": [
+        "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+      ]
+    },
+    {
+      "code": "composition/label-route-clearance",
+      "severity": "error",
+      "message": "[composition/label-route-clearance] showcase dataflow label \"lines\" on flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" is 0px from flows[12] id \"index\" \"verify\" -> \"search\" label \"index\" segment 1 [847.5, 176] -> [847.5, 502] (label rect [815, 256, 66, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 11,
+        "id": "lines",
+        "from": "verify",
+        "to": "line"
+      },
+      "evidence": {
+        "label": "lines",
+        "otherRelationship": {
+          "diagramType": "dataflow",
+          "collection": "flows",
+          "index": 12,
+          "id": "index",
+          "from": "verify",
+          "to": "search"
+        },
+        "segmentIndex": 1,
+        "clearancePx": 0,
+        "minimumPx": 4,
+        "labelRect": {
+          "relation": {
+            "id": "lines",
+            "from": "verify",
+            "to": "line",
+            "label": "lines",
+            "classification": "team format"
+          },
+          "relationIndex": 11,
+          "label": "lines",
+          "x": 814.55,
+          "y": 255.66666666666669,
+          "width": 65.9,
+          "height": 27,
+          "lx": 847.5,
+          "ly": 266.6666666666667
+        },
+        "from": [
+          847.5,
+          176
+        ],
+        "to": [
+          847.5,
+          502
+        ]
+      },
+      "supportedFixes": [
+        "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+      ]
+    },
+    {
+      "code": "composition/label-route-clearance",
+      "severity": "error",
+      "message": "[composition/label-route-clearance] showcase dataflow label \"index\" on flows[12] id \"index\" \"verify\" -> \"search\" label \"index\" is 0px from flows[11] id \"lines\" \"verify\" -> \"line\" label \"lines\" segment 1 [847.5, 165.3] -> [847.5, 388] (label rect [822, 318, 51, 27]; minimum 4px) — adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY.",
+      "subject": {
+        "diagramType": "dataflow",
+        "collection": "flows",
+        "index": 12,
+        "id": "index",
+        "from": "verify",
+        "to": "search"
+      },
+      "evidence": {
+        "label": "index",
+        "otherRelationship": {
+          "diagramType": "dataflow",
+          "collection": "flows",
+          "index": 11,
+          "id": "lines",
+          "from": "verify",
+          "to": "line"
+        },
+        "segmentIndex": 1,
+        "clearancePx": 0,
+        "minimumPx": 4,
+        "labelRect": {
+          "relation": {
+            "id": "index",
+            "from": "verify",
+            "to": "search",
+            "label": "index",
+            "classification": "per wave"
+          },
+          "relationIndex": 12,
+          "label": "index",
+          "x": 821.9,
+          "y": 318,
+          "width": 51.2,
+          "height": 27,
+          "lx": 847.5,
+          "ly": 329
+        },
+        "from": [
+          847.5,
+          165.33333333333334
+        ],
+        "to": [
+          847.5,
+          388
+        ]
+      },
+      "supportedFixes": [
+        "adjust labelAt, labelDx, labelDy, or labelSegment; otherwise adjust the other flow route/via/channelX/channelY"
+      ]
+    },
+    {
+      "code": "layout/constraint",
+      "severity": "error",
+      "message": "Label \"start run\" overlaps node \"scheduler\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [170, 136, 76, 27]\n  node \"scheduler\" rect: [25, 128, 150, 64]\n  Suggested fix: set labelAt [208, 207] or set labelDx 1 with labelDy 61 (below); or set labelAt [208, 108] or set labelDx 1 with labelDy -38 (above)",
+      "subject": {
+        "diagramType": "dataflow"
+      },
+      "evidence": {},
+      "supportedFixes": []
+    },
+    {
+      "code": "layout/constraint",
+      "severity": "error",
+      "message": "Label \"start run\" overlaps node \"discover\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [170, 136, 76, 27]\n  node \"discover\" rect: [240, 128, 150, 64]\n  Suggested fix: set labelAt [208, 207] or set labelDx 1 with labelDy 61 (below); or set labelAt [208, 108] or set labelDx 1 with labelDy -38 (above)",
+      "subject": {
+        "diagramType": "dataflow"
+      },
+      "evidence": {},
+      "supportedFixes": []
+    },
+    {
+      "code": "layout/constraint",
+      "severity": "error",
+      "message": "Label \"due waves\" overlaps node \"discover\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [280, 171, 71, 27]\n  node \"discover\" rect: [240, 128, 150, 64]\n  Suggested fix: set labelAt [315, 207] or set labelDy 25 (below); or set labelAt [315, 108] or set labelDy -74 (above)",
+      "subject": {
+        "diagramType": "dataflow"
+      },
+      "evidence": {},
+      "supportedFixes": []
+    },
+    {
+      "code": "layout/constraint",
+      "severity": "error",
+      "message": "Label \"GET datamap + data\" overlaps node \"forsta\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [157, 257, 100, 27]\n  node \"forsta\" rect: [25, 242, 150, 64]\n  Suggested fix: set labelAt [208, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [208, 222] or set labelDx 1 with labelDy -45 (above)",
+      "subject": {
+        "diagramType": "dataflow"
+      },
+      "evidence": {},
+      "supportedFixes": []
+    },
+    {
+      "code": "layout/constraint",
+      "severity": "error",
+      "message": "Label \"GET datamap + data\" overlaps node \"fetch\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [157, 257, 100, 27]\n  node \"fetch\" rect: [240, 242, 150, 64]\n  Suggested fix: set labelAt [208, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [208, 222] or set labelDx 1 with labelDy -45 (above)",
+      "subject": {
+        "diagramType": "dataflow"
+      },
+      "evidence": {},
+      "supportedFixes": []
+    },
+    {
+      "code": "layout/constraint",
+      "severity": "error",
+      "message": "Label \"answers\" overlaps node \"records\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [585, 257, 95, 27]\n  node \"records\" rect: [455, 242, 150, 64]\n  Suggested fix: set labelAt [633, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [633, 222] or set labelDx 1 with labelDy -45 (above)",
+      "subject": {
+        "diagramType": "dataflow"
+      },
+      "evidence": {},
+      "supportedFixes": []
+    },
+    {
+      "code": "layout/constraint",
+      "severity": "error",
+      "message": "Label \"answers\" overlaps node \"load\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [585, 257, 95, 27]\n  node \"load\" rect: [660, 242, 170, 64]\n  Suggested fix: set labelAt [633, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [633, 222] or set labelDx 1 with labelDy -45 (above)",
+      "subject": {
+        "diagramType": "dataflow"
+      },
+      "evidence": {},
+      "supportedFixes": []
+    },
+    {
+      "code": "layout/constraint",
+      "severity": "error",
+      "message": "Label \"counts\" overlaps node \"load\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [717, 221, 56, 27]\n  node \"load\" rect: [660, 242, 170, 64]\n  Suggested fix: set labelAt [745, 321] or set labelDy 89 (below); or set labelAt [745, 222] or set labelDy -10 (above)",
+      "subject": {
+        "diagramType": "dataflow"
+      },
+      "evidence": {},
+      "supportedFixes": []
+    },
+    {
+      "code": "layout/constraint",
+      "severity": "error",
+      "message": "Label \"lines\" overlaps node \"load\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [815, 256, 66, 27]\n  node \"load\" rect: [660, 242, 170, 64]\n  Suggested fix: set labelAt [848, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [848, 222] or set labelDx 1 with labelDy -45 (above)",
+      "subject": {
+        "diagramType": "dataflow"
+      },
+      "evidence": {},
+      "supportedFixes": []
+    },
+    {
+      "code": "layout/constraint",
+      "severity": "error",
+      "message": "Label \"lines\" overlaps node \"cube\" — adjust labelDx/labelDy/labelSegment or set labelAt.\n  label rect: [815, 256, 66, 27]\n  node \"cube\" rect: [875, 242, 170, 64]\n  Suggested fix: set labelAt [848, 321] or set labelDx 1 with labelDy 54 (below); or set labelAt [848, 222] or set labelDx 1 with labelDy -45 (above)",
+      "subject": {
+        "diagramType": "dataflow"
+      },
+      "evidence": {},
+      "supportedFixes": []
+    }
+  ],
+  "evidence": {
+    "receipt": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-forsta-etl-20261008/forsta-etl.finalize.json",
+    "summaryReceipt": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-forsta-etl-20261008/forsta-etl.finalize-summary.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "validate",
+  "finishedAt": "2026-10-08T09:53:45.933Z",
+  "durationMs": 264,
+  "update": {
+    "status": "current",
+    "installedVersion": "3.0.1",
+    "availableVersion": "3.0.1",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-08T09:52:54.866Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  }
+}

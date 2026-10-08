@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "e6337ad4-cb7f-4557-9465-3d72f626eb6a",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/architecture-cip-database-20261008/candidate.json",
+  "output": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/architecture-cip-database-20261008/cip-database.html",
+  "specification": {
+    "sha256": "5d5461ff344eb9ae7b829f01afd02d8f0ee2ea51b5274bd4a144decb37863e90",
+    "bytes": 7767
+  },
+  "artifact": {
+    "sha256": "b704354a0d9435e725bdf0b620cb07b5a2d3e7e46b5a581a0e115a48c1085a40",
+    "bytes": 781790
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "command": "deliver",
+  "status": "pending",
+  "receiptId": "7b5dd518-aaf6-4f8c-bdb2-2a8dccb699a3",
+  "input": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-forsta-etl-20261008/candidate.json",
+  "output": "/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.archify/dataflow-forsta-etl-20261008/forsta-etl.html"
+}

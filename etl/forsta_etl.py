@@ -35,7 +35,7 @@ from sqlalchemy import bindparam, text
 from app.core.config import config
 from app.core.database import get_engine
 from app.data import cube, harmonise
-from etl import forsta_api
+from etl import forsta_api, tracker_line
 from etl.forsta_client import ForstaError
 from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey
 from etl.run_pipeline import _dt, _rebuild_profiles, _rebuild_question_bases, wave_from_records
@@ -194,21 +194,21 @@ def _respondent(survey_id: int, rec: dict, run: int) -> dict:
             "key": hashlib.sha256(str(rec["RID"]).encode()).hexdigest() if rec.get("RID") else None, "run": run}
 
 
-def load_survey(client, path: str) -> int:
+def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
     """Load (or reload) one Forsta survey as one wave. Returns its survey_id.
 
     Invisible while it loads (load_status = loading); visible only once every
     respondent and every answer is proven equal to the payload."""
     path = path.strip("/")
-    meta = _meta(client, path)
+    meta = meta or _meta(client, path)
     datamap = client.survey_datamap(path)
     questions = forsta_api.questions_from_datamap(datamap)
     records = [r for r in client.survey_data(path) if r.get("uuid")]
     eng = get_engine("etl")
-    with eng.connect() as conn:                   # a reload keeps its wave, even if the first date moved
-        existing = conn.execute(text(
-            "SELECT wave_label, load_status FROM cip_survey WHERE platform = 'forsta' AND source_ref = :p"
-            " ORDER BY survey_id LIMIT 1"), {"p": path}).first()
+    with eng.connect() as conn:                   # a reload keeps its wave, even if the first date moved —
+        existing = conn.execute(text(             # but only a wave this pipeline loaded from the API
+            "SELECT s.wave_label, s.load_status FROM cip_load_log l JOIN cip_survey s ON s.survey_id = l.survey_id"
+            " WHERE l.source_ref = :ref ORDER BY l.load_id LIMIT 1"), {"ref": f"forsta:{path}"}).first()
     qualified = [r for r in records if forsta_api.whole(r.get("status")) == 3] or records
     wave = existing.wave_label if existing else wave_from_records(qualified)
     previous = existing.load_status if existing else None
@@ -238,6 +238,7 @@ def load_survey(client, path: str) -> int:
         log.info("%s → survey_id %s (%s): %d respondents; harmonised %s; cube %d cells", path, survey_id, wave,
                  len(records), harmonise.harmonise_survey(survey_id), cube.refresh_wave(survey_id))
         index_survey(survey_id)
+        tracker_line.build(survey_id)
     except Exception as exc:
         finish_run(run, len(records), written or 0, error=str(exc)[:2000])
         # the answers write is one transaction: if it never committed, a verified wave is still intact
@@ -356,9 +357,10 @@ def run_due(client) -> dict[str, list[str]]:
             "SELECT forsta_path FROM cip_forsta_survey WHERE load_state IN ('due', 'failed')"
             " ORDER BY closed_at, forsta_path"))]
     result: dict[str, list[str]] = {"loaded": [], "failed": []}
+    listed = {str(m["path"]).strip("/"): m for m in client.surveys()} if due else {}   # one list call per run
     for path in due:
         try:
-            load_survey(client, path)
+            load_survey(client, path, listed.get(path))
             result["loaded"].append(path)
         except Exception as exc:                 # recorded in the register and the load log
             log.exception("%s failed", path)
@@ -386,8 +388,8 @@ def main() -> int:
     if args.reindex:
         with get_engine("etl").connect() as conn:
             ids = [s for (s,) in conn.execute(text("SELECT survey_id FROM cip_survey WHERE load_status = 'verified'"))]
-        for sid in ids:
-            index_survey(sid)
+        for i, sid in enumerate(ids, 1):
+            index_survey(sid, concepts=i == len(ids))      # concept rows once, at the end
         log.info("Indexed %d waves", len(ids))
         return 0
     client = _client()

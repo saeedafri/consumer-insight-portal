@@ -148,6 +148,12 @@ shared STG database, and the old names stop working at that moment.
 at 12 M rows (≈ 25 M once the Forsta history and SurveyMonkey are in) every hot read
 already leads with `survey_id` on an index. Trigger to revisit: `cip_answer` > 100 M rows
 → `PARTITION BY HASH(survey_id)` with integrity moved into the loader.
+Re-measured 8 Oct 2026: `cip_answer` 14.3 M rows, 1.3 GB data + 2.9 GB index; it also
+carries a FULLTEXT index (verbatims), which InnoDB likewise cannot partition. Applied
+instead: logical partitioning by wave (survey_id leads every hot index; a wave loads,
+verifies and is replaced as one unit; reads go to the pre-computed cube and
+`cip_tracker_line`). Physical partitioning stays at the 100 M-row trigger, with
+verbatim search moving to `cip_search` at the same time.
 
 ### 3.4 ETL pipeline (all filtering, transformation and aggregation server-side)
 
