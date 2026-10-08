@@ -1,0 +1,37 @@
+# What Forsta runs and when — measured from the 90 surveys the key can see (Oct 2026).
+#
+# Weekly consumer tracker ("Shopping and Spending - inc A + B + C"): one survey a
+# week, launched Monday 12-13 UTC, ~400 qualified. The FIRST module after "inc"
+# is the lead sector; the 12 sectors below rotate in this order, so each one
+# returns every 12 weeks (Jul 2025 - Oct 2026: gaps of 12 weeks, ±1 for holidays).
+# The rest of the title are recurring topics, seasonal trackers and one-off events.
+sectors:
+  - {code: DRUGSTORE,        name: "Drugstore / pharmacy",          title: 'drug ?stores?|pharmacy'}
+  - {code: ECOMMERCE,        name: "eCommerce",                     title: 'e-?commerce'}
+  - {code: LUXURY,           name: "Luxury",                        title: 'luxury'}
+  - {code: DEPT_STORES,      name: "Department stores",             title: 'dept\.? stores?|department stores?'}
+  - {code: BEAUTY,           name: "Beauty",                        title: 'beauty'}
+  - {code: HOME_FURNISHINGS, name: "Home furnishings",              title: 'home furnishings?'}
+  - {code: HOME_IMPROVEMENT, name: "Home improvement / DIY",        title: 'home improvement'}
+  - {code: SOCIAL_COMMERCE,  name: "Social commerce",               title: 'social commerce'}
+  - {code: OFF_PRICE,        name: "Off-price / dollar stores",     title: 'off[- ]?price|dollar stores?'}
+  - {code: APPAREL,          name: "Apparel",                       title: 'apparel'}
+  - {code: MASS_WAREHOUSE,   name: "Mass merchants / warehouse clubs", title: 'mass merch|warehouse'}
+  - {code: FOOTWEAR,         name: "Footwear",                      title: 'footwear'}
+topics:            # recurring add-ons, paired with sectors
+  - {code: TARIFFS_INFLATION, name: "Tariffs + inflation", title: 'tariffs?|inflation'}
+  - {code: GLP1,              name: "GLP-1",               title: 'glp-?1'}
+  - {code: GENAI,             name: "GenAI",               title: 'genai'}
+  - {code: FINANCIAL_HEALTH,  name: "Financial health",    title: 'financial health'}
+  - {code: MIDEAST_GAS,       name: "MidEast gas price shock", title: 'mideast gas'}
+seasonal:          # weekly through a season; waves numbered within the season
+  - code: HOLIDAY_TRACKER
+    name: "Holiday tracker"
+    title: 'holiday track'
+    question: 'current status of your holiday shopping'   # the tracker's own question (XM3) — authoritative once loaded
+season_starts_month: 7   # a holiday season runs Jul → Jun: Sep 2026 and Jan 2027 are season 2026
+annual:            # their own survey once a year (~2,000 respondents)
+  - {code: HOLIDAY_SHOPPING,       name: "Holiday shopping (annual)",  title: '^holiday shopping'}
+  - {code: AMAZON_APPAREL,         name: "Amazon apparel (annual)",    title: 'amazon apparel'}
+  - {code: ONLINE_GROCERY,         name: "Online grocery (annual)",    title: 'online grocery'}
+  - {code: BACK_TO_SCHOOL,         name: "Back-to-school (annual)",    title: 'back-to-school'}

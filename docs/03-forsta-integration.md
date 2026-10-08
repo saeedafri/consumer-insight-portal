@@ -120,6 +120,25 @@ Log: `logs/forsta-etl.log`. On a server the same slots in cron:
 
 ---
 
+## The survey calendar (what runs when)
+
+Measured from all 90 surveys (Jul 2025 – Oct 2026) and stored in `cip_wave_module`
+(`etl/survey_calendar.py`, rules in `config/survey_calendar.yml`), rebuilt after every
+discovery and load, hibernated surveys included:
+
+| Kind | Pattern |
+|---|---|
+| Weekly tracker | every Monday; the first module is the **lead sector**, rotating through 12: Drugstore → eCommerce → Luxury → Dept stores → Beauty → Home furnishings → Home improvement → Social commerce → Off-price/dollar → Apparel → Mass/warehouse → Footwear. Each sector returns every 12 weeks. |
+| Topics | recurring add-ons paired with sectors: tariffs + inflation, GLP-1, GenAI, financial health (MidEast gas price shock Apr–Aug 2026) |
+| Seasonal | holiday tracker (question XM3, "current status of your holiday shopping"), weekly through the season; 2025: Oct 13 – Dec 22; 2026 from Sep 28. Waves are numbered within the season (Jul–Jun) so wave N compares with last year's wave N |
+| Events | one-offs in a title: Prime Day, Black Friday, Labor Day … |
+| Annual | Holiday shopping (Sep), Amazon apparel (Apr), Online grocery (May), Back-to-school (Jun), ~2,000 each |
+| Client | T-Mobile, Zebra, APTOS, Rokbot, Simbe, ARC …, 100–300 qualified |
+
+A seasonal tracker is detected from the wave's questions once loaded (titles miss it:
+Sep 28, 2026 says only "Holiday"), from the title before that.
+`python -m etl.survey_calendar` prints the calendar and the next 12 lead sectors.
+
 ## The data team's line-by-line table
 
 The team built "Weekly Line-By-Line Survey Data.xlsx" by hand: each week's raw

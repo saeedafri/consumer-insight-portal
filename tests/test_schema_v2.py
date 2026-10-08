@@ -73,7 +73,7 @@ def test_fresh_v2_schema_has_every_table_and_column(tmp_path):
     for path in (SCHEMA, VIEWS, SEED):
         apply_sql(path, engine)
     cols = columns(engine)
-    assert len(cols) == 32            # + cip_forsta_survey, cip_search, cip_tracker_line (Oct 2026)
+    assert len(cols) == 33            # + cip_forsta_survey, cip_search, cip_tracker_line, cip_wave_module (Oct 2026)
     assert NEW_TABLES <= set(cols)
     for table, wanted in NEW_COLUMNS.items():
         assert wanted <= cols[table], f"{table} missing {wanted - cols[table]}"

@@ -35,7 +35,7 @@ from sqlalchemy import bindparam, text
 from app.core.config import config
 from app.core.database import get_engine
 from app.data import cube, harmonise
-from etl import forsta_api, tracker_line
+from etl import forsta_api, survey_calendar, tracker_line
 from etl.forsta_client import ForstaError
 from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey
 from etl.run_pipeline import _dt, _rebuild_profiles, _rebuild_question_bases, wave_from_records
@@ -110,6 +110,7 @@ def discover(client) -> dict[str, int]:
                     launched_at = VALUES(launched_at), closed_at = VALUES(closed_at),
                     qualified_n = VALUES(qualified_n), total_n = VALUES(total_n), last_seen = VALUES(last_seen),
                     load_state = VALUES(load_state)"""), rows)
+            survey_calendar.rebuild(conn)
     return dict(Counter(r["lstate"] for r in rows))
 
 
@@ -247,6 +248,7 @@ def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
     finish_run(run, len(records), written)
     _set_status(survey_id, "verified")
     _mark(path, "loaded", survey_id)
+    survey_calendar.rebuild()                          # its questions may name a seasonal tracker
     return survey_id
 
 

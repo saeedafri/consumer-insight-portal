@@ -754,3 +754,25 @@ CREATE TABLE IF NOT EXISTS cip_tracker_line (
   PRIMARY KEY (respondent_id),
   KEY ix_line_wave (wave_date, survey_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- The survey calendar: every Forsta survey × the modules it carries (lead
+-- sector, topics, seasonal trackers, events; annual and ad hoc studies), with
+-- seasonal waves numbered within their season. Rebuilt by the ETL after each
+-- discovery and load (etl/survey_calendar.py, config/survey_calendar.yml).
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS cip_wave_module (
+  forsta_path    VARCHAR(255) NOT NULL,
+  module_code    VARCHAR(40)  NOT NULL,
+  module_name    VARCHAR(120) NOT NULL,
+  kind           ENUM('sector','topic','seasonal','event','annual','adhoc') NOT NULL,
+  is_lead        TINYINT(1)   NOT NULL DEFAULT 0  COMMENT 'the tracker week''s lead sector',
+  launched_on    DATE         NULL,
+  season         SMALLINT     NULL               COMMENT 'seasonal / annual: Jul-Jun season year',
+  series_wave_no SMALLINT     NULL               COMMENT 'nth wave of this module (in its season)',
+  survey_id      INT UNSIGNED NULL               COMMENT 'set once loaded',
+  detected_by    ENUM('title','questions') NOT NULL DEFAULT 'title',
+  PRIMARY KEY (forsta_path, module_code),
+  KEY ix_module_series (module_code, season, series_wave_no),
+  KEY ix_module_day (launched_on)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
