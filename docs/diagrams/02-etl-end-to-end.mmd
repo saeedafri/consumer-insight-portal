@@ -1,0 +1,16 @@
+graph TD
+  S["launchd schedule<br/>weekly_forsta.py"] --> PC{"Pre-checks: database<br/>(4 tries x 5 min),<br/>Forsta key, schema"}
+  PC -->|"database down"| X4["exit 4<br/>next slot retries"]
+  PC -->|"key rejected / old schema"| X2["exit 2"]
+  PC -->|"all ok"| D["Discover: list every survey"]
+  D --> R[("cip_forsta_survey<br/>register")]
+  R -->|"due waves, oldest first"| F["Fetch datamap<br/>+ all records"]
+  F --> T["Transform:<br/>questions + typed answers"]
+  T --> L["Load: one transaction"]
+  L --> V{"Verify:<br/>payload = stored?"}
+  V -->|"no"| FL["Failed<br/>retried next run"]
+  V -->|"yes"| DV["Derive: profiles, concepts,<br/>cube, lines, search, calendar"]
+  DV --> OK["Loaded + visible"]
+  OK --> P{"Published<br/>numbers moved?"}
+  P -->|"no"| X0["exit 0"]
+  P -->|"yes"| X3["exit 3"]

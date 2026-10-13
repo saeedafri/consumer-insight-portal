@@ -6,12 +6,14 @@ scheduler (cron, Azure WebJob) can alert on anything but 0.
     python scripts/weekly_forsta.py            # daily 06:00 IST and Tuesday 06:00 IST
 
 Exit codes: 0 everything due loaded and verified · 1 a wave failed to load or
-verify · 2 Forsta rejected the key or the schema is behind the code · 3 loaded, but a published number moved.
+verify · 2 Forsta rejected the key or the schema is behind the code · 3 loaded, but a published number moved ·
+4 the database stayed unreachable (4 tries, 5 minutes apart).
 """
 from __future__ import annotations
 
 import logging
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -19,11 +21,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import inspect  # noqa: E402
 
 from app.core.config import config  # noqa: E402
-from app.core.database import get_engine  # noqa: E402
+from app.core.database import get_engine, healthcheck  # noqa: E402
 from etl import forsta_etl  # noqa: E402
 from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
 
 log = logging.getLogger("cip.weekly")
+DB_ATTEMPTS, DB_PAUSE_SECONDS = 4, 300     # a VPN or network blip gets 15 minutes before the run gives up
 
 
 def run(client=None) -> int:
@@ -35,6 +38,16 @@ def run(client=None) -> int:
             log.error("Forsta is not configured (FORSTA_HOST, FORSTA_API_KEY)")
             return 2
         client = ForstaClient(fc.host, fc.api_key, fc.timeout, fc.max_retries)
+    for attempt in range(1, DB_ATTEMPTS + 1):
+        ok, status = healthcheck("etl")
+        if ok:
+            break
+        log.warning("Database not reachable (attempt %d of %d): %s", attempt, DB_ATTEMPTS, status)
+        if attempt < DB_ATTEMPTS:
+            time.sleep(DB_PAUSE_SECONDS)
+    else:
+        log.error("Database unreachable; nothing loaded — the next scheduled run tries again")
+        return 4
     try:
         client.whoami()
     except ForstaAuthError as exc:

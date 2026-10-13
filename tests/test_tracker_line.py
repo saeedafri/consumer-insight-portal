@@ -119,3 +119,24 @@ def test_the_scheduled_run_stops_before_loading_into_an_old_schema(csi_db):
     assert weekly.run(Ok(RECORDS)) == 2
     with csi_db.connect() as conn:
         assert conn.exec_driver_sql("SELECT COUNT(*) FROM cip_survey").scalar() == 0
+
+
+def test_the_scheduled_run_waits_out_a_database_blip(csi_db, monkeypatch):
+    import importlib
+    weekly = importlib.import_module("scripts.weekly_forsta")
+    answers = iter([(False, "timed out"), (False, "timed out"), (True, "connected")])
+    monkeypatch.setattr(weekly, "healthcheck", lambda role: next(answers))
+    monkeypatch.setattr(weekly, "DB_PAUSE_SECONDS", 0)
+
+    class Ok(Forsta):
+        def whoami(self):
+            return {}
+    assert weekly.run(Ok(RECORDS)) == 0
+
+
+def test_the_scheduled_run_reports_an_unreachable_database(csi_db, monkeypatch):
+    import importlib
+    weekly = importlib.import_module("scripts.weekly_forsta")
+    monkeypatch.setattr(weekly, "healthcheck", lambda role: (False, "timed out"))
+    monkeypatch.setattr(weekly, "DB_PAUSE_SECONDS", 0)
+    assert weekly.run(Forsta(RECORDS)) == 4

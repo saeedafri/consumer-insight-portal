@@ -1,0 +1,242 @@
+{
+ "schema_version": 1,
+ "diagram_type": "sequence",
+ "meta": {
+  "title": "One Scheduled ETL Run (weekly_forsta.py)",
+  "output": ".archify/sequence-scheduled-run-20261013/scheduled-run.html",
+  "viewBox": [
+   1060,
+   680
+  ],
+  "column_fit": "spread",
+  "quality_profile": "showcase"
+ },
+ "participants": [
+  {
+   "id": "launchd",
+   "type": "cloud",
+   "label": "launchd",
+   "sublabel": "daily 09:00 + Tue/Wed"
+  },
+  {
+   "id": "runner",
+   "type": "backend",
+   "label": "weekly_forsta.py",
+   "sublabel": "the scheduled run"
+  },
+  {
+   "id": "pipeline",
+   "type": "backend",
+   "label": "forsta_etl",
+   "sublabel": "discover + load"
+  },
+  {
+   "id": "forsta",
+   "type": "external",
+   "label": "Forsta API",
+   "sublabel": "GET only, x-apikey"
+  },
+  {
+   "id": "dwh",
+   "type": "database",
+   "label": "dwh_stg",
+   "sublabel": "cip_ tables"
+  }
+ ],
+ "segments": [
+  {
+   "from": 150,
+   "to": 232,
+   "label": "Pre-checks"
+  },
+  {
+   "from": 236,
+   "to": 344,
+   "label": "Discover"
+  },
+  {
+   "from": 348,
+   "to": 512,
+   "label": "Each due wave"
+  },
+  {
+   "from": 516,
+   "to": 568,
+   "label": "Close"
+  }
+ ],
+ "messages": [
+  {
+   "id": "start",
+   "from": "launchd",
+   "to": "runner",
+   "y": 164,
+   "label": "start run",
+   "variant": "emphasis"
+  },
+  {
+   "id": "health",
+   "from": "runner",
+   "to": "dwh",
+   "y": 192,
+   "label": "health + schema check (4 x 5 min)",
+   "variant": "security"
+  },
+  {
+   "id": "whoami",
+   "from": "runner",
+   "to": "forsta",
+   "y": 220,
+   "label": "GET rh/users/self (key check)",
+   "variant": "security"
+  },
+  {
+   "id": "discover",
+   "from": "runner",
+   "to": "pipeline",
+   "y": 248,
+   "label": "discover + run_due",
+   "variant": "default"
+  },
+  {
+   "id": "list",
+   "from": "pipeline",
+   "to": "forsta",
+   "y": 276,
+   "label": "GET rh/companies/all/surveys",
+   "variant": "emphasis"
+  },
+  {
+   "id": "list-ok",
+   "from": "forsta",
+   "to": "pipeline",
+   "y": 304,
+   "label": "90 surveys: state, dates, counts",
+   "variant": "return"
+  },
+  {
+   "id": "register",
+   "from": "pipeline",
+   "to": "dwh",
+   "y": 332,
+   "label": "upsert register + calendar",
+   "variant": "default"
+  },
+  {
+   "id": "datamap",
+   "from": "pipeline",
+   "to": "forsta",
+   "y": 360,
+   "label": "GET surveys/{path}/datamap",
+   "variant": "emphasis"
+  },
+  {
+   "id": "datamap-ok",
+   "from": "forsta",
+   "to": "pipeline",
+   "y": 388,
+   "label": "questions, variables, values",
+   "variant": "return"
+  },
+  {
+   "id": "data",
+   "from": "pipeline",
+   "to": "forsta",
+   "y": 416,
+   "label": "GET surveys/{path}/data",
+   "variant": "emphasis"
+  },
+  {
+   "id": "data-ok",
+   "from": "forsta",
+   "to": "pipeline",
+   "y": 444,
+   "label": "every respondent, all statuses",
+   "variant": "return"
+  },
+  {
+   "id": "load",
+   "from": "pipeline",
+   "to": "dwh",
+   "y": 472,
+   "label": "load in one transaction",
+   "variant": "emphasis"
+  },
+  {
+   "id": "derive",
+   "from": "pipeline",
+   "to": "dwh",
+   "y": 500,
+   "label": "verify, derive, publish",
+   "variant": "emphasis"
+  },
+  {
+   "id": "result",
+   "from": "pipeline",
+   "to": "runner",
+   "y": 528,
+   "label": "loaded / failed lists",
+   "variant": "return"
+  },
+  {
+   "id": "exit",
+   "from": "runner",
+   "to": "launchd",
+   "y": 556,
+   "label": "re-check publications; exit 0-4",
+   "variant": "return"
+  }
+ ],
+ "activations": [
+  {
+   "participant": "runner",
+   "from": 164,
+   "to": 562,
+   "type": "backend"
+  },
+  {
+   "participant": "pipeline",
+   "from": 248,
+   "to": 534,
+   "type": "backend"
+  },
+  {
+   "participant": "forsta",
+   "from": 215,
+   "to": 450,
+   "type": "external"
+  },
+  {
+   "participant": "dwh",
+   "from": 187,
+   "to": 506,
+   "type": "database"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "cyan",
+   "title": "Pre-checks",
+   "items": [
+    "Database: 4 tries, 5 minutes apart; still down → exit 4, the next slot tries again",
+    "Forsta key: 401 → exit 2. Schema older than the code → exit 2 (run scripts/init_db.py)"
+   ]
+  },
+  {
+   "dot": "emerald",
+   "title": "Each due wave, oldest first",
+   "items": [
+    "Due = closed in Forsta, not hibernated, not yet loaded (or reopened, or failed before)",
+    "The wave stays hidden (loading) until every respondent and every answer is proven equal to the payload",
+    "A failure is recorded and the run carries on with the next wave"
+   ]
+  },
+  {
+   "dot": "rose",
+   "title": "Exit codes",
+   "items": [
+    "0 all due loaded · 1 a wave failed · 2 key or schema · 3 a published number moved · 4 database unreachable"
+   ]
+  }
+ ]
+}

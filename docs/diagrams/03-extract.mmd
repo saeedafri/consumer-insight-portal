@@ -1,0 +1,13 @@
+graph TD
+  A["GET rh/companies/all/surveys"] --> B{"Forsta state"}
+  B -->|"testing / live"| T["testing<br/>wait"]
+  B -->|"closed"| C{"Hibernated?"}
+  C -->|"yes"| HB["hibernated<br/>left alone"]
+  C -->|"no"| L{"Already loaded?"}
+  L -->|"no"| DUE["due"]
+  L -->|"yes, close date or total changed"| DUE
+  L -->|"yes, unchanged"| LD["loaded"]
+  DUE --> G1["GET surveys/{path}/datamap?format=json"]
+  DUE --> G2["GET surveys/{path}/data?format=json<br/>no cond: every status"]
+  G1 --> W["datamap JSON:<br/>questions, variables, values, flags"]
+  G2 --> RJ["records JSON:<br/>one object per respondent,<br/>every value a string"]

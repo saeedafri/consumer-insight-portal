@@ -1,0 +1,18 @@
+graph TD
+  FS["cip_forsta_survey<br/>register"] -->|"survey_id"| SV["cip_survey<br/>one row per wave"]
+  WM["cip_wave_module<br/>calendar"] -->|"forsta_path"| FS
+  LL["cip_load_log"] -->|"per run"| SV
+  SV -->|"1:n"| Q["cip_question"]
+  Q -->|"rows"| IT["cip_item"]
+  Q -->|"codes"| OP["cip_option"]
+  Q -->|"variables"| FD["cip_field"]
+  SV -->|"1:n"| RS["cip_respondent"]
+  RS -->|"1:1"| PR["cip_profile"]
+  AN["cip_answer<br/>long fact"] -->|"respondent_id"| RS
+  AN -->|"field_id"| FD
+  AN -->|"cube build"| AC["cip_agg_cell"]
+  RS -->|"qualified rows"| TL["cip_tracker_line"]
+  AC -->|"map_key"| CM["cip_concept_map"]
+  CM --> CO["cip_concept_option"]
+  CO --> CN["cip_concept"]
+  CN -->|"indexed"| SE["cip_search"]

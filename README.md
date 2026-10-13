@@ -81,6 +81,9 @@ consumer-insight-portal/
 
 | Document | Read it for |
 |---|---|
+| [**CIP — Business Description**](docs/CIP-Business-Description.pdf) ([md](docs/CIP-Business-Description.md), [Word](docs/CIP-Business-Description.docx)) | for the business team: how the surveys run, the patterns, what is collected, how the pipeline works, quality and privacy |
+| [**CIP — Technical Specification**](docs/CIP-Technical-Specification.pdf) ([md](docs/CIP-Technical-Specification.md), [Word](docs/CIP-Technical-Specification.docx)) | API, extract, transform, load, derived data, data dictionary, survey patterns, runbook — sections in `docs/technical/` |
+| [`docs/diagrams/`](docs/diagrams/) | editable Excalidraw (`.excalidraw`), Mermaid source (`.mmd`), SVG and PNG of every flow; interactive Archify pages in `.archify/` |
 | [`01-implementation-plan.md`](docs/01-implementation-plan.md) | phases, decisions, risks |
 | [`02-schema-design.md`](docs/02-schema-design.md) | the 19 `csi_` tables, and why every percentage carries its own base |
 | [`03-forsta-integration.md`](docs/03-forsta-integration.md) | endpoints, auth, incremental loading, failure modes |

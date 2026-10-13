@@ -1,0 +1,12 @@
+graph LR
+  FA["Forsta API<br/>Jun 2025 onward"] -->|"etl/forsta_etl.py"| CORE[("cip_ core tables")]
+  Q["dwh_sm* tables:<br/>Qualtrics 2022-2025"] -->|"etl/legacy_dwh.py"| CORE
+  SM["dwh_sm* tables:<br/>SurveyMonkey 2018-2022"] -->|"etl/legacy_dwh.py"| CORE
+  QX["Qualtrics export<br/>May 2025 only"] -->|"etl/qualtrics_export.py"| CORE
+  CORE --> HARM["concepts:<br/>same question across<br/>waves + platforms"]
+  HARM --> CUBE["cube + cohorts"]
+  CORE --> LINE["line-by-line"]
+  CORE --> CAL["survey calendar"]
+  CUBE --> USE["reports, trends,<br/>databanks, exports"]
+  LINE --> USE
+  CAL --> USE

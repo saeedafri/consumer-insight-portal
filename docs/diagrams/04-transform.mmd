@@ -1,0 +1,14 @@
+graph TD
+  DM["datamap question"] --> TY{"type + grouping"}
+  TY -->|"single, 1 variable"| S1["single choice"]
+  TY -->|"multiple"| M1["checkbox list<br/>0/1 per item"]
+  TY -->|"single, many rows"| G1["grid"]
+  G1 -->|"answer titles blank"| BP["bipolar grid:<br/>left / right statement"]
+  TY -->|"number / float"| N1["numeric"]
+  TY -->|"text"| X1["open text"]
+  DM -->|"text variable inside a question"| OE["Other-specify:<br/>own text question"]
+  DM -->|"flag t / v, '- NORMALIZED'"| TV["technical / virtual:<br/>kept, never reported"]
+  REC["API record"] --> PII{"personal field?"}
+  PII -->|"userAgent, url, session,<br/>dcua, ipAddress"| DROP["dropped"]
+  PII -->|"RID"| HASH["sha256<br/>respondent_key"]
+  PII -->|"answer"| VAL["code as integer,<br/>finite number, text,<br/>cut to column size"]

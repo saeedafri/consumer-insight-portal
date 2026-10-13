@@ -719,7 +719,8 @@ CREATE TABLE IF NOT EXISTS cip_forsta_survey (
   last_error   VARCHAR(1000) NULL,
   PRIMARY KEY (forsta_path),
   KEY ix_forsta_due (load_state, closed_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Register of every Forsta survey the key can see, and what the ETL did with it.';
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Search: one row per survey, question and concept, rebuilt after each load.
@@ -738,7 +739,8 @@ CREATE TABLE IF NOT EXISTS cip_search (
   PRIMARY KEY (search_id),
   KEY ix_search_kind (kind, wave_label),
   FULLTEXT KEY ft_search (title, body)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Search index: one row per wave, question and concept (FULLTEXT).';
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- The weekly tracker's line-by-line table (the data team's "Weekly Line-By-
@@ -753,7 +755,8 @@ CREATE TABLE IF NOT EXISTS cip_tracker_line (
   line          JSON            NOT NULL COMMENT 'header -> value, config/tracker_line.yml order',
   PRIMARY KEY (respondent_id),
   KEY ix_line_wave (wave_date, survey_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='The data team's line-by-line rows: one per qualified tracker respondent, JSON in their column order.';
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- The survey calendar: every Forsta survey × the modules it carries (lead
@@ -775,4 +778,5 @@ CREATE TABLE IF NOT EXISTS cip_wave_module (
   PRIMARY KEY (forsta_path, module_code),
   KEY ix_module_series (module_code, season, series_wave_no),
   KEY ix_module_day (launched_on)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Survey calendar: every Forsta survey x module (lead sector, topic, seasonal, event, annual, ad hoc).';

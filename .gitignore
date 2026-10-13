@@ -13,3 +13,4 @@ data/exports/*
 *.xlsx
 !docs/samples/*.xlsx
 data/*.db
+.gstack/

@@ -97,7 +97,8 @@ python scripts/weekly_forsta.py       # auth check → schema check → discover
 
 Exit codes: 0 everything due loaded and verified · 1 a wave failed · 2 Forsta
 rejected the key, it is not configured, or the schema is behind the code (run
-`scripts/init_db.py`) · 3 loaded, but a published number moved (see `/publications`).
+`scripts/init_db.py`) · 3 loaded, but a published number moved (see `/publications`) · 4 the
+database stayed unreachable after 4 tries 5 minutes apart (the next slot tries again).
 
 **When it runs** — set from the 66 tracker waves' own timestamps: launched Monday
 12–13 UTC, closed between Monday 20:00 and Wednesday 23:00 IST (median 13 h,

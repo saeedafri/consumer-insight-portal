@@ -1,0 +1,13 @@
+graph LR
+  A["Coresight research team<br/>writes the weekly questionnaire"] -->|"programmed in"| B["Forsta survey<br/>selfserve/58f/YYMMNN"]
+  B -->|"Monday 12-13 UTC launch"| C["US consumer panel<br/>~500 people, ~400 qualify"]
+  C -->|"answers, median 13 h"| B
+  B -->|"closed Mon night - Wed"| D["CIP ETL<br/>daily 09:00 IST + Tue/Wed"]
+  D -->|"read only, GET"| B
+  D -->|"verified wave"| E[("dwh_stg<br/>cip_ tables")]
+  E --> F["Portal reports,<br/>trends, search"]
+  E --> G["Excel exports:<br/>line-by-line, databanks"]
+  F --> H["Analysts and clients"]
+  G --> H
+  B -.->|"after 3-4 months"| I["Hibernated in Forsta<br/>(428)"]
+  I -.->|"after 365 days"| J["Deleted by Forsta"]
