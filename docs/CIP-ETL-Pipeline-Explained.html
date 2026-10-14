@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How the Forsta ETL Works</title>
+<style>
+:root{
+  --ink:#1f2433; --muted:#5d6475; --line:#e3e6ee; --paper:#ffffff;
+  --src:#6d28d9; --src-bg:#f3edff;
+  --ext:#2563eb; --ext-bg:#e9f0ff;
+  --tra:#d97706; --tra-bg:#fff4e0;
+  --lod:#059669; --lod-bg:#e3f7ef;
+  --ver:#0e7490; --ver-bg:#e0f5f9;
+  --der:#db2777; --der-bg:#fde8f2;
+  --bad:#dc2626; --bad-bg:#fdeaea;
+  --def-bg:#fff8db; --def-line:#e0a800; --def-ink:#5a4600;
+}
+@page{ size:A4; margin:16mm 15mm 18mm 15mm;
+  @bottom-right{ content:"Page " counter(page) " of " counter(pages); font:9px system-ui, sans-serif; color:#8a90a0; }
+  @bottom-left{ content:"CIP · How the Forsta ETL works · 13 Oct 2026"; font:9px system-ui, sans-serif; color:#8a90a0; }
+}
+@page :first{ @bottom-right{content:none} @bottom-left{content:none} }
+*{ box-sizing:border-box }
+body{ margin:0; background:var(--paper); color:var(--ink); font:10.5pt/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact }
+h1,h2,h3{ line-height:1.2; margin:0 }
+h2{ font-size:19pt; color:#fff; padding:10px 14px; border-radius:8px; margin:0 0 12px }
+h3{ font-size:12.5pt; margin:16px 0 6px; padding-left:8px; border-left:5px solid currentColor }
+p{ margin:6px 0 }
+code{ font:9pt Menlo, Consolas, monospace; background:#f1f3f7; padding:0 3px; border-radius:3px }
+section{ margin-top:22px }
+h2,h3{ break-after:avoid }
+.cover{ break-after:page }
+.keep, .flow, .vflow{ break-inside:avoid }
+
+/* keyword + its explanation, inline where the word appears */
+.k{ font-weight:700; border-bottom:2px solid var(--def-line) }
+.d{ background:var(--def-bg); color:var(--def-ink); border-radius:4px; padding:0 5px; font-size:8.8pt; font-style:italic; -webkit-box-decoration-break:clone; box-decoration-break:clone }
+.d::before{ content:"ⓘ "; font-style:normal; font-weight:700 }
+
+/* stage colours */
+.src{ --c:var(--src); --cb:var(--src-bg) } .ext{ --c:var(--ext); --cb:var(--ext-bg) }
+.tra{ --c:var(--tra); --cb:var(--tra-bg) } .lod{ --c:var(--lod); --cb:var(--lod-bg) }
+.ver{ --c:var(--ver); --cb:var(--ver-bg) } .der{ --c:var(--der); --cb:var(--der-bg) }
+.bad{ --c:var(--bad); --cb:var(--bad-bg) }
+h2.src,h2.ext,h2.tra,h2.lod,h2.ver,h2.der,h2.bad{ background:var(--c) }
+h3{ color:var(--c, var(--ink)) }
+
+/* flow diagrams */
+.flow{ display:flex; align-items:stretch; gap:0; margin:10px 0 }
+.flow .node{ flex:1; background:var(--cb); border:2px solid var(--c); border-radius:9px; padding:7px 8px; font-size:8.8pt; line-height:1.35 }
+.flow .node b{ display:block; color:var(--c); font-size:10pt; margin-bottom:2px }
+.flow .arrow{ flex:0 0 18px; display:flex; align-items:center; justify-content:center; color:#9aa1b2; font-size:16pt; font-weight:700 }
+.vflow{ display:flex; flex-direction:column; align-items:stretch; margin:10px 0 }
+.vflow .node{ background:var(--cb); border:2px solid var(--c); border-radius:9px; padding:7px 10px; font-size:9pt }
+.vflow .node b{ color:var(--c) }
+.vflow .down{ text-align:center; color:#9aa1b2; font-size:13pt; line-height:1; margin:2px 0 }
+.vflow .down small{ font-size:8pt; color:var(--muted); font-style:italic }
+.branch{ display:flex; gap:8px }
+.branch > .node{ flex:1 }
+.num{ display:inline-block; min-width:18px; height:18px; border-radius:9px; background:var(--c); color:#fff; font-size:8pt; font-weight:700; text-align:center; line-height:18px; margin-right:5px }
+
+/* tables */
+table{ width:100%; border-collapse:collapse; margin:8px 0; font-size:9pt; break-inside:auto }
+tr{ break-inside:avoid }
+th{ background:var(--c, #39404f); color:#fff; text-align:left; padding:5px 7px; font-weight:600 }
+td{ padding:5px 7px; border-bottom:1px solid var(--line); vertical-align:top }
+tbody tr:nth-child(even) td{ background:#fafbfd }
+
+.box{ background:var(--cb); border:1.5px solid var(--c); border-radius:9px; padding:8px 12px; margin:10px 0; break-inside:avoid }
+.box .t{ font-weight:700; color:var(--c); margin-bottom:3px }
+.json{ font:8.3pt/1.45 Menlo, Consolas, monospace; background:#1e2230; color:#e6e9f2; border-radius:8px; padding:9px 11px; white-space:pre-wrap; margin:8px 0; break-inside:avoid }
+.json .c{ color:#ffd479 } .json .s{ color:#9fe3a6 } .json .x{ color:#ff9b9b }
+.grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
+.pill{ display:inline-block; padding:1px 8px; border-radius:10px; font-size:8.5pt; font-weight:700; color:#fff; background:var(--c) }
+
+/* cover */
+.cover{ height:262mm; display:flex; flex-direction:column; justify-content:space-between; background:linear-gradient(135deg,#312e81 0%,#6d28d9 35%,#db2777 70%,#f59e0b 100%); color:#fff; border-radius:14px; padding:26mm 18mm }
+.cover h1{ font-size:34pt; letter-spacing:-.5px }
+.cover .sub{ font-size:14pt; opacity:.95; margin-top:10px; max-width:150mm }
+.cover .stages{ display:flex; gap:6px; flex-wrap:wrap }
+.cover .stages span{ background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.5); padding:4px 10px; border-radius:14px; font-size:10pt }
+.toc{ columns:2; font-size:10pt }
+.toc div{ margin:3px 0 }
+.legend{ display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div>
+    <div style="font-size:11pt;opacity:.9;letter-spacing:2px">CONSUMER INSIGHT PORTAL</div>
+    <h1 style="margin-top:12px">How the Forsta ETL works</h1>
+    <div class="sub">From a survey in Forsta to verified, report-ready numbers in our database. Each stage is explained step by step, with every technical word defined where it first appears.</div>
+  </div>
+  <div class="stages">
+    <span>① Source: Forsta</span><span>② Schedule</span><span>③ API</span><span>④ Data received</span><span>⑤ Extract</span><span>⑥ Transform</span><span>⑦ Load</span><span>⑧ Verify</span><span>⑨ Derive</span><span>⑩ Failures</span>
+  </div>
+  <div style="font-size:10pt;opacity:.9">Version 1.0 · 13 October 2026 · Facts taken from the code (<code style="background:rgba(255,255,255,.2);color:#fff">etl/</code>, <code style="background:rgba(255,255,255,.2);color:#fff">scripts/</code>) and the live database</div>
+</div>
+
+<!-- ============ 0 HOW TO READ + BIG PICTURE ============ -->
+<section>
+<h2 class="src" style="background:#39404f">How to read this document</h2>
+<p>Each <span class="k">keyword</span> <span class="d">a technical term you may not know</span> is <b>bold with a yellow underline</b>, and its meaning follows straight after it in a yellow note, like this one. You never need to turn to a glossary.</p>
+<div class="legend">
+  <span class="pill src">Source</span><span class="pill ext">Extract</span><span class="pill tra">Transform</span><span class="pill lod">Load</span><span class="pill ver">Verify</span><span class="pill der">Derive</span><span class="pill bad">Failure</span>
+</div>
+<p>Each stage keeps the same colour in every heading, diagram and table.</p>
+
+<div class="toc keep">
+  <div>1. The whole pipeline on one page</div>
+  <div>2. Where the data comes from: Forsta</div>
+  <div>3. When it runs: frequency and timing</div>
+  <div>4. The Forsta API: what we call</div>
+  <div>5. What data we receive</div>
+  <div>6. Extract: finding and fetching surveys</div>
+  <div>7. Transform: turning JSON into rows</div>
+  <div>8. Load: writing to the database</div>
+  <div>9. Verify: proving nothing was lost</div>
+  <div>10. Derive: making it report-ready</div>
+  <div>11. What we ingest and what we never store</div>
+  <div>12. When something goes wrong</div>
+  <div>13. Worked example: one wave, start to finish</div>
+</div>
+
+<h2 class="src" style="background:#312e81;margin-top:18px">1. The whole pipeline on one page</h2>
+<p><span class="k">ETL</span> <span class="d">Extract, Transform, Load: take data out of one system, reshape it, and put it into another</span> is the program that copies our consumer survey answers from Forsta into our database. It runs on its own, several times a day.</p>
+
+<div class="flow">
+  <div class="node src"><b>Forsta</b>The survey tool where respondents answer the weekly survey</div><div class="arrow">→</div>
+  <div class="node ext"><b>Extract</b>Ask Forsta which surveys exist; download each finished one</div><div class="arrow">→</div>
+  <div class="node tra"><b>Transform</b>Turn Forsta's JSON into questions, respondents and answers; drop personal data</div><div class="arrow">→</div>
+  <div class="node lod"><b>Load</b>Write everything into the <code>cip_</code> tables in one safe step</div><div class="arrow">→</div>
+  <div class="node ver"><b>Verify</b>Count that the database matches Forsta exactly</div><div class="arrow">→</div>
+  <div class="node der"><b>Derive</b>Build demographics, totals, search, line-by-line table, calendar</div>
+</div>
+
+<table class="keep" style="--c:#312e81">
+<thead><tr><th style="width:18%">Stage</th><th>What actually happens</th><th style="width:26%">Code</th></tr></thead>
+<tbody>
+<tr><td><span class="pill src">Source</span></td><td>Respondents from a panel answer a survey in Forsta. When the target of about 400 qualified people is reached, the survey is <b>closed</b>.</td><td>—</td></tr>
+<tr><td><span class="pill ext">Extract</span></td><td>Gets the list of every survey. Each survey is marked <i>waiting</i>, <i>due</i>, <i>loaded</i> or <i>hibernated</i>. For each <i>due</i> survey it downloads the questionnaire and every response.</td><td><code>etl/forsta_etl.py</code> <code>etl/forsta_client.py</code></td></tr>
+<tr><td><span class="pill tra">Transform</span></td><td>Works out each question's type (single choice, tick-all, grid, number, text). Converts every answer from text to the right type. Removes or scrambles personal fields.</td><td><code>etl/forsta_api.py</code> <code>etl/records.py</code></td></tr>
+<tr><td><span class="pill lod">Load</span></td><td>Writes the survey, its questions, its respondents and their answers. Respondents and answers are written together, so they either all succeed or all fail.</td><td><code>etl/loaders.py</code></td></tr>
+<tr><td><span class="pill ver">Verify</span></td><td>Checks that the numbers of respondents, questions and answers match what Forsta sent. Only then does the wave appear in reports.</td><td><code>verify()</code> in <code>etl/forsta_etl.py</code></td></tr>
+<tr><td><span class="pill der">Derive</span></td><td>Builds age and income bands, regions, cross-wave question links, pre-counted totals, search, the data team's line-by-line table and the survey calendar.</td><td><code>etl/run_pipeline.py</code> <code>app/data/</code></td></tr>
+</tbody></table>
+
+<div class="box ver"><div class="t">In one sentence</div>Several times a day the job asks Forsta "what's new and finished?". It downloads each new survey in full, reshapes it and stores it. It then counts that nothing was lost before anyone can see it.</div>
+</section>
+
+<!-- ============ 2 SOURCE ============ -->
+<section>
+<h2 class="src">2. Where the data comes from: Forsta</h2>
+<p><span class="k">Forsta</span> <span class="d">the survey platform, formerly called Decipher, where Coresight's surveys are written, run and stored; our account is on the server se1.decipherinc.com</span> holds every survey Coresight runs. Respondents never touch our systems; they answer in Forsta.</p>
+
+<h3 class="src">2.1 The things Forsta holds</h3>
+<table class="src">
+<thead><tr><th style="width:22%">Thing</th><th>What it is</th><th style="width:30%">Example</th></tr></thead>
+<tbody>
+<tr><td><b>Survey</b></td><td>One questionnaire run once. For the weekly tracker, <b>one survey = one wave</b>. <span class="k">Wave</span> <span class="d">one week's run of the same survey; waves are compared week to week</span></td><td>"Shopping and Spending – inc Home Furnishings + Holiday Tracker + GenAI"</td></tr>
+<tr><td><b>Path</b></td><td><span class="k">Path</span> <span class="d">Forsta's unique address for a survey, in the form selfserve/58f/YYMMNN, where 58f is the Coresight folder</span>. It is the key we use to track each survey.</td><td><code>selfserve/58f/260908</code></td></tr>
+<tr><td><b>Respondent / record</b></td><td>One person's attempt at the survey. <span class="k">Record</span> <span class="d">Forsta's word for one respondent's row of answers</span></td><td>record 412, uuid <code>a1b2…</code></td></tr>
+<tr><td><b>Status</b></td><td>How far the person got: <b>1</b> terminated (screened out), <b>2</b> over quota (the group was already full), <b>3</b> qualified (finished and counted), <b>4</b> partial (left before the end).</td><td>Weekly wave: ≈400 qualified out of 403–887 started</td></tr>
+<tr><td><b>Datamap</b></td><td><span class="k">Datamap</span> <span class="d">Forsta's machine-readable description of the questionnaire: every question code, its wording, its type and every answer option with its number</span></td><td><code>D1</code> "What is your gender?" 1=Male, 2=Female…</td></tr>
+<tr><td><b>State</b></td><td>The survey's lifecycle: <i>testing</i> → <i>live</i> (in field) → <i>closed</i>.</td><td><code>"state": "closed"</code></td></tr>
+<tr><td><b>Hibernated</b></td><td><span class="k">Hibernated</span> <span class="d">Forsta moves old closed surveys (about 3–4 months after close) to cold storage; their data cannot be read until a person reactivates them in Forsta</span>. The API then answers <b>428</b>.</td><td>The 2025 holiday waves</td></tr>
+</tbody></table>
+
+<h3 class="src">2.2 The surveys</h3>
+<table class="src">
+<thead><tr><th style="width:24%">Kind</th><th>Pattern</th></tr></thead>
+<tbody>
+<tr><td><b>Weekly tracker</b></td><td>"Shopping and Spending – inc …". Launched every <b>Monday</b>. It has 15 core questions (q1–q5 activities and purchases, CS1–CS2 outlook, D1–D8 demographics) plus that week's modules.</td></tr>
+<tr><td><b>Module</b></td><td><span class="k">Module</span> <span class="d">an extra block of questions added to a wave, such as a retail sector or a topic like tariffs or GLP-1</span>. The lead sector rotates every 12 weeks: Drugstore → eCommerce → Luxury → Dept stores → Beauty → Home furnishings → Home improvement → Social commerce → Off-price → Apparel → Mass/warehouse → Footwear.</td></tr>
+<tr><td><b>Holiday tracker</b></td><td>Questions coded <code>XM</code>, added to every weekly wave from late September to December. Waves are numbered within each season.</td></tr>
+<tr><td><b>Annual / ad hoc</b></td><td>Annual studies (holiday shopping, back to school, online grocery…) and one-off client studies. Same pipeline, same tables.</td></tr>
+</tbody></table>
+
+<h3 class="src">2.3 Our access</h3>
+<p>We read Forsta with an <span class="k">API key</span> <span class="d">a 64-character secret password for programs, stored in the git-ignored .env file and never printed or logged</span>. It belongs to user 879 in the "Coresight Research" folder (<code>58f</code>). The key can <b>only read</b>: our code has no way to edit, reactivate or delete anything in Forsta.</p>
+
+<h3 class="src">2.4 Other sources (history only)</h3>
+<div class="flow">
+  <div class="node src"><b>Forsta API</b>Jun 2025 → today<br>live, weekly</div><div class="arrow">→</div>
+  <div class="node lod" style="flex:1.3"><b>cip_ tables in dwh_stg</b>one set of tables for every platform</div><div class="arrow">←</div>
+  <div class="node src"><b>Qualtrics</b>2022–2025, 142 waves<br>from <code>dwh_sm*</code> tables</div><div class="arrow">←</div>
+  <div class="node src"><b>SurveyMonkey</b>2018–2022, 145 waves<br>from <code>dwh_sm*</code> tables</div>
+</div>
+<p><span class="k">dwh_stg</span> <span class="d">our Azure MySQL staging database; all pipeline tables in it start with cip_</span>. History was loaded once. Only Forsta is fetched on a schedule.</p>
+</section>
+
+<!-- ============ 3 FREQUENCY ============ -->
+<section>
+<h2 class="ext">3. When it runs: frequency and timing</h2>
+<p>The job is started by <span class="k">launchd</span> <span class="d">the macOS built-in scheduler, which runs a program at set times like cron on a server; if the Mac was asleep, it runs the missed slot when it wakes</span> through the agent <code>com.coresight.cip-forsta-etl</code>, which runs <code>scripts/weekly_forsta.py</code>.</p>
+
+<h3 class="ext">3.1 The schedule (India time, IST)</h3>
+<table class="ext">
+<thead><tr><th>Day</th><th>09:00</th><th>14:00</th><th>23:30</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Monday</td><td>✅</td><td></td><td></td><td>Daily safety run</td></tr>
+<tr><td><b>Tuesday</b></td><td>✅</td><td>✅</td><td>✅</td><td>Most waves close Monday night to Tuesday</td></tr>
+<tr><td><b>Wednesday</b></td><td>✅</td><td>✅</td><td>✅</td><td>Late waves close by Wednesday 23:00</td></tr>
+<tr><td>Thu – Sun</td><td>✅</td><td></td><td></td><td>Picks up ad hoc studies and reopened surveys</td></tr>
+</tbody></table>
+<p>That is <b>13 runs a week</b>. Most find nothing to do and finish in seconds. On a server the same schedule is cron <code>0 9 * * *</code>, <code>0 14 * * 2,3</code>, <code>30 23 * * 2,3</code>.</p>
+
+<h3 class="ext">3.2 A typical week, measured over 66 weekly waves</h3>
+<div class="flow">
+  <div class="node src"><b>Mon 17:30–18:30 IST</b>Survey launches (12–13 UTC) in 56 of 66 waves</div><div class="arrow">→</div>
+  <div class="node src"><b>In field</b>Median 13 hours to reach ≈400 qualified; 90% within 49 h</div><div class="arrow">→</div>
+  <div class="node src"><b>Closed</b>Between Mon 20:00 and Wed 23:00 IST</div><div class="arrow">→</div>
+  <div class="node ext"><b>Next run</b>Tue/Wed 09:00, 14:00 or 23:30 finds it <i>due</i></div><div class="arrow">→</div>
+  <div class="node ver"><b>In reports</b>1.5–3 minutes later, verified</div>
+</div>
+<div class="box ext"><div class="t">So how fresh is the data?</div>A wave is usually in the database within <b>a few hours of closing</b>, and at most about 10–15 hours later (the gap between two runs). A wave is <b>never</b> loaded while it is still <i>live</i>, because it would be incomplete.</div>
+
+<h3 class="ext">3.3 What one run does, in order</h3>
+<div class="vflow">
+  <div class="node ext"><span class="num">1</span><b>Database health check.</b> <code>SELECT VERSION()</code>. If the database cannot be reached, it tries 4 times, 5 minutes apart, then stops with <span class="k">exit code</span> <span class="d">a number a program returns when it ends: 0 means fine and anything else names the problem (see section 12)</span> 4.</div>
+  <div class="down">↓</div>
+  <div class="node ext"><span class="num">2</span><b>Key check.</b> <code>GET rh/users/self</code>. If Forsta rejects the key, it stops with exit 2.</div>
+  <div class="down">↓</div>
+  <div class="node ext"><span class="num">3</span><b>Schema check.</b> The newest tables (<code>cip_forsta_survey</code>, <code>cip_search</code>, <code>cip_tracker_line</code>) must exist. If not, exit 2. <span class="k">Schema</span> <span class="d">the definition of the database tables and columns</span></div>
+  <div class="down">↓</div>
+  <div class="node ext"><span class="num">4</span><b>Discover</b> every survey and mark what is due (section 6).</div>
+  <div class="down">↓</div>
+  <div class="node tra"><span class="num">5</span><b>Extract → Transform → Load → Verify → Derive</b> each due wave, oldest first (sections 6–10).</div>
+  <div class="down">↓</div>
+  <div class="node der"><span class="num">6</span><b>Drift check.</b> Recompute every frozen published number. If one moved, exit 3. <span class="k">Drift</span> <span class="d">a number already published to clients changing because the underlying data changed</span></div>
+</div>
+<p>Everything is appended to <code>logs/forsta-etl.log</code>.</p>
+</section>
+
+<!-- ============ 4 API ============ -->
+<section>
+<h2 class="ext">4. The Forsta API: what we call</h2>
+<p>An <span class="k">API</span> <span class="d">Application Programming Interface: web addresses that return data to programs instead of web pages to people</span> is how we read Forsta. Ours is Forsta's <span class="k">REST</span> <span class="d">a style of API where each address is a "resource" and you use standard web verbs such as GET to read it</span> API, version 1.</p>
+
+<h3 class="ext">4.1 Connection settings</h3>
+<table class="ext">
+<thead><tr><th style="width:26%">Setting</th><th>Value and meaning</th></tr></thead>
+<tbody>
+<tr><td>Base URL</td><td><code>https://se1.decipherinc.com/api/v1/</code>. Every call starts with this. <b>HTTPS</b> means the traffic is encrypted.</td></tr>
+<tr><td>Method</td><td><b>GET only.</b> <span class="k">GET</span> <span class="d">the web verb that only reads; POST, PUT and DELETE would create, change or delete, and our client does not contain them</span></td></tr>
+<tr><td>Authentication</td><td>Header <code>x-apikey: &lt;key&gt;</code>. <span class="k">Header</span> <span class="d">extra information sent with each request, alongside the address</span>. Also sent: <code>Accept: application/json</code> and <code>User-Agent: coresight-cip/1.0</code>.</td></tr>
+<tr><td>Format</td><td><span class="k">JSON</span> <span class="d">JavaScript Object Notation, a text format of names and values in {braces} and [lists], readable by people and programs</span></td></tr>
+<tr><td>Timeout</td><td>120 seconds per request (<code>FORSTA_TIMEOUT_SECONDS</code>). If Forsta does not answer in that time, the request is retried.</td></tr>
+<tr><td>Retries</td><td>Up to <b>4 attempts</b>, waiting longer each time, from 2 s up to 60 s (<span class="k">exponential back-off</span> <span class="d">wait, then wait about twice as long before each new try, so a busy server gets breathing room</span>). Retried on connection errors, timeouts, 429 and 5xx.</td></tr>
+<tr><td>Usage</td><td>Forsta's <code>x-usage-today</code> header (calls used today) is written to the debug log.</td></tr>
+<tr><td>Client code</td><td><code>etl/forsta_client.py</code>, class <code>ForstaClient</code></td></tr>
+</tbody></table>
+
+<h3 class="ext">4.2 The four endpoints, the only ones we use</h3>
+<p>An <span class="k">endpoint</span> <span class="d">one specific API address that returns one kind of data</span>:</p>
+<table class="ext">
+<thead><tr><th style="width:32%">Endpoint (all GET)</th><th>Returns</th><th style="width:21%">How often</th></tr></thead>
+<tbody>
+<tr><td><code>rh/users/self</code></td><td>Who the key belongs to. Used only to prove the key works.</td><td>1 per run</td></tr>
+<tr><td><code>rh/companies/all/surveys</code></td><td>Every survey the key can see, with path, title, state, hibernated, tags, dates and counts (about 90 surveys).</td><td>1 per run</td></tr>
+<tr><td><code>surveys/{path}/datamap?format=json</code></td><td>The questionnaire definition (≈0.5 MB).</td><td>1 per wave loaded</td></tr>
+<tr><td><code>surveys/{path}/data?format=json</code></td><td>Every respondent's answers (≈2 MB per 500 respondents). We send <b>no</b> <code>cond</code> filter, so all statuses come back: terminated, over quota, qualified and partial.</td><td>1 per wave loaded; 1 per wave in a reconciliation</td></tr>
+</tbody></table>
+<div class="box ext"><div class="t">Calls per run</div>A run with nothing due makes <b>2 calls</b>. A run that loads one weekly wave makes <b>4 calls</b>: key, list, datamap and data. The survey list is fetched once and reused for every wave in the run.</div>
+
+<h3 class="ext">4.3 What Forsta's answers mean</h3>
+<p>Every reply carries an <span class="k">HTTP status code</span> <span class="d">a three-digit number with every web reply: 2xx success, 4xx a problem with our request, 5xx a problem on the server</span>:</p>
+<table class="bad">
+<thead><tr><th style="width:12%">Code</th><th style="width:34%">Meaning</th><th>What the pipeline does</th></tr></thead>
+<tbody>
+<tr><td><b>200</b></td><td>OK</td><td>Carries on.</td></tr>
+<tr><td><b>401</b></td><td>Key missing, wrong, revoked, or the user is disabled</td><td>Stops the run, exit 2. A person must renew the key.</td></tr>
+<tr><td><b>403</b></td><td>Key valid but no rights on this survey</td><td>This wave fails and is recorded; the others continue.</td></tr>
+<tr><td><b>428</b></td><td>Survey hibernated</td><td>Never loaded. Left alone; reconciliation skips it with a warning.</td></tr>
+<tr><td><b>429</b></td><td>Too many requests (<span class="k">rate limit</span> <span class="d">the server's cap on calls per period</span>)</td><td>Waits and retries, up to 4 attempts.</td></tr>
+<tr><td><b>5xx</b></td><td>Forsta server error</td><td>Retries up to 4 times. If it still fails, the wave is marked <i>failed</i> and retried at the next run.</td></tr>
+</tbody></table>
+</section>
+
+<!-- ============ 5 DATA RECEIVED ============ -->
+<section>
+<h2 class="ext">5. What data we receive</h2>
+<p>Forsta sends three kinds of JSON. Below is one real example of each; comments in yellow are ours.</p>
+
+<h3 class="ext">5.1 The survey list: one item per survey</h3>
+<div class="json">{ "path": <span class="s">"selfserve/58f/260908"</span>,        <span class="c">// unique survey address</span>
+  "title": <span class="s">"Shopping and Spending - inc Home Furnishings + Holiday Tracker + GenAI"</span>,
+  "state": <span class="s">"closed"</span>,                        <span class="c">// testing | live | closed</span>
+  "hibernated": false,                      <span class="c">// true = data not readable</span>
+  "tags": [<span class="s">"Coresight Research"</span>, <span class="s">"Weekly consumer tracker"</span>],
+  "createdOn":    <span class="s">"2026-09-22T15:57:00Z"</span>,    <span class="c">// Z = UTC time</span>
+  "dateLaunched": <span class="s">"2026-10-05T12:22:25Z"</span>,
+  "closedDate":   <span class="s">"2026-10-06T14:19:55Z"</span>,
+  "qualified": 401,  "total": 823,          <span class="c">// finished & counted / everyone who started</span>
+  "sampleSources": [<span class="s">"114"</span>] }                <span class="c">// the respondent panel used</span></div>
+<p>We use this to decide <b>what to download</b>. It is stored in the register table <code>cip_forsta_survey</code>. A <span class="k">register</span> <span class="d">one row per Forsta survey recording what Forsta says about it and what the pipeline has done with it</span></p>
+
+<h3 class="ext">5.2 The datamap: the questionnaire</h3>
+<div class="json">{ "questions": [
+  { "qlabel": <span class="s">"q1"</span>,                           <span class="c">// question code</span>
+    "qtitle": <span class="s">"Which, if any, of these have you done in the past two weeks?"</span>,
+    "type": <span class="s">"multiple"</span>,                       <span class="c">// single | multiple | number | float | text</span>
+    "grouping": <span class="s">"rows"</span>,
+    "variables": [                           <span class="c">// one per answer column in the data</span>
+      { "label": <span class="s">"q1r1"</span>, "rowTitle": <span class="s">"Met up with friends"</span>, "type": <span class="s">"multiple"</span> },
+      { "label": <span class="s">"q1r2"</span>, "rowTitle": <span class="s">"Eaten at a restaurant"</span>, ... } ] },
+  { "qlabel": <span class="s">"D1"</span>, "qtitle": <span class="s">"What is your gender?"</span>, "type": <span class="s">"single"</span>,
+    "values": [ {"value": 1, "title": <span class="s">"Male"</span>}, {"value": 2, "title": <span class="s">"Female"</span>}, ... ] },
+  { "qlabel": <span class="s">"qtime"</span>, ..., "flags": [<span class="s">"t"</span>] } ] }   <span class="c">// t = technical, v = virtual</span></div>
+<p>A <span class="k">variable</span> <span class="d">one column in Forsta's data; a single-choice question has one, a tick-all question has one per option (q1r1, q1r2…)</span> is the unit we store answers against. <span class="k">Flags</span> <span class="d">markers on a question: "t" technical (timings, status, conditions) and "v" virtual (values Forsta computes, e.g. device or browser)</span> tell us which questions are not real survey questions.</p>
+
+<h3 class="ext">5.3 The data: one object per respondent</h3>
+<div class="json">[ { "record": <span class="s">"412"</span>, "uuid": <span class="s">"8k2f…"</span>,            <span class="c">// Forsta's ids for this attempt</span>
+    "status": <span class="s">"3"</span>,                            <span class="c">// 3 = qualified</span>
+    "date": <span class="s">"10/05/2026 14:07"</span>,               <span class="c">// completion, MM/DD/YYYY HH:MM</span>
+    "qtime": <span class="s">"611"</span>,                           <span class="c">// seconds taken</span>
+    "q1r1": <span class="s">"1"</span>, "q1r2": <span class="s">"0"</span>,              <span class="c">// ticked / shown but not ticked</span>
+    "D1": <span class="s">"2"</span>, "D2": <span class="s">"34"</span>, "D8": <span class="s">"TX"</span>,     <span class="c">// codes, numbers, text: ALL strings</span>
+    "q9oe": <span class="s">"Bought a new sofa"</span>,              <span class="c">// open-ended text</span>
+    <span class="x">"RID": "…", "userAgent": "…", "url": "…", "session": "…", "dcua": "…"</span>  <span class="c">// personal: dropped or hashed</span>
+  }, ... ]</div>
+<div class="box tra"><div class="t">Important detail</div><b>Every value arrives as text</b>, even numbers and codes (<code>"3"</code>, <code>"34"</code>). Part of the transform is converting each value to its proper type. An empty value means the question was not asked or not answered.</div>
+
+<h3 class="ext">5.4 Size of a typical weekly wave</h3>
+<table class="ext">
+<thead><tr><th>Measure</th><th>Typical value</th></tr></thead>
+<tbody>
+<tr><td>Respondents in the payload (all statuses)</td><td>403 – 887 (≈400 of them qualified)</td></tr>
+<tr><td>Questions per wave</td><td>≈60 (1,416 measured across the loaded waves)</td></tr>
+<tr><td>Answer rows stored per wave</td><td>≈145,000 on average (4,476,153 across 31 Forsta waves)</td></tr>
+<tr><td>Download size</td><td>datamap ≈0.5 MB + data ≈2 MB</td></tr>
+<tr><td>Load time</td><td>1.5 – 3 minutes, mostly ≈250 ms database round trips from India to Azure</td></tr>
+</tbody></table>
+</section>
+
+<!-- ============ 6 EXTRACT ============ -->
+<section>
+<h2 class="ext">6. Extract: finding and fetching surveys</h2>
+<p><b>What happens:</b> the pipeline first lists everything, decides which surveys are ready, then downloads each ready one in full.</p>
+
+<h3 class="ext">6.1 Step 1: discovery, on every run</h3>
+<p><span class="k">Discovery</span> <span class="d">the step that asks Forsta for the full survey list and updates the register; it downloads no answers</span> calls <code>rh/companies/all/surveys</code> once and <span class="k">upserts</span> <span class="d">"update or insert": change the row if it exists, add it if not, so running twice never creates duplicates</span> one row per survey into <code>cip_forsta_survey</code>, keyed by the path. It then gives each survey a <span class="k">load state</span> <span class="d">the pipeline's own label for a survey: testing, due, loaded, failed or hibernated</span>:</p>
+
+<div class="vflow">
+  <div class="node ext"><b>For each survey in Forsta's list…</b></div>
+  <div class="down">↓ <small>Already loaded and neither the close date nor the total changed?</small></div>
+  <div class="branch">
+    <div class="node lod"><b>Yes → loaded.</b> Nothing to do.</div>
+    <div class="node ext"><b>No ↓</b> continue</div>
+  </div>
+  <div class="down">↓ <small>Is Forsta's state "closed"?</small></div>
+  <div class="branch">
+    <div class="node src"><b>No (testing / live) → testing.</b> Wait; never load an incomplete survey.</div>
+    <div class="node ext"><b>Yes ↓</b> continue</div>
+  </div>
+  <div class="down">↓ <small>Hibernated?</small></div>
+  <div class="branch">
+    <div class="node bad"><b>Yes → hibernated.</b> Left alone. A person must reactivate it in Forsta.</div>
+    <div class="node ext"><b>No ↓</b></div>
+  </div>
+  <div class="down">↓</div>
+  <div class="branch">
+    <div class="node bad"><b>Failed last time → failed</b> (retried this run)</div>
+    <div class="node tra"><b>Otherwise → due</b> (load this run)</div>
+  </div>
+</div>
+<p><b>Reopened surveys:</b> if a loaded survey's close date or total changes (it was reopened and more people answered), it becomes <i>due</i> again and is reloaded in place.</p>
+<p>Discovery also records <code>study_type</code>: <b>tracker</b> if the survey is tagged "Weekly consumer tracker" or titled "Shopping and spending…", <b>annual</b> if tagged "annual tracker", otherwise <b>adhoc</b>. In the same step it rebuilds the survey calendar (section 10).</p>
+
+<h3 class="ext">6.2 Step 2: choose what to load</h3>
+<p>All <i>due</i> and <i>failed</i> surveys are taken <b>oldest close date first</b> and loaded <b>one at a time</b>. If one fails, its error is saved in <code>last_error</code> and the run moves on to the next. One bad survey never blocks the others.</p>
+
+<h3 class="ext">6.3 Step 3: download the wave</h3>
+<div class="flow">
+  <div class="node ext"><b>GET datamap</b>The questionnaire: questions, variables, answer labels, flags</div><div class="arrow">+</div>
+  <div class="node ext"><b>GET data</b>Every record, all four statuses (no filter)</div><div class="arrow">→</div>
+  <div class="node ext"><b>Clean-up</b>Records with no <code>uuid</code> (Forsta system rows) are discarded</div><div class="arrow">→</div>
+  <div class="node tra"><b>To transform</b>Both kept in memory; nothing is written to disk</div>
+</div>
+<p>Why fetch every status, not only qualified? Partial and terminated records show where people dropped out and let us check our counts against Forsta's <code>total</code>. Reports count <b>qualified respondents only</b>.</p>
+
+<h3 class="ext">6.4 Step 4: work out which week it is</h3>
+<table class="ext">
+<thead><tr><th style="width:26%">Item</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td>Wave date / label</td><td>The <b>Monday</b> of the earliest completion date among <b>qualified</b> records (all records if none qualified). The wave launched Mon 5 Oct 2026 becomes <code>2026-10-05</code>.</td></tr>
+<tr><td>Reload</td><td>A survey this pipeline has loaded before (load log <code>forsta:{path}</code>) keeps its wave label and internal <code>survey_id</code>, even if its first date moves.</td></tr>
+<tr><td>Family</td><td><code>CSI-US</code> for the weekly tracker. For other studies, the title without the year in capitals (<code>HOLIDAY_SHOPPING</code>). <span class="k">Family</span> <span class="d">the group of waves that are compared with each other over time</span></td></tr>
+</tbody></table>
+</section>
+
+<!-- ============ 7 TRANSFORM ============ -->
+<section>
+<h2 class="tra">7. Transform: turning JSON into rows</h2>
+<p><b>What happens:</b> the datamap becomes <b>question definitions</b> and each record becomes <b>one respondent row plus one answer row per answered variable</b>. Personal data is removed at this point, before anything reaches the database.</p>
+
+<div class="flow">
+  <div class="node ext"><b>Datamap JSON</b></div><div class="arrow">→</div>
+  <div class="node tra"><b>Questions</b>type, wording, options, items, fields</div>
+  <div class="arrow" style="flex:0 0 30px"></div>
+  <div class="node ext"><b>Records JSON</b></div><div class="arrow">→</div>
+  <div class="node tra"><b>Respondents</b>status, dates, device; personal data removed</div><div class="arrow">→</div>
+  <div class="node tra"><b>Answers</b>one row per person × variable, typed</div>
+</div>
+
+<h3 class="tra">7.1 Recognising the question type</h3>
+<p>Forsta's <code>type</code> and <code>grouping</code> decide how a question is stored. Each question becomes our <code>qtype</code>:</p>
+<table class="tra">
+<thead><tr><th style="width:25%">Forsta shape</th><th style="width:9%">Seen</th><th style="width:15%">Stored as</th><th>Meaning and example</th></tr></thead>
+<tbody>
+<tr><td><code>single</code>, 1 variable</td><td>693</td><td><b>single</b></td><td><span class="k">Single choice</span> <span class="d">pick exactly one answer</span>. D1 gender: one field <code>D1</code>, value 1–4.</td></tr>
+<tr><td><code>multiple</code></td><td>491</td><td><b>multi</b></td><td><span class="k">Tick-all / checkbox</span> <span class="d">pick any number of items; each item is its own yes/no column</span>. q1 activities: fields <code>q1r1</code>, <code>q1r2</code>… each 0 or 1.</td></tr>
+<tr><td><code>single</code>, rows, many variables</td><td>73</td><td><b>grid_single</b></td><td><span class="k">Grid</span> <span class="d">several statements (rows), each answered on the same scale (columns)</span>. One field per row; row label "row — column".</td></tr>
+<tr><td><code>single</code> + a text variable</td><td>53</td><td><b>single</b> + <b>text</b></td><td>A choice question with an "Other (please specify)" box. The box becomes its own text question (see 7.2).</td></tr>
+<tr><td><code>single</code>, rows, 1 variable</td><td>43</td><td>single or grid</td><td>Grid if the variable's name differs from the question code.</td></tr>
+<tr><td><code>number</code> / <code>float</code></td><td>32</td><td><b>numeric</b></td><td>A typed number, such as an amount spent.</td></tr>
+<tr><td><code>text</code> / <code>textarea</code></td><td>23</td><td><b>text</b></td><td><span class="k">Verbatim</span> <span class="d">the respondent's own words, stored exactly as typed</span>.</td></tr>
+</tbody></table>
+
+<h3 class="tra">7.2 The rules applied to every question</h3>
+<table class="tra">
+<thead><tr><th style="width:4%">#</th><th style="width:22%">Rule</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Clean wording</td><td>HTML codes such as <code>&amp;amp;</code> become normal characters and extra spaces are removed. A short label of 80 characters or fewer is made for charts.</td></tr>
+<tr><td>2</td><td>Answer labels</td><td>Taken from the question's <code>values</code>. In about a third of datamaps these are empty, so they are taken from the first variable that has them. Only whole-number codes are kept.</td></tr>
+<tr><td>3</td><td>Grid detection</td><td>Spots a single-choice question that has several rows.</td></tr>
+<tr><td>4</td><td>Bipolar grid</td><td><span class="k">Bipolar grid</span> <span class="d">each row is a pair of opposite statements and the respondent picks one side, e.g. "I'll shop early" vs "I'll shop late"</span>. Forsta leaves the answer titles blank, so we store 1 = left statement and 2 = right statement, and save both statements per row. The old Excel route lost about 3,300 of these answers.</td></tr>
+<tr><td>5</td><td>Other (specify)</td><td>The text box inside a choice question becomes its own text question, e.g. <code>q1r2oe</code>, worded "&lt;question&gt; — &lt;row&gt; (please specify)".</td></tr>
+<tr><td>6</td><td>Technical / virtual</td><td>Flag <code>t</code> (timings, status, conditions) or <code>v</code> (device, browser, panel list), or a title ending "- NORMALIZED". These are <b>stored but never reported</b>.</td></tr>
+<tr><td>7</td><td>Personal fields</td><td><code>RID</code>, <code>userAgent</code>, <code>url</code>, <code>session</code>, <code>dcua</code> and <code>ipAddress</code> never become questions, even if the datamap lists them.</td></tr>
+<tr><td>8</td><td>Topic</td><td>Each question is placed in an editorial topic (demographics, holiday, tariffs…) from its code and wording, using <code>config/survey_map.yml</code>.</td></tr>
+<tr><td>9</td><td>Answer flags</td><td>"Don't know / Not sure / Prefer not to say" are marked <b>non-response</b>. "None of these" is marked <b>exclusive</b>. Item codes ending <code>oe</code> are marked <b>other</b>.</td></tr>
+</tbody></table>
+
+<h3 class="tra">7.3 Each record → one respondent row</h3>
+<table class="tra">
+<thead><tr><th style="width:28%">We store</th><th style="width:22%">From Forsta</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td><code>record_no</code>, <code>forsta_uuid</code></td><td><code>record</code>, <code>uuid</code></td><td>Forsta's own ids, used as the key so reloads update rather than duplicate.</td></tr>
+<tr><td><code>status_code</code>, <code>status_label</code>, <code>is_qualified</code></td><td><code>status</code></td><td>1 Terminated · 2 Overquota · 3 Qualified · 4 Partial. Qualified = status 3.</td></tr>
+<tr><td><code>completed_at</code></td><td><code>date</code></td><td><code>MM/DD/YYYY HH:MM</code> text → a real date-time.</td></tr>
+<tr><td><code>interview_secs</code></td><td><code>qtime</code></td><td>Whole seconds.</td></tr>
+<tr><td><code>device</code>, <code>os</code>, <code>browser</code>, <code>dropout_qcode</code></td><td><code>vmobiledevice</code>, <code>vos</code>, <code>vbrowser</code>, <code>vdropout</code></td><td>Short category labels, at most 50 characters (not the raw browser string).</td></tr>
+<tr><td><code>panel_source</code></td><td><code>vlist</code> / <code>list</code></td><td>Which panel supplied the person.</td></tr>
+<tr><td><code>respondent_key</code></td><td><code>RID</code></td><td><span class="k">SHA-256 hash</span> <span class="d">a one-way scramble: the same input always gives the same 64-character code, but the code cannot be turned back into the panel id</span>. The real panel id is never stored.</td></tr>
+</tbody></table>
+
+<h3 class="tra">7.4 Each answered variable → one answer row</h3>
+<p>Answers are stored <span class="k">long, not wide</span> <span class="d">one row per person per variable, instead of one column per question; the table never needs new columns when weekly modules change</span> in <code>cip_answer</code>:</p>
+<table class="tra">
+<thead><tr><th style="width:28%">Variable kind</th><th>Stored as</th></tr></thead>
+<tbody>
+<tr><td>Code (single, grid row, checkbox item)</td><td><code>value_code</code> as a whole number (<code>"3"</code> and <code>"3.0"</code> both become 3), plus <code>value_label</code>, e.g. "Female".</td></tr>
+<tr><td>Code that is not a whole number</td><td>The raw text goes in <code>value_label</code>; no code is invented.</td></tr>
+<tr><td>Number</td><td><code>value_number</code>, only if it is a real finite number below 10<sup>14</sup> (the column holds 4 decimals).</td></tr>
+<tr><td>Text</td><td><code>value_text</code>, exactly as typed.</td></tr>
+<tr><td>Empty</td><td><b>No row.</b> "Not answered" means no row exists.</td></tr>
+<tr><td>Checkbox "0"</td><td><b>Stored.</b> It means "shown but not ticked", and it gives every tick-all question its base of people who answered.</td></tr>
+</tbody></table>
+
+<div class="box tra"><div class="t">Example: one record becomes rows</div>
+<table style="margin:4px 0 0">
+<thead><tr><th style="background:var(--tra)">Forsta value</th><th style="background:var(--tra)">field</th><th style="background:var(--tra)">value_code</th><th style="background:var(--tra)">value_number</th><th style="background:var(--tra)">value_text / label</th></tr></thead>
+<tbody>
+<tr><td><code>"D1": "2"</code></td><td>D1</td><td>2</td><td></td><td>Female</td></tr>
+<tr><td><code>"q1r1": "1"</code></td><td>q1r1</td><td>1</td><td></td><td>Met up with friends</td></tr>
+<tr><td><code>"q1r2": "0"</code></td><td>q1r2</td><td>0</td><td></td><td>Eaten at a restaurant (not ticked)</td></tr>
+<tr><td><code>"D2": "34"</code></td><td>D2</td><td>34</td><td></td><td>34</td></tr>
+<tr><td><code>"q9oe": "Bought a new sofa"</code></td><td>q9oe</td><td></td><td></td><td>Bought a new sofa</td></tr>
+<tr><td><code>"q7": ""</code></td><td colspan="4"><i>no row: not asked or not answered</i></td></tr>
+<tr><td><code>"userAgent": "Mozilla…"</code></td><td colspan="4"><i>dropped: personal</i></td></tr>
+</tbody></table></div>
+</section>
+
+<!-- ============ 8 LOAD ============ -->
+<section>
+<h2 class="lod">8. Load: writing to the database</h2>
+<p><b>What happens:</b> the transformed wave is written into <code>dwh_stg</code> in a fixed order. The step that replaces respondents and answers is a single <span class="k">transaction</span> <span class="d">a group of database writes that either all succeed together or are all undone together, so nobody ever sees half a wave</span>.</p>
+
+<div class="vflow">
+  <div class="node lod"><span class="num">1</span><b>Survey row</b> in <code>cip_survey</code>, set to <code>load_status = loading</code> (not visible in reports).</div>
+  <div class="down">↓</div>
+  <div class="node lod"><span class="num">2</span><b>Run log</b> row in <code>cip_load_log</code>, with <code>source_ref = forsta:{path}</code>. This is the audit trail of every run. <span class="k">Load log</span> <span class="d">a diary of every load: what, when, rows read and rows written, success or error</span></div>
+  <div class="down">↓</div>
+  <div class="node lod"><span class="num">3</span><b>Definitions</b>: topics, questions, options, items and fields (<code>cip_topic</code>, <code>cip_question</code>, <code>cip_option</code>, <code>cip_item</code>, <code>cip_field</code>). One batched statement per table.</div>
+  <div class="down">↓</div>
+  <div class="node lod" style="border-width:3px"><span class="num">4</span><b>Transaction A, all or nothing:</b><br>
+    a) upsert every respondent into <code>cip_respondent</code>, keyed by survey + record;<br>
+    b) delete respondents Forsta no longer sends, with their answers, profile and cohort rows;<br>
+    c) delete the wave's old answers, then insert the new ones in batches of 5,000 rows.</div>
+  <div class="down">↓</div>
+  <div class="node ver"><span class="num">5</span><b>Verify</b> (section 9). If anything is off, the wave is marked <i>failed</i>.</div>
+  <div class="down">↓</div>
+  <div class="node der"><span class="num">6–11</span><b>Derive</b>: profiles, question bases, concepts, cohorts and cube, search, line-by-line (section 10).</div>
+  <div class="down">↓</div>
+  <div class="node lod"><span class="num">12–14</span><b>Finish</b>: log row closed with row counts. <code>cip_survey.load_status = verified</code>, register set to <i>loaded</i>, calendar rebuilt.</div>
+</div>
+
+<h3 class="lod">8.1 Why it is safe to run again and again</h3>
+<div class="grid2">
+  <div class="box lod"><div class="t">Idempotent</div><span class="k">Idempotent</span> <span class="d">running the same load twice gives exactly the same result as running it once</span>. Every write is an upsert or a replace keyed on Forsta's own ids (path, uuid, record, variable label), so nothing is ever duplicated.</div>
+  <div class="box lod"><div class="t">No half-loaded waves</div>If transaction A fails, the previous answers are untouched. A wave that was already verified stays visible with its old, correct data.</div>
+</div>
+<div class="box lod"><div class="t">Why batches?</div>Each database call from India to Azure takes about 250 ms. Writing 145,000 answers one by one would take 10 hours. Batches of 5,000 keep a wave to a fixed, small number of calls, which is why a wave loads in 1.5–3 minutes.</div>
+
+<h3 class="lod">8.2 Where it lands: the main tables</h3>
+<table class="lod">
+<thead><tr><th style="width:26%">Table</th><th>One row per</th><th style="width:18%">Per weekly wave</th></tr></thead>
+<tbody>
+<tr><td><code>cip_forsta_survey</code></td><td>Forsta survey (the register)</td><td>1</td></tr>
+<tr><td><code>cip_survey</code></td><td>Wave</td><td>1</td></tr>
+<tr><td><code>cip_question</code> / <code>cip_option</code> / <code>cip_item</code> / <code>cip_field</code></td><td>Question / answer option / grid row or checkbox item / Forsta variable</td><td>≈60 questions, hundreds of fields</td></tr>
+<tr><td><code>cip_respondent</code></td><td>Person who started</td><td>403 – 887</td></tr>
+<tr><td><code>cip_answer</code></td><td>Person × variable answered</td><td>≈145,000</td></tr>
+<tr><td><code>cip_load_log</code></td><td>Load run</td><td>1 per load</td></tr>
+</tbody></table>
+</section>
+
+<!-- ============ 9 VERIFY ============ -->
+<section>
+<h2 class="ver">9. Verify: proving nothing was lost</h2>
+<p><b>What happens:</b> before a wave can appear anywhere, the pipeline re-reads what it stored and compares it with the payload it downloaded. <span class="k">Payload</span> <span class="d">the exact data Forsta sent in this run</span></p>
+
+<div class="flow">
+  <div class="node ver"><b>① Respondents</b>Stored respondents for the wave = records sent</div><div class="arrow">+</div>
+  <div class="node ver"><b>② Fields</b>Every datamap variable (except personal ones) has a field</div><div class="arrow">+</div>
+  <div class="node ver"><b>③ Answers</b>For every field: stored answers = records with a non-empty value</div><div class="arrow">→</div>
+  <div class="node lod"><b>All equal</b>Status <code>verified</code>; visible</div>
+</div>
+<div class="box bad"><div class="t">Any difference</div>The error "<code>{path} does not match its payload</code>" is saved in <code>cip_load_log.error_text</code> and <code>cip_forsta_survey.last_error</code>. The wave is marked <b>failed</b>, stays hidden and is retried at the next run.</div>
+
+<h3 class="ver">9.1 Visibility</h3>
+<table class="ver">
+<thead><tr><th style="width:22%"><code>load_status</code></th><th>Meaning</th><th style="width:22%">In reports?</th></tr></thead>
+<tbody>
+<tr><td><code>loading</code></td><td>Being written</td><td>No</td></tr>
+<tr><td><code>verified</code></td><td>Proven equal to Forsta, with everything derived</td><td><b>Yes</b></td></tr>
+<tr><td><code>failed</code></td><td>Did not match, or a later step failed</td><td>No</td></tr>
+</tbody></table>
+
+<h3 class="ver">9.2 Reconciliation: an independent second check</h3>
+<p><span class="k">Reconciliation</span> <span class="d">re-downloading every loaded wave from Forsta and comparing every single stored answer with it</span> is run with <code>python scripts/reconcile.py</code>. It compares codes exactly, numbers to 4 decimals and texts exactly. Hibernated surveys are skipped with a warning.</p>
+<div class="box ver"><div class="t">Last result (8 Oct 2026)</div><b>31 Forsta waves · 4,476,153 answers · 0 differences.</b> The 142 Qualtrics and 145 SurveyMonkey waves are checked against their <code>dwh_sm*</code> source the same way.</div>
+</section>
+
+<!-- ============ 10 DERIVE ============ -->
+<section>
+<h2 class="der">10. Derive: making it report-ready</h2>
+<p><b>What happens:</b> after verification, everything a report needs is calculated <b>once, at load time</b>, so the portal and exports only read finished numbers.</p>
+
+<table class="der">
+<thead><tr><th style="width:24%">Output (table)</th><th>What it is and how it is built</th></tr></thead>
+<tbody>
+<tr><td><b>Profile</b><br><code>cip_profile</code></td><td>One row per respondent with their demographics, read from D1 gender, D2 age, D3 relationship, D4 ethnicity, D5 income, D6 urban/suburban/rural, D7 politics, D8 state, CS1/CS2 outlook. Adds:<br>
+• <b>Age band</b>: 18-29 · 30-44 · 45-60 · Over 60 ("Under 18" is not banded)<br>
+• <b>Generation</b>: Gen Z 18-28 · Millennial 29-44 · Gen X 45-60 · Boomer 61+<br>
+• <b>Income midpoint</b> ($000): &lt;$25k = 13 · $25–49.9k = 37.5 · $50–99.9k = 75 · $100–149.9k = 125 · $150–199.9k = 175 · $200k+ = 225<br>
+• <b>Census region</b>: state → Northeast / Midwest / South / West</td></tr>
+<tr><td><b>Question base</b><br><code>cip_question.base_n</code></td><td><span class="k">Base</span> <span class="d">the number of people a percentage is calculated over: qualified respondents who were shown the question</span></td></tr>
+<tr><td><b>Concepts</b><br><code>cip_concept*</code></td><td><span class="k">Concept</span> <span class="d">"the same question" across waves and platforms, matched by wording because Forsta codes such as D2 or BT14 change meaning between waves</span>. Same wording and options → confirmed automatically. Changed options, or wording at least 85% similar → proposed for a person to confirm. Otherwise → a new concept.</td></tr>
+<tr><td><b>Cube</b><br><code>cip_agg_cell</code></td><td><span class="k">Cube</span> <span class="d">a table of pre-counted totals: for every answer, how many people chose it, broken down by each standard cut</span>. Cuts: total, gender, age band, generation, income band, region, urbanicity, each for everyone and for each <span class="k">cohort</span> <span class="d">a defined group of respondents, e.g. "Beauty shoppers"</span>. Qualified respondents only.</td></tr>
+<tr><td><b>Search</b><br><code>cip_search</code></td><td>A full-text index of wave titles, question wording and concepts, so "GLP-1" finds every wave that asked about it.</td></tr>
+<tr><td><b>Line-by-line</b><br><code>cip_tracker_line</code></td><td>The data team's "Weekly Line-By-Line Survey Data" sheet, rebuilt automatically: one row per qualified respondent in the team's column order. Checked against the team's file across 16 waves: identical apart from 3 errors in the team's file.</td></tr>
+<tr><td><b>Survey calendar</b><br><code>cip_wave_module</code></td><td>Which sector, topics and seasonal trackers each wave carried, plus the holiday-season wave number. This enables "wave N vs last year's wave N" and predicts the next 12 lead sectors.</td></tr>
+</tbody></table>
+</section>
+
+<!-- ============ 11 INGEST ============ -->
+<section>
+<h2 class="lod">11. What we ingest and what we never store</h2>
+<div class="grid2">
+<div>
+<h3 class="lod">Ingested</h3>
+<table class="lod"><thead><tr><th>Data</th><th>From</th></tr></thead><tbody>
+<tr><td>Every survey's metadata: title, state, tags, dates, counts</td><td>survey list</td></tr>
+<tr><td>Every question, answer option, grid row and variable</td><td>datamap</td></tr>
+<tr><td>Every respondent of <b>every status</b> (1–4)</td><td>data</td></tr>
+<tr><td>Every non-empty answer: codes, numbers, open text</td><td>data</td></tr>
+<tr><td>Completion time, interview length, device / OS / browser category, dropout question, panel source</td><td>data</td></tr>
+<tr><td>Technical and virtual questions (stored, hidden)</td><td>datamap + data</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3 class="bad">Never stored</h3>
+<table class="bad"><thead><tr><th>Data</th><th>Why</th></tr></thead><tbody>
+<tr><td><code>RID</code> (panel id)</td><td>Personal; stored only as a SHA-256 hash</td></tr>
+<tr><td><code>userAgent</code>, <code>dcua</code></td><td>Browser fingerprint</td></tr>
+<tr><td><code>url</code>, <code>session</code></td><td>Survey link and panel session</td></tr>
+<tr><td><code>ipAddress</code></td><td>Personal</td></tr>
+<tr><td>Raw JSON files</td><td>Kept in memory only; nothing written to disk</td></tr>
+<tr><td>Surveys still <i>testing</i> / <i>live</i></td><td>Incomplete; loaded once closed</td></tr>
+<tr><td><i>Hibernated</i> surveys</td><td>Unreadable (428) until a person reactivates them</td></tr>
+</tbody></table>
+</div>
+</div>
+
+<h3 class="lod">11.1 Where things stand (13 Oct 2026)</h3>
+<table class="lod">
+<thead><tr><th>Source</th><th>Waves verified</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Forsta (live)</td><td>31</td><td>4,476,153 answers, 0 differences. Wave <code>261000</code> (12 Oct, Home improvement + Holiday Tracker) is still live in Forsta and will load automatically once it closes.</td></tr>
+<tr><td>Qualtrics (history)</td><td>142</td><td>2022–2025</td></tr>
+<tr><td>SurveyMonkey (history)</td><td>145</td><td>2018–2022</td></tr>
+</tbody></table>
+</section>
+
+<!-- ============ 12 FAILURES ============ -->
+<section>
+<h2 class="bad">12. When something goes wrong</h2>
+<p>Every run ends with an exit code, written to the log, that says how it went:</p>
+<table class="bad">
+<thead><tr><th style="width:9%">Code</th><th style="width:36%">Meaning</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td><span class="pill lod">0</span></td><td>Everything due loaded and verified, or nothing was due</td><td>Nothing</td></tr>
+<tr><td><span class="pill tra">1</span></td><td>A wave failed to load or verify</td><td>Read <code>cip_forsta_survey.last_error</code>. The next run retries it automatically.</td></tr>
+<tr><td><span class="pill bad">2</span></td><td>Forsta rejected the key, the key is missing, or the database schema is older than the code</td><td>Renew the key in <code>.env</code>, or run <code>python scripts/init_db.py</code></td></tr>
+<tr><td><span class="pill der">3</span></td><td>Loaded fine, but an already-published number changed</td><td>Review on the Publications page</td></tr>
+<tr><td><span class="pill src">4</span></td><td>Database unreachable after 4 tries over 15 minutes</td><td>Check the VPN or the Azure firewall (the office IP changed on 13 Oct). The next slot retries.</td></tr>
+</tbody></table>
+
+<h3 class="bad">12.1 Common situations</h3>
+<table class="bad">
+<thead><tr><th style="width:30%">You see</th><th style="width:30%">Cause</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>"Loaded 0" for days</td><td>No survey has closed in Forsta</td><td>Expected</td></tr>
+<tr><td>"Can't connect to MySQL … timed out"</td><td>VPN down, or the office IP is not allowed in Azure</td><td>Reconnect; the next slot retries</td></tr>
+<tr><td>A wave "does not match its payload"</td><td>Forsta changed data mid-load, or a step broke</td><td><code>python -m etl.forsta_etl --survey &lt;path&gt;</code></td></tr>
+<tr><td>Survey <i>hibernated</i> and its history is needed</td><td>Forsta hibernated it before it was loaded</td><td>A Forsta owner reactivates it; the next run loads it</td></tr>
+<tr><td>Survey reopened and closed again</td><td>New respondents</td><td>Automatic: becomes due and is reloaded in place</td></tr>
+</tbody></table>
+
+<h3 class="bad">12.2 Commands to run by hand</h3>
+<div class="json">python scripts/weekly_forsta.py                         <span class="c"># the scheduled run, now</span>
+python -m etl.forsta_etl --discover                     <span class="c"># refresh the register only (no answers downloaded)</span>
+python -m etl.forsta_etl --due                          <span class="c"># discover + load everything due</span>
+python -m etl.forsta_etl --survey selfserve/58f/260908  <span class="c"># load or reload one wave</span>
+python -m etl.forsta_etl --reconcile                    <span class="c"># compare every loaded wave with Forsta</span>
+python scripts/test_connection.py                       <span class="c"># database + Forsta check (never prints the key)</span></div>
+</section>
+
+<!-- ============ 13 WORKED EXAMPLE ============ -->
+<section>
+<h2 class="der" style="break-before:page;background:linear-gradient(90deg,var(--src),var(--ext),var(--tra),var(--lod),var(--der))">13. Worked example: one wave, start to finish</h2>
+<p>The wave <code>selfserve/58f/260908</code>, "Shopping and Spending – inc Home Furnishings + Holiday Tracker + GenAI":</p>
+<div class="vflow">
+  <div class="node src"><b>Tue 22 Sep 2026.</b> Created in Forsta. Discovery sees it as <i>testing</i>, so it waits.</div>
+  <div class="down">↓</div>
+  <div class="node src"><b>Mon 5 Oct, 12:22 UTC (17:52 IST).</b> Launched and <i>live</i>. Runs still mark it <i>testing</i>; nothing is downloaded.</div>
+  <div class="down">↓</div>
+  <div class="node src"><b>Tue 6 Oct, 14:19 UTC (19:49 IST).</b> Closed with 401 qualified out of 823 started.</div>
+  <div class="down">↓</div>
+  <div class="node ext"><b>Next run after close</b> (in normal operation, Tue 6 Oct 23:30 IST; this wave was actually loaded on 8 Oct while the pipeline was being built). Health ✓, key ✓, schema ✓. Discovery: closed, not hibernated, never loaded → <b>due</b>.</div>
+  <div class="down">↓</div>
+  <div class="node ext"><b>Extract.</b> GET datamap (≈0.5 MB) + GET data (823 records, all statuses). Rows with no uuid are discarded.</div>
+  <div class="down">↓</div>
+  <div class="node tra"><b>Transform.</b> 54 reportable questions typed: core q1–q6, CS1–CS3, D1–D8 plus extra D codes, HF1–HF7 home furnishings, XM1–XM3 holiday tracker, G1–G8 GenAI. Six "Other (specify)" boxes (e.g. <code>HF2r28oe</code>) become their own text questions. Personal fields are dropped and RID is hashed. Every value is converted from text to its type.</div>
+  <div class="down">↓</div>
+  <div class="node lod"><b>Load.</b> Survey row (<i>loading</i>) → log row → definitions → transaction A (823 respondents, 187,468 answers in 5,000-row batches). Took 2 min 20 s. Wave label = Monday <b>2026-10-05</b>.</div>
+  <div class="down">↓</div>
+  <div class="node ver"><b>Verify.</b> 823 = 823 respondents; every variable has a field; every field's answer count matches → ✓.</div>
+  <div class="down">↓</div>
+  <div class="node der"><b>Derive.</b> Profiles and bands → bases → concepts → cube → search → 401 line-by-line rows → calendar: lead sector Home furnishings (6th in the rotation), GenAI topic, Holiday tracker <b>2026 wave 2</b>.</div>
+  <div class="down">↓</div>
+  <div class="node lod"><b>Done.</b> <code>verified</code>, register <i>loaded</i>, exit 0. The Holiday Databank numbers (53.9 / 37.2 / 8.2 …) now come straight from this wave.</div>
+</div>
+</section>
+
+</body>
+</html>
