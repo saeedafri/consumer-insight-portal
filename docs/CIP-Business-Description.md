@@ -20,7 +20,7 @@ The **Consumer Insight Portal (CIP)** replaces that manual work with an automate
   made visible.
 * The same cleaning the data team did by hand — qualified respondents only, labelled answers, age bands,
   generations, month — is **done automatically**, and proven equal to the team's own file.
-* Everything is stored in the company data warehouse (`dwh_stg`, tables starting `cip_`), together with
+* Everything is stored in the company data warehouse (database `cip_stg`, tables starting `cip_`), together with
   **history back to 2018** (SurveyMonkey 2018–2022, Qualtrics 2022–2025, Forsta 2025 onwards).
 * All counting and percentage work is done **before** anyone opens a report, so reports and exports are instant.
 

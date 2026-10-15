@@ -184,11 +184,11 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <h3 class="src">2.4 Other sources (history only)</h3>
 <div class="flow">
   <div class="node src"><b>Forsta API</b>Jun 2025 → today<br>live, weekly</div><div class="arrow">→</div>
-  <div class="node lod" style="flex:1.3"><b>cip_ tables in dwh_stg</b>one set of tables for every platform</div><div class="arrow">←</div>
+  <div class="node lod" style="flex:1.3"><b>cip_ tables in cip_stg</b>one set of tables for every platform</div><div class="arrow">←</div>
   <div class="node src"><b>Qualtrics</b>2022–2025, 142 waves<br>from <code>dwh_sm*</code> tables</div><div class="arrow">←</div>
   <div class="node src"><b>SurveyMonkey</b>2018–2022, 145 waves<br>from <code>dwh_sm*</code> tables</div>
 </div>
-<p><span class="k">dwh_stg</span> <span class="d">our Azure MySQL staging database; all pipeline tables in it start with cip_</span>. History was loaded once. Only Forsta is fetched on a schedule.</p>
+<p><span class="k">cip_stg</span> <span class="d">our own Azure MySQL staging database; every pipeline table in it starts with cip_. The old Qualtrics and SurveyMonkey source tables (dwh_sm*) stay in the shared dwh_stg database and are only read</span>. History was loaded once. Only Forsta is fetched on a schedule.</p>
 </section>
 
 <!-- ============ 3 FREQUENCY ============ -->
@@ -477,7 +477,7 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <!-- ============ 8 LOAD ============ -->
 <section>
 <h2 class="lod">8. Load: writing to the database</h2>
-<p><b>What happens:</b> the transformed wave is written into <code>dwh_stg</code> in a fixed order. The step that replaces respondents and answers is a single <span class="k">transaction</span> <span class="d">a group of database writes that either all succeed together or are all undone together, so nobody ever sees half a wave</span>.</p>
+<p><b>What happens:</b> the transformed wave is written into <code>cip_stg</code> in a fixed order. The step that replaces respondents and answers is a single <span class="k">transaction</span> <span class="d">a group of database writes that either all succeed together or are all undone together, so nobody ever sees half a wave</span>.</p>
 
 <div class="vflow">
   <div class="node lod"><span class="num">1</span><b>Survey row</b> in <code>cip_survey</code>, set to <code>load_status = loading</code> (not visible in reports).</div>

@@ -14,7 +14,7 @@ Forsta survey; the pipeline discovers them and loads each one as it closes.
 | Piece | State |
 |---|---|
 | Source data | 4 exports analysed: 09/21/26 and 09/28/26, raw + cross-tab each ([05](docs/05-source-data-analysis.md)) |
-| Database | **`dwh_stg`**, account `dwh_app_access` — schema v2: 29 `csi_` tables + 8 `v_csi_` views (Phase 1 of the [survey platform design](docs/superpowers/specs/2026-09-29-survey-platform-design.md)) |
+| Database | **`cip_stg`** (moved from `dwh_stg` on 14 Oct 2026), account `mohdsaeedafri` — 33 `cip_` tables + 9 `v_cip_` views; Qualtrics/SurveyMonkey history stays in `dwh_stg` and is read through `dwh_sm*` views in `cip_stg` (Phase 1 of the [survey platform design](docs/superpowers/specs/2026-09-29-survey-platform-design.md)) |
 | Data loaded | Forsta: both 2026 waves (404 + 403). History: 141 Qualtrics waves Aug 2022 – Apr 2025 from `dwh_sm*` + the May 2025 Excel export — 144 waves, 71,474 qualified respondents, 10.4 M answer rows |
 | Verified | `scripts/reconcile.py`: 667/667 and 788/788 published cells reproduced from raw answers ([09](docs/09-data-verification.md)); all 141 legacy waves match their source (41,124 answer counts, 0 differences); Beauty retailer check vs the analysts' workbook: Amazon.com 492 = 492 |
 | Forsta API | adapter + unattended weekly run (`scripts/weekly_forsta.py`) built and proven equal to the Excel path; the key on file is **rejected (401)** — the first live run is one command once IT's key is in `.env` ([03](docs/03-forsta-integration.md), [04](docs/04-it-requirements-checklist.md)) |
@@ -24,7 +24,7 @@ Forsta survey; the pipeline discovers them and loads each one as it closes.
 | Cohorts & cube | named cohorts over concepts (`config/cohorts.yml`: Beauty shoppers — reproduces the analysts' workbook exactly on its 1,614 respondents); pre-computed cube for all 144 waves; standard view P95 0.35 s, ad-hoc cohort 0.82 s, five-wave stack 0.26 s over the VPN (`scripts/perf_check.py`) |
 | Publications | delivered tables frozen with their definition and footnote; the **Publications** page (`/publications`) re-checks every one against today's data cell by cell (replaces the manual Cross-Check tab); `python -m app.data.publications --drift` exits 1 when a published number moved |
 
-**Run it against `dwh_stg`** (VPN on): `.venv/bin/streamlit run app/main.py` — sign-in is bypassed locally (`APP_ENV=LOCAL` + `DEBUG=true`); OIDC/SSO to follow, as in MDP/SIP
+**Run it against `cip_stg`** (VPN on): `.venv/bin/streamlit run app/main.py` — sign-in is bypassed locally (`APP_ENV=LOCAL` + `DEBUG=true`); OIDC/SSO to follow, as in MDP/SIP
 **Run it offline** on a SQLite copy: `bash scripts/run_local.sh`
 
 ---
@@ -35,7 +35,7 @@ Forsta survey; the pipeline discovers them and loads each one as it closes.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# .env: STG host from market-data-stg/.env, dwh_stg account from Code-Base/Modular-Code/.env
+# .env: STG host from market-data-stg/.env, STG_DB_NAME=cip_stg, account DB_USER_DWH from Code-Base/Modular-Code/.env
 python scripts/test_connection.py
 python scripts/init_db.py
 

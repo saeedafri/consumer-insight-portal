@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════════════════
-# Consumer Insight Portal — one-shot setup against dwh_stg.
+# Consumer Insight Portal — one-shot setup against cip_stg.
 #
 # Run this on your Mac (it needs network access to the Azure STG server,
 # which the cloud session does not have).
@@ -30,7 +30,7 @@ echo "── checking connections"
 python scripts/test_connection.py || true
 
 echo
-echo "── creating the csi_ schema in dwh_stg"
+echo "── creating the cip_ schema in cip_stg"
 python scripts/init_db.py
 
 echo

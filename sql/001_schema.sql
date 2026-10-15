@@ -1,7 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Consumer Insight Portal — CSI schema
--- Target:   MySQL 8.0+  ·  database `dwh_stg` on the Coresight STG server
--- Prefix:   csi_   (views v_csi_)
+-- Target:   MySQL 8.0+  ·  database `cip_stg` on the Coresight STG server
+-- Prefix:   cip_   (views v_cip_)
 -- Charset:  utf8mb4 — retailer names contain curly apostrophes (Smith's)
 --
 -- 29 tables, simple names, in nine groups (schema v2):

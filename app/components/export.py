@@ -113,7 +113,7 @@ def build_workbook(
 
     rows: list[tuple[str, str]] = [
         ("Exported", f"{datetime.now():%d %B %Y, %H:%M}"),
-        ("Source", "Coresight Consumer Insight Portal (CSI tables, dwh_stg)"),
+        ("Source", "Coresight Consumer Insight Portal (CIP tables, cip_stg)"),
     ]
     rows += list(notes or [])
     rows.append((

@@ -41,7 +41,7 @@ def main() -> int:
         idx.setdefault(r[0], []).append(r[1:])
     for r in fks:
         refs.setdefault((r[0], r[1]), f"→ {r[2]}.{r[3]} ({r[4].lower()})")
-    out = ["# 6. Data dictionary — `cip_` tables and views in `dwh_stg`", "",
+    out = ["# 6. Data dictionary — `cip_` tables and views in `cip_stg`", "",
            "Generated from the live database by `scripts/data_dictionary.py`; row counts are InnoDB estimates.", "",
            "| Object | Kind | Rows (approx.) | Purpose |", "|---|---|---:|---|"]
     for name, kind, rows, comment in tables:

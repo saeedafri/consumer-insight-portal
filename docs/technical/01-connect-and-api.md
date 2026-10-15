@@ -20,8 +20,8 @@ graph LR
 | System | Role | Access |
 |---|---|---|
 | Forsta Surveys (Decipher) `se1.decipherinc.com` | Live survey source | HTTPS REST API v1, **GET only** |
-| Azure Database for MySQL 8.0 `csr-mysql8-flex-stg.mysql.database.azure.com`, schema `dwh_stg` | Warehouse | TLS 1.2+, PyMySQL via SQLAlchemy 2 |
-| `dwh_sm*` tables in `dwh_stg` | Qualtrics + SurveyMonkey history (read) | same connection |
+| Azure Database for MySQL 8.0 `csr-mysql8-flex-stg.mysql.database.azure.com`, schema `cip_stg` (all `cip_` tables and views) | Warehouse | TLS 1.2+, PyMySQL via SQLAlchemy 2 |
+| `dwh_sm*` tables in `dwh_stg` | Qualtrics + SurveyMonkey history (read) | same server; read through `dwh_sm*` views in `cip_stg` |
 | macOS launchd (`com.coresight.cip-forsta-etl`) | Scheduler | user agent on the ETL host |
 
 ## 1.2 Forsta API
@@ -83,7 +83,7 @@ checkbox `"0"`/`"1"`, single choice `"1"`…`"n"`, numbers as text, verbatims as
 | Setting | Value |
 |---|---|
 | Driver | `mysql+pymysql`, SQLAlchemy 2 engine, pooled (`DB_POOL_SIZE`, `DB_MAX_OVERFLOW`) |
-| ETL account | `STG_DB_USER` — ALL PRIVILEGES on `dwh_stg` |
+| ETL account | `STG_DB_USER` (`mohdsaeedafri`) — ALL PRIVILEGES on `cip_stg`, SELECT on `dwh_stg` |
 | Portal account | read-only grants (`sql/004_grants.sql`, applied by the DBA) |
 | TLS | required; CA bundle `STG_DB_SSL_CA` (DigiCert Global Root G2) |
 | Latency | ≈250 ms round trip from the India office — every loader step is batched to a constant number of statements per wave |

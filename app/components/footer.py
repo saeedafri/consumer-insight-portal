@@ -56,7 +56,7 @@ def render_footer(data_note: str = "") -> None:
     <div class="csi-footer-col csi-footer-brand">
       <img src="{LOGO}" alt="Coresight Research">
       <div>Consumer Insight Portal — survey analytics on the CIP tables in
-      <code style="color:#e0ded9">dwh_stg</code>.</div>
+      <code style="color:#e0ded9">cip_stg</code>.</div>
     </div>
     <div class="csi-footer-col">
       <h4>Portal</h4>

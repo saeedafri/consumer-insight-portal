@@ -1,40 +1,40 @@
-# 6. Data dictionary — `cip_` tables and views in `dwh_stg`
+# 6. Data dictionary — `cip_` tables and views in `cip_stg`
 
 Generated from the live database by `scripts/data_dictionary.py`; row counts are InnoDB estimates.
 
 | Object | Kind | Rows (approx.) | Purpose |
 |---|---|---:|---|
-| [`cip_agg_cell`](#cip-agg-cell) | table | 1,796,799 | Pre-computed counts per wave x answer x cut x cohort. |
-| [`cip_answer`](#cip-answer) | table | 22,959,662 | Every answer, long format. ~151k rows per wave. |
+| [`cip_agg_cell`](#cip-agg-cell) | table | 2,081,530 | Pre-computed counts per wave x answer x cut x cohort. |
+| [`cip_answer`](#cip-answer) | table | 23,345,651 | Every answer, long format. ~151k rows per wave. |
 | [`cip_auth_session`](#cip-auth-session) | table | 2 | Sign-in audit and revocation. |
 | [`cip_banner`](#cip-banner) | table | 0 | Cross-tab column groups. |
 | [`cip_cohort_def`](#cip-cohort-def) | table | 2 | Named, versioned respondent rules. |
-| [`cip_concept`](#cip-concept) | table | 1,558 | Canonical questions, stable across waves and platforms. |
-| [`cip_concept_map`](#cip-concept-map) | table | 63,375 | Wave question/item/option -> canonical concept, proposed or confirmed. |
-| [`cip_concept_option`](#cip-concept-option) | table | 12,708 | Canonical answers, with band midpoints. |
+| [`cip_concept`](#cip-concept) | table | 1,769 | Canonical questions, stable across waves and platforms. |
+| [`cip_concept_map`](#cip-concept-map) | table | 66,766 | Wave question/item/option -> canonical concept, proposed or confirmed. |
+| [`cip_concept_option`](#cip-concept-option) | table | 11,670 | Canonical answers, with band midpoints. |
 | [`cip_crosstab`](#cip-crosstab) | table | 0 | Cross-tab cells: percentage, count, true base, significance. |
 | [`cip_crosstab_run`](#cip-crosstab-run) | table | 0 | One row per cross-tab export, with its base and filter settings. |
-| [`cip_field`](#cip-field) | table | 51,932 | Export column -> question/item map. |
-| [`cip_forsta_survey`](#cip-forsta-survey) | table | 90 | Register of every Forsta survey the key can see, and what the ETL did with it. |
-| [`cip_item`](#cip-item) | table | 45,281 | List items and grid rows. |
+| [`cip_field`](#cip-field) | table | 56,452 | Export column -> question/item map. |
+| [`cip_forsta_survey`](#cip-forsta-survey) | table | 91 | Register of every Forsta survey the key can see, and what the ETL did with it. |
+| [`cip_item`](#cip-item) | table | 50,335 | List items and grid rows. |
 | [`cip_load_error`](#cip-load-error) | table | 0 | Rows that failed validation, kept for review. |
-| [`cip_load_log`](#cip-load-log) | table | 393 | Audit trail. Nothing enters CSI without a row here. |
+| [`cip_load_log`](#cip-load-log) | table | 408 | Audit trail. Nothing enters CSI without a row here. |
 | [`cip_load_state`](#cip-load-state) | table | 0 | Watermarks so incremental pulls never re-read a whole survey. |
-| [`cip_option`](#cip-option) | table | 28,832 | Answer codes and their labels. |
-| [`cip_profile`](#cip-profile) | table | 166,393 | Demographic cuts, one row per respondent. |
-| [`cip_profile_map`](#cip-profile-map) | table | 1,184 | Which question feeds each demographic cut, per wave. Auditable and editable. |
-| [`cip_publication`](#cip-publication) | table | 2 | A delivered chart or table, frozen at a version. |
-| [`cip_publication_cell`](#cip-publication-cell) | table | 196 | The frozen numbers of a publication. |
-| [`cip_question`](#cip-question) | table | 8,218 | Questions, with their own answering base. |
-| [`cip_respondent`](#cip-respondent) | table | 165,948 | One row per interview. |
-| [`cip_respondent_cohort`](#cip-respondent-cohort) | table | 6,215 | Materialised cohort membership. |
+| [`cip_option`](#cip-option) | table | 28,967 | Answer codes and their labels. |
+| [`cip_profile`](#cip-profile) | table | 151,465 | Demographic cuts, one row per respondent. |
+| [`cip_profile_map`](#cip-profile-map) | table | 1,325 | Which question feeds each demographic cut, per wave. Auditable and editable. |
+| [`cip_publication`](#cip-publication) | table | 3 | A delivered chart or table, frozen at a version. |
+| [`cip_publication_cell`](#cip-publication-cell) | table | 198 | The frozen numbers of a publication. |
+| [`cip_question`](#cip-question) | table | 8,256 | Questions, with their own answering base. |
+| [`cip_respondent`](#cip-respondent) | table | 176,470 | One row per interview. |
+| [`cip_respondent_cohort`](#cip-respondent-cohort) | table | 6,517 | Materialised cohort membership. |
 | [`cip_saved_view`](#cip-saved-view) | table | 0 | Saved filter + question sets, re-run against current data. |
-| [`cip_search`](#cip-search) | table | 10,034 | Search index: one row per wave, question and concept (FULLTEXT). |
+| [`cip_search`](#cip-search) | table | 9,829 | Search index: one row per wave, question and concept (FULLTEXT). |
 | [`cip_segment`](#cip-segment) | table | 0 | Cross-tab columns with their Forsta definitions. |
-| [`cip_survey`](#cip-survey) | table | 301 | Survey waves. |
-| [`cip_topic`](#cip-topic) | table | 15 | Editorial grouping of questions. |
-| [`cip_tracker_line`](#cip-tracker-line) | table | 4,223 | The data team's line-by-line rows: one per qualified tracker respondent, JSON in their column order. |
-| [`cip_wave_module`](#cip-wave-module) | table | 242 | Survey calendar: every Forsta survey x module (lead sector, topic, seasonal, event, annual, ad hoc). |
+| [`cip_survey`](#cip-survey) | table | 319 | Survey waves. |
+| [`cip_topic`](#cip-topic) | table | 16 | Editorial grouping of questions. |
+| [`cip_tracker_line`](#cip-tracker-line) | table | 5,076 | The data team's line-by-line rows: one per qualified tracker respondent, JSON in their column order. |
+| [`cip_wave_module`](#cip-wave-module) | table | 245 | Survey calendar: every Forsta survey x module (lead sector, topic, seasonal, event, annual, ad hoc). |
 | [`cip_weight`](#cip-weight) | table | 0 | One weight per respondent per scheme. |
 | [`cip_weight_scheme`](#cip-weight-scheme) | table | 0 | Named weighting schemes, per wave. |
 | [`v_cip_answers`](#v-cip-answers) | view |  | VIEW |

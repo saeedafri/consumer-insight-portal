@@ -33,7 +33,7 @@ graph TD
 * **Conformed dimensions.** Concept + concept option are the shared "question" dimension across Forsta, Qualtrics
   and SurveyMonkey.
 * **Pre-aggregated cube.** `cip_agg_cell` counts every answer once per standard cut and cohort.
-* **Prefix `cip_`** (views `v_cip_`) so nothing collides with other `dwh_stg` tables.
+* **Prefix `cip_`** (views `v_cip_`) so nothing collides with other tables on the server (history in `dwh_stg` keeps its `dwh_sm` names).
 
 ## 5.2 Cube — `cip_agg_cell`
 

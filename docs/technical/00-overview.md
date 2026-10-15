@@ -1,7 +1,7 @@
 # 0. Overview
 
 **Consumer Insight Portal (CIP) — Technical Specification.** How survey data is retrieved from Forsta, transformed,
-loaded into `dwh_stg`, verified and prepared for reporting. Version 1.0 · 13 October 2026.
+loaded into `cip_stg`, verified and prepared for reporting. Version 1.0 · 13 October 2026.
 
 ## 0.1 Scope
 
