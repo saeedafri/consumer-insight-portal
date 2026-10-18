@@ -1,0 +1,9 @@
+# Who gets the email after each Forsta survey fetch (etl/notify.py).
+# A survey's study_type picks its list; an empty list falls back to `default`.
+# `failure` is told when a run fails (a wave, the database, the key, the schema, drift).
+# Testing: everything goes to the ETL developer only. Replace with the analysts' addresses to go live.
+default: [mohdsaeedafri@coresight.com]
+tracker: []
+annual: []
+adhoc: []
+failure: []

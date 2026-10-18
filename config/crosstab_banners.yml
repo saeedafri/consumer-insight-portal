@@ -1,0 +1,238 @@
+# The data team's cross-tab banners, taken from their Forsta exports of 10/12/26
+# (Cross Tabs, Holiday Status Cross Tabs, Inflation_Sentiment Cross Tabs): each segment is a Forsta
+# expression over the questionnaire (Q.rN single/multi row, Q.chN dropdown choice, Q.rN.cM grid cell).
+# Used by etl/crosstab_export.py; `python -m etl.crosstab_export --compare <file>` checks us against theirs.
+# A dropdown's choice number in the team's expressions (Q.chN) is not always our stored code. D8 (state): choices 1-10 are
+# codes 1-10, choices 11-50 are codes 12-51, and choice 51 is code 11 (Georgia, appended last in Forsta).
+# Derived from their region lists and verified: every region segment then equals their file.
+choice_code:
+  D8: {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 12, 12: 13, 13: 14, 14: 15, 15: 16, 16: 17, 17: 18, 18: 19, 19: 20, 20: 21, 21: 22, 22: 23, 23: 24, 24: 25, 25: 26, 26: 27, 27: 28, 28: 29, 29: 30, 30: 31, 31: 32, 32: 33, 33: 34, 34: 35, 35: 36, 36: 37, 37: 38, 38: 39, 39: 40, 40: 41, 41: 42, 42: 43, 43: 44, 44: 45, 45: 46, 46: 47, 47: 48, 48: 49, 49: 50, 50: 51, 51: 11}
+standard:
+  file: Cross Tabs 10_12_26.xlsx
+  segments:
+  - label: Male
+    expr: D1.r1
+  - label: Female
+    expr: D1.r2
+  - label: Non-binary / third gender
+    expr: D1.r3
+  - label: GenZ
+    expr: D2.ch12 or D2.ch10 or D2.ch11 or D2.ch2 or D2.ch3 or D2.ch4 or D2.ch5 or D2.ch6 or D2.ch7 or D2.ch8 or D2.ch9
+  - label: 18-29
+    expr: D2.ch12 or D2.ch13 or D2.ch10 or D2.ch11 or D2.ch2 or D2.ch3 or D2.ch4 or D2.ch5 or D2.ch6 or D2.ch7 or D2.ch8 or D2.ch9
+  - label: Millennial
+    expr: D2.ch27 or D2.ch26 or D2.ch25 or D2.ch24 or D2.ch23 or D2.ch22 or D2.ch21 or D2.ch20 or D2.ch28 or D2.ch13 or D2.ch14 or D2.ch16 or D2.ch17 or D2.ch18 or D2.ch19 or D2.ch15
+  - label: 30-44
+    expr: D2.ch27 or D2.ch26 or D2.ch25 or D2.ch24 or D2.ch23 or D2.ch22 or D2.ch21 or D2.ch20 or D2.ch28 or D2.ch14 or D2.ch16 or D2.ch17 or D2.ch18 or D2.ch19 or D2.ch15
+  - label: GenX
+    expr: D2.ch41 or D2.ch40 or D2.ch43 or D2.ch42 or D2.ch44 or D2.ch29 or D2.ch34 or D2.ch35 or D2.ch36 or D2.ch37 or D2.ch30 or D2.ch31 or D2.ch32 or D2.ch33 or D2.ch38 or D2.ch39
+  - label: 45-60
+    expr: D2.ch41 or D2.ch40 or D2.ch43 or D2.ch42 or D2.ch44 or D2.ch29 or D2.ch34 or D2.ch35 or D2.ch36 or D2.ch37 or D2.ch30 or D2.ch31 or D2.ch32 or D2.ch33 or D2.ch38 or D2.ch39
+  - label: Boomer
+    expr: D2.ch45 or D2.ch47 or D2.ch46 or D2.ch49 or D2.ch48 or D2.ch54 or D2.ch52 or D2.ch53 or D2.ch50 or D2.ch51
+  - label: Over 60
+    expr: D2.ch45 or D2.ch47 or D2.ch46 or D2.ch49 or D2.ch48 or D2.ch54 or D2.ch52 or D2.ch53 or D2.ch50 or D2.ch51
+  - label: Hispanic
+    expr: D4.r1
+  - label: Caucasian
+    expr: D4.r2
+  - label: African-American
+    expr: D4.r3
+  - label: Other
+    expr: D4.r4 or D4.r5 or D4.r6
+  - label: under $25,000
+    expr: D5.r1
+  - label: $25,000 - $49,999
+    expr: D5.r2
+  - label: $50,000 - $99,999
+    expr: D5.r3
+  - label: $100,000 - $149,999
+    expr: D5.r4
+  - label: $150,000 - $199,999
+    expr: D5.r5
+  - label: $200,000 or greater
+    expr: D5.r6
+  - label: Urban
+    expr: D6.r1
+  - label: Suburban
+    expr: D6.r2
+  - label: Rural
+    expr: D6.r3
+  - label: South
+    expr: D8.ch40 or D8.ch43 or D8.ch42 or D8.ch46 or D8.ch48 or D8.ch24 or D8.ch10 or D8.ch51 or D8.ch17 or D8.ch36 or D8.ch33 or D8.ch18 or D8.ch1 or D8.ch4 or D8.ch8 or D8.ch9
+  - label: West
+    expr: D8.ch44 or D8.ch47 or D8.ch26 or D8.ch28 or D8.ch12 or D8.ch11 or D8.ch50 or D8.ch37 or D8.ch31 or D8.ch2 or D8.ch3 or D8.ch5 or D8.ch6
+  - label: Northeast
+    expr: D8.ch45 or D8.ch21 or D8.ch29 or D8.ch30 or D8.ch32 or D8.ch19 or D8.ch38 or D8.ch39 or D8.ch7
+  - label: Midwest
+    expr: D8.ch41 or D8.ch49 or D8.ch27 or D8.ch23 or D8.ch22 or D8.ch13 or D8.ch14 or D8.ch16 or D8.ch34 or D8.ch35 or D8.ch15
+  - label: Strongly agree with most policies of the Republican Party
+    expr: D7.r1
+  - label: Tend to agree more with policies of the Republican Party
+    expr: D7.r2
+  - label: Seldom agree with policies of either major party
+    expr: D7.r3
+  - label: Tend to agree more with policies of the Democratic Party
+    expr: D7.r4
+  - label: Strongly agree with most policies of the Democratic Party
+    expr: D7.r5
+  - label: Don't know / pay no attention to politics
+    expr: D7.r6
+  - label: Much worse
+    expr: CS1.r1
+  - label: Somewhat worse
+    expr: CS1.r2
+  - label: About the same
+    expr: CS1.r3
+  - label: Somewhat better
+    expr: CS1.r4
+  - label: Much better
+    expr: CS1.r5
+  groups:
+  - title: What is your gender?
+    columns:
+    - Male
+    - Female
+    - Non-binary / third gender
+  - title: What is your age group?
+    columns:
+    - GenZ
+    - 18-29
+    - Millennial
+    - 30-44
+    - GenX
+    - 45-60
+    - Boomer
+    - Over 60
+  - title: Ethnicity
+    columns:
+    - Hispanic
+    - Caucasian
+    - African-American
+    - Other
+  - title: Household income
+    columns:
+    - under $25,000
+    - $25,000 - $49,999
+    - $50,000 - $99,999
+    - $100,000 - $149,999
+    - $150,000 - $199,999
+    - $200,000 or greater
+  - title: Which of the following best describes the area where your primary residence is located?
+    columns:
+    - Urban
+    - Suburban
+    - Rural
+    - South
+    - West
+    - Northeast
+    - Midwest
+  - title: Which of the following best describes your political philosophy?
+    columns:
+    - Strongly agree with most policies of the Republican Party
+    - Tend to agree more with policies of the Republican Party
+    - Seldom agree with policies of either major party
+    - Tend to agree more with policies of the Democratic Party
+    - Strongly agree with most policies of the Democratic Party
+    - Don't know / pay no attention to politics
+  - title: Considering your discretionary income (what is left over after all your monthly bills are paid), do you think your household situation will be better or worse?
+    columns:
+    - Much worse
+    - Somewhat worse
+    - About the same
+    - Somewhat better
+    - Much better
+holiday_status:
+  file: Holiday Status Cross Tabs 10_12_26.xlsx
+  segments:
+  - label: Not yet started
+    expr: XM3.r1
+  - label: Still shopping
+    expr: XM3.r2
+  - label: Finished shopping
+    expr: XM3.r3
+  - label: Do not make holiday purchases
+    expr: XM3.r4
+  - label: 'Yes'
+    expr: XM1.r1
+  - label: 'No'
+    expr: XM1.r2
+  groups:
+  - title: Now we would like to focus on your holiday shopping (gifts, decorations, etc). What is the current status of your holiday shopping?
+    columns:
+    - Not yet started
+    - Still shopping
+    - Finished shopping
+    - Do not make holiday purchases
+  - title: Did you make any holiday purchases in the last seven days?
+    columns:
+    - 'Yes'
+    - 'No'
+inflation_sentiment:
+  file: Inflation_Sentiment Cross Tabs 10_12_26.xlsx
+  segments:
+  - label: Very
+    expr: D13.r3.c1
+    under: Higher Inflation
+  - label: Somewhat
+    expr: D13.r3.c2
+  - label: Not too
+    expr: D13.r3.c3
+  - label: Not at all
+    expr: D13.r3.c4
+  - label: Very
+    expr: D13.r2.c1
+    under: Higher Gas Prices
+  - label: Somewhat
+    expr: D13.r2.c2
+  - label: Not too
+    expr: D13.r2.c3
+  - label: Not at all
+    expr: D13.r2.c4
+  - label: Much worse
+    expr: CS1.r1
+  - label: Somewhat worse
+    expr: CS1.r2
+  - label: About the same
+    expr: CS1.r3
+  - label: Somewhat better
+    expr: CS1.r4
+  - label: Much better
+    expr: CS1.r5
+  - label: Don't know / not sure
+    expr: CS1.r6
+  - label: Not yet started
+    expr: XM3.r1
+  - label: Still shopping
+    expr: XM3.r2
+  - label: Finished shopping
+    expr: XM3.r3
+  - label: Do not make holiday purchases
+    expr: XM3.r4
+  groups:
+  - title: How concerned are you with each of the following possible outcomes due to the Middle East conflict? - Higher Inflation
+    columns:
+    - Very
+    - Somewhat
+    - Not too
+    - Not at all
+  - title: How concerned are you with each of the following possible outcomes due to the Middle East conflict? - Higher Gas Prices
+    columns:
+    - Very
+    - Somewhat
+    - Not too
+    - Not at all
+  - title: Considering your discretionary income (what is left over after all your monthly bills are paid), do you think your household situation will be better or worse?
+    columns:
+    - Much worse
+    - Somewhat worse
+    - About the same
+    - Somewhat better
+    - Much better
+    - Don't know / not sure
+  - title: What is the current status of your holiday shopping?
+    columns:
+    - Not yet started
+    - Still shopping
+    - Finished shopping
+    - Do not make holiday purchases

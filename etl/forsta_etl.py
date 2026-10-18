@@ -371,6 +371,16 @@ def run_due(client) -> dict[str, list[str]]:
     return result
 
 
+def survey_id_of(path: str) -> Optional[int]:
+    with get_engine("etl").connect() as conn:
+        return conn.execute(text("SELECT survey_id FROM cip_forsta_survey WHERE forsta_path = :p"), {"p": path}).scalar()
+
+
+def last_error_of(path: str) -> str:
+    with get_engine("etl").connect() as conn:
+        return conn.execute(text("SELECT last_error FROM cip_forsta_survey WHERE forsta_path = :p"), {"p": path}).scalar() or "no error recorded"
+
+
 def _client():
     from etl.forsta_client import ForstaClient
     fc = config.forsta

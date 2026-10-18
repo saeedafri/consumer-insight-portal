@@ -22,11 +22,19 @@ from sqlalchemy import inspect  # noqa: E402
 
 from app.core.config import config  # noqa: E402
 from app.core.database import get_engine, healthcheck  # noqa: E402
-from etl import forsta_etl  # noqa: E402
+from etl import forsta_etl, notify  # noqa: E402
 from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
 
 log = logging.getLogger("cip.weekly")
 DB_ATTEMPTS, DB_PAUSE_SECONDS = 4, 300     # a VPN or network blip gets 15 minutes before the run gives up
+
+
+def tell(action, *args) -> None:
+    """Notifying never decides the exit code: a broken mail server must not fail a load."""
+    try:
+        action(*args)
+    except Exception:
+        log.exception("Notification failed")
 
 
 def run(client=None) -> int:
@@ -36,6 +44,7 @@ def run(client=None) -> int:
         fc = config.forsta
         if not fc.is_configured:
             log.error("Forsta is not configured (FORSTA_HOST, FORSTA_API_KEY)")
+            tell(notify.failure, "Forsta is not configured", "FORSTA_HOST or FORSTA_API_KEY is missing.")
             return 2
         client = ForstaClient(fc.host, fc.api_key, fc.timeout, fc.max_retries)
     for attempt in range(1, DB_ATTEMPTS + 1):
@@ -47,19 +56,28 @@ def run(client=None) -> int:
             time.sleep(DB_PAUSE_SECONDS)
     else:
         log.error("Database unreachable; nothing loaded — the next scheduled run tries again")
+        tell(notify.failure, "database unreachable", f"{DB_ATTEMPTS} tries, {DB_PAUSE_SECONDS} s apart: {status}")
         return 4
     try:
         client.whoami()
     except ForstaAuthError as exc:
         log.error("Forsta rejected the key: %s", exc)
+        tell(notify.failure, "Forsta rejected the API key", str(exc))
         return 2
     missing = {"cip_forsta_survey", "cip_search", "cip_tracker_line"} - set(inspect(get_engine("etl")).get_table_names())
     if missing:                                        # never load into a schema older than the code
         log.error("Schema is behind the code (missing %s): run scripts/init_db.py first", sorted(missing))
+        tell(notify.failure, "schema is behind the code", f"Missing tables: {sorted(missing)}. Run scripts/init_db.py.")
         return 2
     log.info("Register: %s", forsta_etl.discover(client))
     result = forsta_etl.run_due(client)               # the register and the load log keep the detail
     log.info("Loaded %d: %s", len(result["loaded"]), result["loaded"])
+    for path in result["loaded"]:
+        tell(notify.survey_loaded, forsta_etl.survey_id_of(path))
+    for path in result["failed"]:
+        tell(notify.failure, f"survey {path} did not load", forsta_etl.last_error_of(path))
+    if not result["loaded"] and not result["failed"]:
+        tell(notify.idle_run)
     if result["failed"]:
         log.error("Failed %d: %s", len(result["failed"]), result["failed"])
         return 1
@@ -68,6 +86,8 @@ def run(client=None) -> int:
     for row in moved.itertuples():
         log.warning("Publication %s v%s no longer reproduces: moved %d, missing %d, new %d",
                     row.pub_code, row.version, row.moved, row.missing, row.new)
+    if len(moved):
+        tell(notify.failure, "published numbers moved", moved.to_string(index=False))
     return 3 if len(moved) else 0
 
 
