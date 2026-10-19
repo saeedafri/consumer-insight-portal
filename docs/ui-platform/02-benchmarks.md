@@ -125,6 +125,22 @@ NAIVE_DB=/tmp/bench/stores.db PORT=8692 node scripts/ui_benchmark/node_page.mjs
 ab -q -k -n 20000 -c 100 http://127.0.0.1:<port>/api/summary/Apparel
 ```
 
+## 7. What each option ships to every browser
+
+These sizes come from reading the shipped artifacts directly, the REA way: the installed packages and the built `dist/`, not their documentation.
+
+| Shipped artifact | Entry script, gzipped | Notes |
+|---|--:|---|
+| Streamlit 1.55.0 `static/js/index.RuhrnD1v.js` (+ CSS 8 KB) | **512 KB** (2.13 MB raw) | Loaded before any app content. 113 JS chunks in total (4.7 MB gz) are loaded on demand. |
+| Dash 4.4.1 renderer + components | ≈ 70 KB, + React, + Plotly when a graph is shown | Plotly.js alone is over 1 MB gz when loaded |
+| MIP-FAST-React production build (React 19 + Vite) `index-CCoQ40OZ.js` | **81 KB** (262 KB raw) | + 13 KB CSS |
+| **One complete CIP wave pack** (all 12,425 cube cells of wave 415) | **60 KB** (674 KB raw JSON) | Measured from `cip_agg_cell`, survey 415. Enough to answer every standard cross-tab of that wave in the browser. |
+
+- **Streamlit's entry script alone is 6× a React app's entry script.**
+- **It is 8.5× all of a wave's survey numbers.**
+
+Over a 263 ms India → Central US link (measured, docs/14) or about 100 ms from the UK, every extra round trip and every 100 KB matters on first load. See [05](05-millisecond-ui.md).
+
 ## 6. Raw output (20 Oct 2026)
 
 ```
