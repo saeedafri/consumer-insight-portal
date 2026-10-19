@@ -23,11 +23,11 @@
 			<key>Minute</key>
 			<integer>0</integer>
 			<key>Weekday</key>
-			<integer>0</integer>
+			<integer>1</integer>
 		</dict>
 		<dict>
 			<key>Hour</key>
-			<integer>9</integer>
+			<integer>13</integer>
 			<key>Minute</key>
 			<integer>0</integer>
 			<key>Weekday</key>
@@ -35,27 +35,11 @@
 		</dict>
 		<dict>
 			<key>Hour</key>
-			<integer>9</integer>
+			<integer>18</integer>
 			<key>Minute</key>
 			<integer>0</integer>
 			<key>Weekday</key>
-			<integer>4</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>9</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-			<key>Weekday</key>
-			<integer>5</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>9</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-			<key>Weekday</key>
-			<integer>6</integer>
+			<integer>1</integer>
 		</dict>
 		<dict>
 			<key>Hour</key>
@@ -888,6 +872,102 @@
 			<integer>30</integer>
 			<key>Weekday</key>
 			<integer>3</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>9</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>4</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>13</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>4</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>18</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>4</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>9</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>5</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>13</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>5</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>18</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>5</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>9</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>6</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>13</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>6</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>18</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>6</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>9</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>13</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>18</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+			<key>Weekday</key>
+			<integer>0</integer>
 		</dict>
 	</array>
 	<key>WorkingDirectory</key>

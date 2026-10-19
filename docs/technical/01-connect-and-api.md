@@ -21,7 +21,7 @@ graph LR
 |---|---|---|
 | Forsta Surveys (Decipher) `se1.decipherinc.com` | Live survey source | HTTPS REST API v1, **GET only** |
 | Azure Database for MySQL 8.0 `csr-mysql8-flex-stg.mysql.database.azure.com`, schema `cip_stg` (all `cip_` tables and views) | Warehouse | TLS 1.2+, PyMySQL via SQLAlchemy 2 |
-| `dwh_sm*` tables in `dwh_stg` | Qualtrics + SurveyMonkey history (read) | same server; read through `dwh_sm*` views in `cip_stg` |
+| `dwh_sm*` tables in `cip_stg` | Qualtrics + SurveyMonkey history (read) | copied from `dwh_stg` on 19 Oct 2026 (`scripts/move_legacy_source.py`); frozen since 29 Aug 2025 |
 | macOS launchd (`com.coresight.cip-forsta-etl`) | Scheduler | user agent on the ETL host |
 
 ## 1.2 Forsta API

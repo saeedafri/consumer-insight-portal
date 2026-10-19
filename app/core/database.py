@@ -82,6 +82,8 @@ def get_engine(role: str = "app") -> Engine:
         # 500 ms saved per read from the India office. pool_recycle retires
         # connections before Azure drops them. Writers keep transactions.
         reads_only = role == "app"
+        # The writer bulk-loads answers with LOAD DATA LOCAL INFILE (etl/forsta_etl.py).
+        connect_args = db.connect_args if reads_only else {**db.connect_args, "local_infile": True}
         _engines[role] = create_engine(
             db.url,
             poolclass=QueuePool,
@@ -90,7 +92,7 @@ def get_engine(role: str = "app") -> Engine:
             pool_timeout=db.pool_timeout,
             pool_recycle=db.pool_recycle,
             pool_pre_ping=not reads_only,
-            connect_args=db.connect_args,
+            connect_args=connect_args,
             future=True,
             **({"isolation_level": "AUTOCOMMIT", "skip_autocommit_rollback": True} if reads_only else {}),
         )

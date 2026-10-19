@@ -29,10 +29,14 @@ deletes a survey, and never changes its status.
   qualified / ~500 total, sample source 114.
 - Tags: `Weekly consumer tracker`, `annual tracker` (Holiday, Amazon Apparel,
   Online Grocery, Back-to-school), untagged client studies.
-- **Hibernation**: after ~3–4 months a survey answers `428` until someone
-  reactivates it in Forsta. Hibernated waves are left alone.
-- **Deletion**: Forsta deletes a survey 365 days after creation — the warehouse
-  is the record, so every wave is loaded as soon as it closes.
+- **Hibernation** (Forsta, "Hibernated Surveys"; support ticket #1079025, 20 Oct 2026): after 90 days with no
+  respondent and no user access a survey answers `428`. All data is kept. A logged-in user restores it by opening
+  it in the Portal ("Click here to restore") or loading a report; there is no charge. The pipeline never does this
+  (GET only); once someone restores a survey, the next run loads it.
+- **Deletion** (Forsta, "Data Archival and Deletion"): a live or hibernated survey is not deleted. A hibernated
+  survey that meets the auto-archive criteria is **archived**, and an archived survey is **permanently erased 12
+  months after archiving** (`retention.survey.archived`, default 365 days; can be set to "None" on Decipher Cloud).
+  The warehouse is the record, so every wave is loaded as soon as it closes.
 
 ---
 

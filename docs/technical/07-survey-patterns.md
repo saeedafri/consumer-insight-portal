@@ -28,7 +28,7 @@ graph LR
 | Qualified | 400–414 per tracker wave (fixed quota ≈400) |
 | Total started | 403 – 887 |
 | Gender quota | exactly balanced (7,000 / 7,000 in the team's Feb–Sep file) |
-| Hibernation | ≈3–4 months after close (`428`); deletion 365 days after creation |
+| Hibernation | after 90 days with no respondent and no user access (`428`); data kept; may then be auto-archived, and an archived survey is erased 12 months after archiving (Forsta, 20 Oct 2026) |
 
 ## 7.2 Title grammar
 

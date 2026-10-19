@@ -18,3 +18,11 @@ def csi_db(tmp_path, monkeypatch):
     monkeypatch.setitem(database._engines, "app", engine)
     yield engine
     engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def own_notify_state(tmp_path, monkeypatch):
+    """Tests' fake failures must never fill the real throttle (logs/notify-state.json): it would
+    silence a real alert for 6 hours."""
+    from etl import notify
+    monkeypatch.setattr(notify, "STATE", tmp_path / "notify-state.json")

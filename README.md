@@ -14,7 +14,7 @@ Forsta survey; the pipeline discovers them and loads each one as it closes.
 | Piece | State |
 |---|---|
 | Source data | 4 exports analysed: 09/21/26 and 09/28/26, raw + cross-tab each ([05](docs/05-source-data-analysis.md)) |
-| Database | **`cip_stg`** (moved from `dwh_stg` on 14 Oct 2026), account `mohdsaeedafri` — 33 `cip_` tables + 9 `v_cip_` views; Qualtrics/SurveyMonkey history stays in `dwh_stg` and is read through `dwh_sm*` views in `cip_stg` (Phase 1 of the [survey platform design](docs/superpowers/specs/2026-09-29-survey-platform-design.md)) |
+| Database | **`cip_stg`** (moved from `dwh_stg` on 14 Oct 2026), account `mohdsaeedafri` — 33 `cip_` tables, 12 `v_cip_` views, and the 7 `dwh_sm*` Qualtrics/SurveyMonkey source tables (copied from `dwh_stg` on 19 Oct 2026, row counts and checksums equal; `scripts/move_legacy_source.py`). Nothing in `cip_stg` reads `dwh_stg` any more. Analysts start from `v_cip_wave`, `v_cip_respondent`, `v_cip_answer_long` |
 | Data loaded | Forsta: both 2026 waves (404 + 403). History: 141 Qualtrics waves Aug 2022 – Apr 2025 from `dwh_sm*` + the May 2025 Excel export — 144 waves, 71,474 qualified respondents, 10.4 M answer rows |
 | Verified | `scripts/reconcile.py`: 667/667 and 788/788 published cells reproduced from raw answers ([09](docs/09-data-verification.md)); all 141 legacy waves match their source (41,124 answer counts, 0 differences); Beauty retailer check vs the analysts' workbook: Amazon.com 492 = 492 |
 | Forsta API | adapter + unattended weekly run (`scripts/weekly_forsta.py`) built and proven equal to the Excel path; the key on file is **rejected (401)** — the first live run is one command once IT's key is in `.env` ([03](docs/03-forsta-integration.md), [04](docs/04-it-requirements-checklist.md)) |
@@ -42,7 +42,9 @@ python scripts/init_db.py
 python -m etl.forsta_etl --discover   # register every survey the key can see (cip_forsta_survey)
 python -m etl.forsta_etl --due        # load every closed, readable, unloaded wave; verify; cube; search
 python scripts/reconcile.py           # re-read each wave from Forsta and compare every answer
-python scripts/weekly_forsta.py       # the scheduled run: discover → load due → drift (exit code = outcome)
+python scripts/weekly_forsta.py       # the scheduled run: discover → load due → integrity → drift (exit code = outcome)
+python -m etl.integrity --check       # is the warehouse whole? (without --check it also heals derived rows)
+python scripts/backup_db.py           # proven dump of cip_stg to backups/ (weekly via launchd com.coresight.cip-backup)
 python -m etl.tracker_line --compare "Weekly Line-By-Line Survey Data.xlsx"   # ETL vs the team's file
 
 streamlit run app/main.py --server.port 8611
@@ -94,6 +96,7 @@ consumer-insight-portal/
 | [`08-authentication.md`](docs/08-authentication.md) | providers, what IT must register for SSO, and what is not tested |
 | [**Survey platform design (schema v2)**](docs/superpowers/specs/2026-09-29-survey-platform-design.md) | the target design for every survey platform — approved; Phase 1 live |
 | [`10-analyst-workbook-review-and-schema-v2.md`](docs/10-analyst-workbook-review-and-schema-v2.md) | tab-by-tab review of the analysts' workbook and the defects found |
+| [`14-pipeline-validation-report.md`](docs/14-pipeline-validation-report.md) | audit of 19 Oct 2026: bottlenecks, integrity, the cross-tab check vs the team's files, self-healing ([design](docs/pipeline-resilience.yml)) |
 | [`09-data-verification.md`](docs/09-data-verification.md) | the reconciliation, the defects it caught, and the Forsta region-banner gap |
 
 ## Conventions

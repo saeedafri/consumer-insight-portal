@@ -4,9 +4,11 @@ Forsta (Decipher) is the source from Oct 2026. Every weekly wave of the
 consumer tracker is its own survey (selfserve/58f/YYMMNN), launched on a
 Monday, fielded for ~13 hours, closed the same night. Annual trackers
 (Holiday, Amazon Apparel, Online Grocery, Back-to-school) and client studies
-come the same way. Forsta hibernates a survey after ~3–4 months (it then
-answers 428 until reactivated) and deletes it after 365 days — so every wave is
-loaded as soon as it closes, and the warehouse is the record.
+come the same way. Forsta hibernates a survey after 90 days without respondents
+or user access (it then answers 428 until a user restores it in the Portal); a
+hibernated survey can be auto-archived, and an archived survey is erased 12
+months later — so every wave is loaded as soon as it closes, and the warehouse
+is the record.
 
     python -m etl.forsta_etl --discover          # refresh the register (cip_forsta_survey)
     python -m etl.forsta_etl --due               # discover, then load every closed, readable, unloaded wave
@@ -25,12 +27,17 @@ import argparse
 import hashlib
 import logging
 import math
+import os
 import re
+import tempfile
+import time
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 from sqlalchemy import bindparam, text
+from sqlalchemy.exc import OperationalError
 
 from app.core.config import config
 from app.core.database import get_engine
@@ -201,10 +208,19 @@ def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
     Invisible while it loads (load_status = loading); visible only once every
     respondent and every answer is proven equal to the payload."""
     path = path.strip("/")
+    seconds: dict[str, float] = {}
+    clock = [time.perf_counter()]
+
+    def lap(step: str) -> None:
+        now = time.perf_counter()
+        seconds[step] = round(now - clock[0], 1)
+        clock[0] = now
+
     meta = meta or _meta(client, path)
     datamap = client.survey_datamap(path)
     questions = forsta_api.questions_from_datamap(datamap)
     records = [r for r in client.survey_data(path) if r.get("uuid")]
+    lap("fetch")
     eng = get_engine("etl")
     with eng.connect() as conn:                   # a reload keeps its wave, even if the first date moved —
         existing = conn.execute(text(             # but only a wave this pipeline loaded from the API
@@ -230,16 +246,26 @@ def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
     written = None
     try:
         load_definitions(survey_id, questions, fam)
+        lap("definitions")
         written = _write(survey_id, records, run)
+        lap("write")
         problems = verify(survey_id, datamap, records)
         if problems:
             raise RuntimeError(f"{path} does not match its payload: {problems[:5]}")
+        lap("verify")
         _rebuild_profiles(survey_id, None, fam)
         _rebuild_question_bases(survey_id)
-        log.info("%s → survey_id %s (%s): %d respondents; harmonised %s; cube %d cells", path, survey_id, wave,
-                 len(records), harmonise.harmonise_survey(survey_id), cube.refresh_wave(survey_id))
+        lap("profiles")
+        mapped = harmonise.harmonise_survey(survey_id)
+        lap("harmonise")
+        cells = cube.refresh_wave(survey_id)
+        lap("cube")
         index_survey(survey_id)
+        lap("search")
         tracker_line.build(survey_id)
+        lap("tracker_line")
+        log.info("%s → survey_id %s (%s): %d respondents; harmonised %s; cube %d cells; seconds %s", path, survey_id,
+                 wave, len(records), mapped, cells, seconds)
     except Exception as exc:
         finish_run(run, len(records), written or 0, error=str(exc)[:2000])
         # the answers write is one transaction: if it never committed, a verified wave is still intact
@@ -289,11 +315,56 @@ def _write(survey_id: int, records: list[dict], run: int) -> int:
                 if stored:
                     rows.append({"rid": rid, "sid": survey_id, "fid": field["id"], **stored})
         conn.execute(text("DELETE FROM cip_answer WHERE survey_id = :s"), {"s": survey_id})
-        statement = text("INSERT INTO cip_answer (respondent_id, survey_id, field_id, value_code, value_label,"
-                         " value_number, value_text) VALUES (:rid, :sid, :fid, :code, :label, :num, :txt)")
-        for i in range(0, len(rows), _CHUNK):
-            conn.execute(statement, rows[i:i + _CHUNK])
+        insert_answers(conn, rows)
     return len(people)
+
+
+ANSWER_COLUMNS = "respondent_id, survey_id, field_id, value_code, value_label, value_number, value_text"
+ANSWER_KEYS = ("rid", "sid", "fid", "code", "label", "num", "txt")
+
+
+def insert_answers(conn, rows: list[dict]) -> None:
+    """LOAD DATA LOCAL INFILE on MySQL — 147,635 answers in 14 s instead of 36 s
+    of batched INSERTs over the VPN (wave 412, 19 Oct 2026). Batched INSERTs on
+    SQLite, or when the server refuses LOCAL INFILE or warns about any row."""
+    if not rows:
+        return
+    if conn.dialect.name == "mysql":
+        try:
+            if _load_data(conn, rows):
+                return
+        except OperationalError as exc:            # local_infile switched off on the server
+            log.warning("LOAD DATA refused (%s); using batched INSERTs", exc.orig)
+    statement = text(f"INSERT INTO cip_answer ({ANSWER_COLUMNS}) VALUES ({', '.join(':' + k for k in ANSWER_KEYS)})")
+    for i in range(0, len(rows), _CHUNK):
+        conn.execute(statement, rows[i:i + _CHUNK])
+
+
+def tsv(value: Any) -> str:
+    """One LOAD DATA field: NULL as \\N, the escape characters escaped."""
+    if value is None:
+        return r"\N"
+    return (str(value).replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n")
+            .replace("\r", "\\r").replace("\0", "\\0"))
+
+
+def _load_data(conn, rows: list[dict]) -> bool:
+    """False (and the wave's answers removed again) if MySQL warned about any row:
+    LOCAL turns errors into warnings, and a truncated value must never be kept."""
+    with tempfile.NamedTemporaryFile("w", suffix=".tsv", encoding="utf-8", newline="\n", delete=False) as f:
+        f.writelines("\t".join(tsv(r[k]) for k in ANSWER_KEYS) + "\n" for r in rows)
+    try:
+        conn.exec_driver_sql(
+            f"LOAD DATA LOCAL INFILE '{Path(f.name).as_posix()}' INTO TABLE cip_answer CHARACTER SET utf8mb4"
+            f" FIELDS TERMINATED BY '\\t' ESCAPED BY '\\\\' LINES TERMINATED BY '\\n' ({ANSWER_COLUMNS})")
+        warnings = conn.exec_driver_sql("SHOW WARNINGS LIMIT 5").all()
+    finally:
+        os.remove(f.name)
+    if warnings:
+        log.warning("LOAD DATA warned %s; reloading the answers with batched INSERTs", warnings)
+        conn.execute(text("DELETE FROM cip_answer WHERE survey_id = :s"), {"s": rows[0]["sid"]})
+        return False
+    return True
 
 
 def verify(survey_id: int, datamap: dict, records: list[dict]) -> list[str]:

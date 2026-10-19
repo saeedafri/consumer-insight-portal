@@ -3,17 +3,24 @@ readable, unloaded one (verify → harmonise → cube → search) → re-check e
 publication. One log line per step; the exit code says what happened, so a
 scheduler (cron, Azure WebJob) can alert on anything but 0.
 
-    python scripts/weekly_forsta.py            # daily 06:00 IST and Tuesday 06:00 IST
+    python scripts/weekly_forsta.py            # launchd: daily 09:00 IST; every 30 min Mon 20:00 – Wed 23:30 IST
 
 Exit codes: 0 everything due loaded and verified · 1 a wave failed to load or
 verify · 2 Forsta rejected the key or the schema is behind the code · 3 loaded, but a published number moved ·
-4 the database stayed unreachable (4 tries, 5 minutes apart).
+4 the database stayed unreachable (4 tries, 5 minutes apart) · 5 the integrity check found something it
+could not heal (etl/integrity.py).
+
+Every warning and error also goes to logs/forsta-etl-errors.jsonl, one JSON object per line (run, step,
+error type, traceback); secrets from the environment are masked in both logs.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -22,10 +29,12 @@ from sqlalchemy import inspect  # noqa: E402
 
 from app.core.config import config  # noqa: E402
 from app.core.database import get_engine, healthcheck  # noqa: E402
-from etl import forsta_etl, notify  # noqa: E402
+from etl import forsta_etl, integrity, notify  # noqa: E402
 from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
 
 log = logging.getLogger("cip.weekly")
+ERRORS = Path(__file__).resolve().parents[1] / "logs" / "forsta-etl-errors.jsonl"
+RUN = datetime.now().strftime("%Y%m%d-%H%M%S")
 DB_ATTEMPTS, DB_PAUSE_SECONDS = 4, 300     # a VPN or network blip gets 15 minutes before the run gives up
 
 
@@ -78,6 +87,9 @@ def run(client=None) -> int:
         tell(notify.failure, f"survey {path} did not load", forsta_etl.last_error_of(path))
     if not result["loaded"] and not result["failed"]:
         tell(notify.idle_run)
+    broken = integrity.run()                        # heals derived rows; reports the rest
+    if broken:
+        tell(notify.failure, "integrity check", "\n".join(broken))
     if result["failed"]:
         log.error("Failed %d: %s", len(result["failed"]), result["failed"])
         return 1
@@ -88,9 +100,45 @@ def run(client=None) -> int:
                     row.pub_code, row.version, row.moved, row.missing, row.new)
     if len(moved):
         tell(notify.failure, "published numbers moved", moved.to_string(index=False))
-    return 3 if len(moved) else 0
+    return 3 if len(moved) else 5 if broken else 0
+
+
+class Masked(logging.Formatter):
+    """Masks every secret-looking value from the environment (keys, passwords, tokens, webhooks)."""
+    secrets = sorted((v for k, v in os.environ.items() if len(v) >= 8 and any(
+        word in k for word in ("KEY", "PASSWORD", "SECRET", "TOKEN", "PASSPHRASE", "WEBHOOK"))), key=len, reverse=True)
+
+    def format(self, record: logging.LogRecord) -> str:
+        line = super().format(record)
+        for secret in self.secrets:
+            line = line.replace(secret, "***")
+        return line
+
+
+class JsonLines(Masked):
+    def format(self, record: logging.LogRecord) -> str:
+        entry = {"at": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"), "run": RUN, "level": record.levelname,
+                 "step": record.name, "message": record.getMessage()}
+        if record.exc_info:
+            entry["error"] = record.exc_info[0].__name__
+            entry["trace"] = self.formatException(record.exc_info)
+        record = logging.makeLogRecord({"msg": json.dumps(entry, ensure_ascii=False, default=str)})
+        return super().format(record)
+
+
+def setup_logging() -> None:
+    screen = logging.StreamHandler()
+    screen.setFormatter(Masked("%(asctime)s %(levelname)-7s %(name)s | %(message)s"))
+    ERRORS.parent.mkdir(exist_ok=True)
+    errors = logging.FileHandler(ERRORS, encoding="utf-8")
+    errors.setLevel(logging.WARNING)
+    errors.setFormatter(JsonLines("%(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[screen, errors], force=True)   # app.core sets one up on import
+    # app.data's @st.cache_data warns once per function outside Streamlit: ~40 lines of noise per run
+    from streamlit import logger as streamlit_logger
+    streamlit_logger.set_log_level("ERROR")
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s")
+    setup_logging()
     sys.exit(run())

@@ -144,6 +144,7 @@ standard:
     - Much better
 holiday_status:
   file: Holiday Status Cross Tabs 10_12_26.xlsx
+  stat_groups: B-E,FG          # their Forsta stat test groups (95 / 90, z-test); omit for no letters
   segments:
   - label: Not yet started
     expr: XM3.r1
@@ -170,6 +171,7 @@ holiday_status:
     - 'No'
 inflation_sentiment:
   file: Inflation_Sentiment Cross Tabs 10_12_26.xlsx
+  stat_groups: B-E,F-I,J-O,P-S
   segments:
   - label: Very
     expr: D13.r3.c1

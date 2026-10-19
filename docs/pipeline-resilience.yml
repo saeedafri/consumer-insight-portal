@@ -1,0 +1,153 @@
+# CIP pipeline: error capture and self-healing (design, as built 19 Oct 2026)
+#
+# Every failure the scheduled run (scripts/weekly_forsta.py) can meet, how it is recorded, what the
+# pipeline does about it by itself, and when a person is told. Read with docs/14-pipeline-validation-report.md.
+# Values here describe the code; the code is the source of truth (file/line given for each).
+
+schema_version: 1
+
+logs:
+  run_log:
+    path: logs/forsta-etl.log                 # launchd StandardOut/StandardError
+    format: "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
+    level: INFO
+    masked: true                              # Masked formatter: every env value whose name has KEY, PASSWORD,
+                                              # SECRET, TOKEN, PASSPHRASE or WEBHOOK (≥ 8 chars) becomes ***
+    noise_suppressed: streamlit               # @st.cache_data "No runtime found" warnings (~40 lines a run)
+  error_log:
+    path: logs/forsta-etl-errors.jsonl        # one JSON object per line, WARNING and above
+    masked: true
+    fields:
+      at:      {type: string, format: "YYYY-MM-DDTHH:MM:SS", desc: local time of the event}
+      run:     {type: string, format: "YYYYMMDD-HHMMSS", desc: the run's start, groups every line of one run}
+      level:   {type: string, enum: [WARNING, ERROR, CRITICAL]}
+      step:    {type: string, desc: "logger = pipeline step: cip.weekly, cip.forsta, cip.integrity, cip.notify, cip.cube …"}
+      message: {type: string}
+      error:   {type: string, optional: true, desc: exception class, e.g. OperationalError, ForstaAuthError}
+      trace:   {type: string, optional: true, desc: full traceback}
+    example: >-
+      {"at": "2026-10-18T10:24:32", "run": "20261018-100952", "level": "ERROR", "step": "cip.weekly",
+       "message": "Database unreachable; nothing loaded — the next scheduled run tries again"}
+  database_records:                           # durable, queryable history
+    cip_load_log:      one row per load attempt — rows read/loaded/rejected, started/finished, error_text (2,000 chars)
+    cip_forsta_survey: per survey — load_state (new/due/loaded/failed/hibernated/testing), last_error (1,000 chars)
+    cip_survey:        load_status — loading (invisible), verified (served), failed (invisible)
+  never_logged:                               # personal data and secrets (docs/08, forsta_etl docstring)
+    - FORSTA_API_KEY, EMAIL_PASSWORD, TEAMS_WEBHOOK_URL, DB passwords (masked if they ever appear)
+    - panel RID (stored only as sha256 respondent_key), browser string, URL, session, fingerprint
+
+exit_codes:                                   # scripts/weekly_forsta.py — launchd / any scheduler alerts on ≠ 0
+  0: everything due loaded, verified and whole
+  1: a wave failed to load or verify
+  2: Forsta rejected the key, or the schema is behind the code
+  3: loaded, but a published number moved (publication drift)
+  4: database unreachable after 4 tries, 5 minutes apart
+  5: integrity check found something it could not heal
+
+failures:
+  - id: db_unreachable
+    detect: healthcheck("etl") fails (VPN / public IP change / Azure blip — seen 11, 13, 15, 18 Oct)
+    heal: {action: retry, attempts: 4, pause_seconds: 300}
+    then: exit 4; the next scheduled run (≤ 30 min Tue–Wed, daily otherwise) starts over
+    notify: failure list, once per 6 h (logs/notify-state.json)
+
+  - id: forsta_busy
+    detect: HTTP 429 or 5xx, connection error, timeout (etl/forsta_client.py)
+    heal: {action: retry, attempts: 4, backoff: "exponential 2–60 s (tenacity)"}
+    then: the wave is marked failed and retried next run
+
+  - id: forsta_auth
+    detect: HTTP 401 / 403 on whoami
+    heal: none — a key cannot fix itself
+    then: exit 2
+    notify: failure list, once per 6 h
+
+  - id: hibernated
+    detect: register says hibernated (Forsta answers 428)
+    heal: none by design — Forsta is never written (GET only); the warehouse already holds the loaded copy
+    then: skipped; reconcile logs "not checked"
+
+  - id: schema_behind
+    detect: cip_forsta_survey, cip_search or cip_tracker_line missing
+    heal: none automatically — DDL needs a person (scripts/init_db.py)
+    then: exit 2, nothing loaded
+
+  - id: wave_failed
+    detect: any exception in load_survey, including a payload/database mismatch from verify()
+    record: cip_load_log.error_text, cip_forsta_survey.last_error, cip_survey.load_status = failed
+    heal: {action: reload, when: every following run (run_due picks load_state failed)}
+    guard: the answers write is one transaction — if it never committed, a verified wave stays verified and visible
+    notify: failure list with the stored error, once per 6 h per wave
+
+  - id: bulk_load_refused
+    detect: LOAD DATA LOCAL INFILE raises OperationalError (server local_infile switched off)
+    heal: {action: fallback, to: batched INSERTs (5,000 rows each)}
+    then: logged WARNING; the load carries on
+
+  - id: bulk_load_warned
+    detect: SHOW WARNINGS after LOAD DATA returns anything (truncation, bad value, duplicate key)
+    heal: {action: undo_and_fallback, steps: [delete the wave's answers in the same transaction, batched INSERTs]}
+    why: LOCAL turns errors into warnings; a truncated value must never be kept
+
+  - id: derived_gap                            # etl/integrity.py, kind derived — after every run
+    detect:
+      - verified wave with reportable questions but no cube cells
+      - verified wave missing from search
+      - verified Forsta tracker wave without line-by-line rows
+    heal: {action: rebuild_wave, max_waves_per_check_per_run: 20, functions: [cube.refresh_wave, index_survey, tracker_line.build]}
+    then: re-check; anything still missing → exit 5 and the failure list
+
+  - id: orphan_derived_row                     # etl/integrity.py, kind orphan
+    detect:
+      - tracker line without its respondent
+      - search row of a deleted wave, question or concept
+      - calendar row of a survey not in the register
+    heal: {action: delete_orphans}             # derived/index tables only: always rebuildable
+    then: re-check → exit 5 if still present
+
+  - id: base_data_problem                      # etl/integrity.py, kind base — never changed automatically
+    detect:
+      - tracker line of an unqualified or other wave's respondent
+      - register row pointing at a missing wave
+      - register says loaded, wave not verified
+      - wave stuck loading
+      - verified wave without qualified respondents
+      - duplicate Forsta respondent (uuid) in a wave
+      - same panelist qualified twice in a wave
+      - profile filed under another wave
+    heal: none — reported for a person to decide
+    then: exit 5
+    notify: failure list, once per 6 h
+
+  - id: survey_not_captured                  # etl/integrity.py
+    detect:
+      - "base: closed Forsta survey still not loaded after 3 days → exit 5"
+      - "watch: closed survey hibernated before it was loaded (51 on 19 Oct 2026)"
+      - "watch: survey no longer listed by Forsta and never loaded"
+    heal: none automatically — reactivation is a Forsta write; once reactivated, discovery marks it due and the next run loads it
+    then: watch items are logged (run log + JSON error log) every run and never fail the run
+
+  - id: warehouse_lost
+    detect: a person, or a failed restore check
+    heal:
+      backup: {script: scripts/backup_db.py, schedule: "launchd com.coresight.cip-backup, Sunday 10:00 IST", keep: 4,
+               proven_by: [gzip intact, "Dump completed" trailer, every table and view present, row count per table = live],
+               off_machine_copy: CIP_BACKUP_COPY_DIR}
+      restore: restore into cip_stg_restore, check, switch, then weekly_forsta.py (anything newer) and reconcile.py (prove)
+    notify: failure list when a backup is not proven
+
+  - id: publication_drift
+    detect: a frozen publication no longer reproduces cell by cell (app/data/publications.py)
+    heal: none — a published number moving is a business decision
+    then: exit 3
+    notify: failure list with the moved cells
+
+  - id: notify_failed
+    detect: SMTP or Teams error
+    heal: none; logged WARNING
+    guard: notifying never decides the exit code — a broken mail server must not fail a load
+
+notifications:                                # etl/notify.py, config/notify.yml
+  survey_loaded: {to: "study_type list (tracker / annual / adhoc), else default", channel: [email, teams]}
+  failure:       {to: "failure list, else default", channel: [email, teams], repeat_hours: 6}
+  idle_run:      {to: default, only_if: NOTIFY_ON_EMPTY=1}

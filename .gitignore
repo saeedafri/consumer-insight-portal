@@ -8,9 +8,11 @@ venv/
 .DS_Store
 .pytest_cache/
 logs/*.log
+logs/*.jsonl
 data/exports/*
 !data/exports/.gitkeep
 *.xlsx
 !docs/samples/*.xlsx
 data/*.db
 .gstack/
+backups/

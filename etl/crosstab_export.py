@@ -6,7 +6,9 @@ definitions with n), then Percentages and Counts, one stacked table per
 question, banner columns across, the base ("N=") under the headers, and a flag
 column beside each segment (* under 100 respondents, ** under 30). Segments are
 the team's own Forsta expressions (config/crosstab_banners.yml), qualified
-respondents only, percentage base = total answering.
+respondents only, percentage base = total answering. A banner set with
+`stat_groups` gets Forsta's significance letters in the flag column (upper case
+95 %, lower case 90 %): a pooled z-test on proportions, a t-test on means.
 
     python -m etl.crosstab_export --compare "Cross Tabs 10_12_26.xlsx" [--survey 412]
 
@@ -17,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import math
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -126,8 +129,12 @@ def tables(wave: Wave) -> list[dict]:
         fields = list(wave.fields[wave.fields["question_id"] == q.question_id]["field_name"])
         if q.qtype == "text":
             continue
-        if q.qtype == "numeric":
-            out.append({"qcode": q.qcode, "title": title, "kind": "numeric", "fields": fields, "blocks": []})
+        if q.qtype == "numeric":                    # Forsta's "Don't know" box is a separate noanswer field
+            unsure = wave.fields[wave.fields["field_name"] == f"noanswer{q.qcode}_r1"]
+            label = wave.items[wave.items["item_id"].isin(unsure["item_id"])]["item_label"]
+            out.append({"qcode": q.qcode, "title": title, "kind": "numeric", "fields": fields, "blocks": [],
+                        "unsure": (str(label.iloc[0]).rsplit(": ", 1)[-1] if len(label) else "Don't know",
+                                   f"noanswer{q.qcode}_r1") if len(unsure) else None})
         elif q.is_multi:
             rows = [(r.item_label, r.item_code) for r in items.itertuples()]
             out.append({"qcode": q.qcode, "title": title, "kind": "multi", "fields": fields,
@@ -150,8 +157,11 @@ def cells(wave: Wave, table: dict, seg: pd.Series) -> list[tuple[Optional[str], 
     for block in table["blocks"] or [None]:
         if table["kind"] == "numeric":
             values = wide[table["fields"][0]].dropna() if table["fields"] and table["fields"][0] in wide else pd.Series(dtype=float)
-            out.append((None, [("Mean", values.mean()), ("Median", values.median()),
-                               ("Standard Deviation", values.std(ddof=1))], int(len(values))))
+            stats = [("Mean", values.mean()), ("Median", values.median()), ("Standard Deviation", values.std(ddof=1))]
+            if table.get("unsure"):                 # counted beside the base, as Forsta does
+                label, column = table["unsure"]
+                stats.append((label, float((wide[column] == 1).sum()) if column in wide else 0.0))
+            out.append((None, stats, int(len(values))))
         elif table["kind"] == "multi":
             have = [f for f in table["fields"] if f in wide.columns]
             answered = wide[have].notna().any(axis=1) if have else pd.Series(False, index=wide.index)
@@ -171,19 +181,85 @@ def cells(wave: Wave, table: dict, seg: pd.Series) -> list[tuple[Optional[str], 
     return out
 
 
+STATS = ("Count", "Mean", "Median", "Standard Deviation")
+Z95, Z90 = 1.959964, 1.644854
+
+
+def ztest(x1: float, n1: int, x2: float, n2: int) -> float:
+    """Column proportions, as Forsta tests them — reverse-fitted on the team's 10/12/26 exports: pooled
+    proportion over n−1 bases (4,064 of 4,068 holiday-banner letters equal; the 4 others have bases under 30)."""
+    if n1 < 2 or n2 < 2:
+        return 0.0
+    p = (x1 + x2) / (n1 + n2)
+    se = math.sqrt(p * (1 - p) * (1 / (n1 - 1) + 1 / (n2 - 1)))
+    return (x1 / n1 - x2 / n2) / se if se else 0.0
+
+
+def ttest(m1: float, s1: float, n1: int, m2: float, s2: float, n2: int) -> float:
+    """Column means (Welch's t, judged on the normal critical values like the proportions)."""
+    if n1 < 2 or n2 < 2 or any(v != v for v in (m1, s1, m2, s2)):
+        return 0.0
+    se = math.sqrt(s1 ** 2 / n1 + s2 ** 2 / n2)
+    return (m1 - m2) / se if se else 0.0
+
+
+def stat_groups(key: str) -> list[list[int]]:
+    """'B-E,FG' -> [[1, 2, 3, 4], [5, 6]]: column indexes (Total = 0) tested against each other."""
+    groups = []
+    for part in str(banners()[key].get("stat_groups") or "").split(","):
+        part = part.strip()
+        if "-" in part:
+            first, last = part.split("-")
+            groups.append(list(range(ord(first) - 65, ord(last) - 64)))
+        elif part:
+            groups.append([ord(c) - 65 for c in part])
+    return groups
+
+
+def marks(per: list, b: int, groups: list[list[int]]) -> dict[int, list[str]]:
+    """Significance letters for block b: {row index: letters per column}. Proportion rows get the
+    z-test, a numeric block's Mean the t-test; Count, Median, SD and "Don't know" rows get none."""
+    if not groups:
+        return {}
+    names = [name for name, _ in per[0][b][1]]
+    if names[:1] == ["Mean"]:
+        stats = [(c[b][1][0][1], c[b][1][2][1], c[b][2]) for c in per]
+        rows = {0: (stats, ttest)}
+    else:
+        rows = {k: ([(c[b][1][k][1], c[b][2]) for c in per], ztest) for k, name in enumerate(names) if name not in STATS}
+    out = {}
+    for k, (stats, test) in rows.items():
+        letters = [""] * len(per)
+        for group in groups:
+            for j in group:
+                for other in group:
+                    if other != j and j < len(per) and other < len(per):
+                        z = test(*stats[j], *stats[other])
+                        letters[j] += _letter(other) if z > Z95 else _letter(other).lower() if z > Z90 else ""
+        out[k] = letters
+    return out
+
+
 def compute(wave: Wave, key: str) -> dict:
-    """{(qcode, block name, row label, segment label): (count, base)} plus the segment sizes, all from the database."""
+    """{(qcode, block name, row label, column letter): (count, base)}, the significance letters on the same
+    keys, and each column's size and label — all from the database. Keyed by letter: two segments can share
+    a label ("Very" under Higher Inflation and under Higher Gas Prices)."""
     segs = segments(wave, key)
-    result: dict = {}
-    sizes = {"Total": len(wave.wide)}
-    everyone = pd.Series(True, index=wave.wide.index)
-    for label, seg in [("Total", everyone)] + segs:
-        sizes[label] = int(seg.sum())
-        for table in tables(wave):
-            for name, counts, base in cells(wave, table, seg):
-                for row, count in counts:
-                    result[(table["qcode"], name, row, label)] = (count, base)
-    return {"cells": result, "sizes": sizes}
+    masks = [pd.Series(True, index=wave.wide.index)] + [m for _, m in segs]
+    labels = ["Total"] + [label for label, _ in segs]
+    groups = stat_groups(key)
+    result, letters = {}, {}
+    for table in tables(wave):
+        per = [cells(wave, table, m) for m in masks]
+        for b, (name, rows, _) in enumerate(per[0]):
+            sig = marks(per, b, groups)
+            for k, (row, _) in enumerate(rows):
+                for j in range(len(masks)):
+                    result[(table["qcode"], name, row, _letter(j))] = (per[j][b][1][k][1], per[j][b][2])
+                    if k in sig:
+                        letters[(table["qcode"], name, row, _letter(j))] = sig[k][j]
+    return {"cells": result, "letters": letters, "sizes": {_letter(j): int(m.sum()) for j, m in enumerate(masks)},
+            "labels": {_letter(j): label for j, label in enumerate(labels)}}
 
 
 # ── the workbook ───────────────────────────────────────────────────────────
@@ -201,6 +277,7 @@ def build(survey_id: int, key: str, wave: Optional[Wave] = None) -> bytes:
     sizes = [int(m.sum()) for m in masks]
     all_tables = tables(wave)
     results = [[cells(wave, t, m) for m in masks] for t in all_tables]
+    groups = stat_groups(key)
 
     book = Workbook()
     summary = book.active
@@ -210,9 +287,11 @@ def build(survey_id: int, key: str, wave: Optional[Wave] = None) -> bytes:
     summary["B1"].font = Font(bold=True, size=13)
     summary["B3"] = "Report Settings"
     summary["B3"].font = bold
+    tested = plan.get("stat_groups")
     for r, (a, b) in enumerate([("Respondents:", "Qualified Only"), ("Additional Filter:", "None"), ("Table Set:", "All"),
-                                ("Percentage Base:", "Total Answering"), ("Stat Test Levels:", "None / None  (z-test)"),
-                                ("Stat Test Groups:", "None"), ("Source:", "Consumer Insight Portal (cip_stg), built by the ETL")], start=4):
+                                ("Percentage Base:", "Total Answering"),
+                                ("Stat Test Levels:", "95 / 90  (z-test)" if tested else "None / None  (z-test)"),
+                                ("Stat Test Groups:", tested or "None"), ("Source:", "Consumer Insight Portal (cip_stg), built by the ETL")], start=4):
         summary.cell(r, 2, a).font = bold
         summary.cell(r, 3, b)
     row = 13
@@ -255,15 +334,18 @@ def build(survey_id: int, key: str, wave: Optional[Wave] = None) -> bytes:
                     if flag(base):
                         ws.cell(r, 3 + 2 * j, flag(base))
                 r += 1
+                sig = marks(per_segment, b, groups) if percent else {}
                 for k, (row_label, _) in enumerate(block[1]):
                     ws.cell(r, 1, row_label)
                     for j in range(len(labels)):
                         count, base = per_segment[j][b][1][k][1], per_segment[j][b][2]
-                        stat = row_label in ("Count", "Mean", "Median", "Standard Deviation")
+                        stat = row_label in STATS
                         value = round(count, 4) if stat else (count / base if base else 0) if percent else count
                         cell = ws.cell(r, 2 + 2 * j, 0 if value is None or (isinstance(value, float) and np.isnan(value)) else value)
                         if percent and not stat:
                             cell.number_format = "0%"
+                        if k in sig and sig[k][j]:
+                            ws.cell(r, 3 + 2 * j, sig[k][j]).font = Font(bold=True, color="D62E2F")
                     r += 1
                 r += 1
             r += 1
@@ -331,51 +413,71 @@ def preview(wave: Wave, key: str, qcode: str, labels: list[str], top: int = 0) -
 
 
 # ── compare with the team's file ───────────────────────────────────────────
-def read_team_file(path: str) -> tuple[dict, dict]:
-    """(Counts as {(qcode, block, row, segment): (count, base)}, segment sizes) from a Forsta cross-tab export."""
+HEADER = re.compile(r"^(?P<label>.*?)\s*\((?P<letter>[A-Z]+\d?)\)$")
+
+
+def read_team_file(path: str, sheet: str = "Counts") -> tuple[dict, dict, dict]:
+    """From a Forsta cross-tab export: ({(qcode, block, row, letter): (value, base)}, the significance letters
+    on the same keys, {letter: (label, size)})."""
     from openpyxl import load_workbook
 
-    ws = load_workbook(path, read_only=True, data_only=True)["Counts"]
+    ws = load_workbook(path, read_only=True, data_only=True)[sheet]
     rows = list(ws.iter_rows(values_only=True))
-    found, sizes, qcode = {}, {}, None
+    found, letters, columns, qcode = {}, {}, {}, None
     for i, row in enumerate(rows):
         first = str(row[0]) if row[0] is not None else ""
         if re.match(r"^[A-Za-z0-9_]+: ", first) and row[1] is None:
             qcode = first.split(":")[0]
         if row[1] != "Total (A)":
             continue
-        header = [(c, re.sub(r"\s*\([A-Z]+\d?\)$", "", str(v))) for c, v in enumerate(row) if v]
+        header = [(c, HEADER.match(str(v))) for c, v in enumerate(row) if v and HEADER.match(str(v))]
         block = str(rows[i - 2][0]) if rows[i - 2][0] else None
         total = rows[i + 1]
+        base = {c: int(str(total[c]).removeprefix("N=")) if str(total[c]).removeprefix("N=").isdigit() else None
+                for c, _ in header}
         j = i + 2
-        base = {c: int(total[c]) if str(total[c]).replace(".", "").isdigit() else None for c, _ in header}
         while j < len(rows) and rows[j][0] not in (None, ""):
-            for c, label in header:
+            for c, m in header:
+                key = (qcode, block, str(rows[j][0]), m["letter"])
                 if isinstance(rows[j][c], (int, float)):
-                    found[(qcode, block, str(rows[j][0]), label)] = (float(rows[j][c]), base[c])
+                    found[key] = (float(rows[j][c]), base[c])
+                mark = rows[j][c + 1] if c + 1 < len(rows[j]) else None
+                letters[key] = "" if mark in (None, "*", "**") else str(mark)
             j += 1
-        sizes.update({label: base[c] for c, label in header if label not in sizes and qcode == "q1"})
-    return found, sizes
+        if qcode == "q1":
+            columns.update({m["letter"]: (m["label"], base[c]) for c, m in header if m["letter"] not in columns})
+    return found, letters, columns
 
 
 def compare(path: str, key: str, survey_id: int) -> list[str]:
-    theirs, their_sizes = read_team_file(path)
+    """Every count, base and significance letter of the team's file against ours. The first lines
+    summarise; the rest name each difference (at most 60)."""
+    theirs, _, columns = read_team_file(path, "Counts")
+    _, their_letters, _ = read_team_file(path, "Percentages")
     ours = compute(load_wave(survey_id), key)
-    problems = [f"segment {s}: team n={n}, ours n={ours['sizes'].get(s)}" for s, n in their_sizes.items()
-                if ours["sizes"].get(s) != n]
-    matched = 0
+    problems = [f"column {c} {label}: team n={n}, ours n={ours['sizes'].get(c)} ({ours['labels'].get(c)})"
+                for c, (label, n) in columns.items() if ours["sizes"].get(c) != n or ours["labels"].get(c) != label]
+    matched = equal = 0
     for k, (count, base) in theirs.items():
         mine = ours["cells"].get(k)
         if mine is None:
             continue
         matched += 1
-        if k[2] in ("Count", "Mean", "Median", "Standard Deviation"):
-            same = abs(mine[0] - count) < 1e-3 * max(1, abs(count))
+        value = 0.0 if mine[0] != mine[0] else mine[0]          # Forsta writes 0 where there is no one to count
+        if k[2] in STATS:
+            same = abs(value - count) < 1e-3 * max(1, abs(count)) and mine[1] == base
         else:
-            same = round(mine[0]) == round(count) and mine[1] == base
+            same = round(value) == round(count) and mine[1] == base
+        equal += same
         if not same and len(problems) < 60:
             problems.append(f"{k}: team {count} (base {base}), ours {mine[0]} (base {mine[1]})")
-    problems.insert(0, f"{matched} of the team's {len(theirs)} cells have a counterpart here")
+    tested = [k for k in their_letters if k in ours["letters"]]
+    same_letters = sum(their_letters[k] == ours["letters"][k] for k in tested)
+    for k in tested:
+        if their_letters[k] != ours["letters"][k] and len(problems) < 60:
+            problems.append(f"{k}: team letters {their_letters[k]!r}, ours {ours['letters'][k]!r} (base {ours['cells'][k][1]})")
+    problems[:0] = [f"{matched} of the team's {len(theirs)} cells have a counterpart here (the rest are paradata); {equal} equal",
+                    f"significance letters: {same_letters} of {len(tested)} equal"]
     return problems
 
 

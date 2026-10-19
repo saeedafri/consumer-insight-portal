@@ -37,8 +37,17 @@ async def time_load(ws_url):
 
 
 def footprint():
-    out = subprocess.run(["footprint", "-p", ST_PID], capture_output=True, text=True).stdout
-    return next((l.split("Footprint:")[1].split("(")[0].strip() for l in out.splitlines() if "Footprint:" in l), "?")
+    """macOS phys_footprint (now / peak) of the server process plus its workers, in MB.
+    RSS is not used: macOS compresses idle pages, so RSS swings and under-reports."""
+    pids, todo = [], [ST_PID]
+    while todo:
+        pid = todo.pop()
+        pids.append(pid)
+        todo += subprocess.run(["pgrep", "-P", pid], capture_output=True, text=True).stdout.split()
+    args = [a for p in pids for a in ("-p", p)]
+    out = subprocess.run(["footprint", "-f", "bytes", *args], capture_output=True, text=True).stdout
+    total = lambda key: sum(int(l.split(":")[1].split()[0]) for l in out.splitlines() if l.strip().startswith(key + ":")) / 2**20
+    return f"{total('phys_footprint'):.0f} MB (peak {total('phys_footprint_peak'):.0f} MB, {len(pids)} procs)"
 
 
 async def main():

@@ -45,8 +45,8 @@ graph LR
   E --> G["Excel exports:<br/>line-by-line, databanks"]
   F --> H["Analysts and clients"]
   G --> H
-  B -.->|"after 3-4 months"| I["Hibernated in Forsta<br/>(428)"]
-  I -.->|"after 365 days"| J["Deleted by Forsta"]
+  B -.->|"90 days unused"| I["Hibernated in Forsta<br/>(428)"]
+  I -.->|"if auto-archived, 12 months later"| J["Erased by Forsta"]
 ```
 
 ---
@@ -65,10 +65,12 @@ From October 2026 Forsta is the **only** live source. The old Excel route (downl
 
 * **One survey per week.** Each weekly wave is a new Forsta survey, named `selfserve/58f/YYMMNN`
   (e.g. `260907` = the wave of 28 September 2026).
-* **Hibernation.** About 3–4 months after a survey closes, Forsta puts it to sleep ("hibernated"). Its data can
-  no longer be read until someone **reactivates it by hand in Forsta**. 51 surveys are hibernated today.
-* **Deletion.** Forsta deletes every survey **365 days** after it was created. After that, the warehouse is the only
-  copy. This is why CIP loads every wave within hours of closing.
+* **Hibernation.** After 90 days with no respondents and no one opening it, Forsta puts a survey to sleep
+  ("hibernated"). Its data is kept, but cannot be read until someone **restores it in the Forsta Portal** (open it,
+  "Click here to restore"; no charge). 51 surveys are hibernated today and were never loaded.
+* **Deletion.** Forsta does not delete live or hibernated surveys. A hibernated survey can be **archived**, and an
+  archived survey is **erased 12 months later**. After that, the warehouse is the only copy. This is why CIP loads
+  every wave within hours of closing.
 
 ---
 
@@ -162,7 +164,7 @@ graph LR
   OK -->|"reopened in Forsta"| D
   D -.->|"not loaded in 3-4 months"| H["Hibernated"]
   H -.->|"reactivated by a person"| D
-  H -.->|"365 days"| X["Deleted by Forsta"]
+  H -.->|"auto-archived, then 12 months"| X["Erased by Forsta"]
 ```
 
 ---
