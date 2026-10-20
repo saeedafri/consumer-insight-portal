@@ -11,7 +11,7 @@ uses, nothing more:
 
     ENGINE=/CHARSET=/COLLATE= table options   dropped
     COMMENT '...'                             dropped
-    ENUM(...)                                 TEXT
+    ENUM(...) / SET(...)                      TEXT
     INT UNSIGNED                              INTEGER
     AUTO_INCREMENT                            INTEGER PRIMARY KEY AUTOINCREMENT
     ON UPDATE CURRENT_TIMESTAMP               dropped
@@ -29,7 +29,7 @@ from typing import Optional
 
 _COMMENT = re.compile(r"\s+COMMENT\s+('(?:[^']|'')*'|\"(?:[^\"]|\"\")*\")", re.I)
 _TABLE_OPTS = re.compile(r"\)\s*ENGINE=\w+.*?$", re.I | re.S)
-_ENUM = re.compile(r"\bENUM\s*\([^)]*\)", re.I)
+_ENUM = re.compile(r"\b(?:ENUM|SET)\s*\('[^)]*\)", re.I)   # ENUM('a',…) and SET('a',…) both become TEXT
 _UNSIGNED = re.compile(r"\b(BIGINT|INT|SMALLINT|TINYINT|MEDIUMINT)\s+UNSIGNED\b", re.I)
 _AUTOINC = re.compile(r"\bAUTO_INCREMENT\b", re.I)
 _ON_UPDATE_TS = re.compile(r"\s+ON UPDATE CURRENT_TIMESTAMP\b", re.I)

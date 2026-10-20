@@ -1,0 +1,16 @@
+# Nothing secret or bulky reaches an image: only api/, app/, etl/, config/, sql/ and web/ sources.
+**
+!api/**
+!app/**
+!etl/**
+!config/**
+!sql/**
+!web/package.json
+!web/package-lock.json
+!web/index.html
+!web/tsconfig.json
+!web/vite.config.ts
+!web/src/**
+!deploy/**
+**/__pycache__
+**/.env*

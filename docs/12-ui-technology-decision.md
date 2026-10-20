@@ -1,5 +1,7 @@
 # CIP UI — Technology Decision and Evidence
 
+> **Superseded (20 Oct 2026)** by [`docs/Ui-Design-Claude/`](Ui-Design-Claude/00-README.md). Re-verified evidence, corrections to this document's figures (the "5-user wall" was a laptop test; several SIP issues are fixed), new benchmarks and the marketplace comparison are there.
+
 **Question from the business team:** "The data is in MySQL. We used Streamlit for
 SIP and MIP. Why not connect Streamlit to MySQL and just show the data?"
 

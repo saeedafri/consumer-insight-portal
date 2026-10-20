@@ -1,0 +1,171 @@
+{
+  "archive_sha256": "b4a36b579f2f619000548778a52b3fb20b2b1c6be284c02ab2d9403978f20d0b",
+  "archive_file_entries": 855,
+  "retained_files_after_metadata_exclusion": 393,
+  "python_files": 77,
+  "syntax_errors": [],
+  "groups": {
+    "app": {
+      "python_files": 29,
+      "source_lines": 4949
+    },
+    "etl": {
+      "python_files": 15,
+      "source_lines": 3638
+    },
+    "tests": {
+      "python_files": 18,
+      "source_lines": 3165
+    },
+    "scripts": {
+      "python_files": 15,
+      "source_lines": 1022
+    }
+  },
+  "schema_create_table_count": 33,
+  "streamlit_page_count": 8,
+  "streamlit_pin": "1.55.0",
+  "streamlit_cache_decorators": [
+    {
+      "file": "app/pages/8_Publications.py",
+      "function": "summary",
+      "line": 36,
+      "decorator": "st.cache_data(ttl=60, show_spinner='Re-checking every publication\u2026')"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "list_surveys",
+      "line": 16,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "mapping_queue",
+      "line": 32,
+      "decorator": "st.cache_data(ttl=60, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "mapping_summary",
+      "line": 38,
+      "decorator": "st.cache_data(ttl=60, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "concept_choice",
+      "line": 51,
+      "decorator": "st.cache_data(ttl=60, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "concept_list",
+      "line": 58,
+      "decorator": "st.cache_data(ttl=60, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "question_catalog",
+      "line": 79,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "search",
+      "line": 105,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "wave_report",
+      "line": 123,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "item_incidence",
+      "line": 152,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "single_distribution",
+      "line": 165,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "trend",
+      "line": 178,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "profile_counts",
+      "line": 191,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "ingest_history",
+      "line": 213,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "dimension_values",
+      "line": 257,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "question_choices",
+      "line": 276,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "cohort_size",
+      "line": 402,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "analyse",
+      "line": 418,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "concept_trend",
+      "line": 581,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "concept_pooled",
+      "line": 607,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "concept_catalog",
+      "line": 640,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "cohort_list",
+      "line": 656,
+      "decorator": "st.cache_data(ttl=60, show_spinner=False)"
+    },
+    {
+      "file": "app/data/repository.py",
+      "function": "question_lookup",
+      "line": 671,
+      "decorator": "st.cache_data(ttl=TTL, show_spinner=False)"
+    }
+  ],
+  "fragment_calls_in_app": 0,
+  "production_api_or_react_project_found": false,
+  "scope_note": "Separate SIP and MIP implementation repositories were not found in this archive. Existing reports reference files outside it."
+}

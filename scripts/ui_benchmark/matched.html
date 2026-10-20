@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- Matched workload: same controls as streamlit_sql.py — a sector selector, the "Stores open" metric,
+     a bar chart by state (ECharts) and the full state table. Served by api_page.py and node_page.mjs. -->
+<meta charset="utf-8"><title>Stores</title>
+<select id="sector">
+  <option>Apparel</option><option>Beauty</option><option>Department</option><option>Dollar</option>
+  <option>Electronics</option><option>Grocery</option><option>Home</option><option>Sporting</option>
+</select>
+<h3 id="open">Loading</h3>
+<div id="chart" style="width:900px;height:300px"></div>
+<table id="table"></table>
+<script src="/static/echarts.min.js"></script>
+<script>
+const chart = echarts.init(document.getElementById("chart"));
+// ?local: fetch every sector's summary once (a "data pack"), then answer clicks from memory, no server trip.
+const pack = location.search.includes("local") ? fetch("/api/summary-all").then(r => r.json()) : null;
+async function show(sector) {
+  const d = pack ? (await pack)[sector] : await (await fetch("/api/summary/" + sector)).json();
+  chart.setOption({ animation: false, xAxis: { type: "category", data: d.states.map(s => s.state) }, yAxis: {},
+                    series: [{ type: "bar", data: d.states.map(s => s.stores) }] });
+  document.getElementById("table").innerHTML =
+    d.states.map(s => `<tr><td>${s.state}</td><td>${s.stores}</td><td>${Math.round(s.revenue)}</td></tr>`).join("");
+  document.getElementById("open").textContent = "Stores open " + d.open.toLocaleString("en-US");
+}
+document.getElementById("sector").onchange = e => show(e.target.value);
+show("Apparel");
+</script>

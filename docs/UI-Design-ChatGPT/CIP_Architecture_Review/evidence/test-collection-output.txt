@@ -1,0 +1,146 @@
+
+==================================== ERRORS ====================================
+__________________ ERROR collecting tests/test_forsta_etl.py ___________________
+ImportError while importing test module '<isolated-repository>/tests/test_forsta_etl.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_forsta_etl.py:114: in <module>
+    from etl import forsta_etl
+etl/forsta_etl.py:44: in <module>
+    from etl.forsta_client import ForstaError
+etl/forsta_client.py:19: in <module>
+    from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+E   ModuleNotFoundError: No module named 'tenacity'
+___________________ ERROR collecting tests/test_harmonise.py ___________________
+ImportError while importing test module '<isolated-repository>/tests/test_harmonise.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_harmonise.py:173: in <module>
+    from app.data import repository
+app/data/repository.py:8: in <module>
+    import streamlit as st
+E   ModuleNotFoundError: No module named 'streamlit'
+____________________ ERROR collecting tests/test_notify.py _____________________
+ImportError while importing test module '<isolated-repository>/tests/test_notify.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_notify.py:3: in <module>
+    from etl import notify
+etl/notify.py:38: in <module>
+    from app.components.export import EXCEL_MIME, build_workbook
+app/components/export.py:16: in <module>
+    import streamlit as st
+E   ModuleNotFoundError: No module named 'streamlit'
+____________________ ERROR collecting tests/test_phase3.py _____________________
+ImportError while importing test module '<isolated-repository>/tests/test_phase3.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_phase3.py:296: in <module>
+    import pymysql.cursors
+E   ModuleNotFoundError: No module named 'pymysql'
+____________________ ERROR collecting tests/test_phase4.py _____________________
+ImportError while importing test module '<isolated-repository>/tests/test_phase4.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_phase4.py:23: in <module>
+    from tests.test_phase3 import legacy  # noqa: F401  (pytest fixture: the Phase 3 legacy wave)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_phase3.py:296: in <module>
+    import pymysql.cursors
+E   ModuleNotFoundError: No module named 'pymysql'
+____________________ ERROR collecting tests/test_phase5.py _____________________
+ImportError while importing test module '<isolated-repository>/tests/test_phase5.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_phase5.py:10: in <module>
+    from app.data import cube, publications
+app/data/publications.py:28: in <module>
+    from app.data import repository
+app/data/repository.py:8: in <module>
+    import streamlit as st
+E   ModuleNotFoundError: No module named 'streamlit'
+____________________ ERROR collecting tests/test_phase6.py _____________________
+ImportError while importing test module '<isolated-repository>/tests/test_phase6.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_phase6.py:36: in <module>
+    from tests.test_phase3 import LEGACY_DDL, answers
+tests/test_phase3.py:296: in <module>
+    import pymysql.cursors
+E   ModuleNotFoundError: No module named 'pymysql'
+______________ ERROR collecting tests/test_pipeline_hardening.py _______________
+ImportError while importing test module '<isolated-repository>/tests/test_pipeline_hardening.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_pipeline_hardening.py:10: in <module>
+    from etl import crosstab_export, forsta_etl, integrity
+etl/forsta_etl.py:44: in <module>
+    from etl.forsta_client import ForstaError
+etl/forsta_client.py:19: in <module>
+    from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+E   ModuleNotFoundError: No module named 'tenacity'
+________________ ERROR collecting tests/test_survey_calendar.py ________________
+ImportError while importing test module '<isolated-repository>/tests/test_survey_calendar.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_survey_calendar.py:15: in <module>
+    from etl import forsta_etl, survey_calendar
+etl/forsta_etl.py:44: in <module>
+    from etl.forsta_client import ForstaError
+etl/forsta_client.py:19: in <module>
+    from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+E   ModuleNotFoundError: No module named 'tenacity'
+_________________ ERROR collecting tests/test_tracker_line.py __________________
+ImportError while importing test module '<isolated-repository>/tests/test_tracker_line.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_tracker_line.py:8: in <module>
+    from etl import forsta_etl, tracker_line
+etl/forsta_etl.py:44: in <module>
+    from etl.forsta_client import ForstaError
+etl/forsta_client.py:19: in <module>
+    from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+E   ModuleNotFoundError: No module named 'tenacity'
+=========================== short test summary info ============================
+ERROR tests/test_forsta_etl.py
+ERROR tests/test_harmonise.py
+ERROR tests/test_notify.py
+ERROR tests/test_phase3.py
+ERROR tests/test_phase4.py
+ERROR tests/test_phase5.py
+ERROR tests/test_phase6.py
+ERROR tests/test_pipeline_hardening.py
+ERROR tests/test_survey_calendar.py
+ERROR tests/test_tracker_line.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 10 errors during collection !!!!!!!!!!!!!!!!!!!
+10 errors in 0.68s

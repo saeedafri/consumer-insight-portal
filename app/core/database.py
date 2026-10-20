@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from typing import Any, Generator, Iterable, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Generator, Iterable, Optional, Sequence
 
-import pandas as pd
+if TYPE_CHECKING:
+    import pandas as pd
 from functools import lru_cache
 from pathlib import Path
 
@@ -121,6 +122,7 @@ def session_scope(role: str = "etl") -> Generator[Session, None, None]:
 
 def query_df(sql: str, params: Optional[dict] = None, role: str = "app") -> pd.DataFrame:
     """Run a SELECT and return a DataFrame. The app's only read path."""
+    import pandas as pd   # only the staff pages use DataFrames; the API never loads pandas (≈60 MB per worker)
     with get_engine(role).connect() as conn:
         return pd.read_sql(text(sql), conn, params=params or {})
 

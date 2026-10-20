@@ -2,7 +2,8 @@
 import os, sqlite3
 from functools import lru_cache
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 DB = os.environ["NAIVE_DB"]
 app = FastAPI()
@@ -17,9 +18,32 @@ def sector_summary(sector: str) -> dict:
 def summary(sector: str):
     return JSONResponse(sector_summary(sector))
 
+HERE = os.path.dirname(__file__)
+SECTORS = ["Apparel", "Beauty", "Department", "Dollar", "Electronics", "Grocery", "Home", "Sporting"]
+
+
+@app.get("/api/summary-all")
+def summary_all():
+    return JSONResponse({s: sector_summary(s) for s in SECTORS})
+
+
+@app.get("/matched")
+def matched():
+    return FileResponse(os.path.join(HERE, "matched.html"))
+
+
+@app.get("/static/echarts.min.js")
+def echarts():
+    return FileResponse(os.environ["ECHARTS_JS"], headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
 @app.get("/")
 def page():
     return HTMLResponse("""<!doctype html><body><div id=app>Loading</div><script>
 fetch('/api/summary/Apparel').then(r=>r.json()).then(d=>{document.getElementById('app').innerHTML=
 '<h3>Stores open '+d.open.toLocaleString()+'</h3><table>'+d.states.map(s=>'<tr><td>'+s.state+'</td><td>'+s.stores+'</td></tr>').join('')+'</table>';});
 </script></body>""")
+
+
+if os.environ.get("STATIC_DIR"):   # a built single-page app (React + Vite, or a Next.js static export) at /app
+    app.mount("/app", StaticFiles(directory=os.environ["STATIC_DIR"], html=True), name="app")

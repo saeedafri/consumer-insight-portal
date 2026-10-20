@@ -1,10 +1,128 @@
 # 02 · Benchmarks: the same screen built six ways
 
-**Run:** 20 Oct 2026, 02:46–02:53 IST, by Claude.
+**Run:** 20 Oct 2026, 02:46–02:53 IST and 11:29–11:35 IST, by Claude.
 
-**Raw output:** reproduced in §6. Every number here can be re-run with the commands in §5.
+**Raw output:** in §6 and §0.5. Every number here can be re-run with the commands in §5 and §0.4.
 
 These benchmarks show what each technology *itself* costs once our own coding mistakes are taken out of the picture. That is why the main test uses the same data, the same SQL, the same cache, and the same screen for every variant.
+
+## 0. The decision-grade run: a matched journey, load and click (11:29 IST)
+
+The ChatGPT review ([`docs/UI-Design-ChatGPT`](../UI-Design-ChatGPT/CIP_Architecture_Review/02-code-audit.md), E12) rightly criticised the first run:
+- the API page was lighter than the Streamlit page (no selector, no chart);
+- "done" meant a text marker had appeared, polled every 100 ms;
+- tabs accumulated between steps.
+
+This run fixes all three.
+
+| Fix | What changed |
+|---|---|
+| **Same screen** | Every variant shows the same four things: a sector selector, the "Stores open" metric, a bar chart of 50 states, and the full 50-row table.<br>• FastAPI and Node serve [`matched.html`](../../scripts/ui_benchmark/matched.html), which uses ECharts 6.1 (1.1 MB raw).<br>• Streamlit uses `st.selectbox`, `st.metric`, `st.bar_chart` and `st.dataframe`.<br>• Dash uses `dcc.Dropdown`, `dcc.Graph` and `DataTable`. |
+| **"Ready" means rendered** | The timer stops only when the correct metric value, the drawn chart and the table are all present.<br>• Streamlit: no stale elements remain.<br>• Dash: no callback is still loading. |
+| **A real click, timed** | Every user then changes the sector to *Beauty* at the same moment, using real input events:<br>• Streamlit: type into the selectbox, then Enter.<br>• Dash: mouse click to open the dropdown, then pick the option.<br>• HTML pages: a `<select>` change.<br>The timer stops when the Beauty metric (93,832), the chart and the table are all rendered. |
+| **No piled-up sessions** | Each step opens *N* fresh windows and closes them before the next step, so open sessions = N.<br>Separate windows avoid background-tab throttling. Polling is every 20 ms. |
+
+Harness: [`scripts/ui_benchmark/journey.py`](../../scripts/ui_benchmark/journey.py). All variants ran warm (the cache already filled), on the same machine and the same 1 M-row data.
+
+### 0.1 Results: median (p50) seconds; p95 in brackets
+
+| Users acting at the same moment | 1 | 5 | 10 | 20 | **40** |
+|---|--:|--:|--:|--:|--:|
+| **Streamlit 1.55 (done well), load** | 0.26 | 0.47 (0.55) | 0.80 (1.10) | 1.50 (2.21) | **3.99 (5.44)** |
+| **Streamlit, click → result** | 0.17 | 0.25 (0.26) | 0.46 (0.50) | 0.93 (0.95) | **2.85 (2.85)** |
+| Dash 4.4, 1 worker, load | 0.28 | 0.46 (0.50) | 0.51 (0.52) | 1.00 (1.02) | **1.99 (2.13)** |
+| Dash, click → result | 0.06 | 0.06 (0.08) | 0.17 (0.18) | 0.38 (0.44) | **0.98 (0.99)** |
+| **FastAPI 1 worker + static page, load** | 0.09 | 0.17 (0.17) | 0.23 (0.24) | 0.36 (0.37) | **0.77 (0.81)** |
+| **FastAPI, click → result (one API call)** | 0.09 | 0.03 (0.03) | 0.04 (0.06) | 0.05 (0.07) | **0.12 (0.25)** |
+| Node.js + same static page, load | 0.07 | 0.16 (0.16) | 0.23 (0.24) | 0.39 (0.40) | **0.80 (0.83)** |
+| Node.js, click → result | 0.07 | 0.04 (0.04) | 0.04 (0.05) | 0.06 (0.06) | **0.14 (0.23)** |
+| **FastAPI + data pack in the browser, load** | 0.07 | 0.16 | 0.23 | 0.39 (0.41) | **0.93 (0.96)** |
+| **Data pack, click → result (no server call)** | **0.02** | **0.02** | 0.05 | 0.12 (0.13) | **0.07 (0.10)** |
+
+Server memory: Streamlit 135–149 MB · Dash 69–75 MB · FastAPI 69–86 MB · Node 26–28 MB.
+
+### 0.2 What this proves, and what it does not
+
+1. **Click-to-result at 40 simultaneous users:**
+
+   | Variant | Click → result |
+   |---|--:|
+   | Streamlit | **2.85 s** |
+   | Dash | **0.98 s** |
+   | FastAPI | **0.12 s** |
+   | Node | 0.14 s |
+   | In-browser data pack | **0.07 s** |
+
+   On an identical screen, Streamlit's click is about **24× slower** than the API page. It grows in a straight line (0.17 → 0.25 → 0.46 → 0.93 → 2.85 s) because each click re-runs the page script in one shared Python process.
+2. **FastAPI vs Node: the same for users.** 0.77 vs 0.80 s load; 0.12 vs 0.14 s click. Node's 4–7× raw request rate (§2) does not show up in what users experience. The server language is not the lever.
+3. **The data-pack design is the fastest.**
+   - With one user, a click takes 20 ms, because no network trip is needed.
+   - At 20–40 users the times rise to 70–120 ms. That is the load generator saturating: 40 Chrome windows redrawing charts on one laptop. The server is not involved, since no request is made.
+   - On real users' own devices, each click stays around 20 ms.
+4. **Not proven by this run:**
+   - Azure CPU speed: an Azure vCPU is slower than an M4 core, so the absolute times will be higher.
+   - MySQL instead of SQLite.
+   - Network round trip: there is none locally. Add 28 ms (US East) or about 220 ms (India) to every server-bound click. The in-browser click is the only one with no network cost.
+   - Authentication and entitlement checks.
+   - ETL or export running at the same time.
+
+   Those belong in the vertical-slice qualification on the real server ([06 §11](06-system-design.md)).
+
+### 0.3 First load: fair caveats
+
+- The FastAPI and Node pages served ECharts uncompressed (1.1 MB). With brotli or gzip it would be 369 KB, so their load times are pessimistic.
+- Streamlit's page (512 KB gz entry script) and Dash's page (React + Plotly) load their own bundles. Every variant loaded its bundle from a fresh browser profile on each step, so the cache was cold.
+
+### 0.4 Re-run
+
+```bash
+# servers as in §5, plus ECHARTS_JS=/path/to/echarts.min.js for api_page.py / node_page.mjs
+python scripts/ui_benchmark/journey.py --url http://127.0.0.1:8697/matched --pid <pid> --action native \
+  --ready "document.getElementById('open').textContent==='Stores open 93,477' && document.querySelector('#chart canvas') && document.querySelectorAll('#table tr').length>=50" \
+  --after "document.getElementById('open').textContent==='Stores open 93,832' && document.querySelector('#chart canvas') && document.querySelectorAll('#table tr').length>=50"
+# Streamlit: --action typeahead --input "[data-testid=stSelectbox] input", ready = stMetricValue text + no [data-stale=true] + stVegaLiteChart svg.marks + stDataFrame
+# Dash:      --action popover --input "#sector", ready = #open text + #chart .main-svg + 150 table cells + no [data-dash-is-loading=true]
+# in-browser pack: --url ".../matched?local"
+```
+
+### 0.5 Raw output
+
+```
+== streamlit-1.55-sql (matched) 11:29:08
+  1 users | load-to-ready p50=0.26s p95=0.26s max=0.26s ok=1/1 | click-to-result p50=0.17s p95=0.17s max=0.17s ok=1/1 | server 147 MB
+  5 users | load-to-ready p50=0.47s p95=0.55s max=0.55s ok=5/5 | click-to-result p50=0.25s p95=0.26s max=0.26s ok=5/5 | server 147 MB
+ 10 users | load-to-ready p50=0.80s p95=1.10s max=1.10s ok=10/10 | click-to-result p50=0.46s p95=0.50s max=0.50s ok=10/10 | server 148 MB
+ 20 users | load-to-ready p50=1.50s p95=2.21s max=2.22s ok=20/20 | click-to-result p50=0.93s p95=0.95s max=0.95s ok=20/20 | server 149 MB
+ 40 users | load-to-ready p50=3.99s p95=5.44s max=5.59s ok=40/40 | click-to-result p50=2.85s p95=2.85s max=2.87s ok=40/40 | server 135 MB
+== fastapi-1worker matched 11:30:17
+  1 users | load-to-ready p50=0.09s p95=0.09s max=0.09s ok=1/1 | click-to-result p50=0.09s p95=0.09s max=0.09s ok=1/1 | server 69 MB
+  5 users | load-to-ready p50=0.17s p95=0.17s max=0.17s ok=5/5 | click-to-result p50=0.03s p95=0.03s max=0.03s ok=5/5 | server 69 MB
+ 10 users | load-to-ready p50=0.23s p95=0.24s max=0.24s ok=10/10 | click-to-result p50=0.04s p95=0.06s max=0.06s ok=10/10 | server 69 MB
+ 20 users | load-to-ready p50=0.36s p95=0.37s max=0.37s ok=20/20 | click-to-result p50=0.05s p95=0.07s max=0.07s ok=20/20 | server 69 MB
+ 40 users | load-to-ready p50=0.77s p95=0.81s max=0.81s ok=40/40 | click-to-result p50=0.12s p95=0.25s max=0.25s ok=40/40 | server 69 MB
+== node-http matched 11:31:15
+  1 users | load-to-ready p50=0.07s p95=0.07s max=0.07s ok=1/1 | click-to-result p50=0.07s p95=0.07s max=0.07s ok=1/1 | server 26 MB
+  5 users | load-to-ready p50=0.16s p95=0.16s max=0.16s ok=5/5 | click-to-result p50=0.04s p95=0.04s max=0.04s ok=5/5 | server 27 MB
+ 10 users | load-to-ready p50=0.23s p95=0.24s max=0.24s ok=10/10 | click-to-result p50=0.04s p95=0.05s max=0.05s ok=10/10 | server 27 MB
+ 20 users | load-to-ready p50=0.39s p95=0.40s max=0.40s ok=20/20 | click-to-result p50=0.06s p95=0.06s max=0.06s ok=20/20 | server 27 MB
+ 40 users | load-to-ready p50=0.80s p95=0.83s max=0.84s ok=40/40 | click-to-result p50=0.14s p95=0.23s max=0.23s ok=40/40 | server 28 MB
+== dash-1worker-4threads matched 11:32:55
+  1 users | load-to-ready p50=0.28s p95=0.28s max=0.28s ok=1/1 | click-to-result p50=0.06s p95=0.06s max=0.06s ok=1/1 | server 75 MB
+  5 users | load-to-ready p50=0.46s p95=0.50s max=0.50s ok=5/5 | click-to-result p50=0.06s p95=0.08s max=0.08s ok=5/5 | server 75 MB
+ 10 users | load-to-ready p50=0.51s p95=0.52s max=0.52s ok=10/10 | click-to-result p50=0.17s p95=0.18s max=0.18s ok=10/10 | server 75 MB
+ 20 users | load-to-ready p50=1.00s p95=1.02s max=1.04s ok=20/20 | click-to-result p50=0.38s p95=0.44s max=0.45s ok=20/20 | server 75 MB
+ 40 users | load-to-ready p50=1.99s p95=2.13s max=2.13s ok=40/40 | click-to-result p50=0.98s p95=0.99s max=0.99s ok=40/40 | server 69 MB
+== fastapi-1worker matched + in-browser pack (?local) 11:34:06  (40-user step re-run after a load-generator websocket reset)
+  1 users | load-to-ready p50=0.07s p95=0.07s max=0.07s ok=1/1 | click-to-result p50=0.02s p95=0.02s max=0.02s ok=1/1 | server 85 MB
+  5 users | load-to-ready p50=0.16s p95=0.16s max=0.16s ok=5/5 | click-to-result p50=0.02s p95=0.02s max=0.02s ok=5/5 | server 85 MB
+ 10 users | load-to-ready p50=0.23s p95=0.23s max=0.23s ok=10/10 | click-to-result p50=0.05s p95=0.05s max=0.05s ok=10/10 | server 85 MB
+ 20 users | load-to-ready p50=0.39s p95=0.41s max=0.41s ok=20/20 | click-to-result p50=0.12s p95=0.13s max=0.13s ok=20/20 | server 86 MB
+ 40 users | load-to-ready p50=0.93s p95=0.96s max=0.96s ok=40/40 | click-to-result p50=0.07s p95=0.10s max=0.10s ok=40/40 | server 86 MB
+```
+
+---
+
+The sections below are the **first run (02:46 IST)**. It is kept for history; ChatGPT's critique of it is fair, and §0 above supersedes it. It measured page load to a text marker, with tabs piling up, and the API page did not draw a chart.
 
 ## 1. The test
 
@@ -139,7 +257,39 @@ These sizes come from reading the shipped artifacts directly, the REA way: the i
 - **Streamlit's entry script alone is 6× a React app's entry script.**
 - **It is 8.5× all of a wave's survey numbers.**
 
-Over a 263 ms India → Central US link (measured, docs/14) or about 100 ms from the UK, every extra round trip and every 100 KB matters on first load. See [05](05-millisecond-ui.md).
+Network distance makes this worse:
+
+| Path to the Central US server | Round trip | Source |
+|---|--:|---|
+| India (Azure Central India) | 220 ms | Azure backbone P50 |
+| The dev Mac in India, over VPN | 263 ms | measured, docs/14 |
+| US East | 28 ms | Azure backbone P50 |
+
+At these distances every extra round trip and every 100 KB matters on first load. See [05](05-millisecond-ui.md).
+
+## 8. Streamlit 1.66: does the new server change anything?
+
+**What changed.** Streamlit 1.57.0 (29 Apr 2026) replaced its Tornado server with Starlette/Uvicorn. The current release is 1.66.0 (14 Oct 2026). SIP, MIP and CIP all pin 1.55.0, so variant B was re-run on 1.66.0, on the same machine and data.
+
+| Users at once (open sessions) | 1 (1) | 5 (6) | 10 (16) | 20 (36) | 40 (76) |
+|---|--:|--:|--:|--:|--:|
+| B on 1.55.0 | 0.33 | 0.67 | 1.00 | 1.99 | **4.35** |
+| B on 1.66.0 | 7.40* | 0.71 | 1.03 | 1.89 | **4.04** |
+
+\*The 1-user figure on 1.66.0 is a cold first run: the first session compiles and imports the page.
+
+**Result.** The slope is the same: about 0.1 s per extra simultaneous user. The new server does not change Streamlit's model, which is still one process re-running one script per session. Memory peaked at 167 MB.
+
+Raw output:
+```
+== streamlit-1.66-sql port=8691 pid=62186 02:59:02
+idle footprint: 82 MB (peak 82 MB, 1 procs)
++1 concurrent loads (open sessions=1): p50=7.40s max=7.40s  footprint=163 MB (peak 163 MB, 1 procs)
++5 concurrent loads (open sessions=6): p50=0.71s max=0.82s  footprint=163 MB (peak 163 MB, 1 procs)
++10 concurrent loads (open sessions=16): p50=1.03s max=1.47s  footprint=163 MB (peak 163 MB, 1 procs)
++20 concurrent loads (open sessions=36): p50=1.89s max=3.02s  footprint=163 MB (peak 163 MB, 1 procs)
++40 concurrent loads (open sessions=76): p50=4.04s max=6.61s  footprint=145 MB (peak 167 MB, 1 procs)
+```
 
 ## 6. Raw output (20 Oct 2026)
 

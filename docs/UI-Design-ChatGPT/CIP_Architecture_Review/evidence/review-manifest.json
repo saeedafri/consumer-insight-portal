@@ -1,0 +1,20 @@
+{
+  "review_date": "2026-10-20",
+  "original_archive_sha256": "b4a36b579f2f619000548778a52b3fb20b2b1c6be284c02ab2d9403978f20d0b",
+  "scope": "Source review and bounded local checks; not full application or Azure qualification",
+  "primary_source_count": 51,
+  "numbered_chapters": 8,
+  "full_report_words": 14865,
+  "qa": {
+    "relative_file_links_valid": true,
+    "code_fences_balanced": true,
+    "python_scripts_parse": true,
+    "json_evidence_parses": true,
+    "known_populated_secret_values_found_in_deliverables": false,
+    "budget_arithmetic_checked": true
+  },
+  "executed_probe_script_sha256": {
+    "validation/data_path_probe.py": "64d6da608ef0638649976c23cdf5bc9f22cc1af82e3cd990abf70f297935bae8",
+    "validation/source_probes.py": "ef7e5e6e9d909ab9c48564cb337fce7262ef746c6c88519bc70f2f6323c81f41"
+  }
+}

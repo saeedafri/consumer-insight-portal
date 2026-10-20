@@ -1,0 +1,663 @@
+{
+  "scope": "Synthetic SQLite data-path experiment; no UI, no Streamlit, no network, no Azure, no concurrency",
+  "python": "3.13.5",
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "logical_cpus_reported": 5,
+  "rows": 1000000,
+  "seed": 1,
+  "db_bytes": 75137024,
+  "results_equivalent": true,
+  "measurements": [
+    {
+      "mode": "full_dataframe",
+      "repeats": 5,
+      "wall_ms_samples": [
+        4221.004615000027,
+        2806.9311319999883,
+        2326.890407999997,
+        2092.5674850000178,
+        2155.010850999986
+      ],
+      "median_wall_ms": 2326.890407999997,
+      "input_rows_returned": 1000000,
+      "result_rows": 50,
+      "frame_deep_bytes": 209099220,
+      "serialized_bytes": 71110320,
+      "median_pickle_copy_ms": 157.20232700005,
+      "process_baseline_peak_rss_kib": 102316,
+      "process_peak_rss_kib": 1192992,
+      "pandas_version": "2.2.3",
+      "result": [
+        {
+          "state": "S00",
+          "stores": 2463,
+          "revenue": 61083152411.51284,
+          "open": 1856
+        },
+        {
+          "state": "S01",
+          "stores": 2413,
+          "revenue": 61065204056.21679,
+          "open": 1796
+        },
+        {
+          "state": "S02",
+          "stores": 2504,
+          "revenue": 62876110716.52121,
+          "open": 1883
+        },
+        {
+          "state": "S03",
+          "stores": 2540,
+          "revenue": 64870249508.626526,
+          "open": 1901
+        },
+        {
+          "state": "S04",
+          "stores": 2548,
+          "revenue": 61806207539.4892,
+          "open": 1891
+        },
+        {
+          "state": "S05",
+          "stores": 2470,
+          "revenue": 60665301703.59317,
+          "open": 1847
+        },
+        {
+          "state": "S06",
+          "stores": 2484,
+          "revenue": 61533560437.92418,
+          "open": 1882
+        },
+        {
+          "state": "S07",
+          "stores": 2509,
+          "revenue": 63207560033.00516,
+          "open": 1883
+        },
+        {
+          "state": "S08",
+          "stores": 2538,
+          "revenue": 63777900359.53139,
+          "open": 1881
+        },
+        {
+          "state": "S09",
+          "stores": 2351,
+          "revenue": 58639927869.7078,
+          "open": 1738
+        },
+        {
+          "state": "S10",
+          "stores": 2464,
+          "revenue": 62369329307.85215,
+          "open": 1837
+        },
+        {
+          "state": "S11",
+          "stores": 2516,
+          "revenue": 62610427556.32635,
+          "open": 1907
+        },
+        {
+          "state": "S12",
+          "stores": 2530,
+          "revenue": 63258184838.186295,
+          "open": 1881
+        },
+        {
+          "state": "S13",
+          "stores": 2526,
+          "revenue": 64066531401.47762,
+          "open": 1863
+        },
+        {
+          "state": "S14",
+          "stores": 2458,
+          "revenue": 61766482555.56917,
+          "open": 1841
+        },
+        {
+          "state": "S15",
+          "stores": 2428,
+          "revenue": 60869203977.6388,
+          "open": 1820
+        },
+        {
+          "state": "S16",
+          "stores": 2550,
+          "revenue": 63119730930.82055,
+          "open": 1888
+        },
+        {
+          "state": "S17",
+          "stores": 2486,
+          "revenue": 63130652895.979904,
+          "open": 1866
+        },
+        {
+          "state": "S18",
+          "stores": 2508,
+          "revenue": 63188840276.8063,
+          "open": 1888
+        },
+        {
+          "state": "S19",
+          "stores": 2515,
+          "revenue": 63352165057.393745,
+          "open": 1902
+        },
+        {
+          "state": "S20",
+          "stores": 2498,
+          "revenue": 62257912251.52819,
+          "open": 1869
+        },
+        {
+          "state": "S21",
+          "stores": 2480,
+          "revenue": 62069569965.277824,
+          "open": 1859
+        },
+        {
+          "state": "S22",
+          "stores": 2566,
+          "revenue": 63925442129.31364,
+          "open": 1894
+        },
+        {
+          "state": "S23",
+          "stores": 2534,
+          "revenue": 64012110881.751434,
+          "open": 1916
+        },
+        {
+          "state": "S24",
+          "stores": 2564,
+          "revenue": 63586751773.17727,
+          "open": 1912
+        },
+        {
+          "state": "S25",
+          "stores": 2480,
+          "revenue": 62351403854.86113,
+          "open": 1907
+        },
+        {
+          "state": "S26",
+          "stores": 2526,
+          "revenue": 63238534796.46698,
+          "open": 1868
+        },
+        {
+          "state": "S27",
+          "stores": 2520,
+          "revenue": 62306901008.51921,
+          "open": 1877
+        },
+        {
+          "state": "S28",
+          "stores": 2497,
+          "revenue": 63258342334.16154,
+          "open": 1846
+        },
+        {
+          "state": "S29",
+          "stores": 2504,
+          "revenue": 62075529560.98258,
+          "open": 1838
+        },
+        {
+          "state": "S30",
+          "stores": 2523,
+          "revenue": 62937602179.999146,
+          "open": 1879
+        },
+        {
+          "state": "S31",
+          "stores": 2447,
+          "revenue": 60616932482.411934,
+          "open": 1831
+        },
+        {
+          "state": "S32",
+          "stores": 2512,
+          "revenue": 64072831268.652374,
+          "open": 1880
+        },
+        {
+          "state": "S33",
+          "stores": 2490,
+          "revenue": 62840199100.069885,
+          "open": 1836
+        },
+        {
+          "state": "S34",
+          "stores": 2527,
+          "revenue": 62957881165.975075,
+          "open": 1902
+        },
+        {
+          "state": "S35",
+          "stores": 2469,
+          "revenue": 61627980115.34691,
+          "open": 1843
+        },
+        {
+          "state": "S36",
+          "stores": 2502,
+          "revenue": 61012893013.20873,
+          "open": 1867
+        },
+        {
+          "state": "S37",
+          "stores": 2599,
+          "revenue": 64800309398.30587,
+          "open": 1945
+        },
+        {
+          "state": "S38",
+          "stores": 2582,
+          "revenue": 64912349811.34529,
+          "open": 1929
+        },
+        {
+          "state": "S39",
+          "stores": 2505,
+          "revenue": 61214610834.26474,
+          "open": 1895
+        },
+        {
+          "state": "S40",
+          "stores": 2458,
+          "revenue": 60281332284.839966,
+          "open": 1808
+        },
+        {
+          "state": "S41",
+          "stores": 2469,
+          "revenue": 61735201417.72515,
+          "open": 1858
+        },
+        {
+          "state": "S42",
+          "stores": 2506,
+          "revenue": 62426531455.39113,
+          "open": 1847
+        },
+        {
+          "state": "S43",
+          "stores": 2509,
+          "revenue": 62035773243.193146,
+          "open": 1890
+        },
+        {
+          "state": "S44",
+          "stores": 2509,
+          "revenue": 61945278312.57379,
+          "open": 1867
+        },
+        {
+          "state": "S45",
+          "stores": 2547,
+          "revenue": 63205407803.55572,
+          "open": 1910
+        },
+        {
+          "state": "S46",
+          "stores": 2484,
+          "revenue": 62998126902.41184,
+          "open": 1825
+        },
+        {
+          "state": "S47",
+          "stores": 2472,
+          "revenue": 62273177574.60431,
+          "open": 1865
+        },
+        {
+          "state": "S48",
+          "stores": 2473,
+          "revenue": 61190056827.17508,
+          "open": 1845
+        },
+        {
+          "state": "S49",
+          "stores": 2545,
+          "revenue": 62577430314.904,
+          "open": 1918
+        }
+      ]
+    },
+    {
+      "mode": "sql_summary",
+      "repeats": 5,
+      "wall_ms_samples": [
+        116.77746000003708,
+        92.46339100002388,
+        89.144019999992,
+        91.28736799999615,
+        96.52095199999167
+      ],
+      "median_wall_ms": 92.46339100002388,
+      "input_rows_returned": 50,
+      "result_rows": 50,
+      "frame_deep_bytes": 3932,
+      "serialized_bytes": 2352,
+      "median_pickle_copy_ms": 0.058318000014878635,
+      "process_baseline_peak_rss_kib": 102316,
+      "process_peak_rss_kib": 102316,
+      "pandas_version": "2.2.3",
+      "result": [
+        {
+          "state": "S00",
+          "stores": 2463,
+          "revenue": 61083152411.51284,
+          "open": 1856
+        },
+        {
+          "state": "S01",
+          "stores": 2413,
+          "revenue": 61065204056.21679,
+          "open": 1796
+        },
+        {
+          "state": "S02",
+          "stores": 2504,
+          "revenue": 62876110716.52121,
+          "open": 1883
+        },
+        {
+          "state": "S03",
+          "stores": 2540,
+          "revenue": 64870249508.626526,
+          "open": 1901
+        },
+        {
+          "state": "S04",
+          "stores": 2548,
+          "revenue": 61806207539.4892,
+          "open": 1891
+        },
+        {
+          "state": "S05",
+          "stores": 2470,
+          "revenue": 60665301703.59317,
+          "open": 1847
+        },
+        {
+          "state": "S06",
+          "stores": 2484,
+          "revenue": 61533560437.92418,
+          "open": 1882
+        },
+        {
+          "state": "S07",
+          "stores": 2509,
+          "revenue": 63207560033.00516,
+          "open": 1883
+        },
+        {
+          "state": "S08",
+          "stores": 2538,
+          "revenue": 63777900359.53139,
+          "open": 1881
+        },
+        {
+          "state": "S09",
+          "stores": 2351,
+          "revenue": 58639927869.7078,
+          "open": 1738
+        },
+        {
+          "state": "S10",
+          "stores": 2464,
+          "revenue": 62369329307.85215,
+          "open": 1837
+        },
+        {
+          "state": "S11",
+          "stores": 2516,
+          "revenue": 62610427556.32635,
+          "open": 1907
+        },
+        {
+          "state": "S12",
+          "stores": 2530,
+          "revenue": 63258184838.186295,
+          "open": 1881
+        },
+        {
+          "state": "S13",
+          "stores": 2526,
+          "revenue": 64066531401.47762,
+          "open": 1863
+        },
+        {
+          "state": "S14",
+          "stores": 2458,
+          "revenue": 61766482555.56917,
+          "open": 1841
+        },
+        {
+          "state": "S15",
+          "stores": 2428,
+          "revenue": 60869203977.6388,
+          "open": 1820
+        },
+        {
+          "state": "S16",
+          "stores": 2550,
+          "revenue": 63119730930.82055,
+          "open": 1888
+        },
+        {
+          "state": "S17",
+          "stores": 2486,
+          "revenue": 63130652895.979904,
+          "open": 1866
+        },
+        {
+          "state": "S18",
+          "stores": 2508,
+          "revenue": 63188840276.8063,
+          "open": 1888
+        },
+        {
+          "state": "S19",
+          "stores": 2515,
+          "revenue": 63352165057.393745,
+          "open": 1902
+        },
+        {
+          "state": "S20",
+          "stores": 2498,
+          "revenue": 62257912251.52819,
+          "open": 1869
+        },
+        {
+          "state": "S21",
+          "stores": 2480,
+          "revenue": 62069569965.277824,
+          "open": 1859
+        },
+        {
+          "state": "S22",
+          "stores": 2566,
+          "revenue": 63925442129.31364,
+          "open": 1894
+        },
+        {
+          "state": "S23",
+          "stores": 2534,
+          "revenue": 64012110881.751434,
+          "open": 1916
+        },
+        {
+          "state": "S24",
+          "stores": 2564,
+          "revenue": 63586751773.17727,
+          "open": 1912
+        },
+        {
+          "state": "S25",
+          "stores": 2480,
+          "revenue": 62351403854.86113,
+          "open": 1907
+        },
+        {
+          "state": "S26",
+          "stores": 2526,
+          "revenue": 63238534796.46698,
+          "open": 1868
+        },
+        {
+          "state": "S27",
+          "stores": 2520,
+          "revenue": 62306901008.51921,
+          "open": 1877
+        },
+        {
+          "state": "S28",
+          "stores": 2497,
+          "revenue": 63258342334.16154,
+          "open": 1846
+        },
+        {
+          "state": "S29",
+          "stores": 2504,
+          "revenue": 62075529560.98258,
+          "open": 1838
+        },
+        {
+          "state": "S30",
+          "stores": 2523,
+          "revenue": 62937602179.999146,
+          "open": 1879
+        },
+        {
+          "state": "S31",
+          "stores": 2447,
+          "revenue": 60616932482.411934,
+          "open": 1831
+        },
+        {
+          "state": "S32",
+          "stores": 2512,
+          "revenue": 64072831268.652374,
+          "open": 1880
+        },
+        {
+          "state": "S33",
+          "stores": 2490,
+          "revenue": 62840199100.069885,
+          "open": 1836
+        },
+        {
+          "state": "S34",
+          "stores": 2527,
+          "revenue": 62957881165.975075,
+          "open": 1902
+        },
+        {
+          "state": "S35",
+          "stores": 2469,
+          "revenue": 61627980115.34691,
+          "open": 1843
+        },
+        {
+          "state": "S36",
+          "stores": 2502,
+          "revenue": 61012893013.20873,
+          "open": 1867
+        },
+        {
+          "state": "S37",
+          "stores": 2599,
+          "revenue": 64800309398.30587,
+          "open": 1945
+        },
+        {
+          "state": "S38",
+          "stores": 2582,
+          "revenue": 64912349811.34529,
+          "open": 1929
+        },
+        {
+          "state": "S39",
+          "stores": 2505,
+          "revenue": 61214610834.26474,
+          "open": 1895
+        },
+        {
+          "state": "S40",
+          "stores": 2458,
+          "revenue": 60281332284.839966,
+          "open": 1808
+        },
+        {
+          "state": "S41",
+          "stores": 2469,
+          "revenue": 61735201417.72515,
+          "open": 1858
+        },
+        {
+          "state": "S42",
+          "stores": 2506,
+          "revenue": 62426531455.39113,
+          "open": 1847
+        },
+        {
+          "state": "S43",
+          "stores": 2509,
+          "revenue": 62035773243.193146,
+          "open": 1890
+        },
+        {
+          "state": "S44",
+          "stores": 2509,
+          "revenue": 61945278312.57379,
+          "open": 1867
+        },
+        {
+          "state": "S45",
+          "stores": 2547,
+          "revenue": 63205407803.55572,
+          "open": 1910
+        },
+        {
+          "state": "S46",
+          "stores": 2484,
+          "revenue": 62998126902.41184,
+          "open": 1825
+        },
+        {
+          "state": "S47",
+          "stores": 2472,
+          "revenue": 62273177574.60431,
+          "open": 1865
+        },
+        {
+          "state": "S48",
+          "stores": 2473,
+          "revenue": 61190056827.17508,
+          "open": 1845
+        },
+        {
+          "state": "S49",
+          "stores": 2545,
+          "revenue": 62577430314.904,
+          "open": 1918
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Five local repetitions are not a stable p95 estimate.",
+    "OS page cache is not flushed; order is full_dataframe then sql_summary.",
+    "Peak RSS is process high-water mark including pandas and temporary copies, not per-user RAM.",
+    "pickle copying illustrates a mechanism, not the Streamlit cache runtime.",
+    "No framework performance ranking or production capacity can be inferred."
+  ]
+}

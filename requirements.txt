@@ -4,7 +4,10 @@
 # ══════════════════════════════════════════════════════════════════════════
 
 # ── Core framework ────────────────────────────────────────────────────────
-streamlit==1.55.0
+streamlit==1.55.0               # internal staff pages
+fastapi==0.150.0                # client API (api/): serves published dashboards from memory
+uvicorn[standard]==0.54.0
+gunicorn==26.2.0
 
 # ── Data processing ───────────────────────────────────────────────────────
 pandas>=2.3.0

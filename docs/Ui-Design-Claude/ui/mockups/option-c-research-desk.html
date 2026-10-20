@@ -1,0 +1,100 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Overview · CIP</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet"><style>
+:root{--ink:#1a1a2e;--ink-2:#52514e;--ink-3:#77766f;--line:#e1e4e8;--line-2:#eceef1;--desk:#eef0f3;--paper:#fff;
+--red:#d62e2f;--red-ink:#a61f20;--up:#166b41;--up-weak:#e5f2eb;--down:#a61f20;--down-weak:#f9e9e8;--warn:#8a5a00;--warn-weak:#fbf1dc;
+--s-not:#c4cad3;--s-still:#2a78d6;--s-done:#163f7a;--s-none:#eceef1;--blue:#2a78d6;--blue-ink:#1f62b8;
+--sans:'IBM Plex Sans',Helvetica,Arial,sans-serif;--cond:'IBM Plex Sans Condensed','IBM Plex Sans',Arial,sans-serif}
+*{box-sizing:border-box}html,body{margin:0}body{font-family:var(--sans);color:var(--ink);background:var(--desk);font-size:14px;line-height:1.45}
+.num{font-variant-numeric:tabular-nums}
+.base{font-size:12px;color:var(--ink-3)}
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:500;white-space:nowrap}
+.chip.up{background:var(--up-weak);color:var(--up)}.chip.down{background:var(--down-weak);color:var(--down)}
+.chip.flat{background:var(--line-2);color:var(--ink-2)}.chip.warn{background:var(--warn-weak);color:var(--warn)}
+.chip.missing{background:transparent;color:var(--ink-3);border:1px dashed #c4cad3}
+
+.app{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+.rail{background:var(--paper);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:2px}
+.brand{display:flex;align-items:center;gap:10px;padding:0 8px 18px}
+.brand .mark{width:28px;height:28px;border-radius:6px;background:var(--red);color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px}
+.brand b{font-size:15px;letter-spacing:-.01em}.brand span{display:block;font-size:12px;color:var(--ink-3)}
+.rail a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;color:var(--ink-2);text-decoration:none;font-weight:500;position:relative}
+.rail a.on{color:var(--ink);background:var(--desk)}.rail a.on::before{content:"";position:absolute;left:-12px;top:6px;bottom:6px;width:3px;background:var(--red);border-radius:0 3px 3px 0}
+.rail .group{font-size:12px;color:var(--ink-3);padding:16px 10px 6px}
+.rail .foot{margin-top:auto;font-size:12px;color:var(--ink-3);padding:10px;border-top:1px solid var(--line-2)}
+.main{display:flex;flex-direction:column;min-width:0}
+.top{display:flex;align-items:center;gap:14px;padding:12px 28px;background:var(--paper);border-bottom:1px solid var(--line)}
+.search{flex:1;max-width:560px;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:8px 12px;color:var(--ink-3);background:#fafbfc}
+.search kbd{margin-left:auto;font-family:var(--sans);font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--ink-3)}
+.wave{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-weight:500;background:var(--paper)}
+.wave small{color:var(--ink-3);font-weight:400}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:600;margin-left:auto}
+.context{display:flex;flex-wrap:wrap;gap:6px 18px;padding:10px 28px;font-size:13px;color:var(--ink-2);border-bottom:1px solid var(--line);background:#f7f8fa}
+.context b{color:var(--ink);font-weight:600}
+.page{padding:26px 28px 40px;display:grid;gap:22px;max-width:1240px}
+h1{font-size:26px;line-height:1.2;font-weight:600;letter-spacing:-.015em;margin:0;max-width:44ch}
+.lede{color:var(--ink-2);max-width:72ch;margin:6px 0 0}
+.block{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:20px 22px}
+.block h2{font-size:16px;font-weight:600;margin:0 0 2px}.block .q{color:var(--ink-2);font-size:13px;margin:0 0 16px;max-width:80ch}
+.cols{display:grid;gap:22px}.cols.two{grid-template-columns:1.25fr 1fr}.cols.three{grid-template-columns:repeat(3,1fr)}
+/* the signature: shopping status as one whole */
+.strip{display:flex;height:46px;border-radius:6px;overflow:hidden;margin:6px 0 14px}
+.strip span{display:flex;align-items:center;padding:0 12px;font-weight:600;font-size:15px;color:#fff;min-width:0;white-space:nowrap}
+.strip .not{background:var(--s-not);color:var(--ink)}.strip .still{background:var(--s-still)}.strip .done{background:var(--s-done)}.strip .none{background:var(--s-none);color:var(--ink-2)}
+.legend{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.legend>div{border-top:3px solid;padding-top:8px}.legend .v{font-size:28px;font-weight:600;letter-spacing:-.02em}
+.legend .l{font-weight:500}.legend .c{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.bars{display:grid;gap:9px}
+.bar{display:grid;grid-template-columns:minmax(120px,1.1fr) 2fr 54px 96px;align-items:center;gap:10px;font-size:13px}
+.bar .track{height:12px;background:var(--line-2);border-radius:3px;overflow:hidden}.bar .track i{display:block;height:100%;background:var(--blue)}
+.bar .v{text-align:right;font-weight:600}
+.takeaways{margin:0;padding:0;list-style:none;display:grid;gap:10px}
+.takeaways li{padding-left:14px;border-left:3px solid var(--line);max-width:80ch}
+.takeaways li.key{border-left-color:var(--red)}
+.note{font-size:12px;color:var(--ink-3);max-width:90ch}
+table.x{border-collapse:collapse;width:100%;font-family:var(--cond);font-size:14px}
+table.x th,table.x td{padding:9px 10px;border-bottom:1px solid var(--line-2);text-align:right;white-space:nowrap}
+table.x th:first-child,table.x td:first-child{text-align:left;font-family:var(--sans);white-space:normal}
+table.x thead th{font-weight:600;font-size:13px;color:var(--ink);vertical-align:bottom;border-bottom:1px solid var(--line)}
+table.x thead .letter{display:block;font-weight:500;color:var(--ink-3);font-size:12px}
+table.x .lt{color:var(--blue-ink);font-weight:600;font-size:12px;margin-left:4px}
+table.x tr.basebar td{color:var(--ink-3);font-size:12px;background:#fafbfc}
+table.x tr.net td{font-weight:600;background:#f7f8fa}
+table.x td.small{color:var(--warn)}
+.panel{display:grid;gap:14px;align-content:start}
+.field label{display:block;font-size:12px;color:var(--ink-3);margin-bottom:4px}
+.select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--paper);display:flex;justify-content:space-between}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:8px;padding:8px 14px;font-weight:600;border:1px solid var(--line);background:var(--paper);color:var(--ink)}
+.btn.primary{background:var(--red);border-color:var(--red);color:#fff}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.qlist{display:grid}
+.qrow{display:grid;grid-template-columns:64px 1fr 120px 150px 110px;gap:14px;align-items:center;padding:11px 4px;border-bottom:1px solid var(--line-2)}
+.qrow .code{font-weight:600;color:var(--ink-2)}.qrow .t{font-weight:500}.qrow mark{background:#fff1b8;color:inherit;padding:0 1px}
+.topic{font-weight:600;margin:16px 0 4px;color:var(--ink)}
+.facet{display:flex;gap:8px;flex-wrap:wrap}.facet span{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:13px;background:var(--paper)}
+.facet span.on{border-color:var(--ink);background:var(--ink);color:#fff}
+.mini{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.mini .g b{display:block;font-size:22px;font-weight:600}.mini .g .t{height:8px;background:var(--line-2);border-radius:3px;margin:6px 0}.mini .g .t i{display:block;height:100%;background:var(--s-still)}
+@media (max-width:700px){.app{grid-template-columns:1fr}.rail{display:none}.top{padding:10px 16px;flex-wrap:wrap}.search{max-width:none;flex-basis:100%}.wave{flex:1}.wave small,.avatar,.search kbd{display:none}
+.context{padding:8px 16px}.context span:nth-child(n+3){display:none}.page{padding:16px;gap:16px;max-width:100vw}.block,.legend>div,.cols>*{min-width:0}.chip{white-space:normal}
+.cols.two,.cols.three{grid-template-columns:1fr}.legend,.mini{grid-template-columns:1fr 1fr}
+.bar{grid-template-columns:1fr 1.2fr 46px}.bar .chip{display:none}h1{font-size:21px}.strip span{font-size:13px;padding:0 6px}.block{padding:16px}}
+</style></head><body><div class="app">
+<nav class="rail" aria-label="Main"><div class="brand"><div class="mark">C</div><div><b>Consumer Insight</b><span>Coresight Research</span></div></div>
+<a class="on" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Overview</a><a class="" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Explore questions</a><a class="" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M4 10h16M10 4v16"/></svg>Analysis</a><a class="" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>Trends</a><div class="group">Trackers</div><a class="" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="9"/></svg>Holiday tracker</a><div class="group">Yours</div><a class="" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>Saved views</a><a class="" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/></svg>Exports</a><div class="foot">US weekly consumer survey since 2018. 320 waves.</div></nav>
+<div class="main"><header class="top"><div class="search"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search questions, retailers, topics<kbd>⌘K</kbd></div>
+<div class="wave">Week of Oct 12, 2026 <small>wave 3 of the holiday season</small> ▾</div><div class="avatar">AK</div></header>
+<div class="context"><span><b>404</b> qualified US adults</span><span>Fielded Monday Oct 12, 2026</span><span>Compared with <b>Oct 5</b></span><span>Last year's same week <b>not loaded</b> (hibernated in Forsta)</span><span>Data as of Oct 19, 16:23</span></div>
+<main class="page">
+<section><h1>Over a third of US consumers have started holiday shopping, level with last week</h1>
+<p class="lede">36.9% have started (7.9% finished) against 37.2% a week earlier. Millennials are furthest along; Boomers have barely begun.</p></section>
+<section class="block"><h2>Holiday shopping status</h2><p class="q">What is the current status of your holiday shopping? Asked of all 404 qualified respondents.</p>
+<div class="strip" role="img" aria-label="Holiday shopping status"><span class="not" style="flex:54.95">55%</span><span class="still" style="flex:28.96">29%</span><span class="done" style="flex:7.92">8%</span><span class="none" style="flex:8.17">8%</span></div><div class="legend"><div style="border-color:var(--s-not)"><div class="l">Not yet started</div><div class="v num">55.0%</div><div class="c"><span class="chip flat">▲ 1.1 pts vs last week</span><span class="chip missing">vs last year: not loaded</span></div><div class="base">222 of 404</div></div><div style="border-color:var(--s-still)"><div class="l">Still shopping</div><div class="v num">29.0%</div><div class="c"><span class="chip flat">no change vs last week</span><span class="chip missing">vs last year: not loaded</span></div><div class="base">117 of 404</div></div><div style="border-color:var(--s-done)"><div class="l">Finished</div><div class="v num">7.9%</div><div class="c"><span class="chip flat">▼ 0.3 pts vs last week</span><span class="chip missing">vs last year: not loaded</span></div><div class="base">32 of 404</div></div><div style="border-color:#c9ced6"><div class="l">Not buying for the holidays</div><div class="v num">8.2%</div><div class="c"><span class="chip flat">▼ 0.8 pts vs last week</span><span class="chip missing">vs last year: not loaded</span></div><div class="base">33 of 404</div></div></div></section>
+<div class="cols two">
+<section class="block"><h2>Where holiday shoppers bought this week</h2><p class="q">Retailers used for holiday purchases in the last seven days. Base: the 125 who made a holiday purchase.</p>
+<div class="bars"><div class="bar"><span>Walmart</span><span class="track"><i style="width:81%"></i></span><span class="v num">50.4%</span><span class="chip flat">▲ 5.8 pts </span></div><div class="bar"><span>Amazon</span><span class="track"><i style="width:65%"></i></span><span class="v num">40.8%</span><span class="chip flat">▲ 2.8 pts </span></div><div class="bar"><span>Dollar General</span><span class="track"><i style="width:35%"></i></span><span class="v num">21.6%</span><span class="chip flat">▲ 0.9 pts </span></div><div class="bar"><span>Dollar Tree</span><span class="track"><i style="width:33%"></i></span><span class="v num">20.8%</span><span class="chip flat">▼ 0.9 pts </span></div><div class="bar"><span>Target</span><span class="track"><i style="width:32%"></i></span><span class="v num">20.0%</span><span class="chip flat">▼ 5.0 pts </span></div></div><p class="note" style="margin-top:12px">Change is against last week's 92 purchasers.</p></section>
+<section class="block"><h2>Bought for the holidays in the last seven days</h2><p class="q">Did you make any holiday purchases in the last seven days?</p>
+<div class="legend" style="grid-template-columns:1fr"><div style="border-color:var(--blue)"><div class="v num">30.9%</div>
+<div class="c"><span class="chip warn">vs last week: not comparable</span></div><div class="base">125 of 404, asked of everyone</div></div></div>
+<p class="note" style="margin-top:12px">Last week this was asked only of the 149 who had started shopping (61.7%), so the two figures describe different people.</p></section></div>
+<section class="block"><h2>Started shopping, by generation</h2><p class="q">Still shopping or finished, as a share of each generation.</p><div class="mini"><div class="g"><span>Gen Z <span class="chip warn">small base</span></span><b class="num">48%</b><div class="t"><i style="width:48%"></i></div><span class="base">started, n=42</span></div><div class="g"><span>Millennial</span><b class="num">51%</b><div class="t"><i style="width:51%"></i></div><span class="base">started, n=121</span></div><div class="g"><span>Gen X</span><b class="num">33%</b><div class="t"><i style="width:33%"></i></div><span class="base">started, n=111</span></div><div class="g"><span>Boomer</span><b class="num">23%</b><div class="t"><i style="width:23%"></i></div><span class="base">started, n=130</span></div></div></section>
+</main></div></div></body></html>

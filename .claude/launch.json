@@ -4,15 +4,95 @@
     {
       "name": "cip-dwh",
       "runtimeExecutable": ".venv/bin/streamlit",
-      "runtimeArgs": ["run", "app/main.py", "--server.port", "8502"],
+      "runtimeArgs": [
+        "run",
+        "app/main.py",
+        "--server.port",
+        "8502"
+      ],
       "port": 8502
     },
     {
       "name": "cip-local",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["APP_ENV=LOCAL", "LOCAL_SQLITE_PATH=data/csi_local.db", "AUTH_PROVIDER=off",
-                      ".venv/bin/streamlit", "run", "app/main.py", "--server.port", "8503"],
+      "runtimeArgs": [
+        "APP_ENV=LOCAL",
+        "LOCAL_SQLITE_PATH=data/csi_local.db",
+        "AUTH_PROVIDER=off",
+        ".venv/bin/streamlit",
+        "run",
+        "app/main.py",
+        "--server.port",
+        "8503"
+      ],
       "port": 8503
+    },
+    {
+      "name": "cip-api",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "APP_ENV=LOCAL",
+        "CIP_SESSION_SECRET=local-dev-only-not-a-real-secret",
+        ".venv/bin/gunicorn",
+        "api.main:app",
+        "-k",
+        "uvicorn.workers.UvicornWorker",
+        "-w",
+        "2",
+        "-b",
+        "127.0.0.1:8000"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "cip-api-1w",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "APP_ENV=LOCAL",
+        "CIP_SESSION_SECRET=local-dev-only-not-a-real-secret",
+        ".venv/bin/gunicorn",
+        "api.main:app",
+        "-k",
+        "uvicorn.workers.UvicornWorker",
+        "-w",
+        "1",
+        "-b",
+        "127.0.0.1:8001"
+      ],
+      "port": 8001
+    },
+    {
+      "name": "cip-api-nocache",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "APP_ENV=LOCAL",
+        "CIP_SESSION_SECRET=local-dev-only-not-a-real-secret",
+        "CIP_RESULT_CACHE=0",
+        ".venv/bin/gunicorn",
+        "api.main:app",
+        "-k",
+        "uvicorn.workers.UvicornWorker",
+        "-w",
+        "2",
+        "-b",
+        "127.0.0.1:8002"
+      ],
+      "port": 8002
+    },
+    {
+      "name": "cip-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
+      "port": 5173
     }
   ]
 }

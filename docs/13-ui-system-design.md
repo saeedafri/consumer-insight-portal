@@ -1,5 +1,7 @@
 # CIP UI — System Design
 
+> **Superseded (20 Oct 2026)** by [`docs/Ui-Design-Claude/06-system-design.md`](Ui-Design-Claude/06-system-design.md) (memory budget for 4.5 / 9.88 GB, in-browser wave packs, Front Door, export worker).
+
 How the Coresight Insight Platform's screens are built and served on the
 infrastructure we already have: **one Azure App Service plan and one MySQL
 database**. The reasoning behind each technology choice, with the evidence, is

@@ -42,7 +42,7 @@ from sqlalchemy.exc import OperationalError
 from app.core.config import config
 from app.core.database import get_engine
 from app.data import cube, harmonise
-from etl import forsta_api, survey_calendar, tracker_line
+from etl import forsta_api, serving, survey_calendar, tracker_line
 from etl.forsta_client import ForstaError
 from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey
 from etl.run_pipeline import _dt, _rebuild_profiles, _rebuild_question_bases, wave_from_records
@@ -264,6 +264,8 @@ def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
         lap("search")
         tracker_line.build(survey_id)
         lap("tracker_line")
+        serving.build_wave(survey_id)
+        lap("serving")
         log.info("%s → survey_id %s (%s): %d respondents; harmonised %s; cube %d cells; seconds %s", path, survey_id,
                  wave, len(records), mapped, cells, seconds)
     except Exception as exc:
@@ -275,6 +277,7 @@ def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
     _set_status(survey_id, "verified")
     _mark(path, "loaded", survey_id)
     survey_calendar.rebuild()                          # its questions may name a seasonal tracker
+    serving.rebuild_dependants(survey_id)              # next week / next year now have this wave to compare with
     return survey_id
 
 

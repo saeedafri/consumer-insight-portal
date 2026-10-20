@@ -16,3 +16,5 @@ data/exports/*
 data/*.db
 .gstack/
 backups/
+web/node_modules/
+web/dist/

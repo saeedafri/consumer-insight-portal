@@ -1,0 +1,46 @@
+{
+  "scope": "Selected AST-extracted functions with fake database; no full app or network",
+  "auth_source_sha256": "18141eab679a89cfbb1a070c963fad4c42b560566ceefe1a4f17b4b1310ef105",
+  "session_probes": [
+    {
+      "case": "store_exception",
+      "actual_function_result": true,
+      "source_behavior_reproduced": true
+    },
+    {
+      "case": "missing_session_row",
+      "actual_function_result": true,
+      "source_behavior_reproduced": true
+    },
+    {
+      "case": "revoked_session",
+      "actual_function_result": false,
+      "source_behavior_reproduced": true
+    },
+    {
+      "case": "expired_session",
+      "actual_function_result": false,
+      "source_behavior_reproduced": true
+    },
+    {
+      "case": "live_session",
+      "actual_function_result": true,
+      "source_behavior_reproduced": true
+    }
+  ],
+  "interpretation": "Existing in-memory sessions can remain valid when lookup fails or row is absent; this does not demonstrate unauthenticated login bypass.",
+  "cohort_signature_counterexample": {
+    "before": [
+      1,
+      4
+    ],
+    "after": [
+      2,
+      3
+    ],
+    "same_count_and_sum": true,
+    "sets_differ": true,
+    "source": "app/data/cube.py:153-166",
+    "limitation": "Mathematical counterexample to the signature, not an observed stale production cohort."
+  }
+}

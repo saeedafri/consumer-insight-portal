@@ -40,7 +40,7 @@ _COLUMNS = ("survey_id, cell_key, map_key, question_id, item_id, option_id, coho
 # The wave's answers are read ONCE into a temporary table carrying every cut;
 # each cut × cohort is then an aggregate over that table. Reading the answers
 # per cut cost 78k primary-key lookups each time — 14 times per cohort.
-_ROWS = """
+ANSWER_ROWS = """
     SELECT f.question_id AS qid, f.item_id AS iid, o.option_id AS oid, q.is_multi AS multi,
            a.value_code AS code, a.respondent_id AS rid, p.age_mid AS age, p.income_mid_k AS income,
            {cuts}
@@ -54,7 +54,7 @@ _ROWS = """
      WHERE a.survey_id = :sid AND a.value_code IS NOT NULL
        AND ((q.is_multi = 1 AND f.item_id IS NOT NULL)
             OR (q.is_multi = 0 AND q.qtype IN ('single', 'grid_single') AND o.option_id IS NOT NULL))"""
-_CUTS = ", ".join(f"COALESCE(p.{d}, '') AS {d}" for d in CUBE_DIMS if d != "total")
+ANSWER_CUTS = ", ".join(f"COALESCE(p.{d}, '') AS {d}" for d in CUBE_DIMS if d != "total")
 
 
 def _value(dim: str) -> str:
@@ -110,7 +110,7 @@ def _multi_sql(dim: str, cohort_id: Optional[int]) -> str:
 def _fill_rows(conn, survey_id: int) -> None:
     """The wave's answers with every cut, twice — MySQL cannot open one
     temporary table twice in a statement, and the multi base self-joins."""
-    rows = _ROWS.format(cuts=_CUTS)
+    rows = ANSWER_ROWS.format(cuts=ANSWER_CUTS)
     for table in ("cip_tmp_cube", "cip_tmp_cube2"):
         conn.execute(text(f"CREATE TEMPORARY TABLE IF NOT EXISTS {table} AS {rows} AND 1 = 0"), {"sid": 0})
         conn.execute(text(f"DELETE FROM {table}"))
