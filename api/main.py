@@ -488,6 +488,8 @@ async def cache_static(request: Request, call_next):
     response = await call_next(request)
     if request.url.path.startswith("/assets/"):   # Vite's content-hashed files never change
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif response.headers.get("content-type", "").startswith("text/html"):   # index.html names this release's
+        response.headers["Cache-Control"] = "no-cache"                        # assets: always revalidate it
     return response
 
 

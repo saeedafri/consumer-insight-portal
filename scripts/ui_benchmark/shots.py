@@ -1,5 +1,6 @@
 """Full-size screenshots of the running portal through headless Chrome (DevTools on :9333), signed in with the
-local dev login. Saves PNGs and prints, per page, how long until it was fully drawn.
+local dev login. Saves PNGs and prints, per page, how long until it was fully drawn and the page's JavaScript
+heap (what the dashboard costs the browser in memory).
 
     python scripts/ui_benchmark/shots.py http://127.0.0.1:8000 out_dir /path1 /path2 ...  [--ready JS]
 """
@@ -26,6 +27,7 @@ async def main(a):
             if reply.get("id") == seq:
                 return reply.get("result", {})
 
+    await call("Performance.enable")
     await call("Emulation.setDeviceMetricsOverride", {"width": a.width, "height": a.height, "deviceScaleFactor": 1, "mobile": a.width < 700})
     await call("Page.navigate", {"url": f"{a.base}/auth/dev-login?next=/"})
     await asyncio.sleep(2)
@@ -45,7 +47,8 @@ async def main(a):
         shot = await call("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": a.full, "fromSurface": True})
         name = urllib.parse.quote(path.strip("/").replace("/", "_") or "library", safe="")[:80] + ".png"
         (out / name).write_bytes(base64.b64decode(shot["data"]))
-        print(f"{path:<50} drawn in {ready:5.2f} s  → {name}", flush=True)
+        metrics = {m["name"]: m["value"] for m in (await call("Performance.getMetrics"))["metrics"]}
+        print(f"{path:<50} drawn in {ready:5.2f} s · JS heap {metrics['JSHeapUsedSize'] / 2**20:5.1f} MB · DOM nodes {int(metrics['Nodes']):>5}  → {name}", flush=True)
     urllib.request.urlopen(f"{CDP}/json/close/{target['id']}").read()
 
 

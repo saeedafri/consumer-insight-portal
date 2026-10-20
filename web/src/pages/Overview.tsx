@@ -25,16 +25,16 @@ export default function Overview() {
   const firstOf = (q: Question) => q.groups.length > 1 ? "stacked" as const : "bars" as const;
   return <>
     <div className="page-head"><div>
-      <p className="eyebrow">Wave of {fmtDate(w.wave_date)} · {w.qualified_n} qualified respondents · {book.questions.length} questions</p>
+      <p className="eyebrow">Wave of {fmtDate(w.wave_date)} · {w.qualified_n} qualified respondents · {book.questions.length} {book.questions.length === 1 ? "question" : "questions"}</p>
       <h1>{lead ? `${lead.label} ${lead.d! > 0 ? "rose" : "fell"} ${Math.abs(lead.d!).toFixed(1)} points to ${lead.now.toFixed(1)}%`
                 : w.prior_survey_id ? "No significant change against last week" : w.title}</h1>
       <p className="lede">{lead ? <>{lead.q.text} {up.length > 1 && <>· {up.length} answers moved significantly against {prior ? fmtDate(prior.wave_date) : "last week"}.</>}</> : w.title}</p>
     </div>
-      <div className="toolbar"><Link className="btn primary" to={`/w/${id}/questions`}>Explore all {book.questions.length} questions</Link>
+      <div className="toolbar"><Link className="btn primary" to={`/w/${id}/questions`}>{book.questions.length === 1 ? "Explore the question" : `Explore all ${book.questions.length} questions`}</Link>
         <Link className="btn" to={`/w/${id}/changes`}>Every change</Link></div>
     </div>
 
-    <div className="grid g4" style={{ marginBottom: 16, gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr" }}>
+    <div className="grid g5" style={{ marginBottom: 16 }}>
       <div className="card kpi lead"><div className="k-label">Qualified respondents</div><div className="k-value">{w.qualified_n}</div>
         <div className="k-note">{Object.entries(book.n).filter(([k]) => k !== "Total").slice(0, 2).map(([k, v]) => `${k} ${v}`).join(" · ")}</div></div>
       {(up.length ? up : all.filter(m => m.q.type === "single" && !isProfile(m))).filter((m, i, list) =>
@@ -56,7 +56,9 @@ export default function Overview() {
             <th scope="row"><Link to={`/w/${id}/trends/${encodeURIComponent(m.q.id)}`}>{m.label}</Link><br /><small className="muted">{m.q.id} · {m.q.short || m.q.text}</small></th>
             <td className="num"><b>{pct(m.now)}</b></td><td className="num muted">{pct(m.prior)}</td>
             <td className="num sig">{m.d! > 0 ? "▲" : "▼"} {pts(m.d!).replace(/^[+−]/, "")}</td></tr>)}</tbody>
-        </table></div> : <p className="muted">Nothing moved beyond the margin of error. With about {w.qualified_n} respondents, a change needs to be roughly ±7 points to count.</p>}
+        </table></div> : <p className="muted">{w.prior_survey_id
+          ? `Nothing moved beyond the margin of error. With ${w.qualified_n} respondents each week, a change needs to be about ±${(196 * Math.sqrt(0.5 / Math.max(w.qualified_n, 1))).toFixed(0)} points to count.`
+          : "This survey has no earlier wave within 14 days to compare against."}</p>}
       </Card>
       <Card title="Comparisons for this wave">
         <dl className="facts">

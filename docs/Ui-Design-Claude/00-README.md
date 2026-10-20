@@ -8,6 +8,7 @@
 - this investigation (REA method, benchmarks, production evidence);
 - the ChatGPT review in [`docs/UI-Design-ChatGPT/`](../UI-Design-ChatGPT/ChatGPT-Recommended_design.md); comparison in [09](09-chatgpt-vs-claude.md).
 - **1-core Debian benchmark of every stack (Docker, 20 Oct): [14](14-docker-1core-benchmark.md)**: RAM, requests/s and latency for FastAPI, Node, Next.js SSR and static, Dash and Streamlit at 4.5 GB and 9 GB.
+- **The portal for every survey, Coresight colours, staging test at 1 core / 4 GB (21 Oct): [16](16-portal-and-staging-test.md)**: eight screens, about 6,000 simultaneous users at p95 41 ms; competitor patterns in [15](15-competitor-patterns.md).
 
 **Replaces:** [`docs/12`](../12-ui-technology-decision.md) and [`docs/13`](../13-ui-system-design.md), both kept for history.
 
