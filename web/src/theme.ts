@@ -38,13 +38,20 @@ export function blues(n: number): string[] {
   return Array.from({ length: n }, (_, i) => `rgba(${C.series}, ${(1 - (i * 0.75) / (n - 1)).toFixed(2)})`);
 }
 
+/** Contrast-guaranteed heat ombre alpha avoiding WCAG dead zones (0.55-0.78). */
+export function heatAlpha(ratio: number): number {
+  const r = Math.max(0, Math.min(1, ratio));
+  if (r < 0.65) return 0.06 + 0.44 * (r / 0.65);
+  return 0.82 + 0.16 * ((r - 0.65) / 0.35);
+}
+
 /** A cell of the heat ombre at this strength (0–1). */
 export const heat = (alpha: number) => `rgba(${C.series}, ${alpha.toFixed(2)})`;
 
 /** Text that keeps contrast on a cell of the blue ombre: white on the dark end, ink on the light end. */
 export function inkOn(alpha: number): string {
-  if (C === DARK) return alpha > 0.55 ? "#1B1918" : "#FAFAFA";   // light-blue cells on a dark page
-  return alpha > 0.55 ? "#FFFFFF" : C.ink;
+  if (C === DARK) return alpha > 0.45 ? "#141211" : "#FAFAFA";   // dark ink on light-tint cells, crisp white on dark
+  return alpha >= 0.80 ? "#FFFFFF" : "#1B1918";
 }
 
 const NEGATIVE = /decrease|worse|less|lower|dissatisf|unlikely|disagree|poor|bad|cut|reduc|unfavou?r/i;

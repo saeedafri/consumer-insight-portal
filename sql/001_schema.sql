@@ -754,9 +754,10 @@ CREATE TABLE IF NOT EXISTS cip_tracker_line (
   wave_date     DATE            NOT NULL,
   line          JSON            NOT NULL COMMENT 'header -> value, config/tracker_line.yml order',
   PRIMARY KEY (respondent_id),
-  KEY ix_line_wave (wave_date, survey_id)
+  KEY ix_line_wave (wave_date, survey_id),
+  KEY ix_line_survey (survey_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-  COMMENT='The data team's line-by-line rows: one per qualified tracker respondent, JSON in their column order.';
+  COMMENT='The data team''s line-by-line rows: one per qualified tracker respondent, JSON in their column order.';
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- The survey calendar: every Forsta survey × the modules it carries (lead

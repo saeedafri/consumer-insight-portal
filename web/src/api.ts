@@ -1,5 +1,6 @@
 // The FastAPI contract (api/main.py, docs/Ui-Design-Claude/13 §5) and one cached hook per endpoint.
 import { useQuery } from "@tanstack/react-query";
+import { perf } from "./perf";
 
 export type Column = "Total" | "Male" | "Female" | "Gen Z" | "Millennial" | "Gen X" | "Boomer";
 export const COLUMNS: Column[] = ["Total", "Male", "Female", "Gen Z", "Millennial", "Gen X", "Boomer"];
@@ -27,6 +28,7 @@ export interface Dashboard {
   dashboard: string; title: string; wave: WaveRef; prior: WaveRef | null; last_year: WaveRef | null; ly_rule: string;
   tiles: Record<string, Metric | null>; lists: Record<string, Metric[]>; segments: Record<string, Metric[]>;
   takeaways: string[]; small_base: number; data_as_of: string | null;
+  tile_labels?: Record<string, string>; highlights?: { list: string; title: string; of: string }[]; prior_label?: string;
 }
 export interface Row extends Partial<Record<Column, number>> {
   label: string; code: number | null; prior: number | null; prior_base: number | null;
@@ -53,11 +55,57 @@ export interface Hit { qcode: string; text: string; type: string; family: string
 export class Busy extends Error { constructor() { super("The portal is busy; retrying in a few seconds…"); } }
 
 async function get<T>(url: string): Promise<T> {
-  const r = await fetch(url, { credentials: "same-origin" });
-  if (r.status === 401) { location.href = "/auth/dev-login?next=" + encodeURIComponent(location.pathname); throw new Error("Sign in required"); }
-  if (r.status === 503) throw new Busy();   // admission control: the query client waits and retries
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`);
-  return r.json();
+  const deregister = perf.registerPendingApi(url);
+  const t0 = performance.now();
+  let status = 0;
+  let serverDur: number | null = null;
+  let size: number | null = null;
+
+  try {
+    const r = await fetch(url, { credentials: "same-origin" });
+    status = r.status;
+    const dur = performance.now() - t0;
+
+    const serverTiming = r.headers.get("server-timing");
+    if (serverTiming) {
+      const match = serverTiming.match(/dur=([\d.]+)/);
+      if (match) serverDur = parseFloat(match[1]);
+    }
+    const contentLength = r.headers.get("content-length");
+    if (contentLength) size = parseInt(contentLength, 10);
+
+    perf.logApi({
+      url,
+      endpoint: url.split("?")[0],
+      method: "GET",
+      status: r.status,
+      durationMs: dur,
+      serverDurationMs: serverDur,
+      sizeBytes: size,
+      source: "network",
+    });
+
+    if (r.status === 401) { location.href = "/auth/dev-login?next=" + encodeURIComponent(location.pathname); throw new Error("Sign in required"); }
+    if (r.status === 503) throw new Busy();   // admission control: the query client waits and retries
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`);
+    return r.json();
+  } catch (err) {
+    if (status === 0) {
+      perf.logApi({
+        url,
+        endpoint: url.split("?")[0],
+        method: "GET",
+        status: 0,
+        durationMs: performance.now() - t0,
+        serverDurationMs: null,
+        sizeBytes: null,
+        source: "network",
+      });
+    }
+    throw err;
+  } finally {
+    deregister();
+  }
 }
 
 const forever = { staleTime: 5 * 60_000, gcTime: 30 * 60_000 };
@@ -80,3 +128,13 @@ export const useSearch = (text: string) =>
 
 /** Rows of a question that make sense to rank: drops "None of these" / "Other – please specify". */
 export const isFiller = (label: string) => /^(none of (these|the above)|other\s*[-–(]|prefer not)/i.test(label.trim());
+
+export type LaunchWeek = { date: string; cycle: number; sector: string; topics: string[];
+  status: "loaded" | "in_field" | "closed" | "load_failed" | "setting_up" | "planned" | "not_found";
+  survey_id: number | null; title: string | null; qualified: number | null; quota: number;
+  launched: string | null; closed: string | null; notes: string[] };
+export type TopicRotation = { topic: string; sectors: string[]; last: string | null; fielded: number; next: string | null; next_sector: string | null };
+export type Schedule = { source: string; imported: string; quota: number; plan_ends: string | null; corrected: string[]; topics: TopicRotation[]; weeks: LaunchWeek[] };
+/** Refetched every minute: the API rebuilds it from the Forsta register on every poll. */
+export const useSchedule = () => useQuery({ queryKey: ["schedule"], queryFn: () => get<Schedule>("/api/v1/schedule"),
+                                            staleTime: 60_000, refetchInterval: 60_000 });

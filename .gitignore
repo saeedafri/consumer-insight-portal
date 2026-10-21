@@ -23,3 +23,4 @@ web/tsconfig.tsbuildinfo
 logs/notify-state.json
 .superpowers/
 .impeccable/hook.cache.json
+data/published/

@@ -67,6 +67,8 @@ INDEXES: list[tuple[str, str, str, str]] = [
     ("cip_answer", "ft_answer_text", "FULLTEXT", "value_text"),
     ("cip_agg_cell", "ix_agg_map", "INDEX", "survey_id, map_key, cohort_id, dim"),
     ("cip_survey", "ix_survey_pick", "INDEX", "load_status, study_type, wave_date"),
+    # a reload's DELETE ... WHERE survey_id scanned all 233 MB of lines without it: 13 s, 115 s under load
+    ("cip_tracker_line", "ix_line_survey", "INDEX", "survey_id"),
 ]
 
 # Indexes another one covers: each costs a write per answer row and serves nothing.

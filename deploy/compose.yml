@@ -7,7 +7,8 @@ services:
     image: cip-portal
     build: { context: .., dockerfile: deploy/Dockerfile, target: api }
     env_file: ${CIP_ENV_FILE:-/etc/cip/api.env}
-    environment: { WEB_CONCURRENCY: "2" }
+    environment: { WEB_CONCURRENCY: "2", CIP_PUBLISH_DIR: /srv/cip/published }   # crosstabs read the published cut tables
+    volumes: ["${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro"]
     restart: unless-stopped
     mem_limit: 3g
   nginx:

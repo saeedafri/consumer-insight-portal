@@ -7,6 +7,7 @@ import type { Question } from "../api";
 import { BaseNote, Card, Change, Failure, Loading, SourceLine } from "../components/bits";
 import Glance from "../components/Glance";
 import QuestionChart from "../components/QuestionChart";
+import Profiled from "../components/Profiled";
 import { biggest, isProfile, moves } from "../moves";
 import { fmtDate, pct, pts } from "../stats";
 
@@ -22,37 +23,46 @@ export default function Overview() {
   const prior = waves.find(x => x.survey_id === w.prior_survey_id);
   const up = biggest(all);
   const lead = up[0];
-  const sections = [...new Map(book.questions.map(q => [q.section, q])).values()];   // first question of each section
+  const sections = [...new Map(book.questions.map(q => [q.section, q])).values()].sort((a, b) => a.section.localeCompare(b.section));   // sections in alphabetical order
   const firstOf = (q: Question) => q.groups.length > 1 ? "stacked" as const : "bars" as const;
-  return <>
+  return <Profiled id="Overview">
     <div className="page-head"><div>
-      <p className="eyebrow">Wave of {fmtDate(w.wave_date)} · {w.qualified_n} qualified respondents · {book.questions.length} {book.questions.length === 1 ? "question" : "questions"}</p>
       <h1>{lead ? `${lead.label} ${lead.d! > 0 ? "rose" : "fell"} ${Math.abs(lead.d!).toFixed(1)} points to ${lead.now.toFixed(1)}%`
                 : w.prior_survey_id ? "No significant change against last week" : w.title}</h1>
-      <p className="lede">{lead ? <>{lead.q.text} {up.length > 1 && <>· {up.length} answers moved significantly against {prior ? fmtDate(prior.wave_date) : "last week"}.</>}</> : w.title}</p>
+      <p className="lede">Wave of {fmtDate(w.wave_date)} · {w.qualified_n.toLocaleString("en-US")} qualified respondents · {book.questions.length} {book.questions.length === 1 ? "question" : "questions"}. {lead ? <>{lead.q.text} {up.length > 1 && <>· {up.length} answers moved significantly against {prior ? fmtDate(prior.wave_date) : "last week"}.</>}</> : w.title}</p>
     </div>
-      <div className="toolbar"><Link className="btn primary" to={`/w/${id}/questions`}>{book.questions.length === 1 ? "Explore the question" : `Explore all ${book.questions.length} questions`}</Link>
-        <Link className="btn" to={`/w/${id}/changes`}>Every change</Link></div>
+      <div className="toolbar">
+        <Link className="btn primary" to={`/w/${id}/questions`}>{book.questions.length === 1 ? "Explore the question" : `Explore all ${book.questions.length} questions`}</Link>
+        <Link className="btn" to={`/w/${id}/changes`}>What changed</Link>
+        <button className="btn" onClick={() => window.print()} title="Print briefing or save as PDF">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z" fill="currentColor"/></svg>
+          Print report
+        </button>
+      </div>
     </div>
 
-    {(waves.find(x => x.survey_id === id)?.dashboards ?? []).map(code => <Glance key={code} code={code} id={id} />)}
+    <Profiled id="Overview:Glance">
+      {(waves.find(x => x.survey_id === id)?.dashboards ?? []).map(code => <Glance key={code} code={code} id={id} />)}
+    </Profiled>
 
-    <div className="grid g5" style={{ marginBottom: 16 }}>
-      <div className="card kpi lead"><div className="k-label">Qualified respondents</div><div className="k-value">{w.qualified_n}</div>
-        <div className="k-note">{Object.entries(book.n).filter(([k]) => k !== "Total").slice(0, 2).map(([k, v]) => `${k} ${v}`).join(" · ")}</div></div>
-      {(up.length ? up : all.filter(m => m.q.type === "single" && !isProfile(m))).filter((m, i, list) =>
-        list.findIndex(x => x.q.id === m.q.id) === i).slice(0, 4).map(m =>   // one card per question
-        <button key={m.q.id + m.label} className="card kpi" onClick={() => navigate(`/w/${id}/questions/${encodeURIComponent(m.q.id)}`)}>
-          <div className="k-label clamp">{m.q.short || m.q.text}</div>
-          <div className="k-value">{pct(m.now)}</div>
-          <div className="k-note"><b>{m.label.length > 48 ? m.label.slice(0, 46) + "…" : m.label}</b><br />
-            <Change now={m.now} base={m.g.base} before={m.prior} beforeBase={m.r.prior_base} label="vs last week" routing={m.routing} /></div>
-        </button>)}
-    </div>
+    <Profiled id="Overview:Kpis">
+      <div className="grid g5" style={{ marginBottom: 16 }}>
+        <div className="card kpi lead"><div className="k-label">Qualified respondents</div><div className="k-value">{w.qualified_n.toLocaleString("en-US")}</div>
+          <div className="k-note">{Object.entries(book.n).filter(([k]) => k !== "Total").slice(0, 2).map(([k, v]) => `${k} ${v}`).join(" · ")}</div></div>
+        {(up.length ? up : all.filter(m => m.q.type === "single" && !isProfile(m))).filter((m, i, list) =>
+          list.findIndex(x => x.q.id === m.q.id) === i).slice(0, 4).map(m =>   // one card per question
+          <button key={m.q.id + m.label} className="card kpi" onClick={() => navigate(`/w/${id}/questions/${encodeURIComponent(m.q.id)}`)}>
+            <div className="k-label clamp">{m.q.short || m.q.text}</div>
+            <div className="k-value">{pct(m.now)}</div>
+            <div className="k-note"><b>{m.label.length > 48 ? m.label.slice(0, 46) + "…" : m.label}</b><br />
+              <Change now={m.now} base={m.g.base} before={m.prior} beforeBase={m.r.prior_base} label="vs last week" routing={m.routing} /></div>
+          </button>)}
+      </div>
+    </Profiled>
 
     <div className="grid g3" style={{ marginBottom: 16 }}>
       <Card className="span2" title="Biggest significant moves this week" sub={prior ? `Against the wave of ${fmtDate(prior.wave_date)} · two-proportion test, Benjamini–Hochberg corrected · routing changes excluded` : "No prior week to compare against"}
-            aside={<Link to={`/w/${id}/changes`} className="btn">All changes</Link>}>
+            aside={<Link to={`/w/${id}/changes`} className="btn">What changed</Link>}>
         {up.length ? <div className="table-wrap"><table className="data">
           <thead><tr><th>Answer</th><th className="num">Now</th><th className="num">Last week</th><th className="num">Change</th></tr></thead>
           <tbody>{up.slice(0, 8).map(m => <tr key={m.q.id + m.label}>
@@ -65,7 +75,7 @@ export default function Overview() {
       </Card>
       <Card title="Comparisons for this wave">
         <dl className="facts">
-          <dt>Last week</dt><dd>{prior ? <Link to={`/w/${prior.survey_id}`}>{fmtDate(prior.wave_date)} · n={prior.qualified_n}</Link> : "none within 14 days"}</dd>
+          <dt>Last week</dt><dd>{prior ? <Link to={`/w/${prior.survey_id}`}>{fmtDate(prior.wave_date)} · n={prior.qualified_n.toLocaleString("en-US")}</Link> : "none within 14 days"}</dd>
           <dt>Same week last year</dt><dd>{w.ly_status === "loaded" ? "loaded" : w.ly_status === "not_loaded" ? "fielded but not loaded" : "none"}</dd>
           <dt>Significant vs last week</dt><dd>{up.length} answers</dd>
           <dt>Routing changes</dt><dd>{all.filter(m => m.routing).length} answers not comparable</dd>
@@ -81,5 +91,5 @@ export default function Overview() {
         <SourceLine wave={fmtDate(w.wave_date)} base={`base n=${q.groups[0].base}`} asked={q.base_desc} />
       </Card>)}
     </div>
-  </>;
+  </Profiled>;
 }

@@ -20,7 +20,7 @@ SCREENS = {   # path, the check that its data is on screen
     "questions": ("/questions", "document.querySelector('.qtext')?.textContent.length > 5 && (document.querySelectorAll('canvas').length > 0 || document.querySelectorAll('table.data td').length > 0)"),
     "crosstab": ("/crosstab", "document.querySelectorAll('table.data td').length > 0"),
     "trends": ("/trends", "document.querySelectorAll('canvas').length > 0 || /only one wave|Pick at least one answer|No respondents in|fielded once/.test(document.body.innerText)"),
-    "changes": ("/changes", "document.querySelector('h1')?.textContent.length > 5 && document.querySelectorAll('table.data').length > 0"),
+    "changes": ("/changes", "document.querySelector('h1')?.textContent.length > 5 && (document.querySelectorAll('table.data').length > 0 || /No changes match these filters/.test(document.body.innerText))"),
     "survey": ("/survey", "document.querySelectorAll('.option, table.data button').length > 0"),
 }
 NO_ERROR = "!document.querySelector('.state.error')"

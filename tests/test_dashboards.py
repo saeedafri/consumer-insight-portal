@@ -37,3 +37,27 @@ def test_share_sums_answer_codes_over_the_question_base():
     cube = {(412, "XM3", "total", "Total"): {"base": 404, "built_at": None, "answers": {"1": 222, "2": 117, "3": 32, "4": 33}}}
     assert dashboards.share(cube, WAVES[3], "XM3", [2, 3]) == (149, 404)        # started = still shopping + finished
     assert dashboards.share(cube, WAVES[0], "XM3", [1]) is None                 # wave not loaded
+
+
+def test_monthly_topic_last_year_is_the_nearest_wave_about_a_year_earlier():
+    topic = [{"survey_id": s, "season": None, "series_wave_no": n, "launched_on": d, "qualified": 400}
+             for s, n, d in [(433, 4, date(2025, 9, 29)), (440, 5, date(2025, 10, 27)), (258, 16, date(2026, 8, 31)), (235, 17, date(2026, 9, 28))]]
+    prior, ly = dashboards.comparisons(topic, topic[3], "nearest_year_ago")
+    assert prior["survey_id"] == 258 and ly["survey_id"] == 433
+    assert dashboards.comparisons(topic, topic[1], "nearest_year_ago")[1] is None   # nothing within a month of a year ago
+
+
+def test_significance_matches_the_two_proportion_z_test():
+    assert dashboards.significant(55.0, 400, 45.0, 400)          # 10 pts on 400 each: p ≈ 0.005
+    assert not dashboards.significant(52.0, 400, 50.0, 400)      # 2 pts: noise
+    assert not dashboards.significant(50.0, 0, 40.0, 400)
+
+
+def test_takeaways_mention_only_significant_comparable_changes():
+    cfg = {"tiles": [{"code": "hurts", "label": "Tariffs hurt me", "head": "Tariffs", "say": "say tariffs hurt them"}],
+           "lists": [], "segments": []}
+    row = {"metric_code": "hurts", "segment": "Total", "rank_no": 0, "label": "x", "pct": 44.0, "base_n": 400,
+           "prior_pct": 60.0, "prior_base_n": 400, "ly_pct": 43.0, "ly_base_n": 400, "flags": ""}
+    assert dashboards.takeaways([row], cfg) == ["Tariffs: 44% say tariffs hurt them (down 16.0 pts vs the previous wave; 43% a year ago)."]
+    row["flags"] = "base_changed_prior"
+    assert dashboards.takeaways([row], cfg) == ["Tariffs: 44% say tariffs hurt them (43% a year ago)."]

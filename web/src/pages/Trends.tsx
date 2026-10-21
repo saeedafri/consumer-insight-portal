@@ -1,16 +1,17 @@
 // A question across every wave of its tracker: real dates (missing weeks stay gaps, never joined), the focus
 // answer in red with circular markers, others in blue, optional ±margin of error band and 4-week average.
 import { useMemo, useRef } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { COLUMNS, CUT_OF, present, useBook, useTrend, useWaves } from "../api";
 import type { Column, Trend } from "../api";
-import { Card, copyLink, Empty, Failure, Loading, SourceLine, sourceText } from "../components/bits";
+import { Card, copyLink, Empty, Failure, IconDownload, IconImage, IconLink, Loading, SourceLine, sourceText } from "../components/bits";
 import EChart, { axisText, downloadPng, tooltip } from "../components/EChart";
 import type { Chart } from "../components/EChart";
 import QuestionNav from "../components/QuestionNav";
 import { downloadCsv } from "../csv";
 import { C, blues } from "../theme";
 import { fmtDate, moe, pct, pts, significant } from "../stats";
+import { perf } from "../perf";
 
 const RANGES = [["3m", 92], ["6m", 183], ["1y", 366], ["all", 1e5]] as const;
 const DAY = 86_400_000;
@@ -40,11 +41,51 @@ export default function Trends() {
   if (isLoading) return <Loading what="questions" />;
   if (error || !book) return <Failure error={error} />;
   if (!question) return <Empty>This wave has no questions with percentages.</Empty>;
-  const set = (k: string, v: string) => { const p = new URLSearchParams(params); v ? p.set(k, v) : p.delete(k); setParams(p, { replace: true }); };
+  const qIndex = book.questions.findIndex(x => x.id === question.id);
+  const prevQ = qIndex > 0 ? book.questions[qIndex - 1] : null;
+  const nextQ = qIndex >= 0 && qIndex < book.questions.length - 1 ? book.questions[qIndex + 1] : null;
+  const set = (k: string, v: string) => {
+    perf.startFilterChange(k, v || "default");
+    const p = new URLSearchParams(params);
+    v ? p.set(k, v) : p.delete(k);
+    setParams(p, { replace: true });
+  };
   return <div className="split">
     <QuestionNav questions={book.questions} current={question.id} onPick={q => navigate(`/w/${id}/trends/${encodeURIComponent(q.id)}?${new URLSearchParams({ col: column })}`)} />
     <div className="stack">
       <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+          <div className="breadcrumb">
+            <Link to={`/w/${id}`}>Overview</Link>
+            <span className="sep">›</span>
+            <span>{question.section}</span>
+            <span className="sep">›</span>
+            <code>{question.id}</code>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button
+              className="icon-btn"
+              style={{ width: 28, height: 28, borderRadius: 6, fontSize: 13 }}
+              disabled={!prevQ}
+              onClick={() => prevQ && navigate(`/w/${id}/trends/${encodeURIComponent(prevQ.id)}?${new URLSearchParams({ col: column })}`)}
+              title={prevQ ? `Previous: ${prevQ.id} (${prevQ.short || prevQ.text})` : "First question"}
+              aria-label="Previous question"
+            >
+              ‹
+            </button>
+            <span style={{ fontSize: 11.5, color: "var(--ink-2)", fontWeight: 600 }}>{qIndex + 1} of {book.questions.length}</span>
+            <button
+              className="icon-btn"
+              style={{ width: 28, height: 28, borderRadius: 6, fontSize: 13 }}
+              disabled={!nextQ}
+              onClick={() => nextQ && navigate(`/w/${id}/trends/${encodeURIComponent(nextQ.id)}?${new URLSearchParams({ col: column })}`)}
+              title={nextQ ? `Next: ${nextQ.id} (${nextQ.short || nextQ.text})` : "Last question"}
+              aria-label="Next question"
+            >
+              ›
+            </button>
+          </div>
+        </div>
         <div className="qhead"><code>{question.id}</code><span>{question.section}</span></div>
         <p className="qtext">{question.text}</p>
         <div className="toolbar" style={{ margin: 0 }}>
@@ -83,6 +124,11 @@ function TrendView({ t, column, waveId }: { t: Trend; column: Column; waveId: nu
   const toggle = (label: string) => {
     const next = chosen.includes(label) ? chosen.filter(l => l !== label) : [...chosen, label];
     const p = new URLSearchParams(params); p.set("show", next.join("|")); setParams(p, { replace: true });
+  };
+  const setChosen = (labels: string[]) => {
+    const p = new URLSearchParams(params);
+    p.set("show", labels.join("|"));
+    setParams(p, { replace: true });
   };
   const option = useMemo(() => {
     const shades = blues(Math.max(shown.length - 1, 1));
@@ -154,12 +200,23 @@ function TrendView({ t, column, waveId }: { t: Trend; column: Column; waveId: nu
   if (idx.length < 2) return <Card><Empty>This question was asked in only one wave in this range. Choose “All” or another question.</Empty></Card>;
   return <>
     <Card title={`${focus ? focus.label : "Pick an answer"}: ${idx.length} waves`} sub={`${column} · ${fmtDate(t.waves[idx[0]].wave_date)} – ${fmtDate(t.waves[at].wave_date)} · white rings mark a significant change from the previous wave`}
-          aside={<div className="toolbar" style={{ margin: 0 }}><button className="btn" onClick={exportCsv}>Download CSV</button>
+          aside={<div className="toolbar" style={{ margin: 0 }}>
+            <button className="btn" onClick={exportCsv}><IconDownload /> Download CSV</button>
             <button className="btn" onClick={() => chart.current && focus && downloadPng(chart.current, `${t.qcode} · ${focus.label}: ${idx.length} waves`,
-              sourceText(fmtDate(t.waves[at].wave_date), `n ${baseRange} per wave · ${column}`), `${t.qcode}-trend`)}>Download PNG</button>
-            <button className="btn" onClick={e => copyLink(e.currentTarget)}>Copy link</button></div>}>
+              sourceText(fmtDate(t.waves[at].wave_date), `n ${baseRange} per wave · ${column}`), `${t.qcode}-trend`)}><IconImage /> Download PNG</button>
+            <button className="btn" onClick={e => copyLink(e.currentTarget)}><IconLink /> <span>Copy link</span></button>
+          </div>}>
       {shown.length ? <EChart option={option} height={380} label={`Trend of ${t.qcode}, ${column}`} onReady={c => { chart.current = c; }} />
         : <Empty>Pick at least one answer below.</Empty>}
+      {ranked.length > 3 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "14px 0 8px", fontSize: 12 }}>
+          <span className="muted" style={{ fontWeight: 600 }}>Quick select:</span>
+          <button type="button" className="btn-chip" onClick={() => setChosen(ranked.slice(0, 3).map(s => s.label))}>Top 3</button>
+          {ranked.length > 5 && <button type="button" className="btn-chip" onClick={() => setChosen(ranked.slice(0, 5).map(s => s.label))}>Top 5</button>}
+          <button type="button" className="btn-chip" onClick={() => setChosen(ranked.map(s => s.label))}>All ({ranked.length})</button>
+          <button type="button" className="btn-chip" onClick={() => setChosen([ranked[0].label])}>Top 1 only</button>
+        </div>
+      )}
       <div className="legend-line" role="group" aria-label="Answers shown">
         {ranked.map(s => {
           const k = chosen.indexOf(s.label);

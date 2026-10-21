@@ -7,6 +7,7 @@ import { C, blues, labelOn, scaleColours } from "../theme";
 import { count, moe, pct, pts, significant, SMALL_BASE } from "../stats";
 import EChart, { axisText, tooltip } from "./EChart";
 import type { Chart } from "./EChart";
+import Profiled from "./Profiled";
 
 export type View = "bars" | "columns" | "stacked" | "donut" | "table";
 export const VIEWS: { key: View; label: string }[] = [
@@ -56,7 +57,11 @@ export default function QuestionChart({ question, group = 0, view, columns, sort
   if (view === "table") return <QuestionTable question={question} rows={rows} group={g} columns={columns} />;
   const h = height ?? (view === "bars" ? Math.max(180, rows.length * (columns.length > 1 ? 18 * columns.length + 12 : 34) + 40)
     : view === "stacked" ? Math.max(160, (question.groups.length > 1 ? question.groups.length : 1) * 46 + 80) : 340);
-  return <EChart option={option} height={h} label={`${question.id}: ${question.text}`} onReady={onReady} />;
+  return (
+    <Profiled id={`Chart:${question.id}`}>
+      <EChart option={option} height={h} label={`${question.id}: ${question.text}`} onReady={onReady} />
+    </Profiled>
+  );
 }
 
 function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[], wave: string) {

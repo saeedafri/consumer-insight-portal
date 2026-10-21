@@ -2,18 +2,21 @@
 // (Qualtrics style) or arrows against a reference column, and a second mode that crosses two cuts.
 import { useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { present, useBook, useCrosstab } from "../api";
 import type { Column, Group, Question } from "../api";
-import { BaseNote, Card, Empty, Failure, Loading, SourceLine } from "../components/bits";
+import { BaseNote, Card, Empty, Failure, IconDownload, Loading, SourceLine } from "../components/bits";
 import QuestionNav from "../components/QuestionNav";
 import { downloadCsv } from "../csv";
-import { heat, inkOn } from "../theme";
+import { heat, heatAlpha, inkOn } from "../theme";
 import { count, fmtDate, moe, pct, significant, SMALL_BASE, versusRest } from "../stats";
+import { perf } from "../perf";
+import Profiled from "../components/Profiled";
 
 const LETTERS = "ABCDEFG";
 const CUT_NAMES: Record<string, string> = { gender: "Gender", age_band: "Age band", generation: "Generation", income_band: "Household income",
                                              census_region: "Census region", urbanicity: "Urbanicity" };
+const SORTED_CUTS = Object.entries(CUT_NAMES).sort(([, a], [, b]) => a.localeCompare(b));
 
 const GENERATIONS = ["GenZ", "Millennial", "GenX", "Boomer", "Silent"];
 /** Cut values in reading order: generations young to old, numbers (age, income) ascending, the rest A–Z. */
@@ -51,11 +54,51 @@ export default function Crosstab() {
   const cols = present(book.n);
   const profiled = cols.length > 1;   // ad hoc and archive surveys without age/gender profiles have nothing to cut by
   const mode = params.get("mode") === "two" && profiled ? "two" : "banner";
-  const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }); };
+  const qIndex = book.questions.findIndex(x => x.id === question.id);
+  const prevQ = qIndex > 0 ? book.questions[qIndex - 1] : null;
+  const nextQ = qIndex >= 0 && qIndex < book.questions.length - 1 ? book.questions[qIndex + 1] : null;
+  const set = (k: string, v: string) => {
+    perf.startFilterChange(k, v);
+    const p = new URLSearchParams(params);
+    p.set(k, v);
+    setParams(p, { replace: true });
+  };
   return <div className="split">
     <QuestionNav questions={book.questions} current={question.id} onPick={q => navigate(`/w/${id}/crosstab/${encodeURIComponent(q.id)}?${params}`)} />
     <div className="stack">
       <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+          <div className="breadcrumb">
+            <Link to={`/w/${id}`}>Overview</Link>
+            <span className="sep">›</span>
+            <span>{question.section}</span>
+            <span className="sep">›</span>
+            <code>{question.id}</code>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button
+              className="icon-btn"
+              style={{ width: 28, height: 28, borderRadius: 6, fontSize: 13 }}
+              disabled={!prevQ}
+              onClick={() => prevQ && navigate(`/w/${id}/crosstab/${encodeURIComponent(prevQ.id)}?${params}`)}
+              title={prevQ ? `Previous: ${prevQ.id} (${prevQ.short || prevQ.text})` : "First question"}
+              aria-label="Previous question"
+            >
+              ‹
+            </button>
+            <span style={{ fontSize: 11.5, color: "var(--ink-2)", fontWeight: 600 }}>{qIndex + 1} of {book.questions.length}</span>
+            <button
+              className="icon-btn"
+              style={{ width: 28, height: 28, borderRadius: 6, fontSize: 13 }}
+              disabled={!nextQ}
+              onClick={() => nextQ && navigate(`/w/${id}/crosstab/${encodeURIComponent(nextQ.id)}?${params}`)}
+              title={nextQ ? `Next: ${nextQ.id} (${nextQ.short || nextQ.text})` : "Last question"}
+              aria-label="Next question"
+            >
+              ›
+            </button>
+          </div>
+        </div>
         <div className="qhead"><code>{question.id}</code><span>{question.section}</span><BaseNote base={question.groups[0].base} /></div>
         <p className="qtext">{question.text}</p>
         <div className="seg" role="group" aria-label="Cross-tab mode">
@@ -65,8 +108,15 @@ export default function Crosstab() {
         </div>
       </Card>
       {!profiled && <p className="muted">This survey has no respondent profile (gender, age, generation…), so only the Total column is available.</p>}
-      {mode === "banner" ? <Banner question={question} n={book.n} wave={fmtDate(book.wave.wave_date)} cols={cols} />
-                         : <TwoCuts id={id} question={question} />}
+      {mode === "banner" ? (
+        <Profiled id="Crosstab:Banner">
+          <Banner question={question} n={book.n} wave={fmtDate(book.wave.wave_date)} cols={cols} />
+        </Profiled>
+      ) : (
+        <Profiled id="Crosstab:TwoCuts">
+          <TwoCuts id={id} question={question} />
+        </Profiled>
+      )}
     </div>
   </div>;
 }
@@ -75,7 +125,12 @@ function Banner({ question, n, wave, cols }: { question: Question; n: Record<Col
   const [params, setParams] = useSearchParams();
   const ref = (cols.includes(params.get("ref") as Column) ? params.get("ref") : "Total") as Column;
   const marks = params.get("marks") === "arrows" ? "arrows" : "letters";
-  const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }); };
+  const set = (k: string, v: string) => {
+    perf.startFilterChange(k, v);
+    const p = new URLSearchParams(params);
+    p.set(k, v);
+    setParams(p, { replace: true });
+  };
   const { on, view } = useHover();
   const exportCsv = () => downloadCsv(`${question.id}-crosstab`, ["Group", "Answer", ...cols],
     question.groups.flatMap(g => g.rows.map(r => [g.label, r.label, ...cols.map(c => r[c])])),
@@ -88,7 +143,7 @@ function Banner({ question, n, wave, cols }: { question: Question; n: Record<Col
         <button aria-pressed={marks === "letters"} onClick={() => set("marks", "letters")}>Letters</button>
         <button aria-pressed={marks === "arrows"} onClick={() => set("marks", "arrows")}>Arrows</button>
       </div>
-      <button className="btn" onClick={exportCsv}>Download CSV</button></div>}>
+      <button className="btn" onClick={exportCsv}><IconDownload /> Download CSV</button></div>}>
     {question.groups.map(g => <Matrix key={g.label} g={g} q={question} n={n} cols={cols} refCol={ref} marks={marks} hover={on} onRef={c => set("ref", c)} />)}
     <div className="legend-line">
       <span><i style={{ background: heat(0.15) }} />low</span><span><i style={{ background: heat(0.9) }} />high share</span>
@@ -113,7 +168,7 @@ function Matrix({ g, q, n, cols, refCol, marks, hover, onRef }: { g: Group; q: Q
     return s > 0 ? "▲" : s < 0 ? "▼" : "";
   };
   return <div className="table-wrap" style={{ marginBottom: 14 }}>
-    {g.label && <h4 style={{ margin: "8px 0", fontSize: 14 }}>{g.label}</h4>}
+    {g.label && <h3 style={{ margin: "10px 0 6px", fontSize: "14.5px", fontWeight: 700 }}>{g.label}</h3>}
     <table className="data xt">
       <thead><tr><th>Answer</th>{cols.map((c, i) =>
         <th key={c} className={`num ${c === refCol && marks === "arrows" ? "ref" : ""}`}>
@@ -124,10 +179,10 @@ function Matrix({ g, q, n, cols, refCol, marks, hover, onRef }: { g: Group; q: Q
         {g.rows.map(r => <tr key={r.label}><th scope="row">{r.label}</th>{cols.map(c => {
           const v = r[c];
           if (v == null) return <td key={c} className="cell hidden">–</td>;
-          const alpha = 0.08 + 0.82 * (v / max);
+          const alpha = heatAlpha(v / max);
           const m = mark(v, c, r);
           return <td key={c} className={`cell ${base(c) < SMALL_BASE ? "small-col" : ""}`}
-                     style={{ background: heat(alpha), color: inkOn(alpha), opacity: base(c) < SMALL_BASE ? 0.6 : 1 }}
+                     style={{ background: heat(alpha), color: inkOn(alpha) }}
                      {...hover(<><b>{r.label}</b><b className="v">{pct(v)} <small style={{ fontSize: 12, color: "var(--ink-2)" }}>±{moe(v, base(c)).toFixed(1)}</small></b>
                        {c} · ≈{count(v, base(c))} of {base(c)} respondents
                        {m && <div style={{ marginTop: 4 }}>{marks === "letters" ? `Significantly higher than ${m.split("").map(l => cols[LETTERS.indexOf(l)]).join(", ")}`
@@ -145,7 +200,12 @@ function TwoCuts({ id, question }: { id: number; question: Question }) {
   const [params, setParams] = useSearchParams();
   const a = params.get("a") ?? "gender", b = params.get("b") ?? "generation";
   const weeks = Number(params.get("weeks") ?? 1);
-  const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }); };
+  const set = (k: string, v: string) => {
+    perf.startFilterChange(k, v);
+    const p = new URLSearchParams(params);
+    p.set(k, v);
+    setParams(p, { replace: true });
+  };
   const { data, isFetching, error } = useCrosstab(id, question.id, [a, b], weeks, a !== b);
   const { on, view } = useHover();
   const answers = useMemo(() => [...new Map((data?.rows ?? []).map(r =>
@@ -157,7 +217,7 @@ function TwoCuts({ id, question }: { id: number; question: Question }) {
   return <Card title="Two cuts combined" sub="One answer at a time. Cells under 30 respondents are hidden; under 50 are flagged. Pool four weeks to grow small cells.">
     <div className="toolbar">
       {(["a", "b"] as const).map(k => <select key={k} aria-label={k === "a" ? "Rows" : "Columns"} value={k === "a" ? a : b} onChange={e => set(k, e.target.value)}>
-        {Object.entries(CUT_NAMES).map(([v, l]) => <option key={v} value={v}>{k === "a" ? "Rows: " : "Columns: "}{l}</option>)}</select>)}
+        {SORTED_CUTS.map(([v, l]) => <option key={v} value={v}>{k === "a" ? "Rows: " : "Columns: "}{l}</option>)}</select>)}
       <div className="seg" role="group" aria-label="Weeks pooled">
         {[1, 2, 4].map(w => <button key={w} aria-pressed={weeks === w} onClick={() => set("weeks", String(w))}>{w === 1 ? "This week" : `Last ${w} weeks`}</button>)}
       </div>
@@ -175,8 +235,8 @@ function TwoCuts({ id, question }: { id: number; question: Question }) {
           if (!r) return <td key={y} className="cell hidden">–</td>;
           const [, , , , , nn, base, p, flags] = r as [string, string, string, number, string, number | null, number, number | null, string];
           if (flags === "suppressed") return <td key={y} className="cell hidden" {...on(<>{x} × {y}<br />Only {base} respondents: hidden</>)}>n&lt;30</td>;
-          const alpha = 0.08 + 0.8 * ((p ?? 0) / 100);
-          return <td key={y} className="cell" style={{ background: heat(alpha), color: inkOn(alpha), opacity: flags === "small_base" ? 0.65 : 1 }}
+          const alpha = heatAlpha((p ?? 0) / 100);
+          return <td key={y} className={`cell ${flags === "small_base" ? "small-col" : ""}`} style={{ background: heat(alpha), color: inkOn(alpha) }}
                      {...on(<><b>{x} × {y}</b><b className="v">{pct(p)} <small style={{ fontSize: 12 }}>±{moe(p ?? 0, base).toFixed(1)}</small></b>{nn} of {base} respondents
                        {flags === "small_base" && <div style={{ color: "var(--warn)" }}>Small base: read with caution</div>}</>)}>
             {(p ?? 0).toFixed(0)}<small style={{ display: "block", fontWeight: 400, fontSize: 10 }}>n={base}</small></td>;

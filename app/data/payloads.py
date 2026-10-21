@@ -11,7 +11,7 @@ from decimal import Decimal
 from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
-from etl.serving import SMALL_BASE
+from etl.serving import CUTS, SMALL_BASE
 
 COLUMNS = ("qcode", "dim", "dim_value", "item_label", "option_code", "option_label", "n", "base_n",
            "pct", "prior_pct", "prior_base_n", "ly_pct", "ly_base_n", "flags")
@@ -159,7 +159,7 @@ def family_trends(family: str, study_type: str, qcode: str) -> dict:
     by: dict = {}
     for r in rows:
         by.setdefault((r["dim"], r["dim_value"]), []).append(r)
-    return {(d, v): _trend(qcode, d, v, waves, by[(d, v)]) for d, v in TREND_COLUMNS if (d, v) in by}
+    return {(d, v): _trend(qcode, d, v, waves, by.get((d, v), [])) for d, v in TREND_COLUMNS}   # empty when nobody in that group answered
 
 
 def trend(survey_id: int, qcode: str, dim: str, value: str) -> dict:
@@ -184,12 +184,8 @@ def module_section(qcode: str, modules: list[str]) -> str:
     return f"{letters} block"
 
 
-def pool(conn, survey_id: int, weeks: int) -> list[dict]:
-    """The wave and up to weeks - 1 earlier ones, following the same prior-week chain as srv_result."""
-    family = {r["survey_id"]: r for r in conn.execute(text(   # one round trip: the family's latest waves up to this one
-        "SELECT w.survey_id, w.wave_date, w.prior_survey_id FROM srv_wave w JOIN srv_wave me ON me.survey_id = :s"
-        " AND w.survey_family = me.survey_family AND w.wave_date <= me.wave_date ORDER BY w.wave_date DESC LIMIT 20"),
-        {"s": survey_id}).mappings()}
+def chain(family: dict, survey_id: int, weeks: int) -> list[dict]:
+    """The wave and up to weeks - 1 earlier ones of {survey_id: wave}, following the prior-week chain as srv_result does."""
     waves = []
     while survey_id in family and len(waves) < weeks:
         waves.append(family[survey_id])
@@ -197,22 +193,47 @@ def pool(conn, survey_id: int, weeks: int) -> list[dict]:
     return waves
 
 
+def pool(conn, survey_id: int, weeks: int) -> list[dict]:
+    family = {r["survey_id"]: dict(r) for r in conn.execute(text(   # one round trip: the family's latest waves up to this one
+        "SELECT w.survey_id, w.wave_date, w.prior_survey_id FROM srv_wave w JOIN srv_wave me ON me.survey_id = :s"
+        " AND w.survey_family = me.survey_family AND w.wave_date <= me.wave_date ORDER BY w.wave_date DESC LIMIT 20"),
+        {"s": survey_id}).mappings()}
+    return chain(family, survey_id, weeks)
+
+
+def question_cuts(conn, ids: list[int], qcode: str | None = None) -> dict:
+    """{(survey_id, qcode): {"answers": [...], "counts": [[item_id, option_id, *CUTS, n], ...]}}: srv_answer counted
+    by every cut at once and the question's answer labels, enough for any two-cut crosstab. The ETL publishes one
+    per wave and question (etl/publish.py); crosstab() builds it live for the rest."""
+    where = "survey_id IN :ids" + (" AND qcode = :q" if qcode else "")
+    params = {"ids": ids, **({"q": qcode} if qcode else {})}
+    cuts = ", ".join(CUTS)
+    out: dict = defaultdict(lambda: {"answers": [], "counts": []})
+    for r in conn.execute(text(
+            f"SELECT survey_id, qcode, item_id, option_id, {cuts}, COUNT(*) FROM srv_answer WHERE {where}"
+            f" GROUP BY survey_id, qcode, item_id, option_id, {cuts}").bindparams(bindparam("ids", expanding=True)), params):
+        out[(r[0], r[1])]["counts"].append(list(r[2:]))
+    for a in conn.execute(text(
+            "SELECT survey_id, qcode, item_id, option_id, item_label, option_code, option_label, sort_order, flags"
+            f" FROM srv_result WHERE {where} AND dim = 'total'").bindparams(bindparam("ids", expanding=True)), params).mappings():
+        out[(a["survey_id"], a["qcode"])]["answers"].append({k: a[k] for k in list(a.keys())[2:]})
+    return dict(out)
+
+
 def crosstab(survey_id: int, qcode: str, by: tuple, weeks: int) -> dict:
-    """Counts by two cuts from srv_answer, pooled across waves on the answer's label and code (ids differ
-    per wave, as in srv_result's comparisons), then bases, percentages and flags. Respondents with no
-    value for a cut are left out, as in srv_result. Cells nobody chose come back as n = 0."""
-    first, second = by
     with get_engine("app").connect() as conn:
         waves = pool(conn, survey_id, weeks)
-        ids = [w["survey_id"] for w in waves] or [-1]
-        counts = conn.execute(text(
-            f"SELECT survey_id, item_id, option_id, {first}, {second}, COUNT(*) FROM srv_answer"
-            f" WHERE survey_id IN :ids AND qcode = :q GROUP BY survey_id, item_id, option_id, {first}, {second}")
-            .bindparams(bindparam("ids", expanding=True)), {"ids": ids, "q": qcode}).all()
-        answers = conn.execute(text(
-            "SELECT survey_id, item_id, option_id, item_label, option_code, option_label, sort_order, flags"
-            " FROM srv_result WHERE survey_id IN :ids AND qcode = :q AND dim = 'total'")
-            .bindparams(bindparam("ids", expanding=True)), {"ids": ids, "q": qcode}).mappings().all()
+        found = question_cuts(conn, [w["survey_id"] for w in waves] or [-1], qcode)
+    return crosstab_from(survey_id, qcode, by, waves, {sid: part for (sid, _), part in found.items()})
+
+
+def crosstab_from(survey_id: int, qcode: str, by: tuple, waves: list[dict], parts: dict) -> dict:
+    """One question by two cuts, pooled across waves on the answer's label and code (ids differ per wave, as in
+    srv_result's comparisons), then bases, percentages and flags. parts is question_cuts' {survey_id: part}.
+    Respondents with no value for a cut are left out, as in srv_result. Cells nobody chose come back as n = 0."""
+    first, second = (2 + CUTS.index(cut) for cut in by)
+    answers = [{**a, "survey_id": sid} for sid, part in parts.items() for a in part["answers"]]
+    counts = [(sid, c[0], c[1], c[first], c[second], c[-1]) for sid, part in parts.items() for c in part["counts"]]
     if not any(a["survey_id"] == survey_id for a in answers):
         raise LookupError("That question is not in that wave")
     label = {(a["survey_id"], a["item_id"], a["option_id"]): a for a in answers}

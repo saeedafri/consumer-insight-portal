@@ -99,6 +99,10 @@ class ForstaClient:
     def survey_data(self, path: str, **params: Any) -> list[dict]:
         return self._get(f"surveys/{path.strip('/')}/data", format="json", **params).json()
 
+    def survey_quota(self, path: str) -> dict:
+        """Each quota cell's limit and completes; 428 while the survey is hibernated."""
+        return self._get(f"surveys/{path.strip('/')}/quota").json()
+
     def whoami(self) -> dict:
         """Cheapest call that proves the key works. Use in test_connection.py."""
         return self._get("rh/users/self").json()

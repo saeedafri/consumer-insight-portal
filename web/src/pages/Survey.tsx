@@ -1,10 +1,10 @@
 // The questionnaire as a respondent saw it, one question at a time, with the live result beside it.
-import { useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router";
 import { useBook } from "../api";
 import { BaseNote, Card, Empty, Failure, Loading } from "../components/bits";
 import QuestionChart from "../components/QuestionChart";
-import { fmtDate } from "../stats";
+import { fmtDate, pct } from "../stats";
 
 export default function Survey() {
   const { id: raw, q: code } = useParams();
@@ -13,11 +13,29 @@ export default function Survey() {
   const { data: book, isLoading, error } = useBook(id);
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const at = useMemo(() => Math.max(0, book?.questions.findIndex(x => x.id === code) ?? 0), [book, code]);
+  useEffect(() => {
+    if (!book) return;   // hooks run on every render, so before the loading returns below
+    const handleKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (e.key === "ArrowLeft" && at > 0) {
+        e.preventDefault();
+        navigate(`/w/${id}/survey/${encodeURIComponent(book!.questions[at - 1].id)}`);
+      } else if (e.key === "ArrowRight" && at < (book?.questions.length ?? 0) - 1) {
+        e.preventDefault();
+        navigate(`/w/${id}/survey/${encodeURIComponent(book!.questions[at + 1].id)}`);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [at, book]);
+
   if (isLoading) return <Loading what="questionnaire" />;
   if (error || !book) return <Failure error={error} />;
   const q = book.questions[at];
   if (!q) return <Empty>This wave has no questions to preview.</Empty>;
   const go = (i: number) => navigate(`/w/${id}/survey/${encodeURIComponent(book.questions[i].id)}`);
+
   const multi = q.type === "multi" || q.type === "grid_multi";
   const choose = (key: string, label: string) => setPicked(p => {
     const now = p[key] ?? [];
@@ -26,12 +44,11 @@ export default function Survey() {
   const sections = [...new Map(book.questions.map((x, i) => [x.section, i])).entries()];
   return <>
     <div className="page-head"><div>
-      <p className="eyebrow">Survey preview · wave of {fmtDate(book.wave.wave_date)}</p>
       <h1>What respondents were asked</h1>
-      <p className="lede">{book.questions.length} questions in {sections.length} sections. Answer for yourself to see where you sit against {book.wave.qualified_n} respondents.</p>
+      <p className="lede">Wave of {fmtDate(book.wave.wave_date)} · {book.questions.length} questions in {sections.length} sections. Answer for yourself to see where you sit against {book.wave.qualified_n.toLocaleString("en-US")} qualified respondents.</p>
     </div></div>
-    <div className="grid g3">
-      <div className="span2 stack">
+    <div className="grid g3" style={{ marginBottom: 18 }}>
+      <div className="span2">
         <Card className="respondent">
           <div className="qhead"><span style={{ color: "var(--red)", fontWeight: 700 }}>{q.section}</span><span>· Question {at + 1} of {book.questions.length}</span><code>{q.id}</code></div>
           <h2>{q.text}</h2>
@@ -46,24 +63,30 @@ export default function Survey() {
           : <div className="options">{q.groups[0].rows.map(r => {
               const on = (picked[q.id] ?? []).includes(r.label);
               return <button key={r.label} className={`option ${on ? "on" : ""}`} aria-pressed={on} onClick={() => choose(q.id, r.label)}>
-                <span className={`box ${multi ? "" : "radio"}`} /><span style={{ textAlign: "left" }}>{r.label}</span></button>;
+                <span className={`box ${multi ? "" : "radio"}`} />
+                <span style={{ textAlign: "left" }}>{r.label}</span>
+                {on && r.Total != null && <b style={{ marginLeft: "auto", color: "var(--sig)", fontVariantNumeric: "tabular-nums", fontSize: 13 }}>{pct(r.Total)}</b>}
+              </button>;
             })}</div>}
           <div className="toolbar" style={{ marginTop: 20 }}>
-            <button className="btn" disabled={at === 0} onClick={() => go(at - 1)}>‹ Previous</button>
-            <button className="btn primary" disabled={at >= book.questions.length - 1} onClick={() => go(at + 1)}>Next question ›</button>
+            <button className="btn" disabled={at === 0} onClick={() => go(at - 1)} title="Previous question (←)">‹ Previous</button>
+            <button className="btn primary" disabled={at >= book.questions.length - 1} onClick={() => go(at + 1)} title="Next question (→)">Next question ›</button>
+            <span style={{ flex: 1 }} />
+            <Link className="btn" to={`/w/${id}/questions/${encodeURIComponent(q.id)}`}>Open in Question Explorer →</Link>
           </div>
-        </Card>
-        <Card title="How everyone answered" sub={`${q.id} · Total`} aside={<BaseNote base={q.groups[0].base} />}>
-          <QuestionChart question={q} view={q.groups.length > 1 ? "stacked" : "bars"} columns={["Total"]} sort={false} wave={fmtDate(book.wave.wave_date)} />
         </Card>
       </div>
       <Card title="Questionnaire flow" className="flow">
-        <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
+        <div style={{ maxHeight: 460, overflowY: "auto" }}>
           {sections.map(([section, first], k) => <button key={section} className={q.section === section ? "on" : ""} onClick={() => go(first)}>
             <span className="no">{k + 1}</span><span>{section}<br /><small className="muted">{book.questions.filter(x => x.section === section).length} questions</small></span>
           </button>)}
         </div>
       </Card>
     </div>
+
+    <Card title="How everyone answered" sub={`${q.id} · Total`} aside={<BaseNote base={q.groups[0].base} />}>
+      <QuestionChart question={q} view={q.groups.length > 1 ? "stacked" : "bars"} columns={["Total"]} sort={false} wave={fmtDate(book.wave.wave_date)} />
+    </Card>
   </>;
 }

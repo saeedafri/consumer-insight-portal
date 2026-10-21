@@ -5,23 +5,299 @@
 #   tiles     → one percentage each, with prior-week and last-year comparisons
 #   lists     → a ranked multi-choice question (top N, e.g. retailers); its #1 can be a tile
 #   segments  → one tile metric across a demographic cut (generation, age_band, …)
+#   aliases   → older codes of the same question: {old: configured}
+#   say/head  → the key-takeaway wording: "<head>: <pct>% <say>"; a list's `tile` shows its #1 as a tile
 #
-# prior week = previous series_wave_no of the same module and season (cip_wave_module)
+# Single-choice codes are the Forsta value codes. A wave where they carry other labels than in most waves
+# (a question code reused for another question) is left out of that tile; python -m api.dashboards --check lists them.
+#
+# prior      = previous series_wave_no of the same module and season (cip_wave_module); prior_label names it
 # last year  = ly_rule: same_wave_number (wave N of last season, as the business team's Databank does)
 #              or same_calendar_week (the wave launched within ±3 days of one year earlier)
+#              or nearest_year_ago (the wave closest to one year earlier, within a month: monthly topics)
 
 holiday_tracker:
   title: Holiday Survey Databank
   module: HOLIDAY_TRACKER
   small_base: 50                      # flag any percentage on fewer respondents than this
   ly_rule: same_wave_number           # "vs LY" = the same wave number last season (Databank definition)
+  prior_label: last week
   tiles:
-    - {code: not_started, label: NOT YET STARTED,       qcode: XM3, codes: [1]}
-    - {code: started,     label: STARTED SHOPPING,      qcode: XM3, codes: [2, 3]}
-    - {code: finished,    label: FINISHED SHOPPING,     qcode: XM3, codes: [3]}
-    - {code: bought_7d,   label: BOUGHT IN PAST 7 DAYS, qcode: XM1, codes: [1]}
+    - {code: not_started, label: Not started,           qcode: XM3, codes: [1],    head: Progress, say: have not started holiday shopping}
+    - {code: started,     label: Started,               qcode: XM3, codes: [2, 3], head: Progress, say: have started}
+    - {code: finished,    label: Finished,              qcode: XM3, codes: [3],    head: Progress, say: have finished}
+    - {code: bought_7d,   label: Bought in past 7 days, qcode: XM1, codes: [1],    head: Activity, say: bought for the holidays in the past 7 days}
   lists:
-    - {code: retailers,  label: "#1 HOLIDAY RETAILER", qcode: XM2,  top: 5, exclude: [None of these]}
-    - {code: categories, label: TOP CATEGORIES,        qcode: XM1A, top: 5, exclude: [Other - please specify]}
+    - {code: retailers,  qcode: XM2,  top: 5, exclude: [None of these], head: Retailers, say: lead among holiday purchasers,
+       tile: "#1 holiday retailer", of: of purchasers}
+    - {code: categories, qcode: XM1A, top: 5, exclude: [Other - please specify], head: Categories, say: lead the holiday basket}
   segments:
-    - {code: started_by_generation, of: started, dim: generation, order: [GenZ, Millennial, GenX, Boomer]}
+    - {code: started_by_generation, of: started, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, started holiday shopping"}
+
+tariffs_inflation:
+  title: Tariffs and Inflation Tracker
+  module: TARIFFS_INFLATION
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: prices_risen,     label: See prices rising,         qcode: IN1, codes: [1],    head: Prices, say: notice prices have generally risen}
+    - {code: hurts_me,         label: Tariffs hurt me,           qcode: TF1, codes: [1, 2], head: Tariffs, say: say tariffs hurt them personally}
+    - {code: hurts_economy,    label: Tariffs hurt the economy,  qcode: TF2, codes: [1, 2], head: Tariffs, say: say they hurt the US economy}
+    - {code: changing_habits,  label: Changing how they shop,    qcode: TF5, codes: [1],    head: Behavior, say: have changed or expect to change how they shop to avoid tariffs}
+  lists:
+    - {code: grocery_moves,    qcode: IN2, top: 5, exclude: [No change, Other (please specify)], head: Grocery response to prices,
+       say: are the top moves, tile: "#1 grocery response", of: of shoppers}
+    - {code: tariff_concerns,  qcode: TF3, top: 5, exclude: [None of these, Other (please specify)], head: Tariff concerns, say: worry consumers most}
+  segments:
+    - {code: hurts_me_by_generation, of: hurts_me, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, say tariffs hurt them personally"}
+
+mideast_gas:
+  title: Middle East Conflict and Gas Prices
+  module: MIDEAST_GAS
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: following,     label: Following the conflict,     qcode: D12, codes: [3, 4], head: Attention, say: pay some or a lot of attention to the conflict}
+    - {code: following_lot, label: Following it a lot,         qcode: D12, codes: [4],    head: Attention, say: a lot}
+    - {code: cut_back,      label: Cut spending due to gas,    qcode: D14, codes: [1],    head: Spending, say: have cut spending elsewhere because of higher gas prices}
+  lists:
+    - {code: cutbacks, qcode: D15, top: 5, exclude: [Other (please specify), None of these], head: Where they cut back,
+       say: are cut most, tile: "#1 area cut back", of: of those cutting back}
+  segments:
+    - {code: cut_back_by_generation, of: cut_back, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, cut spending because of gas prices"}
+
+genai:
+  title: GenAI Tracker
+  module: GENAI
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: aware,       label: Heard of AI,               qcode: G1,  codes: [1],    head: Awareness, say: have heard of AI}
+    - {code: shop_used,   label: Have shopped with GenAI,   qcode: G6A, codes: [1],    head: Shopping, say: of GenAI users have used it to shop}
+    - {code: shop_intent, label: Plan to shop with GenAI,   qcode: G6A, codes: [2, 3], head: Shopping, say: plan or would like to}
+    - {code: work_use,    label: Use GenAI for work,        qcode: G6,  codes: [2, 3], head: Work, say: of users use GenAI for work (alone or with personal use)}
+  lists:
+    - {code: tools, qcode: G5, top: 5, exclude: [None of these, Other (please specify)], head: Tools used,
+       say: are the most used, tile: "#1 GenAI tool", of: have used it}
+    - {code: worries, qcode: G8, top: 5, exclude: [None of these, Other (please specify)], head: Worries, say: worry consumers most}
+  segments:
+    - {code: shop_used_by_generation, of: shop_used, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, GenAI users who have shopped with it"}
+
+financial_health:
+  title: Consumer Financial Health
+  module: FINANCIAL_HEALTH
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: savings_month,  label: Savings last under a month, qcode: F1, codes: [1, 2, 3], head: Savings, say: could cover their bills for less than a month from savings}
+    - {code: savings_week,   label: Savings last under a week,  qcode: F1, codes: [1],       head: Savings, say: for less than a week}
+    - {code: low_debt,       label: Low unsecured debt,         qcode: F2, codes: [1],       head: Debt, say: owe unsecured debt under 25% of monthly income}
+    - {code: windfall,       label: Expect a windfall,          qcode: F3, codes: [1, 2],    head: Windfall, say: "expect a windfall (stimulus, loan forgiveness, inheritance) in the next 12 months"}
+  lists: []
+  segments:
+    - {code: savings_month_by_generation, of: savings_month, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, savings would last under a month"}
+
+glp1:
+  title: GLP-1 Tracker
+  module: GLP1
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: using,       label: Using a GLP-1 drug,  qcode: GP1, codes: [1],    head: Usage, say: of US adults are using a GLP-1 drug like Ozempic}
+    - {code: weight_loss, label: Taking it for weight loss, qcode: GP2, codes: [1, 2], head: Usage, say: of users take it for weight loss}
+    - {code: eating_less, label: Eating less,         qcode: GP3, codes: [4, 5], head: Eating, say: of users eat less than before}
+  lists:
+    - {code: changes, qcode: GP5, top: 5, exclude: [None of these], head: Since starting,
+       say: are the top changes among users, tile: "#1 change since starting", of: of users}
+    - {code: how_less, qcode: GP4, top: 3, exclude: [None of these], head: How they eat less, say: lead among users eating less}
+  segments:
+    - {code: using_by_generation, of: using, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, using a GLP-1 drug"}
+
+holiday_outlook:
+  title: Holiday Outlook
+  module: HOLIDAY
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: spend_more,     label: Will spend more,        qcode: HX2, codes: [4, 5], head: Holiday spending, say: expect to spend more than last year}
+    - {code: spend_less,     label: Will spend less,        qcode: HX2, codes: [1, 2], head: Holiday spending, say: expect to spend less}
+    - {code: inflation_up,   label: Expect higher inflation, qcode: HX4, codes: [1],   head: Inflation, say: expect inflation to be higher by December}
+    - {code: finances_worse, label: Finances worse,          qcode: HX5, codes: [4, 5], head: Finances, say: expect their finances to be worse this holiday than last}
+  lists: []
+  segments:
+    - {code: spend_more_by_generation, of: spend_more, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, expect to spend more this holiday"}
+
+# ── lead sectors: one per weekly tracker wave, rotating; the same three questions each time ──────────
+
+drugstore:
+  title: Drugstore / Pharmacy
+  module: DRUGSTORE
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: bought, label: Bought in past 3 months, qcode: DS1, codes: [1], head: Purchase, say: "bought from a drugstore or pharmacy in the past three months"}
+  lists:
+    - {code: top, qcode: DS2, top: 5, head: "Top drugstores", say: lead among buyers, tile: "#1 drugstore", of: of buyers}
+    - {code: categories, qcode: DS3, top: 5, head: "Top products", say: lead}
+  segments:
+    - {code: bought_by_generation, of: bought, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, bought from a drugstore or pharmacy"}
+
+home_improvement:
+  title: Home Improvement / DIY
+  module: HOME_IMPROVEMENT
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: bought, label: Bought in past 3 months, qcode: HI1, codes: [1], head: Purchase, say: "bought home-improvement, DIY or garden products in the past three months"}
+  lists:
+    - {code: top, qcode: HI2, top: 5, head: "Top retailers", say: lead among buyers, tile: "#1 retailer", of: of buyers}
+    - {code: categories, qcode: HI3, top: 5, head: "Top products", say: lead}
+  segments:
+    - {code: bought_by_generation, of: bought, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, bought home-improvement, DIY or garden products"}
+
+off_price:
+  title: Off-Price / Dollar Stores
+  module: OFF_PRICE
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: bought, label: Bought in past 3 months, qcode: O1, codes: [1], head: Purchase, say: "bought from an off-price retailer in the past three months"}
+  lists:
+    - {code: top, qcode: O2, top: 5, head: "Top off-price retailers", say: lead among buyers, tile: "#1 off-price retailer", of: of buyers}
+    - {code: categories, qcode: O3, top: 5, head: "Top item types", say: lead}
+  segments:
+    - {code: bought_by_generation, of: bought, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, bought from an off-price retailer"}
+
+apparel:
+  title: Apparel
+  module: APPAREL
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: bought, label: Bought in past 3 months, qcode: AP1, codes: [1], head: Purchase, say: "bought clothing or accessories in the past three months"}
+  lists:
+    - {code: top, qcode: AP3, top: 5, head: "Top retailers", say: lead among buyers, tile: "#1 retailer", of: of buyers}
+    - {code: categories, qcode: AP2, top: 5, head: "Top categories", say: lead}
+  segments:
+    - {code: bought_by_generation, of: bought, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, bought clothing or accessories"}
+
+footwear:
+  title: Footwear
+  module: FOOTWEAR
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: bought, label: Bought in past 3 months, qcode: FW1, codes: [1], head: Purchase, say: "bought footwear in the past three months"}
+  lists:
+    - {code: top, qcode: FW2, top: 5, head: "Top retailers", say: lead among buyers, tile: "#1 retailer", of: of buyers}
+    - {code: categories, qcode: FW4, top: 5, head: "Top categories", say: lead}
+  segments:
+    - {code: bought_by_generation, of: bought, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, bought footwear"}
+
+ecommerce:
+  title: eCommerce
+  module: ECOMMERCE
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: bought, label: Bought in past 3 months, qcode: EC1, codes: [1], head: Purchase, say: "bought online in the past three months"}
+  lists:
+    - {code: top, qcode: EC2, top: 5, head: "Top online retailers", say: lead among buyers, tile: "#1 online retailer", of: of buyers}
+    - {code: categories, qcode: EC4, top: 5, head: "Top categories", say: lead}
+  segments:
+    - {code: bought_by_generation, of: bought, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, bought online"}
+
+luxury:
+  title: Luxury
+  module: LUXURY
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: bought, label: Bought in past 3 months, qcode: LX1, codes: [1], head: Purchase, say: "bought luxury products in the past three months"}
+  lists:
+    - {code: top, qcode: LX3, top: 5, head: "Top brands", say: lead among buyers, tile: "#1 brand", of: of buyers}
+    - {code: categories, qcode: LX2, top: 5, head: "Top categories", say: lead}
+  segments:
+    - {code: bought_by_generation, of: bought, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, bought luxury products"}
+
+dept_stores:
+  title: Department Stores
+  module: DEPT_STORES
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: bought, label: Bought in past 3 months, qcode: DP1, codes: [1], head: Purchase, say: "bought from a department store in the past three months"}
+  lists:
+    - {code: top, qcode: DP2, top: 5, head: "Top department stores", say: lead among buyers, tile: "#1 department store", of: of buyers}
+    - {code: categories, qcode: DP3, top: 5, head: "Top product types", say: lead}
+  segments:
+    - {code: bought_by_generation, of: bought, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, bought from a department store"}
+
+beauty:
+  title: Beauty
+  module: BEAUTY
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: bought, label: Bought in past 3 months, qcode: BT1, codes: [1], head: Purchase, say: "bought beauty products in the past three months"}
+  lists:
+    - {code: top, qcode: BT3, top: 5, head: "Top discovery channels", say: lead among buyers, tile: "#1 discovery channel", of: of buyers}
+    - {code: categories, qcode: BT7, top: 5, head: "Top product types", say: lead}
+  segments:
+    - {code: bought_by_generation, of: bought, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, bought beauty products"}
+
+home_furnishings:
+  title: Home Furnishings
+  module: HOME_FURNISHINGS
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles:
+    - {code: bought, label: Bought in past 3 months, qcode: HF1, codes: [1], head: Purchase, say: "bought home-furnishing or décor products in the past three months"}
+  lists:
+    - {code: top, qcode: HF2, top: 5, head: "Top retailers", say: lead among buyers, tile: "#1 retailer", of: of buyers}
+    - {code: categories, qcode: HF3, top: 5, head: "Top products", say: lead}
+  segments:
+    - {code: bought_by_generation, of: bought, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, bought home-furnishing or décor products"}
+
+mass_warehouse:
+  title: Mass Merchants / Warehouse Clubs
+  module: MASS_WAREHOUSE
+  small_base: 50
+  ly_rule: nearest_year_ago
+  tiles: []
+  lists:
+    - {code: top, qcode: M1, top: 5, head: Top mass merchants and clubs, say: lead among all adults, tile: "#1 mass merchant / club", of: of all adults}
+    - {code: categories, qcode: M2, top: 5, head: Top categories, say: lead}
+
+social_commerce:
+  title: Social Commerce
+  module: SOCIAL_COMMERCE
+  small_base: 50
+  ly_rule: nearest_year_ago
+  aliases: {SM1: SC1, SM2: SC2, SM3: SC3, SM6: SC6}   # the Feb 2026 wave used SM codes for the same questions
+  tiles:
+    - {code: used, label: Used social media to shop, qcode: SC1, codes: [1], head: Social shopping, say: used social media while shopping in the past three months}
+    - {code: bought, label: Bought on social media, qcode: SC3, codes: [1], head: Social shopping, say: of them bought on social media}
+  lists:
+    - {code: top, qcode: SC2, top: 5, head: Top platforms, say: lead among social shoppers, tile: "#1 platform", of: of social shoppers}
+    - {code: categories, qcode: SC6, top: 5, head: Top products bought on social media, say: lead}
+  segments:
+    - {code: bought_by_generation, of: bought, dim: generation, order: [GenZ, Millennial, GenX, Boomer],
+       say: "By generation, bought on social media"}

@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { COLUMNS, isFiller, present, useBook } from "../api";
 import type { Column } from "../api";
-import { BaseNote, Card, Change, copyLink, Empty, Failure, Loading, SourceLine, sourceText } from "../components/bits";
+import { BaseNote, Card, Change, copyLink, Empty, Failure, IconDownload, IconImage, IconLink, Loading, SourceLine, sourceText } from "../components/bits";
 import { downloadPng } from "../components/EChart";
 import type { Chart } from "../components/EChart";
 import QuestionChart, { VIEWS, viewsFor } from "../components/QuestionChart";
@@ -11,6 +11,7 @@ import type { View } from "../components/QuestionChart";
 import QuestionNav from "../components/QuestionNav";
 import { downloadCsv } from "../csv";
 import { fmtDate, pct, SMALL_BASE } from "../stats";
+import { perf } from "../perf";
 
 const CUTS: { key: string; label: string; cols: Column[] }[] = [
   { key: "total", label: "Total", cols: ["Total"] },
@@ -37,11 +38,19 @@ export default function Explorer() {
   const cuts = CUTS.map(c => ({ ...c, cols: c.cols.filter(col => shown.includes(col)) })).filter(c => c.key === "total" || c.cols.length > 1);
   const cut = cuts.find(c => c.key === params.get("cut")) ?? cuts[0];
   const group = Math.min(Number(params.get("row") ?? 0), question.groups.length - 1);
-  const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }); };
+  const set = (k: string, v: string) => {
+    perf.startFilterChange(k, v);
+    const p = new URLSearchParams(params);
+    p.set(k, v);
+    setParams(p, { replace: true });
+  };
   const g = question.groups[group];
   const top = [...g.rows].filter(r => !isFiller(r.label)).sort((a, b) => (b.Total ?? 0) - (a.Total ?? 0))[0];
   const small = cut.cols.filter(c => (g.bases[c] ?? 0) < SMALL_BASE);
   const wave = fmtDate(book.wave.wave_date);
+  const qIndex = book.questions.findIndex(x => x.id === question.id);
+  const prevQ = qIndex > 0 ? book.questions[qIndex - 1] : null;
+  const nextQ = qIndex >= 0 && qIndex < book.questions.length - 1 ? book.questions[qIndex + 1] : null;
   const exportCsv = () => downloadCsv(`${question.id}-${book.wave.wave_date}`, ["Answer", ...cut.cols.map(c => `${c} %`), "Last week %"],
     g.rows.map(r => [r.label, ...cut.cols.map(c => r[c]), r.prior]),
     [`${question.id}: ${question.text}`, `${book.wave.title}, wave of ${wave}`, `Base: ${cut.cols.map(c => `${c} n=${g.bases[c]}`).join(", ")}`, "Source: Coresight Research US Consumer Survey"]);
@@ -49,6 +58,38 @@ export default function Explorer() {
     <QuestionNav questions={book.questions} current={question.id} onPick={q => navigate(`/w/${id}/questions/${encodeURIComponent(q.id)}?${params}`)} />
     <div className="stack">
       <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+          <div className="breadcrumb">
+            <Link to={`/w/${id}`}>Overview</Link>
+            <span className="sep">›</span>
+            <span>{question.section}</span>
+            <span className="sep">›</span>
+            <code>{question.id}</code>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button
+              className="icon-btn"
+              style={{ width: 28, height: 28, borderRadius: 6, fontSize: 13 }}
+              disabled={!prevQ}
+              onClick={() => prevQ && navigate(`/w/${id}/questions/${encodeURIComponent(prevQ.id)}?${params}`)}
+              title={prevQ ? `Previous: ${prevQ.id} (${prevQ.short || prevQ.text})` : "First question"}
+              aria-label="Previous question"
+            >
+              ‹
+            </button>
+            <span style={{ fontSize: 11.5, color: "var(--ink-2)", fontWeight: 600 }}>{qIndex + 1} of {book.questions.length}</span>
+            <button
+              className="icon-btn"
+              style={{ width: 28, height: 28, borderRadius: 6, fontSize: 13 }}
+              disabled={!nextQ}
+              onClick={() => nextQ && navigate(`/w/${id}/questions/${encodeURIComponent(nextQ.id)}?${params}`)}
+              title={nextQ ? `Next: ${nextQ.id} (${nextQ.short || nextQ.text})` : "Last question"}
+              aria-label="Next question"
+            >
+              ›
+            </button>
+          </div>
+        </div>
         <div className="qhead"><code>{question.id}</code><span>{question.section}</span><span>· {question.type.replace("_", " ")}</span><BaseNote base={g.base} /></div>
         <p className="qtext">{question.text}</p>
         {question.base_desc && <p className="muted" style={{ margin: "0 0 6px" }}>Asked of: {question.base_desc}</p>}
@@ -66,14 +107,14 @@ export default function Explorer() {
           {question.groups.length > 1 && view !== "stacked" && <select aria-label="Grid row" value={group} onChange={e => set("row", e.target.value)}>
             {question.groups.map((x, i) => <option key={x.label} value={i}>{x.label}</option>)}
           </select>}
-          <label className="check"><input type="checkbox" checked={sort} onChange={e => setSort(e.target.checked)} /> Sort by value</label>
+          <label className="check"><input type="checkbox" checked={sort} onChange={e => { perf.startFilterChange("sort", String(e.target.checked)); setSort(e.target.checked); }} /> Sort by value</label>
           <span style={{ flex: 1 }} />
-          <button className="btn" onClick={exportCsv}>Download CSV</button>
+          <button className="btn" onClick={exportCsv}><IconDownload /> Download CSV</button>
           {view !== "table" && <button className="btn" onClick={() => chart.current && downloadPng(chart.current, `${question.id}: ${question.text}`,
-            sourceText(wave, `base n=${g.base}`), `${question.id}-${book.wave.wave_date}`)}>Download PNG</button>}
-          <button className="btn" onClick={e => copyLink(e.currentTarget)}>Copy link</button>
-          <Link className="btn" to={`/w/${id}/crosstab/${encodeURIComponent(question.id)}`}>Cross-tab</Link>
-          <Link className="btn" to={`/w/${id}/trends/${encodeURIComponent(question.id)}`}>Trend</Link>
+            sourceText(wave, `base n=${g.base}`), `${question.id}-${book.wave.wave_date}`)}><IconImage /> Download PNG</button>}
+          <button className="btn" onClick={e => copyLink(e.currentTarget)}><IconLink /> <span>Copy link</span></button>
+          <Link className="btn" to={`/w/${id}/crosstab/${encodeURIComponent(question.id)}`}>Cross-tab matrix</Link>
+          <Link className="btn" to={`/w/${id}/trends/${encodeURIComponent(question.id)}`}>Trends</Link>
         </div>
         <QuestionChart question={question} group={group} view={view} columns={view === "donut" || view === "stacked" ? ["Total"] : cut.cols} sort={sort} wave={wave}
           onReady={c => { chart.current = c; }} />

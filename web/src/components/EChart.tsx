@@ -6,6 +6,7 @@ import { AriaComponent, GridComponent, LegendComponent, TooltipComponent } from 
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsCoreOption } from "echarts/core";
 import { C } from "../theme";
+import { perf } from "../perf";
 
 echarts.use([AriaComponent, BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
@@ -65,8 +66,29 @@ export default function EChart({ option, height, onClick, label, onReady }:
     return () => { resize.disconnect(); c.dispose(); };
   }, []);
   // aria: ECharts writes a spoken description of the data (series, ranges, values) onto the chart element
-  useEffect(() => { chart.current!.setOption({ animationDuration: 250, textStyle: axisText(),
-    aria: { enabled: true, label: { general: { withoutTitle: `${label}. ` } } }, ...option }, { notMerge: true }); }, [option, label]);
+  useEffect(() => {
+    const c = chart.current;
+    if (!c) return;
+    const deregister = perf.registerPendingGraph(label);
+    const t0 = performance.now();
+    const onFinished = () => {
+      const dur = performance.now() - t0;
+      perf.logGraph({
+        label,
+        durationMs: Math.round(dur * 10) / 10,
+      });
+      deregister();
+      c.off("finished", onFinished);
+    };
+    c.on("finished", onFinished);
+
+    c.setOption({
+      animationDuration: 250,
+      textStyle: axisText(),
+      aria: { enabled: true, label: { general: { withoutTitle: `${label}. ` } } },
+      ...option
+    }, { notMerge: true });
+  }, [option, label]);
   useEffect(() => {
     const c = chart.current!;
     c.off("click");

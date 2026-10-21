@@ -21,10 +21,11 @@ export function Change({ now, base, before, beforeBase, label, routing }:
   </span>;
 }
 
-export function Card({ title, sub, aside, children, className = "" }:
-  { title?: ReactNode; sub?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string }) {
+export function Card({ title, sub, aside, children, className = "", as = "h2" }:
+  { title?: ReactNode; sub?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string; as?: "h2" | "h3" }) {
+  const Heading = as;
   return <section className={`card ${className}`}>
-    {(title || aside) && <header className="card-head"><div><h3>{title}</h3>{sub && <p className="sub">{sub}</p>}</div>{aside}</header>}
+    {(title || aside) && <header className="card-head"><div><Heading>{title}</Heading>{sub && <p className="sub">{sub}</p>}</div>{aside}</header>}
     {children}
   </section>;
 }
@@ -33,7 +34,12 @@ export function Loading({ what = "data" }: { what?: string }) {
   return <div className="state" role="status"><span className="spinner" aria-hidden /> Loading {what}…</div>;
 }
 export function Failure({ error }: { error: unknown }) {
-  return <div className="state error" role="alert">Could not load: {error instanceof Error ? error.message : String(error)}. Refresh to try again.</div>;
+  return (
+    <div className="state error" role="alert">
+      <p style={{ margin: "0 0 12px", fontWeight: 600 }}>Could not load: {error instanceof Error ? error.message : String(error)}</p>
+      <button className="btn" onClick={() => window.location.reload()}>Refresh to try again</button>
+    </div>
+  );
 }
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="state">{children}</div>;
@@ -49,8 +55,26 @@ export function SourceLine({ wave, base, asked, extra }: { wave: string; base: s
 export const sourceText = (wave: string, base: string) =>
   `Source: Coresight Research US Consumer Survey · US adults 18+ · fielded week of ${wave} · ${base} · unweighted`;
 
+export function IconDownload() {
+  return <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>;
+}
+
+export function IconImage() {
+  return <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" fill="currentColor"/></svg>;
+}
+
+export function IconLink() {
+  return <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z" fill="currentColor"/></svg>;
+}
+
 export async function copyLink(button: HTMLButtonElement) {
-  try { await navigator.clipboard.writeText(location.href); button.textContent = "Link copied"; }
-  catch { button.textContent = "Copy the address bar"; }
-  setTimeout(() => { button.textContent = "Copy link"; }, 1800);
+  const target = button.querySelector("span") || button;
+  const original = target.textContent;
+  try {
+    await navigator.clipboard.writeText(location.href);
+    target.textContent = "Link copied";
+  } catch {
+    target.textContent = "Copy the address bar";
+  }
+  setTimeout(() => { target.textContent = original; }, 1800);
 }

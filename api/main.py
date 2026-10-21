@@ -40,9 +40,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.database import get_engine
 from app.data import payloads
 from api.search import SearchIndex
+from etl import launch_schedule
+from etl.publish import ROOT as PUBLISH_ROOT
 from etl.serving import CUTS, SMALL_BASE
 
 log = logging.getLogger("cip.api")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s")   # [PERF] lines show
 WEB = Path(__file__).resolve().parents[1] / "web" / "dist"
 COOKIE = "cip_session"
 SESSION_HOURS = 12
@@ -61,6 +64,7 @@ class Payload:
 STORE: dict[tuple[str, int], Payload] = {}
 LATEST: dict[str, int] = {}
 STAMP: tuple = ()
+SCHEDULE: Payload | None = None          # the launch plan against the Forsta register, rebuilt every poll
 SERVING: tuple = ()                      # (count, newest built_at) of srv_wave: the serving data's version
 RESULTS: OrderedDict[tuple, Payload] = OrderedDict()   # (version, kind, args) → finished response, least recent first
 CACHE_BYTES = int(os.environ.get("CIP_CACHE_MB", "256")) * 2**20   # per worker: the cache never grows past this
@@ -69,6 +73,8 @@ BUILD_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_BUILD_SLOTS", "8")))   #
 BUILD_WAIT = float(os.environ.get("CIP_BUILD_WAIT", "3"))   # seconds a request may queue for a slot before "busy, retry"
 CATALOGUE: SearchIndex | None = None     # every reportable question of every built wave (api/search.py)
 CACHE_RESULTS = os.environ.get("CIP_RESULT_CACHE", "1") != "0"   # 0 only to measure the database path
+PUBLISHED = PUBLISH_ROOT / "current"     # the ETL's prebuilt responses (etl/publish.py): no database work on a view
+PUBLISHED_VERSION = ""
 
 
 def _load() -> None:
@@ -90,14 +96,30 @@ def _load() -> None:
 
 
 def _changed() -> bool:
-    global SERVING, RESULTS, CACHED_BYTES, CATALOGUE
+    global SERVING, RESULTS, CACHED_BYTES, CATALOGUE, PUBLISHED_VERSION
     with get_engine("app").connect() as conn:
         serving = tuple(conn.execute(text("SELECT COUNT(*), MAX(built_at) FROM srv_wave")).one())
         dashboards = tuple(conn.execute(text("SELECT COUNT(*), MAX(published_at) FROM cip_dash_published")).one())
-    if serving != SERVING:   # new serving data: old answers are never asked for again
+    if serving != SERVING:
         CATALOGUE = _load_catalogue()
-        SERVING, RESULTS, CACHED_BYTES = serving, OrderedDict(), 0
+    version = os.path.realpath(PUBLISHED)
+    if serving != SERVING or version != PUBLISHED_VERSION:   # new data or a new publish: old answers are never asked for again
+        SERVING, PUBLISHED_VERSION, RESULTS, CACHED_BYTES = serving, version, OrderedDict(), 0
     return dashboards != STAMP
+
+
+def _published(*parts: str) -> Payload | None:
+    """The prebuilt response for api/v1/<parts>, or None when it was not published (a new wave before the next
+    publish, a single-wave family's trend): the caller then builds it from the database."""
+    if any(not p or p.startswith(".") for p in parts):
+        return None
+    path = PUBLISHED.joinpath("api", "v1", *parts)
+    try:
+        gz = path.with_name(path.name + ".json.gz").read_bytes()
+    except OSError:
+        return None
+    body = gzip.decompress(gz)
+    return Payload(f'"{hashlib.sha256(body).hexdigest()[:16]}"', body, gz)
 
 
 def _load_catalogue() -> SearchIndex:
@@ -110,9 +132,16 @@ def _load_catalogue() -> SearchIndex:
             " WHERE q.is_technical = 0 AND q.is_virtual = 0 AND q.qtype IN ('single', 'multi', 'grid_single', 'grid_multi')"
             " ORDER BY w.wave_date")).mappings().all()
         labels = defaultdict(set)
-        for survey_id, qcode, item, option in conn.execute(text(
-                "SELECT DISTINCT survey_id, qcode, item_label, option_label FROM srv_result WHERE dim = 'total'")):
-            labels[(survey_id, qcode)].update(x for x in (item, option) if x)
+        for sid, qc, lbl in conn.execute(text(
+                "SELECT q.survey_id, q.qcode, o.value_label FROM cip_option o"
+                " JOIN cip_question q ON q.question_id = o.question_id")):
+            if lbl:
+                labels[(sid, qc)].add(lbl)
+        for sid, qc, lbl in conn.execute(text(
+                "SELECT q.survey_id, q.qcode, i.item_label FROM cip_item i"
+                " JOIN cip_question q ON q.question_id = i.question_id")):
+            if lbl:
+                labels[(sid, qc)].add(lbl)
     groups: dict = {}
     for r in rows:
         key = (r["qcode"].upper(), " ".join(r["qtext"].lower().split()))
@@ -127,12 +156,18 @@ def _load_catalogue() -> SearchIndex:
     return SearchIndex(docs)
 
 
+def _load_schedule() -> None:
+    global SCHEDULE
+    SCHEDULE = _json(launch_schedule.weeks())
+
+
 async def _refresh_forever() -> None:
     while True:
         await asyncio.sleep(REFRESH_SECONDS)
         try:
             if await run_in_threadpool(_changed):
                 await run_in_threadpool(_load)
+            await run_in_threadpool(_load_schedule)
         except Exception:   # keep serving the last good payloads; the next poll retries
             log.exception("Dashboard refresh failed; still serving the previous payloads")
 
@@ -153,6 +188,7 @@ async def startup() -> None:
         raise RuntimeError("CIP_SESSION_SECRET is not set")
     await run_in_threadpool(_load)
     await run_in_threadpool(_changed)
+    await run_in_threadpool(_load_schedule)
     asyncio.get_running_loop().create_task(_refresh_forever())
 
 
@@ -251,15 +287,23 @@ async def results(survey_id: int, request: Request, q: str, dim: str = "total", 
     return _send(request, await _cached((SERVING, survey_id, qcodes, dims), lambda: _json(payloads.results(survey_id, qcodes, dims))))
 
 
+@app.get("/api/v1/schedule")
+async def schedule(request: Request, who: dict = Depends(user)) -> Response:
+    """The data team's launch plan, week by week, against what Forsta fielded (etl/launch_schedule.py)."""
+    if SCHEDULE is None:
+        raise HTTPException(503, "The schedule is loading", headers={"Retry-After": "3"})
+    return _send(request, SCHEDULE)
+
+
 @app.get("/api/v1/waves")
 async def waves(request: Request, who: dict = Depends(user)) -> Response:
-    return _send(request, await _cached((SERVING, "waves"), lambda: _json(payloads.waves(_boards()))))
+    return _send(request, await _cached((SERVING, "waves"), lambda: _published("waves") or _json(payloads.waves(_boards()))))
 
 
 @app.get("/api/v1/waves/{survey_id}/book")
 async def book(survey_id: int, request: Request, who: dict = Depends(user)) -> Response:
     """The whole wave for the four dashboard screens in one cached response (≈ 30 KB gzipped)."""
-    return _send(request, await _cached((SERVING, "book", survey_id), lambda: _json(payloads.book(survey_id))))
+    return _send(request, await _cached((SERVING, "book", survey_id), lambda: _published("waves", str(survey_id), "book") or _json(payloads.book(survey_id))))
 
 
 @app.get("/api/v1/trend")
@@ -275,11 +319,18 @@ async def trend(survey_id: int, q: str, request: Request, dim: str = "total", va
 async def family_trend(family: str, study_type: str, qcode: str, dim: str, value: str, request: Request,
                        who: dict = Depends(user)) -> Response:
     """A question across every wave of one tracker family, for Total or one banner column. The ETL publishes
-    these for every multi-wave family (etl/publish.py) and nginx serves the files; this answers the rest."""
+    these for every multi-wave family (etl/publish.py); this reads those files and builds the rest."""
     if dim not in ("total",) + CUTS:
         raise HTTPException(422, f"dim takes total or one of: {', '.join(CUTS)}")
-    return _send(request, await _cached((SERVING, "family_trend", family, study_type, qcode, dim, value),
-                                        lambda: _json(payloads.family_trend(family, study_type, qcode, dim, value))))
+    def build() -> Payload:   # a survey fielded once has no trend: say so without a database read
+        found = _published("trends", family, study_type, qcode, dim, value)
+        if found:
+            return found
+        listed = _published("waves")
+        if listed and sum(w["survey_family"] == family and w["study_type"] == study_type for w in json.loads(listed.body)) == 1:
+            raise HTTPException(404, "This survey was fielded once, so it has no trend")
+        return _json(payloads.family_trend(family, study_type, qcode, dim, value))
+    return _send(request, await _cached((SERVING, "family_trend", family, study_type, qcode, dim, value), build))
 
 
 @app.get("/api/v1/search")
@@ -302,8 +353,16 @@ async def crosstab(survey_id: int, request: Request, q: str, by: str, weeks: int
     cuts = tuple(by.split(","))
     if len(cuts) != 2 or len(set(cuts)) != 2 or not set(cuts) <= set(CUTS):
         raise HTTPException(422, f"by takes two different cuts from: {', '.join(CUTS)}")
-    return _send(request, await _cached((SERVING, "crosstab", survey_id, q, cuts, weeks),
-                                        lambda: _json(payloads.crosstab(survey_id, q, cuts, weeks))))
+    def build() -> Payload:   # from the published cut tables when the wave has them, else from the database
+        listed = _published("waves")
+        waves = json.loads(listed.body) if listed else []
+        me = next((w for w in waves if w["survey_id"] == survey_id), None)
+        pool = payloads.chain({w["survey_id"]: w for w in waves if me and w["survey_family"] == me["survey_family"]}, survey_id, weeks)
+        parts = {w["survey_id"]: json.loads(found.body) for w in pool if (found := _published("waves", str(w["survey_id"]), "cuts", q))}
+        if survey_id in parts:
+            return _json(payloads.crosstab_from(survey_id, q, cuts, pool, parts))
+        return _json(payloads.crosstab(survey_id, q, cuts, weeks))
+    return _send(request, await _cached((SERVING, "crosstab", survey_id, q, cuts, weeks), build))
 
 
 @app.get("/healthz")
@@ -327,6 +386,22 @@ async def dev_login(email: str = "analyst@coresight.com", next: str = "/") -> Re
     target = next if next.startswith("/") and not next.startswith("//") else "/"   # same-site paths only
     response = RedirectResponse(target, status_code=303)
     response.set_cookie(COOKIE, issue(email), httponly=True, samesite="lax", secure=False, max_age=SESSION_HOURS * 3600)
+    return response
+
+
+@app.middleware("http")
+async def performance_logging_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000.0
+    response.headers["Server-Timing"] = f"total;dur={duration_ms:.2f}"
+    path = request.url.path
+    if path.startswith("/api/"):
+        status = response.status_code
+        if duration_ms > 200:
+            log.warning("[PERF-SLOW] %s %s took %.1f ms (status %d)", request.method, path, duration_ms, status)
+        else:
+            log.info("[PERF] %s %s took %.1f ms (status %d)", request.method, path, duration_ms, status)
     return response
 
 

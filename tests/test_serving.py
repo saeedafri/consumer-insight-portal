@@ -133,6 +133,10 @@ def test_crosstab_hides_tiny_cells_flags_small_ones_and_pools_weeks_by_answer(cs
     two = read(2)
     pooled = next(dict(zip(two["columns"], r)) for r in two["rows"] if r[:2] == ["GenZ", "Female"] and r[3] == 1)
     assert (pooled["n"], pooled["base_n"], pooled["flags"]) == (20, 45, "small_base")   # ids differ, answers pooled
+    with csi_db.connect() as conn:   # the API's published path: cut tables written as JSON, paired in memory
+        waves = payloads.pool(conn, 412, 2)
+        parts = {sid: served(part) for (sid, _), part in payloads.question_cuts(conn, [266, 412], "XM1").items()}
+    assert served(payloads.crosstab_from(412, "XM1", ("generation", "gender"), waves, parts)) == two
     assert [w["survey_id"] for w in two["waves"]] == [412, 266]
     assert two["warnings"] == ["base_changed_within_pool"]       # XM1 asked of 149/401, then 404/404
 

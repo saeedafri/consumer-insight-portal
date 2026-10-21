@@ -1,10 +1,16 @@
 """Shared fixtures."""
 from __future__ import annotations
 
+import os
+import tempfile
+
 import pytest
 import sqlalchemy as sa
 
 from app.core import database, schema_upgrade
+
+# before etl.publish is imported: a test's publish must never replace the portal's real files (data/published)
+os.environ["CIP_PUBLISH_DIR"] = tempfile.mkdtemp(prefix="cip-published-")
 
 
 @pytest.fixture()

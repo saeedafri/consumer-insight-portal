@@ -32,7 +32,7 @@ import re
 import tempfile
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -42,7 +42,7 @@ from sqlalchemy.exc import OperationalError
 from app.core.config import config
 from app.core.database import get_engine
 from app.data import cube, harmonise
-from etl import forsta_api, serving, survey_calendar, tracker_line
+from etl import forsta_api, launch_schedule, serving, survey_calendar, tracker_line
 from etl.forsta_client import ForstaError
 from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey
 from etl.run_pipeline import _dt, _rebuild_profiles, _rebuild_question_bases, wave_from_records
@@ -76,22 +76,52 @@ def _when(value: Any) -> Optional[datetime]:
     return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
 
 
+FIELD_HOURS = 9          # the data team's window: launch ~18:00 IST, fieldwork over by 03:00 IST
+
+
+def fielded(client, meta: dict, now: Optional[datetime] = None) -> bool:
+    """A live survey whose fieldwork is over though Forsta has not closed it yet: its quota is reached
+    (a weekly tracker wave at the plan's 400 qualified; any other study when every unconditional quota sheet
+    is full) or FIELD_HOURS have passed since launch. Read-only: the survey stays open in Forsta."""
+    launched = _when(meta.get("dateLaunched"))
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    if launched and now - launched >= timedelta(hours=FIELD_HOURS):
+        return True
+    qualified = meta.get("qualified") or 0
+    if study_type(meta) == "tracker":
+        return qualified >= launch_schedule.QUOTA
+    try:
+        quota = client.survey_quota(str(meta["path"]).strip("/"))
+    except Exception as exc:                       # no quota to read: the time limit still applies
+        log.warning("Quota of %s not readable: %s", meta.get("path"), exc)
+        return False
+    targets = [sum(quota["markers"].get(c["marker"], {}).get("limit", 0) for c in sheet[0]["cells"])
+               for sheet in quota.get("sheets", {}).values() if not sheet[0].get("sheetCond")]
+    targets = [t for t in targets if t]
+    return bool(targets) and qualified >= min(targets)
+
+
 def discover(client) -> dict[str, int]:
     """Upsert every survey the key can see into cip_forsta_survey and decide
     what to do with it: due (closed, readable, not loaded), hibernated,
     testing, loaded, failed. Returns how many surveys are in each state."""
     eng = get_engine("etl")
     with eng.connect() as conn:
-        known = {p: (state, sid, str(closed or "")[:19], total) for p, state, sid, closed, total in conn.execute(text(
-            "SELECT forsta_path, load_state, survey_id, closed_at, total_n FROM cip_forsta_survey"))}
+        stored = [dict(r) for r in conn.execute(text("SELECT * FROM cip_forsta_survey")).mappings()]
+    known = {r["forsta_path"]: (r["load_state"], r["survey_id"], str(r["closed_at"] or "")[:19], r["total_n"])
+             for r in stored}
+    stored = {r["forsta_path"]: r for r in stored}
     rows = []
     for m in client.surveys():
         path = str(m["path"]).strip("/")
         previous, survey_id, closed, total = known.get(path, (None, None, "", None))
         closed_now = _when(m.get("closedDate"))
         reopened = (closed_now and str(closed_now)[:19] != closed) or (m.get("total") not in (None, total))
-        if previous == "loaded" and not reopened:
+        live = m.get("state") == "live"
+        if previous == "loaded" and (live or not reopened):   # loaded while fielding: reloaded once Forsta closes it
             state = "loaded"
+        elif live and fielded(client, m):
+            state = "due"
         elif m.get("state") != "closed":
             state = "testing"
         elif m.get("hibernated"):
@@ -104,7 +134,18 @@ def discover(client) -> dict[str, int]:
                      "launched": _when(m.get("dateLaunched")), "closed": _when(m.get("closedDate")),
                      "qn": m.get("qualified"), "tn": m.get("total"), "seen": datetime.now(timezone.utc).replace(tzinfo=None),
                      "lstate": state, "sid": survey_id})
-    if rows:
+    columns = {"title": "title", "fstate": "state", "hib": "hibernated", "tags": "tags", "stype": "study_type",
+               "created": "created_on", "launched": "launched_at", "closed": "closed_at", "qn": "qualified_n",
+               "tn": "total_n", "lstate": "load_state"}
+    shown = lambda v: "" if v is None else str(v)[:19]   # noqa: E731
+    changed = [r for r in rows if r["path"] not in stored
+               or any(shown(r[k]) != shown(stored[r["path"]][c]) for k, c in columns.items())]
+    if rows:                                    # an idle run is this one UPDATE: no upsert, no calendar rebuild
+        with eng.begin() as conn:
+            conn.execute(text("UPDATE cip_forsta_survey SET last_seen = :seen WHERE forsta_path IN :paths")
+                         .bindparams(bindparam("paths", expanding=True)),
+                         {"seen": rows[0]["seen"], "paths": [r["path"] for r in rows]})
+    if changed:
         with eng.begin() as conn:
             conn.execute(text("""
                 INSERT INTO cip_forsta_survey (forsta_path, title, state, hibernated, tags, study_type, created_on,
@@ -116,7 +157,7 @@ def discover(client) -> dict[str, int]:
                     study_type = VALUES(study_type), created_on = VALUES(created_on),
                     launched_at = VALUES(launched_at), closed_at = VALUES(closed_at),
                     qualified_n = VALUES(qualified_n), total_n = VALUES(total_n), last_seen = VALUES(last_seen),
-                    load_state = VALUES(load_state)"""), rows)
+                    load_state = VALUES(load_state)"""), changed)
             survey_calendar.rebuild(conn)
     return dict(Counter(r["lstate"] for r in rows))
 
