@@ -1,11 +1,12 @@
 // A question across every wave of its tracker: real dates (missing weeks stay gaps, never joined), the focus
 // answer in red with circular markers, others in blue, optional ±margin of error band and 4-week average.
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { COLUMNS, CUT_OF, useBook, useTrend } from "../api";
+import { COLUMNS, CUT_OF, present, useBook, useTrend, useWaves } from "../api";
 import type { Column, Trend } from "../api";
-import { Card, Empty, Failure, Loading } from "../components/bits";
-import EChart, { AXIS_TEXT, TOOLTIP } from "../components/EChart";
+import { Card, copyLink, Empty, Failure, Loading, SourceLine, sourceText } from "../components/bits";
+import EChart, { axisText, downloadPng, tooltip } from "../components/EChart";
+import type { Chart } from "../components/EChart";
 import QuestionNav from "../components/QuestionNav";
 import { downloadCsv } from "../csv";
 import { C, blues } from "../theme";
@@ -13,6 +14,16 @@ import { fmtDate, moe, pct, pts, significant } from "../stats";
 
 const RANGES = [["3m", 92], ["6m", 183], ["1y", 366], ["all", 1e5]] as const;
 const DAY = 86_400_000;
+const WEEKLY_GAP = 10;   // days: a longer silence is a missing wave or another season, never "the previous wave"
+
+/** The answer's previous wave, only when it is the week before (not across a gap or season). */
+function previous(t: Trend, s: Trend["series"][number], i: number): number | null {
+  for (let k = i - 1; k >= 0; k--) {
+    if (new Date(t.waves[i].wave_date).getTime() - new Date(t.waves[k].wave_date).getTime() > WEEKLY_GAP * DAY) return null;
+    if (s.pct[k] != null) return k;
+  }
+  return null;
+}
 
 export default function Trends() {
   const { id: raw, q: code } = useParams();
@@ -23,7 +34,9 @@ export default function Trends() {
   const question = useMemo(() => book?.questions.find(x => x.id === code) ?? book?.questions[0], [book, code]);
   const column = (COLUMNS.includes(params.get("col") as Column) ? params.get("col") : "Total") as Column;
   const [dim, value] = CUT_OF[column];
-  const trend = useTrend(id, question?.id ?? "", dim, value);
+  const waves = useWaves().data ?? [];
+  const familySize = waves.filter(w => w.survey_family === book?.wave.survey_family && w.study_type === book?.wave.study_type && w.rows_built !== 0).length;
+  const trend = useTrend(familySize > 1 ? book?.wave : undefined, question?.id ?? "", dim, value);   // one wave: nothing to trend
   if (isLoading) return <Loading what="questions" />;
   if (error || !book) return <Failure error={error} />;
   if (!question) return <Empty>This wave has no questions with percentages.</Empty>;
@@ -36,22 +49,29 @@ export default function Trends() {
         <p className="qtext">{question.text}</p>
         <div className="toolbar" style={{ margin: 0 }}>
           <label className="sr-only" htmlFor="col">Respondents</label>
-          <select id="col" value={column} onChange={e => set("col", e.target.value)}>{COLUMNS.map(c => <option key={c}>{c}</option>)}</select>
+          <select id="col" value={column} onChange={e => set("col", e.target.value)}>{present(book.n).map(c => <option key={c}>{c}</option>)}</select>
           <div className="seg" role="group" aria-label="Time range">
             {RANGES.map(([k]) => <button key={k} aria-pressed={(params.get("range") ?? "1y") === k} onClick={() => set("range", k)}>{k === "all" ? "All" : k}</button>)}
           </div>
-          <label className="check"><input type="checkbox" checked={params.get("avg") === "1"} onChange={e => set("avg", e.target.checked ? "1" : "")} /> 4-week average</label>
-          <label className="check"><input type="checkbox" checked={params.get("band") === "1"} onChange={e => set("band", e.target.checked ? "1" : "")} /> Margin of error</label>
+          <label className="check" title="Each point becomes the mean of that wave and the three before it: smooths week-to-week noise, at the cost of reacting a month late."><input type="checkbox" checked={params.get("avg") === "1"} onChange={e => set("avg", e.target.checked ? "1" : "")} /> 4-week average</label>
+          <label className="check" title="The shaded band is the 95 % margin of error of the red line: with about 400 people a week, ±5 points. Moves inside it can be noise."><input type="checkbox" checked={params.get("band") === "1"} onChange={e => set("band", e.target.checked ? "1" : "")} /> Margin of error</label>
         </div>
       </Card>
-      {trend.error ? <Failure error={trend.error} /> : !trend.data ? <Loading what="trend" />
+      {familySize === 1 ? <Card><Empty>This survey was fielded once, so there is no trend. Weekly tracker questions and repeated studies have trends.</Empty></Card>
+        : trend.error ? <Failure error={trend.error} /> : !trend.data ? <Loading what="trend" />
         : <TrendCard t={trend.data} column={column} waveId={id} />}
     </div>
   </div>;
 }
 
 function TrendCard({ t, column, waveId }: { t: Trend; column: Column; waveId: number }) {
+  if (!t.waves.length) return <Card><Empty>No respondents in {column === "Total" ? "this survey" : `the ${column} group`} answered this question. Choose another column or question.</Empty></Card>;
+  return <TrendView t={t} column={column} waveId={waveId} />;
+}
+
+function TrendView({ t, column, waveId }: { t: Trend; column: Column; waveId: number }) {
   const [params, setParams] = useSearchParams();
+  const chart = useRef<Chart | null>(null);
   const range = RANGES.find(([k]) => k === (params.get("range") ?? "1y"))![1];
   const avg = params.get("avg") === "1", band = params.get("band") === "1";
   const at = t.waves.findIndex(w => w.survey_id === waveId);
@@ -88,24 +108,23 @@ function TrendCard({ t, column, waveId }: { t: Trend; column: Column; waveId: nu
       series.push({
         type: "line", name: s.label, data: points(values).map(([time, v], j, all) => {
           const i = t.waves.findIndex(w => new Date(w.wave_date + "T00:00:00").getTime() === time);
-          const prev = all.slice(0, j).reverse().find(p => p[1] != null);
-          const pi = prev ? t.waves.findIndex(w => new Date(w.wave_date + "T00:00:00").getTime() === prev[0]) : -1;
-          const jump = !avg && v != null && i > 0 && pi >= 0 && s.base[i] && s.base[pi] && s.pct[pi] != null &&
-                       significant(v, s.base[i]!, s.pct[pi]!, s.base[pi]!);
-          return { value: [time, v], i, symbolSize: jump ? 9 : dense ? 0 : 6, itemStyle: jump ? { color: "#fff", borderColor: color, borderWidth: 2.5 } : undefined };
+          const pi = i >= 0 ? previous(t, s, i) : null;
+          const jump = !avg && v != null && pi != null && s.base[i] && s.base[pi] && significant(v, s.base[i]!, s.pct[pi]!, s.base[pi]!);
+          return { value: [time, v], i, symbolSize: jump ? 9 : dense ? 0 : 6, itemStyle: jump ? { color: C.surface, borderColor: color, borderWidth: 2.5 } : undefined };
         }),
         connectNulls: false, showSymbol: true, symbol: "circle", lineStyle: { width: k === 0 ? 2.25 : 1.5, color }, itemStyle: { color },
+        endLabel: { show: true, color, fontWeight: 700, fontSize: 11, formatter: (p: { value: [number, number | null] }) => (p.value[1] == null ? "" : `${p.value[1].toFixed(0)}%`) },
         emphasis: { focus: "series" }, z: 10 - k,
       });
       if (band && k === 0) {
         const lower = points(s.pct.map((p, i) => (p == null || !s.base[i] ? null : p - moe(p, s.base[i]!))));
         const width = points(s.pct.map((p, i) => (p == null || !s.base[i] ? null : 2 * moe(p, s.base[i]!))));
         series.push({ type: "line", stack: "band", data: lower, lineStyle: { opacity: 0 }, symbol: "none", silent: true, tooltip: { show: false } },
-                    { type: "line", stack: "band", data: width, lineStyle: { opacity: 0 }, symbol: "none", areaStyle: { color: "rgba(214,46,47,.12)" }, silent: true, tooltip: { show: false } });
+                    { type: "line", stack: "band", data: width, lineStyle: { opacity: 0 }, symbol: "none", areaStyle: { color: "rgba(214,46,47,.16)" }, silent: true, tooltip: { show: false } });
       }
     });
     return {
-      tooltip: { ...TOOLTIP, trigger: "axis", axisPointer: { type: "line", lineStyle: { color: C.silver } },
+      tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "line", lineStyle: { color: C.silver } },
         formatter: (ps: { seriesName: string; color: string; data: { value: [number, number | null]; i: number } }[]) => {
           const real = ps.filter(p => p.data?.value?.[1] != null && p.data.i >= 0);
           if (!real.length) return "No wave this week (not fielded or not loaded)";
@@ -113,28 +132,34 @@ function TrendCard({ t, column, waveId }: { t: Trend; column: Column; waveId: nu
           return `<b>Wave of ${fmtDate(t.waves[i].wave_date)}</b>` + real.map(p => {
             const s = t.series.find(x => x.label === p.seriesName)!;
             const v = p.data.value[1]!, base = s.base[i] ?? 0;
-            const pi = t.waves.slice(0, i).map((_, k) => k).reverse().find(k => s.pct[k] != null);
+            const pi = previous(t, s, i);
             const change = pi == null ? "" : ` · ${pts(v - s.pct[pi]!)}${s.base[pi] && significant(v, base, s.pct[pi]!, s.base[pi]!) ? " <b>sig.</b>" : ""}`;
             return `<div style="margin-top:5px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${p.color};margin-right:6px"></span>${s.label}<br/>` +
                    `<b style="font-size:15px">${pct(v)}</b> ±${moe(v, base).toFixed(1)} · n=${base}${avg ? " · 4-wk avg" : change}</div>`;
           }).join("");
         } },
       legend: { show: false },
-      grid: { left: 8, right: 24, top: 16, bottom: 8, containLabel: true },
-      xAxis: { type: "time", axisLabel: { ...AXIS_TEXT, hideOverlap: true }, axisLine: { lineStyle: { color: C.silver } }, axisTick: { show: true } },
-      yAxis: { type: "value", axisLabel: { ...AXIS_TEXT, formatter: "{value}%" }, splitLine: { lineStyle: { color: C.mist } },
+      grid: { left: 8, right: 44, top: 16, bottom: 8, containLabel: true },
+      xAxis: { type: "time", axisLabel: { ...axisText(), hideOverlap: true }, axisLine: { lineStyle: { color: C.silver } }, axisTick: { show: true } },
+      yAxis: { type: "value", axisLabel: { ...axisText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.mist } },
                min: (v: { min: number }) => Math.max(0, Math.floor((v.min - 5) / 10) * 10) },
       series,
     };
   }, [t, idx, shown, avg, band]);
   const focus = shown[0];
+  const bases = idx.map(i => focus?.base[i]).filter((b): b is number => b != null);
+  const baseRange = bases.length ? `${Math.min(...bases)}–${Math.max(...bases)}` : "–";
   const exportCsv = () => downloadCsv(`${t.qcode}-trend-${column}`, ["Wave", ...shown.map(s => `${s.label} %`), ...shown.map(s => `${s.label} base`)],
     idx.map(i => [t.waves[i].wave_date, ...shown.map(s => s.pct[i]), ...shown.map(s => s.base[i])]), [`${t.qcode} trend, ${column}`, "Source: Coresight Research US Consumer Survey"]);
   if (idx.length < 2) return <Card><Empty>This question was asked in only one wave in this range. Choose “All” or another question.</Empty></Card>;
   return <>
     <Card title={`${focus ? focus.label : "Pick an answer"}: ${idx.length} waves`} sub={`${column} · ${fmtDate(t.waves[idx[0]].wave_date)} – ${fmtDate(t.waves[at].wave_date)} · white rings mark a significant change from the previous wave`}
-          aside={<button className="btn" onClick={exportCsv}>Download CSV</button>}>
-      {shown.length ? <EChart option={option} height={380} label={`Trend of ${t.qcode}`} /> : <Empty>Pick at least one answer below.</Empty>}
+          aside={<div className="toolbar" style={{ margin: 0 }}><button className="btn" onClick={exportCsv}>Download CSV</button>
+            <button className="btn" onClick={() => chart.current && focus && downloadPng(chart.current, `${t.qcode} · ${focus.label}: ${idx.length} waves`,
+              sourceText(fmtDate(t.waves[at].wave_date), `n ${baseRange} per wave · ${column}`), `${t.qcode}-trend`)}>Download PNG</button>
+            <button className="btn" onClick={e => copyLink(e.currentTarget)}>Copy link</button></div>}>
+      {shown.length ? <EChart option={option} height={380} label={`Trend of ${t.qcode}, ${column}`} onReady={c => { chart.current = c; }} />
+        : <Empty>Pick at least one answer below.</Empty>}
       <div className="legend-line" role="group" aria-label="Answers shown">
         {ranked.map(s => {
           const k = chosen.indexOf(s.label);
@@ -144,13 +169,14 @@ function TrendCard({ t, column, waveId }: { t: Trend; column: Column; waveId: nu
           </label>;
         })}
       </div>
+      <SourceLine wave={fmtDate(t.waves[at].wave_date)} base={`n ${baseRange} per wave`} extra={`${column}${avg ? " · 4-week average" : ""}${band ? " · band = 95 % margin of error" : ""}`} />
     </Card>
     {focus && <Card title={`Recent waves: ${focus.label}`}>
       <div className="table-wrap"><table className="data">
         <thead><tr><th>Wave</th><th className="num">Share</th><th className="num">± margin</th><th className="num">Base</th><th className="num">vs previous wave</th></tr></thead>
         <tbody>{idx.slice(-10).reverse().map(i => {
           const v = focus.pct[i], b = focus.base[i] ?? 0;
-          const pi = idx.filter(k => k < i).reverse().find(k => focus.pct[k] != null);
+          const pi = previous(t, focus, i);
           const sig = v != null && pi != null && significant(v, b, focus.pct[pi]!, focus.base[pi] ?? 0);
           return <tr key={i} className={i === at ? "picked" : ""}><th scope="row">{fmtDate(t.waves[i].wave_date)}</th>
             <td className="num"><b>{pct(v)}</b></td><td className="num muted">{v == null ? "–" : `±${moe(v, b).toFixed(1)}`}</td><td className="num">{b || "–"}</td>

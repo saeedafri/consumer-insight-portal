@@ -22,7 +22,7 @@ export default function Library() {
   if (isLoading) return <Loading what="surveys" />;
   if (error) return <Failure error={error} />;
   const all = waves!;
-  const latest = all.find(w => w.study_type === "tracker") ?? all[0];
+  const latest = all.find(w => w.study_type === "tracker" && w.rows_built !== 0) ?? all[0];
   const byYear = new Map<string, typeof shown>();
   for (const w of shown) byYear.set(w.wave_date.slice(0, 4), [...(byYear.get(w.wave_date.slice(0, 4)) ?? []), w]);
   const trackers = all.filter(w => w.study_type === "tracker");
@@ -63,7 +63,10 @@ export default function Library() {
       <div className="wave-list">
         {[...byYear].map(([y, ws]) => <div key={y}>
           <h2 className="year-head">{y} · {ws.length} {ws.length === 1 ? "wave" : "waves"}</h2>
-          {ws.map(w => <Link key={w.survey_id} to={`/w/${w.survey_id}`} className="wave-row">
+          {ws.map(w => w.rows_built === 0 ? <div key={w.survey_id} className="wave-row empty" title="Registered, but no results are built for this wave yet">
+            <span className="date">{fmtDate(w.wave_date)}</span><span className="title"><span>{w.title}</span></span>
+            <span className="muted">No results loaded</span><span className="n">n={w.qualified_n}</span></div>
+          : <Link key={w.survey_id} to={`/w/${w.survey_id}`} className="wave-row">
             <span className="date">{fmtDate(w.wave_date)}</span>
             <span className="title"><span>{w.title}</span><small className="tags">{(w.modules ?? []).slice(0, 4).map(m => <span key={m} className="tag">{m}</span>)}</small></span>
             <span className="muted">{KIND[w.study_type] ?? w.study_type}</span>

@@ -1,28 +1,49 @@
 // Coresight 2026 palette (Color Palette and Style Guide). Primary first; accents only where the guide allows.
-export const C = {
+// Two themes share the brand colours; dark swaps the surfaces and moves blue text and series to light blue.
+const LIGHT = {
   red: "#D62E2F",        // highlight: always some red in a chart
   ink: "#2D2A29",        // text
+  ink2: "#5F5C5B",       // secondary text (ink at 75 %)
   paper: "#FAFAFA",      // background
+  surface: "#FFFFFF",    // cards, tooltips
   blue: "#005F8F",
   sky: "#A3C0CE",        // default bar colour; never text on white
   rose: "#D07676",
   grey: "#7F7F7F",
   silver: "#B2B2B2",
   mist: "#E5E5E5",
+  warn: "#8A5A00",
   green: "#61A575",      // positive only, against red as negative
+  series: "0, 95, 143",  // the blue the ombre is made of (rgb)
+};
+const DARK: typeof LIGHT = {
+  ...LIGHT, ink: "#FAFAFA", ink2: "#C9C5C3", paper: "#1B1918", surface: "#2D2A29", blue: "#A3C0CE",
+  grey: "#A39F9D", silver: "#6E6A68", mist: "#45413F", warn: "#FEBC20", series: "163, 192, 206",
 };
 
-/** An ombre of the dark blue (the guide's "opacity trick"), darkest first, for n series. */
+export type Theme = "light" | "dark";
+export let C = document.documentElement.dataset.theme === "dark" ? DARK : LIGHT;   // set before paint by index.html;
+// a live binding, so modules read the current theme's colours at render time
+
+export function setTheme(theme: Theme) {
+  C = theme === "dark" ? DARK : LIGHT;
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem("cip-theme", theme); } catch { /* private mode: the choice lasts this visit */ }
+}
+export const savedTheme = (): Theme => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+
+/** An ombre of the series blue (the guide's "opacity trick"), strongest first, for n series. */
 export function blues(n: number): string[] {
   if (n <= 1) return [C.sky];
-  return Array.from({ length: n }, (_, i) => {
-    const alpha = 1 - (i * 0.75) / (n - 1);
-    return `rgba(0, 95, 143, ${alpha.toFixed(2)})`;
-  });
+  return Array.from({ length: n }, (_, i) => `rgba(${C.series}, ${(1 - (i * 0.75) / (n - 1)).toFixed(2)})`);
 }
+
+/** A cell of the heat ombre at this strength (0–1). */
+export const heat = (alpha: number) => `rgba(${C.series}, ${alpha.toFixed(2)})`;
 
 /** Text that keeps contrast on a cell of the blue ombre: white on the dark end, ink on the light end. */
 export function inkOn(alpha: number): string {
+  if (C === DARK) return alpha > 0.55 ? "#1B1918" : "#FAFAFA";   // light-blue cells on a dark page
   return alpha > 0.55 ? "#FFFFFF" : C.ink;
 }
 
@@ -48,4 +69,7 @@ export function scaleColours(labels: string[]): string[] | null {
 }
 
 /** Ink or white for a label on a fill, keeping at least 4.5:1. */
-export const labelOn = (fill: string) => ([C.red, C.grey, C.blue, C.ink].includes(fill) || fill.startsWith("rgba(0, 95, 143, 1") || fill.startsWith("rgba(0, 95, 143, 0.9") || fill.startsWith("rgba(0, 95, 143, 0.8") ? "#FFFFFF" : C.ink);
+export function labelOn(fill: string): string {
+  const strong = /^rgba\(0, 95, 143, (1|0\.[89])/.test(fill) || ["#D62E2F", "#7F7F7F", "#005F8F", "#2D2A29"].includes(fill);
+  return strong ? "#FFFFFF" : "#2D2A29";   // fills are light or brand-strong in both themes
+}

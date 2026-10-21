@@ -1,5 +1,7 @@
 // App frame: a dark rail with the wave's screens, a top bar with the wave switcher and global question search.
 import { useEffect, useRef, useState } from "react";
+import { savedTheme, setTheme } from "../theme";
+import type { Theme } from "../theme";
 import { NavLink, Outlet, useNavigate, useParams } from "react-router";
 import { useWaves } from "../api";
 import type { Wave } from "../api";
@@ -20,6 +22,8 @@ function Icon({ d }: { d: string }) {
 
 export default function Shell() {
   const { id } = useParams();
+  const [theme, setThemeState] = useState<Theme>(savedTheme);
+  const toggle = () => { const next = theme === "dark" ? "light" : "dark"; setTheme(next); setThemeState(next); };
   const waves = useWaves();
   const wave = waves.data?.find(w => String(w.survey_id) === id);
   return <div className="app">
@@ -41,13 +45,14 @@ export default function Shell() {
       {wave && <div className="rail-foot"><b>{wave.qualified_n.toLocaleString("en-US")}</b><span>qualified respondents</span></div>}
     </aside>
     <div className="main-col">
-      <TopBar waves={waves.data ?? []} wave={wave} />
-      <main id="main" tabIndex={-1}><Outlet /></main>
+      <TopBar waves={waves.data ?? []} wave={wave} theme={theme} onTheme={toggle} />
+      {/* keyed on the theme: charts rebuild with the new palette, data stays cached */}
+      <main id="main" tabIndex={-1} key={theme}><Outlet /></main>
     </div>
   </div>;
 }
 
-function TopBar({ waves, wave }: { waves: Wave[]; wave?: Wave }) {
+function TopBar({ waves, wave, theme, onTheme }: { waves: Wave[]; wave?: Wave; theme: Theme; onTheme: () => void }) {
   const navigate = useNavigate();
   const search = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
@@ -56,7 +61,8 @@ function TopBar({ waves, wave }: { waves: Wave[]; wave?: Wave }) {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
-  const family = wave ? waves.filter(w => w.survey_family === wave.survey_family && w.study_type === wave.study_type) : [];
+  const family = wave ? waves.filter(w => w.survey_family === wave.survey_family && w.study_type === wave.study_type
+                                     && (w.rows_built !== 0 || w.survey_id === wave.survey_id)) : [];
   const at = family.findIndex(w => w.survey_id === wave?.survey_id);   // newest first
   const go = (w?: Wave) => w && navigate(location.pathname.replace(/^\/w\/\d+/, `/w/${w.survey_id}`));
   return <header className="topbar">
@@ -74,5 +80,10 @@ function TopBar({ waves, wave }: { waves: Wave[]; wave?: Wave }) {
       <input id="global-search" ref={search} value={text} onChange={e => setText(e.target.value)} placeholder="Search every question…" />
       <kbd aria-hidden>⌘K</kbd>
     </form>
+    <button className="theme-btn" onClick={onTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} title={`${theme === "dark" ? "Light" : "Dark"} theme`}>
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path fill="currentColor" d={theme === "dark"
+        ? "M12 7a5 5 0 110 10 5 5 0 010-10zm0-5l1 3h-2zm0 20l-1-3h2zM2 12l3-1v2zm20 0l-3 1v-2zM4.9 4.9l2.8 1.4-1.4 1.4zm14.2 14.2l-2.8-1.4 1.4-1.4zM4.9 19.1l1.4-2.8 1.4 1.4zM19.1 4.9l-1.4 2.8-1.4-1.4z"
+        : "M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"} /></svg>
+    </button>
   </header>;
 }

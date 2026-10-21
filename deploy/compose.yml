@@ -1,0 +1,20 @@
+# The whole portal on one Debian server: nginx (static files + published payloads) in front of the API.
+# The ETL runs on the host (cron/systemd) and writes $CIP_PUBLISH_DIR, which nginx reads.
+#   CIP_PUBLISH_DIR=/srv/cip/published docker compose -f deploy/compose.yml up -d
+# Staging (1 core, 4.5 GB): nginx ≈ 30 MB, API 2 workers ≈ 150 MB idle, < 1.5 GB at 10,000 users.
+services:
+  api:
+    image: cip-portal
+    build: { context: .., dockerfile: deploy/Dockerfile, target: api }
+    env_file: ${CIP_ENV_FILE:-/etc/cip/api.env}
+    environment: { WEB_CONCURRENCY: "2" }
+    restart: unless-stopped
+    mem_limit: 3g
+  nginx:
+    image: cip-web
+    build: { context: .., dockerfile: deploy/Dockerfile, target: nginx }
+    ports: ["8080:8080"]
+    volumes: ["${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro"]
+    depends_on: [api]
+    restart: unless-stopped
+    mem_limit: 256m

@@ -7,7 +7,10 @@ from datetime import date
 
 import sqlalchemy as sa
 
+from app.data import payloads
 from etl import forsta_etl, serving
+
+served = lambda data: json.loads(payloads.encode(data))   # what the API sends
 
 
 def seed(conn, survey_id, day, qualified, xm1_yes, xm1_base, path=None):
@@ -119,7 +122,7 @@ def test_crosstab_hides_tiny_cells_flags_small_ones_and_pools_weeks_by_answer(cs
                             for _ in range(count)]
         conn.execute(sa.text("INSERT INTO srv_answer (survey_id, qcode, item_id, option_id, respondent_id, generation,"
                              " gender) VALUES (:s, 'XM1', 0, :o, :r, :g, :x)"), answers)
-    read = lambda weeks: json.loads(main._query_crosstab(412, "XM1", ("generation", "gender"), weeks).body)
+    read = lambda weeks: served(payloads.crosstab(412, "XM1", ("generation", "gender"), weeks))
     one = read(1)
     yes = {(v1, v2): dict(zip(one["columns"], r)) for r in one["rows"] for v1, v2 in [r[:2]] if r[3] == 1}
     tiny = yes[("GenZ", "Female")]
@@ -140,7 +143,7 @@ def test_the_book_gives_any_wave_in_the_dashboards_shape_and_the_picker_lists_it
         seed(conn, 266, date(2026, 10, 5), qualified=401, xm1_yes=92, xm1_base=149)
         seed(conn, 412, date(2026, 10, 12), qualified=404, xm1_yes=125, xm1_base=404)
     serving.build_wave(266), serving.build_wave(412)
-    book = json.loads(main._query_book(412).body)
+    book = served(payloads.book(412))
     assert book["columns"] == ["Total", "Male", "Female", "Gen Z", "Millennial", "Gen X", "Boomer"]
     assert book["n"]["Total"] == 404 and book["wave"]["wave_date"] == "2026-10-12"
     (question,) = book["questions"]                              # XM1, single choice: one group, a row per answer
@@ -148,7 +151,7 @@ def test_the_book_gives_any_wave_in_the_dashboards_shape_and_the_picker_lists_it
     yes = next(r for r in question["groups"][0]["rows"] if r["label"] == "Yes")
     assert (yes["Total"], yes["prior"], yes["Gen Z"], "Male" in yes) == (30.9, 61.7, 30.0, False)
     assert yes["flags"] == "base_changed_prior" and question["groups"][0]["base"] == 404
-    picker = json.loads(main._query_waves().body)
+    picker = served(payloads.waves({}))
     assert [w["survey_id"] for w in picker] == [412, 266] and picker[0]["prior_survey_id"] == 266
 
 
@@ -158,14 +161,14 @@ def test_trend_follows_a_question_across_its_family_and_search_finds_it(csi_db):
         seed(conn, 266, date(2026, 10, 5), qualified=401, xm1_yes=92, xm1_base=149)
         seed(conn, 412, date(2026, 10, 12), qualified=404, xm1_yes=125, xm1_base=404)
     serving.build_wave(266), serving.build_wave(412)
-    trend = json.loads(main._query_trend(412, "XM1", "total", "Total").body)
+    trend = served(payloads.trend(412, "XM1", "total", "Total"))
     assert [w["survey_id"] for w in trend["waves"]] == [266, 412]
     yes = next(s for s in trend["series"] if s["label"] == "Yes")
     assert yes["pct"] == [61.7, 30.9] and yes["base"] == [149, 404]
-    main.CATALOGUE = main._load_catalogue()
-    (hit,) = main._search(["holiday", "seven"], 10)
+    index = main._load_catalogue()
+    (hit,) = index.search("holiday seven")["results"]
     assert (hit["qcode"], hit["waves"], hit["survey_id"], hit["last"]) == ("XM1", 2, 412, "2026-10-12")
-    assert main._search(["nothing-like-this"], 10) == []
+    assert index.search("Yes")["results"][0]["qcode"] == "XM1"          # found by an answer label
 
 
 def test_the_result_cache_stays_under_its_byte_cap(monkeypatch):

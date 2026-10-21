@@ -19,6 +19,11 @@ def test_prior_is_previous_wave_and_last_year_is_same_calendar_week():
     assert ly["launched_on"] == date(2025, 10, 13) and ly["survey_id"] is None   # hibernated: reported, not skipped
 
 
+def test_last_year_by_the_databank_rule_is_the_same_wave_number_of_last_season():
+    prior, ly = dashboards.comparisons(WAVES, WAVES[3], "same_wave_number")
+    assert prior["survey_id"] == 266 and ly["survey_id"] == 240                # wave 3 2025 (27 Oct), loaded
+
+
 def test_routing_change_is_flagged_and_small_bases_are_marked():
     wave, prior = WAVES[3], WAVES[2]
     row = dashboards.metric("bought_7d", "BOUGHT", (125, 404), (92, 149), None, (wave, prior, None), CFG)

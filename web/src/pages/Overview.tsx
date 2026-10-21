@@ -4,7 +4,8 @@ import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useBook, useWaves } from "../api";
 import type { Question } from "../api";
-import { BaseNote, Card, Change, Failure, Loading } from "../components/bits";
+import { BaseNote, Card, Change, Failure, Loading, SourceLine } from "../components/bits";
+import Glance from "../components/Glance";
 import QuestionChart from "../components/QuestionChart";
 import { biggest, isProfile, moves } from "../moves";
 import { fmtDate, pct, pts } from "../stats";
@@ -34,6 +35,8 @@ export default function Overview() {
         <Link className="btn" to={`/w/${id}/changes`}>Every change</Link></div>
     </div>
 
+    {(waves.find(x => x.survey_id === id)?.dashboards ?? []).map(code => <Glance key={code} code={code} id={id} />)}
+
     <div className="grid g5" style={{ marginBottom: 16 }}>
       <div className="card kpi lead"><div className="k-label">Qualified respondents</div><div className="k-value">{w.qualified_n}</div>
         <div className="k-note">{Object.entries(book.n).filter(([k]) => k !== "Total").slice(0, 2).map(([k, v]) => `${k} ${v}`).join(" · ")}</div></div>
@@ -48,7 +51,7 @@ export default function Overview() {
     </div>
 
     <div className="grid g3" style={{ marginBottom: 16 }}>
-      <Card className="span2" title="Biggest significant moves this week" sub={prior ? `Against the wave of ${fmtDate(prior.wave_date)} · 95 % two-proportion test · routing changes excluded` : "No prior week to compare against"}
+      <Card className="span2" title="Biggest significant moves this week" sub={prior ? `Against the wave of ${fmtDate(prior.wave_date)} · two-proportion test, Benjamini–Hochberg corrected · routing changes excluded` : "No prior week to compare against"}
             aside={<Link to={`/w/${id}/changes`} className="btn">All changes</Link>}>
         {up.length ? <div className="table-wrap"><table className="data">
           <thead><tr><th>Answer</th><th className="num">Now</th><th className="num">Last week</th><th className="num">Change</th></tr></thead>
@@ -75,6 +78,7 @@ export default function Overview() {
       {sections.map(q => <Card key={q.id} title={<Link to={`/w/${id}/questions/${encodeURIComponent(q.id)}`} style={{ color: "inherit", textDecoration: "none" }}>{q.short || q.text}</Link>}
                               sub={<>{q.section} · {q.id} · {q.type.replace("_", " ")}</>} aside={<BaseNote base={q.groups[0].base} />}>
         <QuestionChart question={{ ...q, groups: q.groups.map(g => ({ ...g, rows: g.rows.slice(0, 10) })) }} view={firstOf(q)} columns={["Total"]} sort wave={fmtDate(w.wave_date)} />
+        <SourceLine wave={fmtDate(w.wave_date)} base={`base n=${q.groups[0].base}`} asked={q.base_desc} />
       </Card>)}
     </div>
   </>;

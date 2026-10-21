@@ -31,6 +31,7 @@ async def main(a):
     await call("Emulation.setDeviceMetricsOverride", {"width": a.width, "height": a.height, "deviceScaleFactor": 1, "mobile": a.width < 700})
     await call("Page.navigate", {"url": f"{a.base}/auth/dev-login?next=/"})
     await asyncio.sleep(2)
+    await call("Runtime.evaluate", {"expression": f"localStorage.setItem('cip-theme', '{a.theme}')"})
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     for path in a.paths:
@@ -61,4 +62,5 @@ if __name__ == "__main__":
     p.add_argument("--width", type=int, default=1440)
     p.add_argument("--height", type=int, default=900)
     p.add_argument("--full", action="store_true", help="capture the whole page, not just the viewport")
+    p.add_argument("--theme", default="light", choices=["light", "dark"])
     asyncio.run(main(p.parse_args()))

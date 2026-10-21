@@ -1,0 +1,24 @@
+# Words people type → words the questionnaires use. Each line is one group: searching any member finds all.
+# Owned by the research team: add a line when someone could not find a question (the API logs searches
+# with no results — review them monthly). Lower case; phrases allowed.
+groups:
+  - [holiday, holidays, christmas, xmas, festive, gift, gifts, seasonal]
+  - [black friday, cyber monday, thanksgiving weekend, holiday deals]
+  - [prime day, big deal days, prime big deal days, amazon deals]
+  - [bnpl, buy now pay later, klarna, afterpay, affirm, installments]
+  - [gas, gasoline, fuel, petrol, gas prices]
+  - [ai, artificial intelligence, genai, gen ai, chatgpt, gemini, copilot, generative ai]
+  - [grocery, groceries, supermarket, food shopping]
+  - [online, ecommerce, e-commerce, internet, website, app]
+  - [in store, in-store, physical store, brick and mortar]
+  - [income, salary, earnings, household income]
+  - [spend, spending, budget, expenditure]
+  - [cut back, reduce spending, reduced spending, spend less, trade down, trading down]
+  - [inflation, prices rising, higher prices, cost of living]
+  - [tariff, tariffs, import duties]
+  - [glp-1, glp1, ozempic, wegovy, mounjaro, zepbound, weight loss drug]
+  - [diy, home improvement, home-improvement, hardware]
+  - [denim, jeans]
+  - [social commerce, tiktok shop, instagram shopping, social media shopping]
+  - [economy, economic outlook, recession]
+  - [generation, gen z, millennial, gen x, boomer, age group]

@@ -59,7 +59,7 @@ class Stats:
             self.errors[kind] += 1
 
 
-async def user(base, cookie, waves, recent, think, stop, stats, measuring, books):
+async def user(base, cookie, waves, recent, think, stop, stats, measuring, books, families):
     http = Http(base, cookie)
     await asyncio.sleep(random.random() * think)   # users arrive spread out, not all at once
 
@@ -91,17 +91,18 @@ async def user(base, cookie, waves, recent, think, stop, stats, measuring, books
                 a, b = random.sample(CUTS, 2)
                 await call("crosstab", f"/api/v1/waves/{wave}/crosstab?q={q}&by={a},{b}&weeks={random.choice([1, 1, 4])}")
             elif roll < 0.85:
-                await call("trend", f"/api/v1/trend?survey_id={wave}&q={q}")
+                family, study = families[wave]   # the Trends screen asks for the family's published trend
+                await call("trend", f"/api/v1/trends/{quote(family)}/{study}/{q}/total/Total")
             else:
                 await call("search", f"/api/v1/search?q={quote(random.choice(['holiday', 'amazon', 'gas', 'grocery', 'ai tools', 'walmart', 'income', 'denim']))}")
         await asyncio.sleep(random.expovariate(1 / think))
 
 
-async def step(a, n, cookie, waves, recent, books):
+async def step(a, n, cookie, waves, recent, books, families):
     stats, start = Stats(), time.time()
     measure_from = start + a.ramp
     stop = measure_from + a.seconds
-    await asyncio.gather(*[user(a.base, cookie, waves, recent, a.think, stop, stats, lambda: measure_from <= time.time() < stop, books)
+    await asyncio.gather(*[user(a.base, cookie, waves, recent, a.think, stop, stats, lambda: measure_from <= time.time() < stop, books, families)
                            for _ in range(n)])
     took = a.seconds   # only requests that started inside the window are counted
     every = [ms for v in stats.lat.values() for ms in v]
@@ -123,11 +124,13 @@ async def main(a):
     _, _, body = await http.get("/api/v1/waves")
     rows = unzip(body)
     waves = [w["survey_id"] for w in rows]
-    recent = [w["survey_id"] for w in rows if w["study_type"] == "tracker"][:8]
+    recent = [w["survey_id"] for w in rows if w["study_type"] == "tracker" and w.get("rows_built", 1)][:8]
+    waves = [w["survey_id"] for w in rows if w.get("rows_built", 1)]
+    families = {w["survey_id"]: (w["survey_family"], w["study_type"]) for w in rows}
     print(f"{len(waves)} waves, recent tracker waves {recent}", flush=True)
     books = {}
     for n in [int(x) for x in a.users.split(",")]:
-        await step(a, n, cookie, waves, recent, books)
+        await step(a, n, cookie, waves, recent, books, families)
 
 
 if __name__ == "__main__":

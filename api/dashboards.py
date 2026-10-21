@@ -52,13 +52,23 @@ def series(conn, module: str) -> list[dict]:
     return rows
 
 
-def comparisons(waves: list[dict], wave: dict) -> tuple[Optional[dict], Optional[dict]]:
-    """Prior week: the previous wave of the same season. Last year: the wave launched in the same
-    calendar week one year earlier (±3 days), loaded or not — so a missing one is reported, not skipped."""
+LY_RULES = ("same_wave_number", "same_calendar_week")
+
+
+def comparisons(waves: list[dict], wave: dict, ly_rule: str = "same_calendar_week") -> tuple[Optional[dict], Optional[dict]]:
+    """Prior week: the previous wave of the same season. Last year, by the module's rule:
+      same_wave_number    wave N of last season (the business team's Databank: wave 3 2026 vs wave 3 2025)
+      same_calendar_week  the wave launched in the same calendar week one year earlier (±3 days)
+    Loaded or not — so a missing one is reported, not skipped."""
+    if ly_rule not in LY_RULES:
+        raise ValueError(f"ly_rule must be one of {LY_RULES}")
     prior = next((w for w in waves if w["season"] == wave["season"]
                   and w["series_wave_no"] == wave["series_wave_no"] - 1), None)
-    target = wave["launched_on"] - timedelta(days=364)
-    ly = next((w for w in waves if abs((w["launched_on"] - target).days) <= 3), None)
+    if ly_rule == "same_wave_number":
+        ly = next((w for w in waves if w["season"] == wave["season"] - 1 and w["series_wave_no"] == wave["series_wave_no"]), None)
+    else:
+        target = wave["launched_on"] - timedelta(days=364)
+        ly = next((w for w in waves if abs((w["launched_on"] - target).days) <= 3), None)
     return prior, ly
 
 
@@ -112,7 +122,7 @@ def compute(conn, code: str, survey_id: int) -> tuple[dict, list[dict]]:
     cfg = load_config()[code]
     waves = series(conn, cfg["module"])
     wave = next(w for w in waves if w["survey_id"] == survey_id)
-    prior, ly = comparisons(waves, wave)
+    prior, ly = comparisons(waves, wave, cfg.get("ly_rule", "same_calendar_week"))
     trio = (wave, prior, ly)
     qcodes = sorted({t["qcode"] for t in cfg["tiles"]} | {l["qcode"] for l in cfg["lists"]})
     dims = ["total"] + [s["dim"] for s in cfg.get("segments", [])]
@@ -212,6 +222,7 @@ def payload(header: dict, rows: list[dict]) -> dict:
         "segments": {s["code"]: group(s["code"]) for s in cfg.get("segments", [])},
         "takeaways": takeaways(rows, header),
         "small_base": cfg["small_base"],
+        "ly_rule": cfg.get("ly_rule", "same_calendar_week"),
         "data_as_of": str(header["cube_built_at"])[:19].replace(" ", "T") if header["cube_built_at"] else None,
     }
 

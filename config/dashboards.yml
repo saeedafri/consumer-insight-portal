@@ -7,12 +7,14 @@
 #   segments  → one tile metric across a demographic cut (generation, age_band, …)
 #
 # prior week = previous series_wave_no of the same module and season (cip_wave_module)
-# last year  = the module's wave launched in the same calendar week one year earlier (±3 days)
+# last year  = ly_rule: same_wave_number (wave N of last season, as the business team's Databank does)
+#              or same_calendar_week (the wave launched within ±3 days of one year earlier)
 
 holiday_tracker:
   title: Holiday Survey Databank
   module: HOLIDAY_TRACKER
   small_base: 50                      # flag any percentage on fewer respondents than this
+  ly_rule: same_wave_number           # "vs LY" = the same wave number last season (Databank definition)
   tiles:
     - {code: not_started, label: NOT YET STARTED,       qcode: XM3, codes: [1]}
     - {code: started,     label: STARTED SHOPPING,      qcode: XM3, codes: [2, 3]}

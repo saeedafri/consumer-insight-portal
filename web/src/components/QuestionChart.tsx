@@ -5,7 +5,8 @@ import type { Column, Group, Question, Row } from "../api";
 import { isFiller } from "../api";
 import { C, blues, labelOn, scaleColours } from "../theme";
 import { count, moe, pct, pts, significant, SMALL_BASE } from "../stats";
-import EChart, { AXIS_TEXT, TOOLTIP } from "./EChart";
+import EChart, { axisText, tooltip } from "./EChart";
+import type { Chart } from "./EChart";
 
 export type View = "bars" | "columns" | "stacked" | "donut" | "table";
 export const VIEWS: { key: View; label: string }[] = [
@@ -26,9 +27,9 @@ export function tip(row: Row, column: Column, group: Group, question: Question, 
   const v = row[column];
   const base = group.bases[column] ?? group.base;
   const lines = [`<div style="font-weight:600;margin-bottom:4px">${esc(row.label)}</div>`,
-    `<div style="font-size:20px;font-weight:700;color:${C.red}">${pct(v)} <span style="font-size:12px;font-weight:500;color:#5f5c5b">±${moe(v ?? 0, base).toFixed(1)} pts</span></div>`,
-    `<div style="color:#5f5c5b">${column}${group.label ? ` · ${esc(group.label)}` : ""} · ≈${count(v ?? 0, base).toLocaleString("en-US")} of ${base.toLocaleString("en-US")} respondents</div>`];
-  if (base < SMALL_BASE) lines.push(`<div style="color:#8a5a00;margin-top:4px">Small base (under ${SMALL_BASE}): read with caution</div>`);
+    `<div style="font-size:20px;font-weight:700;color:${C.red}">${pct(v)} <span style="font-size:12px;font-weight:500;color:${C.ink2}">±${moe(v ?? 0, base).toFixed(1)} pts</span></div>`,
+    `<div style="color:${C.ink2}">${column}${group.label ? ` · ${esc(group.label)}` : ""} · ≈${count(v ?? 0, base).toLocaleString("en-US")} of ${base.toLocaleString("en-US")} respondents</div>`];
+  if (base < SMALL_BASE) lines.push(`<div style="color:${C.warn};margin-top:4px">Small base (under ${SMALL_BASE}): read with caution</div>`);
   if (column === "Total") {
     const vsPrior = row.flags.includes("base_changed_prior") ? "base changed, not comparable"
       : row.prior == null || !row.prior_base ? "not available"
@@ -36,7 +37,7 @@ export function tip(row: Row, column: Column, group: Group, question: Question, 
     const vsLy = row.ly == null ? "not loaded" : `${pts((v ?? 0) - row.ly)} (${pct(row.ly)})`;
     lines.push(`<div style="margin-top:6px;border-top:1px solid ${C.mist};padding-top:6px">vs last week: ${vsPrior}<br/>vs last year: ${vsLy}</div>`);
   }
-  lines.push(`<div style="color:#7f7f7f;margin-top:4px;font-size:11px">${esc(question.id)} · wave of ${wave}</div>`);
+  lines.push(`<div style="color:${C.grey};margin-top:4px;font-size:11px">${esc(question.id)} · wave of ${wave}</div>`);
   return lines.join("");
 }
 
@@ -46,15 +47,16 @@ function ordered(rows: Row[], sort: boolean, column: Column): Row[] {
   return [...body, ...rows.filter(r => isFiller(r.label))];
 }
 
-export default function QuestionChart({ question, group = 0, view, columns, sort, wave, height }:
-  { question: Question; group?: number; view: View; columns: Column[]; sort: boolean; wave: string; height?: number }) {
+export default function QuestionChart({ question, group = 0, view, columns, sort, wave, height, onReady }:
+  { question: Question; group?: number; view: View; columns: Column[]; sort: boolean; wave: string; height?: number;
+    onReady?: (chart: Chart) => void }) {
   const g = question.groups[Math.min(group, question.groups.length - 1)];
   const rows = ordered(g.rows, sort, columns[0]);
   const option = useMemo(() => build(question, g, rows, view, columns, wave), [question, g, rows, view, columns, wave]);
   if (view === "table") return <QuestionTable question={question} rows={rows} group={g} columns={columns} />;
   const h = height ?? (view === "bars" ? Math.max(180, rows.length * (columns.length > 1 ? 18 * columns.length + 12 : 34) + 40)
     : view === "stacked" ? Math.max(160, (question.groups.length > 1 ? question.groups.length : 1) * 46 + 80) : 340);
-  return <EChart option={option} height={h} label={`${question.id}: ${question.text}`} />;
+  return <EChart option={option} height={h} label={`${question.id}: ${question.text}`} onReady={onReady} />;
 }
 
 function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[], wave: string) {
@@ -63,7 +65,7 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
   // several columns: Total in red (the guide wants red in every chart), the cuts in the blue ombre
   const cuts = blues(Math.max(columns.length - 1, 1));
   const palette = multiSeries ? columns.map((c, i) => (c === "Total" ? C.red : cuts[columns[0] === "Total" ? i - 1 : i])) : [C.sky];
-  const tooltip = { ...TOOLTIP, formatter: (p: { dataIndex: number; seriesIndex: number; data?: { row?: Row; group?: Group } }) => {
+  const hover = { ...tooltip(), formatter: (p: { dataIndex: number; seriesIndex: number; data?: { row?: Row; group?: Group } }) => {
     const d = p.data ?? {};
     return tip(d.row ?? rows[p.dataIndex], columns[p.seriesIndex] ?? columns[0], d.group ?? g, q, wave);
   } };
@@ -72,7 +74,7 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
   if (view === "donut") {
     const shades = blues(rows.length - 1);
     return {
-      tooltip, legend: { show: false },
+      tooltip: hover, legend: { show: false },
       series: [{
         type: "pie", radius: ["52%", "78%"], avoidLabelOverlap: true, padAngle: 1, itemStyle: { borderRadius: 3 },
         label: { formatter: (p: { name: string; value: number }) => `${p.name.length > 28 ? p.name.slice(0, 27) + "…" : p.name}\n{b|${p.value.toFixed(1)}%}`,
@@ -88,12 +90,12 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
     const answers = groups[0].rows.map(r => r.label);
     const shades = scaleColours(answers) ?? blues(answers.length);
     return {
-      tooltip: { ...TOOLTIP, formatter: (p: { data: { row: Row; group: Group } }) => tip(p.data.row, "Total", p.data.group, q, wave) },
-      legend: { bottom: 0, textStyle: AXIS_TEXT, itemWidth: 12, itemHeight: 12, icon: "roundRect" },
+      tooltip: { ...tooltip(), formatter: (p: { data: { row: Row; group: Group } }) => tip(p.data.row, "Total", p.data.group, q, wave) },
+      legend: { bottom: 0, textStyle: axisText(), itemWidth: 12, itemHeight: 12, icon: "roundRect" },
       grid: { left: 8, right: 16, top: 8, bottom: 56, containLabel: true },
-      xAxis: { type: "value", max: 100, axisLabel: { ...AXIS_TEXT, formatter: "{value}%" }, splitLine: { lineStyle: { color: C.mist } } },
+      xAxis: { type: "value", max: 100, axisLabel: { ...axisText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.mist } } },
       yAxis: { type: "category", inverse: true, data: groups.map(x => x.label || "Total"),
-               axisLabel: { ...AXIS_TEXT, width: 200, overflow: "break" }, axisTick: { show: false } },
+               axisLabel: { ...axisText(), width: 200, overflow: "break" }, axisTick: { show: false } },
       series: answers.map((a, i) => ({
         type: "bar", stack: "all", name: a, barWidth: 26,
         itemStyle: { color: shades[i] },
@@ -106,12 +108,12 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
   const horizontal = view === "bars";
   const category = { type: "category", data: labels, inverse: horizontal, axisTick: { show: false },
                      axisLine: { lineStyle: { color: C.silver } },
-                     axisLabel: horizontal ? { ...AXIS_TEXT, width: 230, overflow: "break", lineHeight: 14 }
-                                           : { ...AXIS_TEXT, interval: 0, width: Math.max(60, 640 / Math.max(rows.length, 1)), overflow: "break" } };
+                     axisLabel: horizontal ? { ...axisText(), width: 230, overflow: "break", lineHeight: 14 }
+                                           : { ...axisText(), interval: 0, width: Math.max(60, 640 / Math.max(rows.length, 1)), overflow: "break" } };
   const value = { type: "value", max: (v: { max: number }) => Math.min(100, Math.ceil((v.max + 8) / 10) * 10),
-                  axisLabel: { ...AXIS_TEXT, formatter: "{value}%" }, splitLine: { lineStyle: { color: C.mist } } };
+                  axisLabel: { ...axisText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.mist } } };
   return {
-    tooltip, legend: multiSeries ? { top: 0, textStyle: AXIS_TEXT, icon: "roundRect", itemWidth: 12, itemHeight: 12 } : { show: false },
+    tooltip: hover, legend: multiSeries ? { top: 0, textStyle: axisText(), icon: "roundRect", itemWidth: 12, itemHeight: 12 } : { show: false },
     grid: { left: 8, right: horizontal ? 48 : 12, top: multiSeries ? 32 : 8, bottom: 8, containLabel: true },
     xAxis: horizontal ? value : category, yAxis: horizontal ? category : value,
     series: columns.map((col, si) => ({

@@ -25,7 +25,8 @@ export default function Search() {
       {!query ? <Empty>Type at least two letters to search every wave.</Empty>
         : error ? <Failure error={error} /> : isFetching && !data ? <Loading what="results" />
         : !data?.results.length ? <Empty>No question matches “{query}”. Try fewer words.</Empty>
-        : <div className="table-wrap"><table className="data">
+        : <><Understood u={data.understood} count={data.results.length} />
+        <div className="table-wrap"><table className="data">
           <thead><tr><th>Code</th><th>Question</th><th className="num">Waves</th><th>Asked</th><th /></tr></thead>
           <tbody>{data.results.map(h => <tr key={h.qcode + h.text}>
             <td><code style={{ color: "var(--red)", fontWeight: 700 }}>{h.qcode}</code></td>
@@ -34,7 +35,19 @@ export default function Search() {
             <td className="muted">{h.first === h.last ? fmtDate(h.last) : `${fmtDate(h.first)} – ${fmtDate(h.last)}`}</td>
             <td>{h.waves > 1 && <Link className="btn" to={`/w/${h.survey_id}/trends/${encodeURIComponent(h.qcode)}`}>Trend</Link>}</td>
           </tr>)}</tbody>
-        </table></div>}
+        </table></div></>}
     </Card>
   </>;
+}
+
+/** What the search did with the words, so a corrected or widened search is never a surprise. */
+function Understood({ u, count }: { u?: { corrected: string[]; expanded: string[]; matched_by: string }; count: number }) {
+  if (!u) return null;
+  return <p className="muted" style={{ margin: "0 0 10px" }}>
+    {count} {count === 1 ? "question" : "questions"}
+    {u.corrected.length > 0 && <> · spelling corrected: <b>{u.corrected.join(", ")}</b></>}
+    {u.expanded.length > 0 && <> · also searched: {u.expanded.join("; ")}</>}
+    {u.matched_by === "fragments" && <> · matched on parts of words</>}
+    {u.matched_by === "any word" && <> · no question has every word, so these match some of them</>}
+  </p>;
 }

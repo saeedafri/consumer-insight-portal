@@ -12,5 +12,6 @@
 !web/vite.config.ts
 !web/src/**
 !deploy/**
+!DigiCertGlobalRootG2.crt.pem
 **/__pycache__
 **/.env*

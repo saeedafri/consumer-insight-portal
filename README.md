@@ -1,15 +1,25 @@
-# Consumer Insight Portal (CSI)
+# Consumer Insight Portal (CIP)
 
-Coresight Research · survey analytics on the STG (DWH) database.
+Coresight Research · consumer-survey analytics on the STG database (`cip_stg`).
 
-CIP pulls consumer-survey data from the **Forsta Surveys** API
-(`se1.decipherinc.com`, formerly Decipher — read only, GET) into MySQL and
-serves it through a Streamlit portal. Every weekly tracker wave is its own
-Forsta survey; the pipeline discovers them and loads each one as it closes.
+CIP pulls consumer-survey data from the **Forsta Surveys** API (`se1.decipherinc.com`, read only, GET) into
+MySQL, builds screen-agnostic serving tables, and serves them to analysts and clients through:
+
+- **the portal** (`web/` React + Vite, `api/` FastAPI): every survey and wave since 2018. Library, search,
+  overview with the business Databank tiles, question explorer, cross-tabs (incl. two cuts), trends, what changed,
+  survey preview. Coresight palette, light and dark;
+- **Streamlit staff pages** (`app/pages/`): data health, mappings, publications, analysis builder.
+
+Every weekly tracker wave is its own Forsta survey; the pipeline discovers each one as it closes, loads it,
+verifies it, builds the cube and serving tables, and publishes the portal's standard screens as static files.
+
+**Design and test results:** [`docs/Ui-Design-Claude/00-README.md`](docs/Ui-Design-Claude/00-README.md). That covers
+the stack decision, the serving design, the staging tests at 1 core / 4 GB, the ETL time and RAM, the council
+verdict and the chatbot readiness.
 
 ---
 
-## Status — 29 September 2026
+## Status: data platform (September–October 2026)
 
 | Piece | State |
 |---|---|
@@ -24,7 +34,12 @@ Forsta survey; the pipeline discovers them and loads each one as it closes.
 | Cohorts & cube | named cohorts over concepts (`config/cohorts.yml`: Beauty shoppers — reproduces the analysts' workbook exactly on its 1,614 respondents); pre-computed cube for all 144 waves; standard view P95 0.35 s, ad-hoc cohort 0.82 s, five-wave stack 0.26 s over the VPN (`scripts/perf_check.py`) |
 | Publications | delivered tables frozen with their definition and footnote; the **Publications** page (`/publications`) re-checks every one against today's data cell by cell (replaces the manual Cross-Check tab); `python -m app.data.publications --drift` exits 1 when a published number moved |
 
-**Run it against `cip_stg`** (VPN on): `.venv/bin/streamlit run app/main.py` — sign-in is bypassed locally (`APP_ENV=LOCAL` + `DEBUG=true`); OIDC/SSO to follow, as in MDP/SIP
+**Run the portal** (VPN on, against `cip_stg`): `npm --prefix web run build`, then
+`APP_ENV=LOCAL CIP_SESSION_SECRET=<random> .venv/bin/gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w 2 -b 127.0.0.1:8000`
+and open http://127.0.0.1:8000/auth/dev-login. **Deploy:** `deploy/compose.yml` (nginx + API on one server), and
+`python -m etl.publish` after each load.
+
+**Run the Streamlit staff pages against `cip_stg`** (VPN on): `.venv/bin/streamlit run app/main.py` — sign-in is bypassed locally (`APP_ENV=LOCAL` + `DEBUG=true`); OIDC/SSO to follow, as in MDP/SIP
 **Run it offline** on a SQLite copy: `bash scripts/run_local.sh`
 
 ---
@@ -56,27 +71,21 @@ streamlit run app/main.py --server.port 8611
 
 ```
 consumer-insight-portal/
-├── app/                    Streamlit portal
-│   ├── main.py             entry point and navigation
-│   ├── core/               config, pooled SQLAlchemy access, SQLite fallback
-│   ├── data/repository.py  every query the app makes, cached
-│   ├── components/         header nav, validated palette, Plotly builders, Excel export
-│   ├── data/harmonise.py   links each wave's questions to concepts (spec §5.2)
-│   └── pages/              Overview · Survey report · Analysis Builder · Trends · Mappings · Publications · Health
-├── config/survey_map.yml   topic rules and demographic detection — edit here, not in code
-├── etl/
-│   ├── survey_map.py       resolves topics and cuts for a questionnaire it has never seen
-│   ├── forsta_client.py    Forsta REST client (x-apikey, retries; GET only)
-│   ├── forsta_api.py       datamap → questions (labels, bipolar grids, other-specify, flags)
-│   ├── forsta_etl.py       discover → load → verify → publish → harmonise / cube / search
-│   ├── records.py          shared parsed-question shape and text helpers
-│   ├── loaders.py          idempotent upserts, search index
-│   ├── legacy_dwh.py       Qualtrics / SurveyMonkey history from dwh_sm*
-│   └── run_pipeline.py     loader steps shared by every source
-├── sql/                    001 schema · 002 views · 003 seed · 004 grants
-├── scripts/                init_db.py · test_connection.py · reconcile.py · weekly_forsta.py · perf_check.py
-├── tests/
-└── docs/                   plan · schema · integration · IT checklist · data analysis
+├── api/                    FastAPI for the portal: main.py (endpoints, cache, admission control), search.py (FTS5),
+│                           dashboards.py (module Databank tiles and takeaways from config/dashboards.yml)
+├── web/                    React 19 + Vite + TypeScript portal (src/pages, src/components, Coresight theme)
+├── app/                    Streamlit staff pages, plus the shared library every part imports:
+│   ├── core/               config, pooled SQLAlchemy access, SQLite fallback, schema upgrades
+│   └── data/               repository, cube, harmonise, cohorts, publications, payloads (the portal's responses)
+├── etl/                    Forsta and legacy loaders, verification, serving tables (serving.py),
+│                           static publishing for nginx (publish.py), notifications, integrity
+├── config/                 survey map, cohorts, banners, calendar, dashboards, search synonyms (all YAML)
+├── sql/                    001 schema · 002 views · 003 seed · 004 grants · 005 serving · 006 dashboards
+├── deploy/                 Dockerfile (api + nginx targets), compose.yml, nginx.conf
+├── scripts/                weekly run, backup, init, reconcile, checks, doc build; launchd jobs;
+│   └── ui_benchmark/       reproducible load, browser and click tests behind the docs' numbers
+├── tests/                  pytest suite (web: `npm --prefix web run check` for the statistics)
+└── docs/                   decision log 01–14, business and technical specs, diagrams, UI and serving design
 ```
 
 ## Documentation
@@ -85,9 +94,10 @@ consumer-insight-portal/
 |---|---|
 | [**CIP — Business Description**](docs/CIP-Business-Description.pdf) ([md](docs/CIP-Business-Description.md), [Word](docs/CIP-Business-Description.docx)) | for the business team: how the surveys run, the patterns, what is collected, how the pipeline works, quality and privacy |
 | [**CIP — Technical Specification**](docs/CIP-Technical-Specification.pdf) ([md](docs/CIP-Technical-Specification.md), [Word](docs/CIP-Technical-Specification.docx)) | API, extract, transform, load, derived data, data dictionary, survey patterns, runbook — sections in `docs/technical/` |
+| [**Portal design, tests and system design**](docs/Ui-Design-Claude/00-README.md) | stack decision, serving tables, staging tests at 1 core / 4 GB, ETL time and RAM, council verdict, chatbot readiness |
 | [`docs/diagrams/`](docs/diagrams/) | editable Excalidraw (`.excalidraw`), Mermaid source (`.mmd`), SVG and PNG of every flow; interactive Archify pages in `.archify/` |
 | [`01-implementation-plan.md`](docs/01-implementation-plan.md) | phases, decisions, risks |
-| [`02-schema-design.md`](docs/02-schema-design.md) | the 19 `csi_` tables, and why every percentage carries its own base |
+| [`02-schema-design.md`](docs/02-schema-design.md) | the first schema (now `cip_` tables, see the Technical Specification), and why every percentage carries its own base |
 | [`03-forsta-integration.md`](docs/03-forsta-integration.md) | endpoints, auth, incremental loading, failure modes |
 | [`04-it-requirements-checklist.md`](docs/04-it-requirements-checklist.md) | **what to send IT** |
 | [`05-source-data-analysis.md`](docs/05-source-data-analysis.md) | what the two Excel files actually contain |

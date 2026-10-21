@@ -6,6 +6,7 @@ import "@fontsource-variable/montserrat";
 import "./styles.css";
 import Shell from "./components/Shell";
 import { Loading } from "./components/bits";
+import { Busy } from "./api";
 
 const page = (load: () => Promise<{ default: React.ComponentType }>) => {
   const Page = lazy(load);
@@ -26,6 +27,10 @@ const router = createBrowserRouter([{
   ],
 }]);
 
-const queries = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
+const queries = new QueryClient({ defaultOptions: { queries: {
+  refetchOnWindowFocus: false,
+  retry: (count, error) => (error instanceof Busy ? count < 3 : count < 1),   // busy: up to 3 tries, 3 s apart
+  retryDelay: (_, error) => (error instanceof Busy ? 3000 : 800),
+} } });
 createRoot(document.getElementById("root")!).render(
   <StrictMode><QueryClientProvider client={queries}><RouterProvider router={router} /></QueryClientProvider></StrictMode>);

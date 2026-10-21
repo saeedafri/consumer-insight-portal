@@ -29,7 +29,7 @@ from sqlalchemy import inspect  # noqa: E402
 
 from app.core.config import config  # noqa: E402
 from app.core.database import get_engine, healthcheck  # noqa: E402
-from etl import forsta_etl, integrity, notify  # noqa: E402
+from etl import forsta_etl, integrity, notify, publish  # noqa: E402
 from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
 
 log = logging.getLogger("cip.weekly")
@@ -88,6 +88,11 @@ def run(client=None) -> int:
     if not result["loaded"] and not result["failed"]:
         tell(notify.idle_run)
     broken = integrity.run()                        # heals derived rows; reports the rest
+    if result["loaded"] and os.environ.get("CIP_PUBLISH_DIR"):   # the standard screens as static files for nginx
+        try:
+            publish.publish()
+        except Exception as exc:                    # the previous version stays live; say so
+            tell(notify.failure, "publishing the portal files", str(exc))
     if broken:
         tell(notify.failure, "integrity check", "\n".join(broken))
     if result["failed"]:

@@ -3,12 +3,12 @@
 import { useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { COLUMNS, useBook, useCrosstab } from "../api";
+import { present, useBook, useCrosstab } from "../api";
 import type { Column, Group, Question } from "../api";
-import { BaseNote, Card, Empty, Failure, Loading } from "../components/bits";
+import { BaseNote, Card, Empty, Failure, Loading, SourceLine } from "../components/bits";
 import QuestionNav from "../components/QuestionNav";
 import { downloadCsv } from "../csv";
-import { inkOn } from "../theme";
+import { heat, inkOn } from "../theme";
 import { count, fmtDate, moe, pct, significant, SMALL_BASE, versusRest } from "../stats";
 
 const LETTERS = "ABCDEFG";
@@ -48,7 +48,9 @@ export default function Crosstab() {
   if (isLoading) return <Loading what="cross-tabs" />;
   if (error || !book) return <Failure error={error} />;
   if (!question) return <Empty>This wave has no questions with percentages.</Empty>;
-  const mode = params.get("mode") === "two" ? "two" : "banner";
+  const cols = present(book.n);
+  const profiled = cols.length > 1;   // ad hoc and archive surveys without age/gender profiles have nothing to cut by
+  const mode = params.get("mode") === "two" && profiled ? "two" : "banner";
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }); };
   return <div className="split">
     <QuestionNav questions={book.questions} current={question.id} onPick={q => navigate(`/w/${id}/crosstab/${encodeURIComponent(q.id)}?${params}`)} />
@@ -58,24 +60,26 @@ export default function Crosstab() {
         <p className="qtext">{question.text}</p>
         <div className="seg" role="group" aria-label="Cross-tab mode">
           <button aria-pressed={mode === "banner"} onClick={() => set("mode", "banner")}>Banner: gender and generation</button>
-          <button aria-pressed={mode === "two"} onClick={() => set("mode", "two")}>Combine two cuts</button>
+          <button aria-pressed={mode === "two"} onClick={() => set("mode", "two")} disabled={!profiled}
+                  title={profiled ? undefined : "This survey has no respondent profile (gender, age, generation…) to cut by"}>Combine two cuts</button>
         </div>
       </Card>
-      {mode === "banner" ? <Banner question={question} n={book.n} wave={fmtDate(book.wave.wave_date)} />
+      {!profiled && <p className="muted">This survey has no respondent profile (gender, age, generation…), so only the Total column is available.</p>}
+      {mode === "banner" ? <Banner question={question} n={book.n} wave={fmtDate(book.wave.wave_date)} cols={cols} />
                          : <TwoCuts id={id} question={question} />}
     </div>
   </div>;
 }
 
-function Banner({ question, n, wave }: { question: Question; n: Record<Column, number>; wave: string }) {
+function Banner({ question, n, wave, cols }: { question: Question; n: Record<Column, number>; wave: string; cols: Column[] }) {
   const [params, setParams] = useSearchParams();
-  const ref = (COLUMNS.includes(params.get("ref") as Column) ? params.get("ref") : "Total") as Column;
+  const ref = (cols.includes(params.get("ref") as Column) ? params.get("ref") : "Total") as Column;
   const marks = params.get("marks") === "arrows" ? "arrows" : "letters";
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }); };
   const { on, view } = useHover();
-  const exportCsv = () => downloadCsv(`${question.id}-crosstab`, ["Group", "Answer", ...COLUMNS],
-    question.groups.flatMap(g => g.rows.map(r => [g.label, r.label, ...COLUMNS.map(c => r[c])])),
-    [`${question.id}: ${question.text}`, `Wave of ${wave}`, `Bases: ${COLUMNS.map(c => `${c} n=${question.groups[0].bases[c]}`).join(", ")}`]);
+  const exportCsv = () => downloadCsv(`${question.id}-crosstab`, ["Group", "Answer", ...cols],
+    question.groups.flatMap(g => g.rows.map(r => [g.label, r.label, ...cols.map(c => r[c])])),
+    [`${question.id}: ${question.text}`, `Wave of ${wave}`, `Bases: ${cols.map(c => `${c} n=${question.groups[0].bases[c]}`).join(", ")}`]);
   return <Card title="Column percentages" sub={marks === "letters"
       ? "A letter means the figure is significantly higher than that column's (95 %). Click a column to compare everything against it."
       : `▲▼ = significantly higher or lower than ${ref === "Total" ? "everyone else" : ref} (95 %). Click a column to change the reference.`}
@@ -85,23 +89,24 @@ function Banner({ question, n, wave }: { question: Question; n: Record<Column, n
         <button aria-pressed={marks === "arrows"} onClick={() => set("marks", "arrows")}>Arrows</button>
       </div>
       <button className="btn" onClick={exportCsv}>Download CSV</button></div>}>
-    {question.groups.map(g => <Matrix key={g.label} g={g} q={question} n={n} refCol={ref} marks={marks} hover={on} onRef={c => set("ref", c)} />)}
+    {question.groups.map(g => <Matrix key={g.label} g={g} q={question} n={n} cols={cols} refCol={ref} marks={marks} hover={on} onRef={c => set("ref", c)} />)}
     <div className="legend-line">
-      <span><i style={{ background: "rgba(0,95,143,.15)" }} />low</span><span><i style={{ background: "rgba(0,95,143,.9)" }} />high share</span>
+      <span><i style={{ background: heat(0.15) }} />low</span><span><i style={{ background: heat(0.9) }} />high share</span>
       <span style={{ color: "var(--warn)" }}>Amber base = fewer than {SMALL_BASE} respondents: read with caution</span>
     </div>
+    <SourceLine wave={wave} base={`Total n=${question.groups[0].base}`} asked={question.base_desc} extra="letters: column-vs-column z-tests" />
     {view}
   </Card>;
 }
 
-function Matrix({ g, q, n, refCol, marks, hover, onRef }: { g: Group; q: Question; n: Record<Column, number>; refCol: Column; marks: string;
+function Matrix({ g, q, n, cols, refCol, marks, hover, onRef }: { g: Group; q: Question; n: Record<Column, number>; cols: Column[]; refCol: Column; marks: string;
   hover: (body: ReactNode) => object; onRef: (c: Column) => void }) {
-  const max = Math.max(1, ...g.rows.flatMap(r => COLUMNS.map(c => r[c] ?? 0)));
+  const max = Math.max(1, ...g.rows.flatMap(r => cols.map(c => r[c] ?? 0)));
   const base = (c: Column) => g.bases[c] ?? 0;
   const mark = (v: number, c: Column, r: (typeof g.rows)[number]) => {
     if (base(c) < SMALL_BASE) return "";
     if (marks === "letters")
-      return COLUMNS.map((o, i) => o !== c && base(o) >= SMALL_BASE && (r[o] ?? 0) < v && significant(v, base(c), r[o] ?? 0, base(o)) ? LETTERS[i] : "").join("");
+      return cols.map((o, i) => o !== c && base(o) >= SMALL_BASE && (r[o] ?? 0) < v && significant(v, base(c), r[o] ?? 0, base(o)) ? LETTERS[i] : "").join("");
     if (c === refCol) return "";
     const s = refCol === "Total" ? versusRest(v, base(c), r.Total ?? 0, base("Total"))
       : significant(v, base(c), r[refCol] ?? 0, base(refCol)) ? (v > (r[refCol] ?? 0) ? 1 : -1) : 0;
@@ -110,22 +115,22 @@ function Matrix({ g, q, n, refCol, marks, hover, onRef }: { g: Group; q: Questio
   return <div className="table-wrap" style={{ marginBottom: 14 }}>
     {g.label && <h4 style={{ margin: "8px 0", fontSize: 14 }}>{g.label}</h4>}
     <table className="data xt">
-      <thead><tr><th>Answer</th>{COLUMNS.map((c, i) =>
+      <thead><tr><th>Answer</th>{cols.map((c, i) =>
         <th key={c} className={`num ${c === refCol && marks === "arrows" ? "ref" : ""}`}>
           <button onClick={() => onRef(c)} title={`Compare against ${c}`}>{c}<small>{LETTERS[i]} · n={n[c] ?? base(c)}</small></button></th>)}</tr></thead>
       <tbody>
-        <tr className="base-row"><th scope="row">Base (answered)</th>{COLUMNS.map(c =>
+        <tr className="base-row"><th scope="row">Base (answered)</th>{cols.map(c =>
           <td key={c} className="num" style={base(c) < SMALL_BASE ? { color: "var(--warn)" } : undefined}>{base(c)}{base(c) < SMALL_BASE ? " ⚠" : ""}</td>)}</tr>
-        {g.rows.map(r => <tr key={r.label}><th scope="row">{r.label}</th>{COLUMNS.map(c => {
+        {g.rows.map(r => <tr key={r.label}><th scope="row">{r.label}</th>{cols.map(c => {
           const v = r[c];
           if (v == null) return <td key={c} className="cell hidden">–</td>;
           const alpha = 0.08 + 0.82 * (v / max);
           const m = mark(v, c, r);
           return <td key={c} className={`cell ${base(c) < SMALL_BASE ? "small-col" : ""}`}
-                     style={{ background: `rgba(0,95,143,${alpha.toFixed(2)})`, color: inkOn(alpha), opacity: base(c) < SMALL_BASE ? 0.6 : 1 }}
+                     style={{ background: heat(alpha), color: inkOn(alpha), opacity: base(c) < SMALL_BASE ? 0.6 : 1 }}
                      {...hover(<><b>{r.label}</b><b className="v">{pct(v)} <small style={{ fontSize: 12, color: "var(--ink-2)" }}>±{moe(v, base(c)).toFixed(1)}</small></b>
                        {c} · ≈{count(v, base(c))} of {base(c)} respondents
-                       {m && <div style={{ marginTop: 4 }}>{marks === "letters" ? `Significantly higher than ${m.split("").map(l => COLUMNS[LETTERS.indexOf(l)]).join(", ")}`
+                       {m && <div style={{ marginTop: 4 }}>{marks === "letters" ? `Significantly higher than ${m.split("").map(l => cols[LETTERS.indexOf(l)]).join(", ")}`
                          : `Significantly ${m === "▲" ? "higher" : "lower"} than ${refCol === "Total" ? "everyone else" : refCol}`} (95 %)</div>}
                        {base(c) < SMALL_BASE && <div style={{ color: "var(--warn)" }}>Small base: read with caution</div>}
                        <div className="muted" style={{ marginTop: 4 }}>{q.id}</div></>)}>
@@ -171,7 +176,7 @@ function TwoCuts({ id, question }: { id: number; question: Question }) {
           const [, , , , , nn, base, p, flags] = r as [string, string, string, number, string, number | null, number, number | null, string];
           if (flags === "suppressed") return <td key={y} className="cell hidden" {...on(<>{x} × {y}<br />Only {base} respondents: hidden</>)}>n&lt;30</td>;
           const alpha = 0.08 + 0.8 * ((p ?? 0) / 100);
-          return <td key={y} className="cell" style={{ background: `rgba(0,95,143,${alpha.toFixed(2)})`, color: inkOn(alpha), opacity: flags === "small_base" ? 0.65 : 1 }}
+          return <td key={y} className="cell" style={{ background: heat(alpha), color: inkOn(alpha), opacity: flags === "small_base" ? 0.65 : 1 }}
                      {...on(<><b>{x} × {y}</b><b className="v">{pct(p)} <small style={{ fontSize: 12 }}>±{moe(p ?? 0, base).toFixed(1)}</small></b>{nn} of {base} respondents
                        {flags === "small_base" && <div style={{ color: "var(--warn)" }}>Small base: read with caution</div>}</>)}>
             {(p ?? 0).toFixed(0)}<small style={{ display: "block", fontWeight: 400, fontSize: 10 }}>n={base}</small></td>;

@@ -30,7 +30,7 @@ export default function Changes() {
     <div className="page-head"><div>
       <p className="eyebrow">What changed · wave of {fmtDate(book.wave.wave_date)}</p>
       <h1>{rows.length} {onlySig ? "significant " : ""}changes against {against === "ly" ? "the same week last year" : "last week"}</h1>
-      <p className="lede">Every answer of every question, tested at 95 % (two proportions). Answers whose question was asked of a different group than last week ({routing}) are left out of the test rather than shown as a false move.</p>
+      <p className="lede">Every answer of every question, tested with a two-proportion z-test and kept as significant only if it survives the Benjamini–Hochberg correction across the whole wave (5 % false discoveries), so chance moves are not reported as news. Answers whose question was asked of a different group than last week ({routing}) are left out of the test rather than shown as a false move.</p>
     </div></div>
     <Card>
       <div className="toolbar">

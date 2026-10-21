@@ -38,3 +38,19 @@ export function Failure({ error }: { error: unknown }) {
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="state">{children}</div>;
 }
+
+/** The line competitors put under every chart (YouGov, OWID, Civiqs): who, when, how many, how tested. */
+export function SourceLine({ wave, base, asked, extra }: { wave: string; base: string; asked?: string | null; extra?: string }) {
+  return <p className="source-line" title="Unweighted percentages of qualified respondents. Changes are tested with a two-proportion z-test at 95 %; the What changed list also corrects for testing many answers at once (Benjamini–Hochberg).">
+    Source: Coresight Research US Consumer Survey · US adults 18+ · fielded week of {wave} · {asked ? `asked of ${asked} · ` : ""}{base} · unweighted · significance at 95 %{extra ? ` · ${extra}` : ""}
+  </p>;
+}
+
+export const sourceText = (wave: string, base: string) =>
+  `Source: Coresight Research US Consumer Survey · US adults 18+ · fielded week of ${wave} · ${base} · unweighted`;
+
+export async function copyLink(button: HTMLButtonElement) {
+  try { await navigator.clipboard.writeText(location.href); button.textContent = "Link copied"; }
+  catch { button.textContent = "Copy the address bar"; }
+  setTimeout(() => { button.textContent = "Copy link"; }, 1800);
+}
