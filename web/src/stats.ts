@@ -3,9 +3,9 @@ export function significant(p1: number, n1: number, p2: number, n2: number): boo
   return pValue(p1, n1, p2, n2) < 0.05;
 }
 
-/** Two-sided p-value of the two-proportion z-test (1 when it cannot be computed). */
+/** Two-sided p-value of the two-proportion z-test (1 when it cannot be computed, or either side is under TEST_BASE). */
 export function pValue(p1: number, n1: number, p2: number, n2: number): number {
-  if (!n1 || !n2) return 1;
+  if (!n1 || !n2 || n1 < TEST_BASE || n2 < TEST_BASE) return 1;
   const a = p1 / 100, b = p2 / 100;
   const pooled = (a * n1 + b * n2) / (n1 + n2);
   const se = Math.sqrt(pooled * (1 - pooled) * (1 / n1 + 1 / n2));
@@ -40,7 +40,8 @@ export function versusRest(col: number, colBase: number, total: number, totalBas
 }
 
 export const SMALL_BASE = 50;
-export const HIDDEN_BASE = 30;   // under this the data carries no figure (app/data/payloads.HIDDEN_BASE): screens show the base only
+export const HIDDEN_BASE = 5;    // under this the data carries no figure (app/data/payloads.HIDDEN_BASE): screens show the base only
+export const TEST_BASE = 30;     // under this on either side a difference is never called significant (too few to test)
 export const pct = (v: number | null | undefined) => (v == null ? "–" : `${v.toFixed(1)}%`);
 export const pts = (d: number) => `${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d).toFixed(1)} pts`;
 export const count = (p: number, base: number) => Math.round((p / 100) * base);

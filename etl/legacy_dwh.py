@@ -16,7 +16,6 @@ imported) are skipped and counted.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import logging
 import re
 from typing import Optional
@@ -314,7 +313,7 @@ def load_legacy(legacy_id: str) -> int:
             "sid": survey_id, "rec": n, "uuid": str(rid)[:64], "sc": code,
             "sl": (label or "")[:30] or None, "qual": 1 if status == "completed" else 0,
             "done": filled, "secs": secs,
-            "key": hashlib.sha256(str(rid).encode()).hexdigest(), "run": run})
+            "key": xp.respondent_key(rid), "run": run})
     with eng.begin() as conn:
         if respondents:
             conn.execute(text("""

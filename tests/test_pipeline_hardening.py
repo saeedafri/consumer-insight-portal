@@ -84,3 +84,38 @@ def test_the_scheduled_run_writes_warnings_to_the_json_error_log(tmp_path, monke
         root.handlers[:], root.level = kept
     lines = (tmp_path / "errors.jsonl").read_text().splitlines()
     assert [json.loads(line)["message"] for line in lines] == ["Integrity: something"]
+
+
+def test_the_watchdog_tells_when_a_run_goes_silent(tmp_path, monkeypatch):
+    weekly = importlib.import_module("scripts.weekly_forsta")
+    told = []
+    monkeypatch.setattr(weekly, "HEARTBEAT", tmp_path / "beat.json")
+    monkeypatch.setattr(weekly, "tell", lambda action, *args: told.append(args[0]))
+    monkeypatch.setattr(weekly.launch_schedule, "planned_today", lambda: None)
+    weekly.beat("watching: waiting", 0.5)
+    assert weekly.watchdog() == 0 and told == []                     # inside its promise
+    weekly.beat("watching: waiting", -2)                              # promised a beat two hours ago, then went quiet
+    assert weekly.watchdog() == 1 and told == ["the ETL run stopped without finishing"]
+    weekly.beat("finished", 0, last_exit=0)
+    told.clear()
+    assert weekly.watchdog() == 0 and told == []                      # a finished run owes nothing until next week
+
+
+def test_a_salted_respondent_key_matches_a_rekeyed_old_one(monkeypatch):
+    import hashlib
+    import hmac
+    from etl import records
+    old = records.respondent_key(123)                                   # before the salt: plain sha256
+    monkeypatch.setenv("CIP_RESPONDENT_SALT", "s" * 32)
+    assert old == hashlib.sha256(b"123").hexdigest()
+    assert records.respondent_key(123) == hmac.new(b"s" * 32, old.encode(), hashlib.sha256).hexdigest()   # = rekey_respondents
+
+
+def test_a_planned_tracker_week_missing_after_four_days_is_reported(monkeypatch):
+    from datetime import date
+    from etl import integrity, launch_schedule
+    plan = {"weeks": [{"date": "2026-10-12", "status": "loaded"}, {"date": "2026-10-19", "status": "load_failed"},
+                      {"date": "2026-10-26", "status": "planned"}, {"date": "2025-01-06", "status": "not_found"}]}
+    monkeypatch.setattr(launch_schedule, "weeks", lambda today=None: plan)
+    assert integrity.planned_weeks_missing(date(2026, 10, 22)) == []          # 19 Oct is only 3 days old
+    assert integrity.planned_weeks_missing(date(2026, 10, 23)) == ["planned tracker week not in the portal 4 days after its Monday: 2026-10-19"]

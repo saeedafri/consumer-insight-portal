@@ -79,7 +79,7 @@ def send(subject: str, body: str, to: list[str], attachments: list[tuple[str, by
     return True
 
 
-def teams(headline: str) -> None:
+def teams(headline: str) -> bool:
     url = os.getenv("TEAMS_WEBHOOK_URL", "").strip()
     if url:
         try:
@@ -87,8 +87,10 @@ def teams(headline: str) -> None:
                 "$schema": "http://adaptivecards.io/schemas/adaptive-card.json", "type": "AdaptiveCard", "version": "1.4",
                 "body": [{"type": "TextBlock", "text": headline, "wrap": True}]}}]}
             requests.post(url, json=card, timeout=30).raise_for_status()
+            return True
         except Exception as exc:
             log.warning("Teams message not sent: %s", exc)
+    return False
 
 
 # ── the facts ──────────────────────────────────────────────────────────────
@@ -313,15 +315,16 @@ def failure(what: str, detail: str) -> bool:
     if already_told(subject):
         log.info("Already told about %r in the last %d h", subject, REPEAT_HOURS)
         return False
-    teams(f"❌ CIP pipeline failed: {what}. Details in the email; the next run retries.")
+    first = next((line for line in detail.splitlines() if line.strip()), "")[:300]
+    posted = teams(f"❌ CIP pipeline failed: {what}. {first} (full detail in the email and logs/forsta-etl.log)")
     page = (f'<div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px"><div style="background:#b3261e;color:#fff;padding:12px 16px;'
             f'font-size:16px;font-weight:600">Pipeline failure</div><p style="font-size:14px"><b>{html.escape(what)}</b></p>'
             f'<pre style="background:#f6f6f6;padding:10px;font-size:12px;white-space:pre-wrap">{html.escape(detail)}</pre>'
             f'<p style="font-size:12px;color:#6b6a68">The next scheduled run tries again. Log: logs/forsta-etl.log</p></div>')
     sent = send(subject, f"{what}\n\n{detail}\n\nThe next scheduled run tries again. Logs: logs/forsta-etl.log\n", recipients("failure"), page=page)
-    if sent:
+    if sent or posted:   # the team channel alone counts as told
         mark_told(subject)
-    return sent
+    return sent or posted
 
 
 def idle_run() -> bool:

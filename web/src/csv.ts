@@ -11,11 +11,17 @@ export function downloadCsv(name: string, header: string[], rows: (string | numb
   URL.revokeObjectURL(a.href);
 }
 
-export type Format = "csv" | "xlsx" | "pptx";
+export type Format = "csv" | "xlsx" | "pptx" | "board";
+export type TableSpec = { name: string; header: string[]; rows: (string | number | null)[][]; notes: string[] };
 
-/** The same table as CSV (built here), an Excel workbook or a PowerPoint slide (built by the API from these rows). */
+/** The same table as CSV (built here), an Excel workbook or a PowerPoint slide (built by the API from these rows), or
+ * pinned to a board as it is now (components/PinDialog listens). */
 export async function downloadTable(format: Format, name: string, header: string[], rows: (string | number | null | undefined)[][], notes: string[]) {
   if (format === "csv") return downloadCsv(name, header, rows, notes);
+  if (format === "board") {
+    const spec: TableSpec = { name, header, rows: rows.map(r => r.map(c => (c === undefined ? null : c))), notes };
+    return void window.dispatchEvent(new CustomEvent<TableSpec>("cip:pin", { detail: spec }));
+  }
   const response = await fetch(`/api/v1/export/${format}`, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, header, rows: rows.map(r => r.map(c => (c === undefined ? null : c))), notes }) });
   if (!response.ok) throw new Error(`Export failed (${response.status})`);

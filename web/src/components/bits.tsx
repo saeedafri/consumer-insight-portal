@@ -130,5 +130,8 @@ export function ExportButtons({ onExport }: { onExport: (format: Format) => unkn
   return <div className="seg export" role="group" aria-label="Download">
     {([["csv", "CSV"], ["xlsx", "Excel"], ["pptx", "PowerPoint"]] as const).map(([format, label]) =>
       <button key={format} onClick={() => onExport(format)} title={`Download this table as ${label}`}><IconDownload /> {label}</button>)}
+    <button onClick={() => onExport("board")} title="Pin this table, as it is now, to a board you can share and download as a deck">
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M16 3l5 5-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z" /></svg> Board
+    </button>
   </div>;
 }

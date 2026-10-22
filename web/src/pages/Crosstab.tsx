@@ -246,7 +246,7 @@ function TwoCuts({ id, question }: { id: number; question: Question }) {
   const rows = (data?.rows ?? []).filter(r => `${r[2]}|${r[3]}` === pick);
   const v1s = natural([...new Set(rows.map(r => r[0] as string))]), v2s = natural([...new Set(rows.map(r => r[1] as string))]);
   const cell = (x: string, y: string) => rows.find(r => r[0] === x && r[1] === y);
-  return <Card title="Two cuts combined" sub="One answer at a time. Cells under 30 respondents are hidden; under 50 are flagged. Pool four weeks to grow small cells.">
+  return <Card title="Two cuts combined" sub="One answer at a time. Cells under 5 respondents are hidden; under 50 are flagged; under 30 never tested for significance. Pool four weeks to grow small cells.">
     <div className="toolbar">
       {(["a", "b"] as const).map(k => <select key={k} aria-label={k === "a" ? "Rows" : "Columns"} value={k === "a" ? a : b} onChange={e => set(k, e.target.value)}>
         {SORTED_CUTS.map(([v, l]) => <option key={v} value={v}>{k === "a" ? "Rows: " : "Columns: "}{l}</option>)}</select>)}

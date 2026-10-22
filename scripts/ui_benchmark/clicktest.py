@@ -16,8 +16,8 @@ from tornado.websocket import websocket_connect
 CDP = "http://127.0.0.1:9333"
 SETTLED = "!document.querySelector('.spinner')"
 SCREENS = {   # path, the check that its data is on screen
-    "overview": ("", "document.querySelector('h1')?.textContent.length > 5 && document.querySelectorAll('canvas').length > 0"),
-    "questions": ("/questions", "document.querySelector('.qtext')?.textContent.length > 5 && (document.querySelectorAll('canvas').length > 0 || document.querySelectorAll('table.data td').length > 0)"),
+    "overview": ("", "document.querySelector('h1')?.textContent.length > 5 && (document.querySelectorAll('canvas').length > 0 || /no figure is shown under 30/.test(document.body.innerText))"),
+    "questions": ("/questions", "document.querySelector('.qtext')?.textContent.length > 5 && (document.querySelectorAll('canvas').length > 0 || document.querySelectorAll('table.data td').length > 0 || /under 30|n<30/.test(document.body.innerText))"),
     "crosstab": ("/crosstab", "document.querySelectorAll('table.data td').length > 0"),
     "trends": ("/trends", "document.querySelectorAll('canvas').length > 0 || /only one wave|Pick at least one answer|No respondents in|fielded once/.test(document.body.innerText)"),
     "changes": ("/changes", "document.querySelector('h1')?.textContent.length > 5 && (document.querySelectorAll('table.data').length > 0 || /No changes match these filters/.test(document.body.innerText))"),

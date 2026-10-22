@@ -53,4 +53,11 @@ def test_failure_emails_and_posts_to_teams_once(monkeypatch, tmp_path):
     assert notify.failure("survey X did not load", "boom")
     assert notify.failure("survey X did not load", "boom") is False          # same failure inside the window
     assert sent == ["CIP pipeline FAILED: survey X did not load"]
-    assert posted == ["\u274c CIP pipeline failed: survey X did not load. Details in the email; the next run retries."]
+    assert posted == ["\u274c CIP pipeline failed: survey X did not load. boom (full detail in the email and logs/forsta-etl.log)"]
+
+
+def test_a_failure_posted_only_to_teams_still_counts_as_told(monkeypatch, tmp_path):
+    monkeypatch.setattr(notify, "STATE", tmp_path / "state.json")
+    monkeypatch.setattr(notify, "send", lambda *a, **k: False)            # no mail password on this machine
+    monkeypatch.setattr(notify, "teams", lambda headline: True)
+    assert notify.failure("run crashed", "trace") and notify.already_told("CIP pipeline FAILED: run crashed")

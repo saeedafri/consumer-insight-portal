@@ -132,7 +132,7 @@ def test_crosstab_hides_tiny_cells_flags_small_ones_and_pools_weeks_by_answer(cs
         option = {(s, l): o for s, l, o in conn.execute(sa.text(
             "SELECT survey_id, option_label, option_id FROM srv_result WHERE qcode = 'XM1' AND dim = 'total'"))}
         answers = []
-        for sid, generation, gender, yes, no in ((412, "GenZ", "Female", 10, 15), (412, "Boomer", "Male", 20, 20),
+        for sid, generation, gender, yes, no in ((412, "GenZ", "Female", 2, 2), (412, "Boomer", "Male", 20, 20),
                                                  (412, "Boomer", "Female", 15, 45), (412, "", "Female", 1, 0),
                                                  (266, "GenZ", "Female", 10, 10)):
             for label, count in (("Yes", yes), ("No", no)):
@@ -144,13 +144,13 @@ def test_crosstab_hides_tiny_cells_flags_small_ones_and_pools_weeks_by_answer(cs
     one = read(1)
     yes = {(v1, v2): dict(zip(one["columns"], r)) for r in one["rows"] for v1, v2 in [r[:2]] if r[3] == 1}
     tiny = yes[("GenZ", "Female")]
-    assert (tiny["n"], tiny["pct"], tiny["base_n"], tiny["flags"]) == (None, None, 25, "suppressed")
+    assert (tiny["n"], tiny["pct"], tiny["base_n"], tiny["flags"]) == (None, None, 4, "suppressed")   # under 5: no figure
     assert (yes[("Boomer", "Male")]["pct"], yes[("Boomer", "Male")]["flags"]) == (50.0, "small_base")
     assert (yes[("Boomer", "Female")]["pct"], yes[("Boomer", "Female")]["flags"]) == (25.0, "")
     assert all(r[0] for r in one["rows"]) and one["weeks"] == 1 and one["warnings"] == []
     two = read(2)
     pooled = next(dict(zip(two["columns"], r)) for r in two["rows"] if r[:2] == ["GenZ", "Female"] and r[3] == 1)
-    assert (pooled["n"], pooled["base_n"], pooled["flags"]) == (20, 45, "small_base")   # ids differ, answers pooled
+    assert (pooled["n"], pooled["base_n"], pooled["flags"]) == (12, 24, "small_base")   # ids differ, answers pooled; 24 is shown
     with csi_db.connect() as conn:   # the API's published path: cut tables written as JSON, paired in memory
         waves = payloads.pool(conn, 412, 2)
         parts = {sid: served(part) for (sid, _), part in payloads.question_cuts(conn, [266, 412], "XM1").items()}

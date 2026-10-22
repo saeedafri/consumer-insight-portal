@@ -57,6 +57,8 @@ const router = createBrowserRouter([{
     { path: "/w/:id/compare/:q?", element: page("Page:Compare", () => import("./pages/Compare")) },
     { path: "/w/:id/audience/:q?", element: page("Page:Audience", () => import("./pages/Audience")) },
     { path: "/ask", element: page("Page:Ask", () => import("./pages/Ask")) },
+    { path: "/boards/:id?", element: page("Page:Boards", () => import("./pages/Boards")) },
+    { path: "/whats-new", element: page("Page:WhatsNew", () => import("./pages/WhatsNew")) },
     { path: "/w/:id/changes", element: page("Page:Changes", () => import("./pages/Changes")) },
     { path: "/w/:id/survey/:q?", element: page("Page:Survey", () => import("./pages/Survey")) },
     {

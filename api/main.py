@@ -59,6 +59,21 @@ LOCAL = os.environ.get("APP_ENV", "").lower() == "local"   # dev sign-in only wh
 REFRESH_SECONDS = 60
 
 
+def build_id() -> str:
+    """The code this process runs: CIP_BUILD from the image, else the checkout's commit (a dirty tree says so)."""
+    if os.environ.get("CIP_BUILD"):
+        return os.environ["CIP_BUILD"]
+    import subprocess
+    try:
+        return subprocess.run(["git", "describe", "--always", "--dirty"], capture_output=True, text=True, timeout=5,
+                              cwd=Path(__file__).parent).stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+BUILD = build_id()
+
+
 @dataclass(frozen=True)
 class Payload:
     etag: str
@@ -227,6 +242,7 @@ def user(request: Request) -> dict:
         raise HTTPException(401, "Sign in required")
     if not hmac.compare_digest(signature, _sign(value)) or int(expires) < time.time():
         raise HTTPException(401, "Sign in required")
+    request.state.email = email   # the team routes (api/team.py) record who did what from the session, not a typed name
     return {"email": email, "products": products.split(",")}
 
 
@@ -350,15 +366,15 @@ async def family_trend(family: str, study_type: str, qcode: str, dim: str, value
 
 @app.get("/api/v1/search")
 async def search(request: Request, q: str = Query(..., min_length=2, max_length=100), limit: int = Query(40, ge=1, le=200),
-                 who: dict = Depends(user)) -> Response:
+                 offset: int = Query(0, ge=0, le=5000), who: dict = Depends(user)) -> Response:
     """Questions by words, code, answer label or survey title, typo- and synonym-tolerant (api/search.py).
     The response says what it understood: {"results": [...], "understood": {corrected, expanded, matched_by}}."""
     def run() -> Payload:
-        found = CATALOGUE.search(q, limit) if CATALOGUE else {"results": [], "understood": {}}
+        found = CATALOGUE.search(q, limit, offset) if CATALOGUE else {"results": [], "total": 0, "understood": {}}
         if not found["results"]:
             log.info("search with no results: %r", q[:100])   # reviewed monthly to grow config/search_synonyms.yml
         return _json(found)
-    return _send(request, await _cached((SERVING, "search", " ".join(q.lower().split()), limit), run))
+    return _send(request, await _cached((SERVING, "search", " ".join(q.lower().split()), limit, offset), run))
 
 
 @app.get("/api/v1/waves/{survey_id}/crosstab")
@@ -442,7 +458,7 @@ async def healthz() -> dict:
         }
     except Exception:
         pass
-    return {"dashboards": len(STORE), "published": str(STAMP[1]) if STAMP else None,
+    return {"build": BUILD, "dashboards": len(STORE), "published": str(STAMP[1]) if STAMP else None,
             "serving_waves": SERVING[0] if SERVING else 0, "serving_built": str(SERVING[1]) if SERVING else None,
             "cached_results": len(RESULTS), "cached_mb": round(CACHED_BYTES / 2**20, 1), "catalogue": len(CATALOGUE.docs) if CATALOGUE else 0,
             "pool": pool_info}

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import re
+from pathlib import Path
 
 MAX_ROWS = 2000
 RED, INK, GREY = "D62E2F", "2D2A29", "6B6A68"
@@ -38,7 +39,7 @@ def xlsx(spec: dict) -> bytes:
         sheet.append([literal(note)])
     sheet.append([])
     top = len(spec["notes"]) + 2
-    sheet.append(spec["header"])
+    sheet.append([literal(h) for h in spec["header"]])
     for cell in sheet[top]:
         cell.font, cell.fill = Font(bold=True, color="FAFAFA"), PatternFill("solid", fgColor="2D2A29")
     for row in spec["rows"]:
@@ -52,16 +53,65 @@ def xlsx(spec: dict) -> bytes:
     return out.getvalue()
 
 
+LOGO = Path(__file__).resolve().parents[1] / "web" / "public" / "coresight-logo.png"
+
+
 def pptx(spec: dict) -> bytes:
-    """One 16:9 slide: the question as title, a bar chart of the % columns (Total in red, the rest in blues), the
-    first rows as a table when they fit, and the notes (wave, bases, source) as the footer."""
+    """One 16:9 slide of one table (add_slide)."""
+    deck = new_deck()
+    add_slide(deck, spec)
+    return save(deck)
+
+
+def deck_pptx(title: str, subtitle: str, specs: list[dict]) -> bytes:
+    """A branded deck: a cover (logo, title, who and when), then one slide per table, numbered, each with its own
+    wave, bases and source. A board downloads this way (api/team.py)."""
+    from pptx.dml.color import RGBColor
+    from pptx.util import Inches, Pt
+    deck = new_deck()
+    cover = deck.slides.add_slide(deck.slide_layouts[6])
+    band = cover.shapes.add_shape(1, 0, 0, deck.slide_width, Inches(0.25))   # 1 = rectangle: the brand-red top band
+    band.fill.solid()
+    band.fill.fore_color.rgb = RGBColor.from_string(RED)
+    band.line.fill.background()
+    if LOGO.exists():
+        cover.shapes.add_picture(str(LOGO), Inches(0.8), Inches(0.9), height=Inches(0.7))
+    for text, top, size, bold, colour in ((title, 2.7, 36, True, INK), (subtitle, 3.9, 16, False, GREY),
+                                          (f"{len(specs)} slides · Coresight Research US Consumer Survey", 6.6, 11, False, GREY)):
+        frame = cover.shapes.add_textbox(Inches(0.8), Inches(top), Inches(11.7), Inches(1.1)).text_frame
+        frame.word_wrap = True
+        frame.text = text
+        run = frame.paragraphs[0].runs[0]
+        run.font.size, run.font.bold, run.font.color.rgb = Pt(size), bold, RGBColor.from_string(colour)
+    for number, spec in enumerate(specs, 2):
+        slide = add_slide(deck, spec)
+        mark = slide.shapes.add_textbox(Inches(11.3), Inches(7.05), Inches(1.6), Inches(0.35)).text_frame
+        mark.text = f"Coresight Research · {number}"
+        mark.paragraphs[0].runs[0].font.size, mark.paragraphs[0].runs[0].font.color.rgb = Pt(8), RGBColor.from_string(GREY)
+    return save(deck)
+
+
+def new_deck():
     from pptx import Presentation
+    from pptx.util import Inches
+    deck = Presentation()
+    deck.slide_width, deck.slide_height = Inches(13.333), Inches(7.5)
+    return deck
+
+
+def save(deck) -> bytes:
+    out = io.BytesIO()
+    deck.save(out)
+    return out.getvalue()
+
+
+def add_slide(deck, spec: dict):
+    """The question as title, a bar chart of the % columns (Total in red, the rest in blues), the first rows as a table
+    when there is nothing to chart, and the notes (wave, bases, source) as the footer."""
     from pptx.chart.data import CategoryChartData
     from pptx.dml.color import RGBColor
     from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
     from pptx.util import Inches, Pt
-    deck = Presentation()
-    deck.slide_width, deck.slide_height = Inches(13.333), Inches(7.5)
     slide = deck.slides.add_slide(deck.slide_layouts[6])
     title = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(12.3), Inches(1.0)).text_frame
     title.word_wrap = True
@@ -105,6 +155,4 @@ def pptx(spec: dict) -> bytes:
     foot.text = " · ".join(lines)[:900] or "Source: Coresight Research US Consumer Survey"
     for run in foot.paragraphs[0].runs:
         run.font.size, run.font.color.rgb = Pt(9), RGBColor.from_string(GREY)
-    out = io.BytesIO()
-    deck.save(out)
-    return out.getvalue()
+    return slide

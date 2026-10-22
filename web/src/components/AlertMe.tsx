@@ -1,5 +1,5 @@
 // "Alert me": tell the team on Teams when this answer moves significantly against the previous wave or last year
-// (api/team.py; the pipeline checks every alert once per new wave, same question wording only, 30+ people each side).
+// (api/team.py; the pipeline checks every alert once per new wave, same question wording only, 30+ people each side to be tested).
 import { useState } from "react";
 import { myName, send } from "../api";
 import type { Group, Question } from "../api";
@@ -17,7 +17,7 @@ export default function AlertMe({ surveyId, question, group }: { surveyId: numbe
     try {
       await send("POST", "/api/v1/alerts", { survey_id: surveyId, qcode: question.id, item_label: multi ? r.label : group.label,
         option_code: multi ? null : r.code, answer_label: answer, name: `${question.id} · ${answer}`, against, by });
-      setNote(`Alert set: the team hears on Teams when “${answer}” moves significantly.`);
+      setNote(`Alert set: the team hears on Teams, and you by email, when “${answer}” moves significantly.`);
     } catch (e) { setNote(e instanceof Error ? e.message : String(e)); }
   };
   if (!open) return <button className="btn" onClick={() => setOpen(true)} title="Get a Teams message when an answer moves significantly">Alert me</button>;

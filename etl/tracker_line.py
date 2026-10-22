@@ -26,7 +26,7 @@ import pandas as pd
 import yaml
 from sqlalchemy import bindparam, text
 
-from app.core.database import get_engine
+from app.core.database import bulk_insert, get_engine
 
 log = logging.getLogger("cip.tracker_line")
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "tracker_line.yml"
@@ -50,15 +50,13 @@ def _month(value: Any) -> Optional[str]:
 
 
 def build(survey_id: int) -> int:
-    """Rebuild one wave's lines (three reads, one batched insert). Waves
+    """Rebuild one wave's lines (three reads, one bulk upload). Waves
     outside the tracker family get none."""
     with get_engine("etl").begin() as conn:
         conn.execute(text("DELETE FROM cip_tracker_line WHERE survey_id = :s"), {"s": survey_id})
-        rows = [{"rid": rid, "s": survey_id, "w": wave, "line": json.dumps(line, ensure_ascii=False)}
-                for rid, wave, line in lines(conn, survey_id)]
-        if rows:
-            conn.execute(text("INSERT INTO cip_tracker_line (respondent_id, survey_id, wave_date, line)"
-                              " VALUES (:rid, :s, :w, :line)"), rows)
+        rows = [(rid, survey_id, wave, json.dumps(line, ensure_ascii=False)) for rid, wave, line in lines(conn, survey_id)]
+        if rows:   # one upload, not ~700 INSERT values: from India the round trips, not the server, were the cost
+            bulk_insert(conn, "cip_tracker_line", ("respondent_id", "survey_id", "wave_date", "line"), rows)
     return len(rows)
 
 
@@ -81,12 +79,12 @@ def lines(conn, survey_id: int) -> list[tuple[int, Any, dict]]:
     for rid, qcode, multi, item, code, label, number, said in conn.execute(text("""
             SELECT a.respondent_id, q.qcode, q.is_multi, i.item_label, a.value_code,
                    COALESCE(a.value_label, o.value_label, i.item_label), a.value_number, a.value_text
-              FROM cip_answer a
-              JOIN cip_field f ON f.field_id = a.field_id
-              JOIN cip_question q ON q.question_id = f.question_id AND q.qcode IN :codes
+              FROM cip_question q
+              JOIN cip_field f ON f.question_id = q.question_id AND f.survey_id = :s
+              JOIN cip_answer a ON a.survey_id = :s AND a.field_id = f.field_id
               LEFT JOIN cip_item i ON i.item_id = f.item_id
               LEFT JOIN cip_option o ON o.question_id = f.question_id AND o.value_code = a.value_code
-             WHERE a.survey_id = :s""").bindparams(bindparam("codes", expanding=True)),
+             WHERE q.survey_id = :s AND q.qcode IN :codes""").bindparams(bindparam("codes", expanding=True)),
             {"s": survey_id, "codes": codes}):
         mine = answers.setdefault(rid, {})
         if multi:

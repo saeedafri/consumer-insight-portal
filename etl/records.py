@@ -7,10 +7,22 @@ history through their own adapters.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
+import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 NO_TO = "NO TO: "
+
+
+def respondent_key(rid: Any) -> str:
+    """The panel id as a keyed hash: HMAC-SHA256 (key CIP_RESPONDENT_SALT) over its plain sha256. Without the salt
+    a list of panel ids cannot be matched against the stored keys. Keying the sha256, not the id, is what let the keys
+    stored before the salt be rekeyed in place (scripts/rekey_respondents.py), since the ids themselves are never kept."""
+    plain = hashlib.sha256(str(rid).encode()).hexdigest()
+    salt = os.getenv("CIP_RESPONDENT_SALT", "")
+    return hmac.new(salt.encode(), plain.encode(), hashlib.sha256).hexdigest() if salt else plain
 
 
 def clean_text(value: Any) -> str:

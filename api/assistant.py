@@ -1,7 +1,7 @@
 """Ask CIP: a question in plain words, answered only from the portal's own published figures, every statement cited.
 
 1. Find sources: the question catalogue (api/search.py) gives the matching questions; each one's latest wave figures
-   come from the published wave book (the same numbers every screen shows, groups under 30 already hidden).
+   come from the published wave book (the same numbers every screen shows, groups under 5 already hidden).
 2. Answer: with Claude credentials (ANTHROPIC_API_KEY, or a profile), Claude writes a short answer from those sources
    only and names the ones it used; code then drops any citation that is not a real source, and an answer left with
    none is "no source". Without credentials the sources themselves are the answer (cited figures, no prose).
@@ -54,7 +54,7 @@ def sources(question: str, search: Callable[[str, int], dict], book: Callable[[i
         if not asked & topic(" ".join([q["text"], *(r["label"] for r in group["rows"])])):
             continue             # a loose search match (a word fragment) that shares no topic word with the question
         answers = sorted(([r["label"], r.get("Total")] for r in group["rows"] if r.get("Total") is not None), key=lambda a: -a[1])
-        if not answers:          # fewer than 30 people answered: nothing to quote
+        if not answers:          # fewer than 5 people answered: nothing to quote
             continue
         out.append({"id": f"S{len(out) + 1}", "survey_id": hit["survey_id"], "wave_date": data["wave"]["wave_date"],
                     "title": data["wave"]["title"], "qcode": q["id"], "question": q["text"], "base": group["base"],

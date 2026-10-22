@@ -24,3 +24,4 @@ logs/notify-state.json
 .superpowers/
 .impeccable/hook.cache.json
 data/published/
+logs/etl-heartbeat.json

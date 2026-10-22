@@ -39,3 +39,9 @@ def test_answer_labels_partial_words_and_nothing():
     assert codes("gasol")[0] == "D14"                       # prefix / fragment
     assert index.search("zzzz qqqq")["results"] == []
     assert index.search('"; DROP TABLE words; --')["results"] == []   # operators in user text are harmless
+
+
+def test_search_pages_through_every_match_without_repeats():
+    pages = [index.search("holiday", 1, offset) for offset in (0, 1, 2)]
+    assert [p["total"] for p in pages] == [2, 2, 2]
+    assert [d["qcode"] for p in pages for d in p["results"]] in (["XM3", "XM2"], ["XM2", "XM3"])   # each once, then none

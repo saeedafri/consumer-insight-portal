@@ -1,7 +1,7 @@
 // Every question in every wave: type words or a question code; open it in its latest wave or as a trend.
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { useSearch } from "../api";
+import { SEARCH_PAGE, useSearch } from "../api";
 import type { Hit } from "../api";
 import { Card, Failure, Loading } from "../components/bits";
 import { fmtDate } from "../stats";
@@ -14,7 +14,9 @@ export default function Search() {
   const [params, setParams] = useSearchParams();
   const [text, setText] = useState(params.get("q") ?? "");
   const query = params.get("q") ?? "";
-  const { data, isFetching, error } = useSearch(query);
+  const page = Math.max(1, Math.trunc(Number(params.get("page") ?? 1)) || 1);
+  const { data, isFetching, error } = useSearch(query, page);
+  const goPage = (n: number) => { const p = new URLSearchParams(params); if (n > 1) p.set("page", String(n)); else p.delete("page"); setParams(p); scrollTo(0, 0); };
   const byMeasure = params.get("by") === "measure";
 
   return <>
@@ -86,7 +88,7 @@ export default function Search() {
           </div>
         )
         : <><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-          <Understood u={data.understood} count={data.results.length} />
+          <Understood u={data.understood} count={data.results.length} total={data.total} from={(page - 1) * SEARCH_PAGE + 1} />
           <Tabs value={byMeasure ? "measure" : "wording"} onValueChange={val => {
             const p = new URLSearchParams(params);
             if (val === "measure") p.set("by", "measure");
@@ -115,7 +117,12 @@ export default function Search() {
               </Link>
             </td>
           </tr>)}</tbody>
-        </table></div>}</>}
+        </table></div>}
+        {data.total > SEARCH_PAGE && <nav className="pager" aria-label="Search result pages">
+          <button className="btn" disabled={page <= 1} onClick={() => goPage(page - 1)}>Previous</button>
+          <span className="muted">Page {page} of {Math.ceil(Math.min(data.total, 5000 + SEARCH_PAGE) / SEARCH_PAGE)}</span>
+          <button className="btn" disabled={page * SEARCH_PAGE >= Math.min(data.total, 5000 + SEARCH_PAGE)} onClick={() => goPage(page + 1)}>Next</button>
+        </nav>}</>}
     </Card>
   </>;
 }
@@ -147,10 +154,11 @@ function Measures({ hits }: { hits: Hit[] }) {
 }
 
 /** What the search did with the words, so a corrected or widened search is never a surprise. */
-function Understood({ u, count }: { u?: { corrected: string[]; expanded: string[]; matched_by: string }; count: number }) {
+function Understood({ u, count, total, from }: { u?: { corrected: string[]; expanded: string[]; matched_by: string }; count: number; total?: number; from: number }) {
   if (!u) return null;
   return <p className="muted" style={{ margin: "0 0 10px" }}>
-    {count} {count === 1 ? "question" : "questions"}
+    {total != null && total > count ? <>{from.toLocaleString("en-US")}–{(from + count - 1).toLocaleString("en-US")} of {total.toLocaleString("en-US")} questions, best match first</>
+      : <>{count} {count === 1 ? "question" : "questions"}</>}
     {u.corrected.length > 0 && <> · spelling corrected: <b>{u.corrected.join(", ")}</b></>}
     {u.expanded.length > 0 && <> · also searched: {u.expanded.join("; ")}</>}
     {u.matched_by === "fragments" && <> · matched on parts of words</>}

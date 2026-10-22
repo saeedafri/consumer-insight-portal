@@ -37,3 +37,18 @@ Every query is an index range read; none scans the table. Subtracting the 269 ms
 - Loopback test on one Mac; the 1-core servers will be slower on CPU. Re-run on staging before sizing.
 - The first version of this test opened a new connection per request and exhausted local ports (an artifact of the test, not the server). It was rewritten to keep connections.
 - The earlier stress script in `scripts/stress_benchmark.py` hides some of its own errors and needs a warm cache; this test does not.
+
+## Production budget: 1 core, 768 MB (22 Oct 2026, later run)
+
+The API image (`deploy/Dockerfile`, 2 workers, `CIP_CACHE_MB=128`) in Docker with `--cpus=1 --memory=768m`, the live published files mounted read-only, the database on Azure. Same mix and strict counting as above; the load generator ran on the same Mac.
+
+| Run | Requests/s | Errors | p50 | p95 | p99 | Memory peak |
+|---|---|---|---|---|---|---|
+| 50 analysts, cold caches | 575 | 0 | 2.8 ms | 70 ms | 163 ms | 361 MB |
+| 50 analysts, warm | 669 | 0 | 1.2 ms | 7.0 ms | 24 ms | 394 MB |
+| 200 analysts, no pause between requests (saturation) | 1,274 | 0 | 134 ms | 274 ms | 380 ms | 446 MB |
+
+- One core serves about 1,270 requests a second before requests queue. An analyst clicking every few seconds makes well under one request a second, so one core carries hundreds of people working at once.
+- Memory stays under 450 MB in a 768 MB cap: each worker's response cache is capped at 128 MB, and the cache is the only part that grows. With nginx (128 MB cap) the portal fits in 1 GB.
+- Boot is 2 to 18 s: the time is three startup queries and the dashboard payloads over the 270 ms Azure link, not the container (2 s on a local database, see the CI smoke test).
+- The first requests after a start or a new publish are slower (p95 70 ms) while each worker reads and caches the published files; after that, p95 is under 10 ms.

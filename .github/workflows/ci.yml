@@ -1,0 +1,60 @@
+# Every push and pull request: the Python tests (SQLite, no secrets, no network), the web type-check, statistics
+# check and build, and the container images. Nothing here deploys or touches the live portal.
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt pytest
+      - run: pytest -q tests
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
+  images:
+    needs: [python, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f deploy/Dockerfile --target api --build-arg CIP_BUILD=${GITHUB_SHA::8} -t cip-api:ci .
+      - run: docker build -f deploy/Dockerfile --target nginx -t cip-nginx:ci .
+      - name: the API image boots on an empty local database and answers /healthz with its build
+        run: |
+          docker run --rm -v "$PWD/sql:/srv/cip/sql:ro" -e APP_ENV=LOCAL -e LOCAL_SQLITE_PATH=/tmp/ci.db -e CIP_SESSION_SECRET=ci-only -e WANT=${GITHUB_SHA::8} cip-api:ci sh -c '
+            python -c "from app.core import database, schema_upgrade; schema_upgrade.install(database.get_engine(\"etl\"))"
+            gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000 &
+            for i in $(seq 30); do
+              python -c "import urllib.request; print(urllib.request.urlopen(\"http://127.0.0.1:8000/healthz\").read().decode())" 2>/dev/null | grep -q "\"build\":\"$WANT\"" && exit 0
+              sleep 1
+            done
+            exit 1'

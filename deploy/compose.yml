@@ -1,7 +1,8 @@
 # The whole portal on one Debian server: nginx (static files + published payloads) in front of the API.
 # The ETL runs on the host (cron/systemd) and writes $CIP_PUBLISH_DIR, which nginx reads.
 #   CIP_PUBLISH_DIR=/srv/cip/published docker compose -f deploy/compose.yml up -d
-# Staging (1 core, 4.5 GB): nginx ≈ 30 MB, API 2 workers ≈ 150 MB idle, < 1.5 GB at 10,000 users.
+# Production and staging budget: 1 core, the whole portal under 1 GB (API 768 MB cap, nginx 128 MB). Measured 22 Oct 2026:
+# API at 1 core / 1 GB served 50 analysts at about 670 requests/s, p95 under 10 ms warm, peak 410 MB (.planning/wiki/STRESS_BENCHMARK.md).
 services:
   api:
     image: cip-portal
@@ -10,7 +11,8 @@ services:
     environment: { WEB_CONCURRENCY: "2", CIP_PUBLISH_DIR: /srv/cip/published }   # crosstabs read the published cut tables
     volumes: ["${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro"]
     restart: unless-stopped
-    mem_limit: 3g
+    mem_limit: 768m
+    cpus: 1.0
   nginx:
     image: cip-web
     build: { context: .., dockerfile: deploy/Dockerfile, target: nginx }
@@ -18,4 +20,4 @@ services:
     volumes: ["${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro"]
     depends_on: [api]
     restart: unless-stopped
-    mem_limit: 256m
+    mem_limit: 128m

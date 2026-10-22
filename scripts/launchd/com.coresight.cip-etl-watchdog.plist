@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.coresight.cip-etl-watchdog</string>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.venv/bin/python</string>
+		<string>/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/scripts/weekly_forsta.py</string>
+		<string>--watchdog</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/logs/etl-watchdog.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/logs/etl-watchdog.log</string>
+	<key>StartInterval</key>
+	<integer>3600</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal</string>
+</dict>
+</plist>

@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Callable, Optional
 
 from sqlalchemy import text
@@ -172,7 +172,20 @@ def run(heal: bool = True, waves: int = 20) -> list[str]:
             left.append(f"{what} (still wrong after healing)")
         else:
             log.info("Integrity: healed %s", check.name)
+    left += planned_weeks_missing()
     return left
+
+
+def planned_weeks_missing(today: Optional[date] = None) -> list[str]:
+    """A tracker week the data team planned (config/launch_schedule.yml) that is still not in the portal 4 days after
+    its Monday. Checked against the plan, not every Monday: the tracker ran fortnightly in parts of 2024 and 2025."""
+    from etl import launch_schedule
+    today = today or date.today()
+    late = [str(w["date"]) for w in launch_schedule.weeks(today)["weeks"]
+            if today - timedelta(days=56) <= date.fromisoformat(str(w["date"])) <= today - timedelta(days=4) and w["status"] != "loaded"]
+    if late:
+        log.warning("Integrity: planned tracker weeks not in the portal: %s", late)
+    return [f"planned tracker week not in the portal 4 days after its Monday: {', '.join(late)}"] if late else []
 
 
 def main() -> int:

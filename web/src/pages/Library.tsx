@@ -39,7 +39,7 @@ export default function Library() {
   return <>
     <div className="page-head"><div>
       <h1>Every Coresight consumer survey, one place</h1>
-      <p className="lede">{all.length.toLocaleString("en-US")} surveys and waves from {all.at(-1)!.wave_date.slice(0, 4)} to {all[0].wave_date.slice(0, 4)}: the weekly US consumer tracker plus annual and ad hoc studies. Open any wave for its overview, every question, cross-tabs and trends.</p>
+      <p className="lede">{all.length.toLocaleString("en-US")} surveys and waves{all.length ? ` from ${all.at(-1)!.wave_date.slice(0, 4)} to ${all[0].wave_date.slice(0, 4)}` : ""}: the weekly US consumer tracker plus annual and ad hoc studies. Open any wave for its overview, every question, cross-tabs and trends.</p>
     </div></div>
     <div className="hero">
       <Card className="latest" title={<>Latest tracker wave · {fmtDate(latest.wave_date)}</>} sub={`${latest.qualified_n.toLocaleString("en-US")} qualified US adults`}>
@@ -163,7 +163,7 @@ function TeamSaved() {
   return <Card title="Team saved views" sub="Saved by anyone on the team with the bookmark button at the top of a screen">
     <ul className="saved-views">{data.map(v => <li key={v.view_id}>
       <Link to={v.url}>{v.name}</Link><small className="muted">{v.saved_by} · {fmtDate(v.created_at.slice(0, 10))}</small>
-      <Button variant="ghost" size="xs" onClick={() => { void send("DELETE", `/api/v1/team/views/${v.view_id}`).then(() => refetch()); }} aria-label={`Remove ${v.name}`}>Remove</Button>
+      <Button variant="ghost" size="xs" onClick={e => { const button = e.currentTarget; void send("DELETE", `/api/v1/team/views/${v.view_id}`).then(() => refetch(), (err: Error) => { button.textContent = err.message; }); }} aria-label={`Remove ${v.name}`}>Remove</Button>
     </li>)}</ul>
   </Card>;
 }
@@ -176,7 +176,7 @@ function TeamAlerts() {
     <ul className="saved-views">{data.map(a => <li key={a.alert_id}>
       <span>{a.name}{a.dim !== "total" ? ` · ${a.dim_value}` : ""} <small className="muted">vs {a.against === "ly" ? "last year" : "the previous wave"}</small></span>
       <small className="muted">{a.created_by}{a.last_fired ? ` · last fired on wave ${a.last_fired}` : ""}</small>
-      <button className="btn-chip" onClick={() => { void send("DELETE", `/api/v1/alerts/${a.alert_id}`).then(() => refetch()); }} aria-label={`Remove ${a.name}`}>Remove</button>
+      <button className="btn-chip" onClick={e => { const button = e.currentTarget; void send("DELETE", `/api/v1/alerts/${a.alert_id}`).then(() => refetch(), (err: Error) => { button.textContent = err.message; }); }} aria-label={`Remove ${a.name}`}>Remove</button>
     </li>)}</ul>
   </Card>;
 }

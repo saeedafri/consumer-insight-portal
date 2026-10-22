@@ -1,0 +1,50 @@
+# Bitbucket Pipelines: the same checks as .github/workflows/ci.yml. Every push and pull request runs the Python tests
+# (SQLite, no secrets, no network), the web type-check, statistics check and build, then builds the API image and
+# boots it on an empty local database. Nothing here deploys or touches the live portal.
+definitions:
+  steps:
+    - step: &python
+        name: Python tests
+        image: python:3.13-slim
+        caches: [pip]
+        script:
+          - pip install -r requirements.txt pytest
+          - pytest -q tests
+    - step: &web
+        name: Web check and build
+        image: node:26-slim
+        caches: [node]
+        script:
+          - cd web
+          - npm ci
+          - npm run check
+          - npm run build
+    - step: &images
+        name: Images build and boot
+        services: [docker]
+        caches: [docker]
+        script:
+          - export BUILD=${BITBUCKET_COMMIT:0:8}
+          - docker build -f deploy/Dockerfile --target api --build-arg CIP_BUILD=$BUILD -t cip-api:ci .
+          - docker build -f deploy/Dockerfile --target nginx -t cip-nginx:ci .
+          - >-
+            docker run --rm -v "$BITBUCKET_CLONE_DIR/sql:/srv/cip/sql:ro" -e APP_ENV=LOCAL -e LOCAL_SQLITE_PATH=/tmp/ci.db
+            -e CIP_SESSION_SECRET=ci-only -e WANT=$BUILD cip-api:ci sh -c '
+            python -c "from app.core import database, schema_upgrade; schema_upgrade.install(database.get_engine(\"etl\"))";
+            gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000 &
+            for i in $(seq 30); do
+            python -c "import urllib.request; print(urllib.request.urlopen(\"http://127.0.0.1:8000/healthz\").read().decode())" 2>/dev/null | grep -q "\"build\":\"$WANT\"" && exit 0;
+            sleep 1; done; exit 1'
+
+pipelines:
+  default:
+    - parallel:
+        - step: *python
+        - step: *web
+    - step: *images
+  pull-requests:
+    '**':
+      - parallel:
+          - step: *python
+          - step: *web
+      - step: *images

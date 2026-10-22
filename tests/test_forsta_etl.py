@@ -246,11 +246,13 @@ def test_reconcile_compares_every_stored_answer_with_the_api(csi_db, monkeypatch
     assert forsta_etl.reconcile_survey(sid, FakeForsta())[1]
 
 
-def test_the_weekly_run_discovers_loads_and_reports_by_exit_code(csi_db):
+def test_the_weekly_run_discovers_loads_and_reports_by_exit_code(csi_db, monkeypatch):
     import importlib
 
+    from etl import integrity
     from etl.forsta_client import ForstaAuthError
     weekly = importlib.import_module("scripts.weekly_forsta")
+    monkeypatch.setattr(integrity, "planned_weeks_missing", lambda today=None: [])   # the real plan's weeks are not in this database
     every_wave = {"selfserve/58f/260907": [record(n) for n in range(1, 5)],
                   "selfserve/58f/260905": [record(n) for n in range(6, 9)]}
     assert weekly.run(FakeForsta(data=every_wave)) == 0

@@ -16,7 +16,7 @@ import logging
 from typing import Any
 
 import requests
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, wait_exponential
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class ForstaClient:
     @retry(
         retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout, ForstaBusy)),
         wait=wait_exponential(multiplier=2, min=2, max=60),
-        stop=stop_after_attempt(4),
+        stop=lambda state: state.attempt_number >= state.args[0].max_retries,   # FORSTA_MAX_RETRIES (default 4)
         reraise=True,
     )
     def _get(self, endpoint: str, **params: Any) -> requests.Response:

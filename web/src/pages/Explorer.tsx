@@ -43,7 +43,7 @@ export default function Explorer() {
   const shown = present(book.n);   // cuts with respondents in this wave
   const cuts = CUTS.map(c => ({ ...c, cols: c.cols.filter(col => shown.includes(col)) })).filter(c => c.key === "total" || c.cols.length > 1);
   const cut = cuts.find(c => c.key === params.get("cut")) ?? cuts[0];
-  const group = Math.min(Number(params.get("row") ?? 0), question.groups.length - 1);
+  const group = Math.max(0, Math.min(Math.trunc(Number(params.get("row") ?? 0)) || 0, question.groups.length - 1));   // a hand-edited ?row= never breaks the page
   const set = (k: string, v: string) => {
     perf.startFilterChange(k, v);
     const p = new URLSearchParams(params);
@@ -57,7 +57,8 @@ export default function Explorer() {
   const qIndex = book.questions.findIndex(x => x.id === question.id);
   const prevQ = qIndex > 0 ? book.questions[qIndex - 1] : null;
   const nextQ = qIndex >= 0 && qIndex < book.questions.length - 1 ? book.questions[qIndex + 1] : null;
-  const exportAs = (format: Format) => downloadTable(format, `${question.id}-${book.wave.wave_date}`, ["Answer", ...cut.cols.map(c => `${c} %`), "Last week %"],
+  const weekly = book.wave.study_type === "tracker";   // annual and ad hoc studies compare with their previous wave, not last week
+  const exportAs = (format: Format) => downloadTable(format, `${question.id}-${book.wave.wave_date}`, ["Answer", ...cut.cols.map(c => `${c} %`), weekly ? "Last week %" : "Previous wave %"],
     g.rows.map(r => [r.label, ...cut.cols.map(c => r[c]), r.prior]),
     [`${question.id}: ${question.text}`, `${book.wave.title}, wave of ${wave}`, `Base: ${cut.cols.map(c => `${c} n=${g.bases[c]}`).join(", ")}`, `Source: Coresight Research US Consumer Survey${book.wave.platform ? ` · ${provenance(book.wave)}` : ""}`]);
   return <div className="split">
@@ -117,7 +118,7 @@ export default function Explorer() {
         {question.base_desc ? <p className="muted" style={{ margin: "0 0 6px" }}>Asked of: {question.base_desc}</p>
           : g.base < book.n.Total && <p className="muted" style={{ margin: "0 0 6px" }}>Asked of {g.base.toLocaleString("en-US")} of the wave's {book.n.Total.toLocaleString("en-US")} respondents; the rest were routed past it. Percentages use these {g.base.toLocaleString("en-US")}.</p>}
         {top && <p className="top-answer">Top answer{g.label ? ` for ${g.label}` : ""}: <b>{top.label}</b> at <em>{pct(top.Total)}</em>{" "}
-          <Change now={top.Total ?? undefined} base={g.base} before={top.prior} beforeBase={top.prior_base} label="vs last week" routing={top.flags.includes("base_changed_prior")} /></p>}
+          <Change now={top.Total ?? undefined} base={g.base} before={top.prior} beforeBase={top.prior_base} label={weekly ? "vs last week" : "vs the previous wave"} routing={top.flags.includes("base_changed_prior")} /></p>}
       </Card>
       <Card>
         <div className="toolbar" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -168,7 +169,7 @@ export default function Explorer() {
         <div className="legend-line">
           {(view === "bars" || view === "columns") && cut.cols.length === 1 && <>
             <span><i style={{ background: "var(--red)" }} />Top answer</span><span><i style={{ background: "var(--sky)" }} />Other answers</span></>}
-          <span>Hover any bar for n, base, margin of error and the change vs last week.</span>
+          <span>Hover any bar for n, base, margin of error and the change vs {weekly ? "last week" : "the previous wave"}.</span>
           {small.length > 0 && <span style={{ color: "var(--warn)" }}>Small base (n&lt;{SMALL_BASE}): {small.join(", ")}, shown faded; under {HIDDEN_BASE} no figure is shown</span>}
         </div>
         <SourceLine wave={wave} base={cut.cols.map(c => `${c} n=${g.bases[c] ?? 0}`).join(", ")} asked={question.base_desc} from={book.wave} />

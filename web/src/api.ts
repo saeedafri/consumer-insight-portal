@@ -136,9 +136,11 @@ export const useQuestion = (wave: Wave | undefined, q: string) =>
 export const useCrosstab = (id: number, q: string, by: [string, string], weeks: number, on: boolean) =>
   useQuery({ queryKey: ["crosstab", id, q, by, weeks], enabled: on && !!q, ...forever,
              queryFn: () => get<Crosstab>(`/api/v1/waves/${id}/crosstab?q=${encodeURIComponent(q)}&by=${by.join(",")}&weeks=${weeks}`) });
-export const useSearch = (text: string) =>
-  useQuery({ queryKey: ["search", text], enabled: text.trim().length >= 2, ...forever,
-             queryFn: () => get<{ results: Hit[]; understood: { corrected: string[]; expanded: string[]; matched_by: string } }>(`/api/v1/search?q=${encodeURIComponent(text.trim())}&limit=60`) });
+export const SEARCH_PAGE = 50;
+export const useSearch = (text: string, page = 1) =>
+  useQuery({ queryKey: ["search", text, page], enabled: text.trim().length >= 2, ...forever, placeholderData: previous => previous,
+             queryFn: () => get<{ results: Hit[]; total: number; understood: { corrected: string[]; expanded: string[]; matched_by: string } }>(
+               `/api/v1/search?q=${encodeURIComponent(text.trim())}&limit=${SEARCH_PAGE}&offset=${(page - 1) * SEARCH_PAGE}`) });
 
 /** Rows of a question that make sense to rank: drops "None of these" / "Other – please specify". */
 export const isFiller = (label: string) => /^(none of (these|the above)|other\s*[-–(]|prefer not)/i.test(label.trim());
@@ -172,6 +174,13 @@ export interface Audience { audience_id: number; name: string; definition: Audie
 export interface AudienceResult { qcode: string; multi: boolean; skipped: string[]; rows: [string, number | null, number, number | null, number | null, number, number][] }
 export interface Answer { answer: string; no_source: boolean; mode: "claude" | "figures" | "none";
                           sources: { id: string; survey_id: number; wave_date: string; title: string; qcode: string; question: string; base: number; answers: [string, number][]; link: string }[] }
+export interface BoardSummary { board_id: number; name: string; created_by: string; created_at: string; items: number }
+export interface BoardComment { comment_id: number; author: string; body: string; created_at: string }
+export interface BoardItem { item_id: number; title: string; url: string; data_version: string; added_by: string; added_at: string;
+                             spec: { name: string; header: string[]; rows: (string | number | null)[][]; notes: string[] }; comments: BoardComment[] }
+export interface Board { board_id: number; name: string; created_by: string; created_at: string; current_version: string; items: BoardItem[] }
+export const useBoards = () => useQuery({ queryKey: ["boards"], queryFn: () => get<BoardSummary[]>("/api/v1/boards") });
+export const useBoard = (id: number) => useQuery({ queryKey: ["board", id], queryFn: () => get<Board>(`/api/v1/boards/${id}`) });
 export const useTeamViews = () => useQuery({ queryKey: ["team-views"], queryFn: () => get<TeamView[]>("/api/v1/team/views") });
 export const useAlerts = () => useQuery({ queryKey: ["alerts"], queryFn: () => get<Alert[]>("/api/v1/alerts") });
 export const useAudiences = () => useQuery({ queryKey: ["audiences"], queryFn: () => get<Audience[]>("/api/v1/audiences") });

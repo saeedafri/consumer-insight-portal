@@ -19,12 +19,11 @@ is the record.
 The API's codes are written as codes — no label round trip (a bipolar grid's
 answers have no labels at all). Personal fields never reach the database:
 the browser string, link, session and fingerprint are dropped; the panel id is
-kept only as a sha256 (respondent_key). Forsta is only ever read (GET).
+kept only as a keyed hash (respondent_key, etl/records.respondent_key). Forsta is only ever read (GET).
 """
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import math
@@ -42,7 +41,7 @@ from sqlalchemy.exc import OperationalError
 from app.core.config import config
 from app.core.database import bulk_insert, get_engine
 from app.data import cube, harmonise
-from etl import forsta_api, launch_schedule, serving, survey_calendar, tracker_line
+from etl import forsta_api, launch_schedule, records as xp, serving, survey_calendar, tracker_line
 from etl.forsta_client import ForstaError
 from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey
 from etl.run_pipeline import _dt, _rebuild_profiles, _rebuild_question_bases, wave_from_records
@@ -277,7 +276,7 @@ def _respondent(survey_id: int, rec: dict, run: int) -> dict:
             "markers": _cut(rec.get("markers"), 1000), "dev": _cut(rec.get("vmobiledevice"), 50),
             "os": _cut(rec.get("vos"), 50), "br": _cut(rec.get("vbrowser"), 50), "drop": _cut(rec.get("vdropout"), 50),
             "src": _cut(rec.get("vlist") or rec.get("list"), 100),
-            "key": hashlib.sha256(str(rec["RID"]).encode()).hexdigest() if rec.get("RID") else None, "run": run}
+            "key": xp.respondent_key(rec["RID"]) if rec.get("RID") else None, "run": run}
 
 
 def load_survey(client, path: str, meta: Optional[dict] = None) -> int:

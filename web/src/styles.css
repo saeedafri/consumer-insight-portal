@@ -723,3 +723,26 @@ table.data tbody tr:nth-child(n+8), .xt tbody tr:nth-child(n+8), .wave-row:nth-c
   @keyframes row-in { from { opacity: 0; } }
   table.data tbody tr, .xt tbody tr, .wave-row { animation-duration: 160ms; animation-delay: 0ms !important; }
 }
+
+/* Boards (pages/Boards.tsx, components/PinDialog.tsx) */
+.head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.row-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.row-form input { flex: 1 1 220px; min-width: 0; }
+.comments { margin-top: 12px; border-top: 1px solid var(--mist); padding-top: 8px; }
+.comment { margin: 0 0 8px; line-height: 1.5; font-size: 13.5px; overflow-wrap: anywhere; }
+.comment .comment-delete { margin-left: 8px; padding: 2px 8px; font-size: 12px; min-height: 0; }
+.pin-dialog { border: 1px solid var(--mist); border-radius: var(--radius); background: var(--surface); color: var(--ink); width: min(460px, calc(100vw - 32px)); padding: 20px; }
+.pin-dialog::backdrop { background: rgba(0, 0, 0, .35); }
+.pin-dialog form { display: flex; flex-direction: column; gap: 8px; }
+.pin-dialog h3 { margin: 0; }
+.pin-dialog label { font-size: 12.5px; font-weight: 600; color: var(--ink-2); margin-top: 4px; }
+.pin-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+/* What's new (pages/WhatsNew.tsx) */
+.release-date { margin: 8px 0 0; font-size: 15px; color: var(--ink-2); font-weight: 600; }
+.new-entry { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 20px; padding: 20px; align-items: start; }
+.new-entry h3 { margin: 0 0 8px; font-size: 17px; }
+.new-entry p { margin: 0 0 12px; line-height: 1.6; color: var(--ink-2); max-width: 60ch; }
+.new-entry img { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--mist); }
+.new-entry:not(:has(img)) { grid-template-columns: 1fr; }
+@media (max-width: 900px) { .new-entry { grid-template-columns: 1fr; } }

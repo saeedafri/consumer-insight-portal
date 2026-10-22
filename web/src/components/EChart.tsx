@@ -2,13 +2,13 @@
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart } from "echarts/charts";
-import { AriaComponent, GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
+import { AriaComponent, GridComponent, LegendPlainComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsCoreOption } from "echarts/core";
 import { C } from "../theme";
 import { perf } from "../perf";
 
-echarts.use([AriaComponent, BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([AriaComponent, BarChart, LineChart, PieChart, GridComponent, LegendPlainComponent, TooltipComponent, CanvasRenderer]);
 
 // Read at render time (functions, not constants), so a theme switch repaints every chart.
 export const tooltip = () => ({

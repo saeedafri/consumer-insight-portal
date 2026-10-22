@@ -96,3 +96,14 @@ def test_a_reload_that_drops_a_question_leaves_no_stale_question_file(csi_db, tm
     serving.build_wave(412)
     publish.publish(tmp_path, jobs=1)
     assert [w[0] for w in json.loads(gzip.decompress(target.read_bytes()))["waves"]] == [266]
+
+
+def test_a_new_small_cell_rule_rebuilds_every_wave(csi_db, tmp_path, monkeypatch):
+    with csi_db.begin() as conn:
+        seed(conn, 266, date(2026, 10, 5), qualified=401, xm1_yes=92, xm1_base=149)
+        seed(conn, 412, date(2026, 10, 12), qualified=404, xm1_yes=125, xm1_base=404)
+    serving.build_wave(266), serving.build_wave(412)
+    publish.publish(tmp_path, jobs=1)
+    assert json.loads((publish.build(tmp_path, jobs=1) / "manifest.json").read_text())["rebuilt_waves"] == 0
+    monkeypatch.setattr(payloads, "HIDDEN_BASE", 10)                                  # the rule changed: nothing is reused
+    assert json.loads((publish.build(tmp_path, jobs=1) / "manifest.json").read_text())["rebuilt_waves"] == 2

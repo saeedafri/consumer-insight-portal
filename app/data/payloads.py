@@ -25,7 +25,8 @@ CROSSTAB_COLUMNS = ("v1", "v2", "item_label", "option_code", "option_label", "n"
 BANNER = (("Total", "total", "Total"), ("Male", "gender", "Male"), ("Female", "gender", "Female"),
           ("Gen Z", "generation", "GenZ"), ("Millennial", "generation", "Millennial"), ("Gen X", "generation", "GenX"),
           ("Boomer", "generation", "Boomer"))   # dashboard column, srv_result dim, dim_value
-HIDDEN_BASE = 30   # respondents: below this no screen, file or export shows a figure, only the base ("n<30")
+HIDDEN_BASE = 5    # respondents: below this no screen, file or export shows a figure, only the base ("n<5")
+TEST_BASE = 30     # respondents: below this on either side no difference is called significant
 COUNTRIES = Path(__file__).resolve().parents[2] / "config" / "countries.yml"
 # Where a wave came from, for every screen's source line and export: platform, fielding window, source reference
 SOURCE = "s.country, s.platform, s.source_ref, s.field_start, s.field_end"
@@ -49,7 +50,15 @@ def results(survey_id: int, qcodes: tuple, dims: tuple) -> dict:
             " ORDER BY qcode, dim, dim_value, sort_order").bindparams(bindparam("q", expanding=True),
                                                                       bindparam("d", expanding=True)),
             {"s": survey_id, "q": list(qcodes), "d": list(dims)}).all()
-    return {"survey_id": survey_id, "columns": COLUMNS, "rows": [list(r) for r in rows]}
+    def masked(r):   # under HIDDEN_BASE only the base goes out, like every other screen and file
+        r = dict(zip(COLUMNS, r))
+        if (r["base_n"] or 0) < HIDDEN_BASE:
+            r["n"] = r["pct"] = None
+        for pct, base in (("prior_pct", "prior_base_n"), ("ly_pct", "ly_base_n")):
+            if (r[base] or 0) < HIDDEN_BASE:
+                r[pct] = None
+        return list(r.values())
+    return {"survey_id": survey_id, "columns": COLUMNS, "rows": [masked(r) for r in rows]}
 
 
 def waves(dashboards: dict) -> list[dict]:

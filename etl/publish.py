@@ -75,9 +75,12 @@ def build(root: Path = ROOT, jobs: int = 4) -> Path:
     out.mkdir(parents=True)
     live = root / "current"
     try:
-        before = json.loads((live / "manifest.json").read_text()).get("built", {})
-    except (OSError, ValueError):   # first publish, or one from before incremental builds
-        before = {}
+        last = json.loads((live / "manifest.json").read_text())
+    except (OSError, ValueError):   # first publish
+        last = {}
+    rules = {"hidden_base": payloads.HIDDEN_BASE, "test_base": payloads.TEST_BASE}
+    rules_changed = last.get("rules", {"hidden_base": 30}) != rules   # a new small-cell rule: every file is rebuilt
+    before = {} if rules_changed else last.get("built", {})
     start = time.perf_counter()
     with get_engine("app").connect() as conn:
         waves = {str(sid): (str(at), family, study) for sid, at, family, study in conn.execute(text(
@@ -118,7 +121,7 @@ def build(root: Path = ROOT, jobs: int = 4) -> Path:
     gone = bool(set(before) - set(waves))   # a wave removed: every trend of its family loses a point
     changed = {waves[str(sid)][1:] for sid in fresh}
     multi = [f for f, m in members.items() if len(m) > 1]
-    full = [f for f in multi if gone or not reuse(f"api/v1/questions/{f[0]}/{f[1]}")]
+    full = [f for f in multi if gone or rules_changed or not reuse(f"api/v1/questions/{f[0]}/{f[1]}")]
     # a new or reloaded wave changes only the files of the questions it asked (a question file lists the waves that
     # asked it): the family's other files stay linked to the live version, so a 268-wave tracker rebuilds ~60 questions
     partial = [f for f in multi if f in changed and f not in full]
@@ -154,7 +157,7 @@ def build(root: Path = ROOT, jobs: int = 4) -> Path:
     manifest = {"version": version, "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "serving_version": serving, "waves": len(ids), "books": len(ids), "dashboards": len(boards),
                 "rebuilt_waves": len(fresh), "rebuilt_families": len(redo), "questions_written": len(done),
-                "bytes_written": size, "seconds": round(time.perf_counter() - start, 1),
+                "bytes_written": size, "seconds": round(time.perf_counter() - start, 1), "rules": rules,
                 "built": {sid: at for sid, (at, _, _) in waves.items()}}
     check(out, manifest, ids)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -164,10 +167,12 @@ def build(root: Path = ROOT, jobs: int = 4) -> Path:
 
 
 def check(out: Path, manifest: dict, ids: list[int]) -> None:
-    """Quality gates before anything goes live: every wave has a readable book with questions, the picker lists
-    every wave, and no file is empty or corrupt."""
+    """Quality gates before anything goes live: every wave has a readable book with questions and readable respondent
+    bitsets, the picker lists every wave, no wave lost more than a tenth of its questions against the live version
+    (a broken load or harmonisation, not a real change), and no file is empty or corrupt."""
     problems = []
-    read = lambda rel: json.loads(gzip.decompress((out / rel).read_bytes()))
+    read = lambda rel, root=out: json.loads(gzip.decompress((root / rel).read_bytes()))
+    live = out.parent / "current"
     if len(read("api/v1/waves.json.gz")) != len(ids):
         problems.append(f"picker does not list the {len(ids)} waves serving has")
     for sid in ids:
@@ -175,8 +180,17 @@ def check(out: Path, manifest: dict, ids: list[int]) -> None:
             doc = read(f"api/v1/waves/{sid}/book.json.gz")
             if doc["wave"]["survey_id"] != sid or not isinstance(doc["questions"], list):
                 problems.append(f"book {sid}: wrong wave or no question list")
+            if not isinstance(read(f"api/v1/waves/{sid}/people.json.gz").get("questions"), dict):
+                problems.append(f"people {sid}: no respondent bitsets")
         except Exception as exc:   # missing, unreadable or truncated
             problems.append(f"book {sid}: {exc}")
+            continue
+        try:
+            before = len(read(f"api/v1/waves/{sid}/book.json.gz", live)["questions"])
+        except (OSError, ValueError, KeyError):   # a new wave, or no live version yet
+            continue
+        if isinstance(doc["questions"], list) and before >= 10 and len(doc["questions"]) < 0.9 * before:   # a small wave may lose one
+            problems.append(f"book {sid}: {len(doc['questions'])} questions, {before} in the live version")
     if problems:
         shutil.rmtree(out, ignore_errors=True)
         raise RuntimeError(f"publish gates failed, previous version stays live: {problems[:5]}")

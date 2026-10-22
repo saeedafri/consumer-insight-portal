@@ -24,9 +24,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import sys
 import time
-from datetime import datetime
+import traceback
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -41,10 +43,23 @@ from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
 
 log = logging.getLogger("cip.weekly")
 ERRORS = Path(__file__).resolve().parents[1] / "logs" / "forsta-etl-errors.jsonl"
+HEARTBEAT = ERRORS.with_name("etl-heartbeat.json")   # read by --watchdog, which runs hourly on its own
 RUN = datetime.now().strftime("%Y%m%d-%H%M%S")
 DB_ATTEMPTS, DB_PAUSE_SECONDS = 4, 300     # a VPN or network blip gets 15 minutes before the run gives up
 WATCH_EVERY_SECONDS, WATCH_HOURS = 30 * 60, 54   # Mon 17:30 → Wed 23:30 IST; 64 of 68 waves closed within 54 h
 FULL_CHECK_DAY = 4                          # Friday: the one idle run a week that still runs integrity and drift
+RUN_HOURS = 3                               # longest a run may take before the watchdog calls it stuck
+LATE_MINUTES = 60                           # slack past the promised next beat
+
+
+def beat(state: str, next_in_hours: float, **extra) -> None:
+    """Promise the watchdog the next sign of life. A killed run cannot warn, so its silence has to."""
+    try:
+        HEARTBEAT.write_text(json.dumps({"at": datetime.now().isoformat(timespec="seconds"), "run": RUN, "pid": os.getpid(),
+                                         "state": state, "next": datetime.fromtimestamp(time.time() + next_in_hours * 3600)
+                                         .isoformat(timespec="seconds"), **extra}))
+    except OSError:
+        log.exception("Heartbeat not written")
 
 
 def tell(action, *args) -> None:
@@ -105,8 +120,10 @@ def run(client=None) -> int:
         except Exception as exc:                    # last week's dashboards stay live; say so
             tell(notify.failure, "building the topic dashboards", str(exc))
         try:                                        # the team's metric alerts (api/team.py), judged once per new wave
-            for message in team.due_alerts([forsta_etl.survey_id_of(path) for path in result["loaded"]]):
+            for message, email in team.due_alerts([forsta_etl.survey_id_of(path) for path in result["loaded"]]):
                 tell(notify.teams, message)
+                if email:                           # and the person who set it, by email
+                    tell(notify.send, f"CIP alert: {message[2:80]}", message, [email])
         except Exception as exc:
             tell(notify.failure, "checking the metric alerts", str(exc))
     if result["loaded"] or not (publish.ROOT / "current").exists():   # the standard screens as prebuilt files
@@ -138,6 +155,7 @@ def watch(week: dict) -> int:
                        "Forsta closes it. Progress: portal → Launch schedule.")
     deadline, code = time.time() + WATCH_HOURS * 3600, 0
     while True:
+        beat("watching: running", RUN_HOURS)
         code = run()
         now = next((w for w in launch_schedule.weeks()["weeks"] if w["date"] == str(week["date"])), {})
         if now.get("status") == "loaded" and now.get("closed"):
@@ -147,6 +165,7 @@ def watch(week: dict) -> int:
             tell(notify.teams, f"⚠️ {name}: not in after {WATCH_HOURS} h (status: {now.get('status', 'unknown')}). "
                                "The Friday run checks again.")
             return code
+        beat("watching: waiting", WATCH_EVERY_SECONDS / 3600, last_exit=code)
         time.sleep(WATCH_EVERY_SECONDS)
 
 
@@ -186,11 +205,63 @@ def setup_logging() -> None:
     streamlit_logger.set_log_level("ERROR")
 
 
-if __name__ == "__main__":
-    setup_logging()
+def watchdog() -> int:
+    """Hourly, apart from the run: tell the team when a run stopped without saying so, or a planned Monday never began."""
+    try:
+        last = json.loads(HEARTBEAT.read_text())
+    except (OSError, ValueError):
+        last = None
+    now = datetime.now()
+    if last and last["state"] != "finished" and now > datetime.fromisoformat(last["next"]) + timedelta(minutes=LATE_MINUTES):
+        tell(notify.failure, "the ETL run stopped without finishing",
+             f"Last sign of life {last['at']} ({last['state']}, run {last['run']}); it promised another by {last['next']}. "
+             "It was killed or the Mac slept or restarted. The next scheduled run starts it again; to resume now run "
+             "scripts/weekly_forsta.py.")
+        return 1
+    started = launch_schedule.planned_today() and now.hour * 60 + now.minute > 18 * 60
+    if started and (not last or datetime.fromisoformat(last["at"]).date() < now.date()):
+        tell(notify.failure, "this Monday's ETL run never started",
+             "It was due at 17:30 IST. Check that the Mac is awake and the launchd job is loaded; run scripts/weekly_forsta.py.")
+        return 1
+    if last is None or now - datetime.fromisoformat(last["at"]) > timedelta(days=8):
+        tell(notify.failure, "no ETL run for over a week", f"Last run: {last['at'] if last else 'never recorded'}.")
+        return 1
+    return 0
+
+
+def main() -> int:
     planned = launch_schedule.planned_today()
     with get_engine("etl").connect() as lock:   # one run at a time: a hand-run --due and launchd would load a wave twice
         if not lock.execute(text("SELECT GET_LOCK('cip_etl', 0)")).scalar():
             log.info("Another CIP run holds the lock; this one stops")
-            sys.exit(0)
-        sys.exit(watch(planned) if planned else run())   # the lock goes with the connection
+            return 0
+        beat("running", RUN_HOURS)
+        code = watch(planned) if planned else run()   # the lock goes with the connection
+    beat("finished", 0, last_exit=code)
+    return code
+
+
+def stopped(signum, frame):
+    raise SystemExit(128 + signum)
+
+
+if __name__ == "__main__":
+    setup_logging()
+    if sys.argv[1:] == ["--watchdog"]:
+        sys.exit(watchdog())
+    signal.signal(signal.SIGTERM, stopped)   # launchd, a shutdown or kill: say so before going
+    signal.signal(signal.SIGHUP, stopped)
+    try:
+        sys.exit(main())
+    except SystemExit as exc:
+        if isinstance(exc.code, int) and exc.code > 128:
+            log.error("Stopped by signal %d", exc.code - 128)
+            tell(notify.failure, "the ETL run was stopped", f"Signal {exc.code - 128} at {datetime.now():%Y-%m-%d %H:%M}. "
+                                                            "The next scheduled run starts it again.")
+            beat("finished", 0, last_exit=exc.code)
+        raise
+    except BaseException:
+        log.exception("The run crashed")
+        tell(notify.failure, "the ETL run crashed", traceback.format_exc()[-1500:])
+        beat("finished", 0, last_exit=1)
+        sys.exit(1)

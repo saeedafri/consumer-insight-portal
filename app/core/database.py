@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 # seconds a single statement may wait for MySQL before failing instead of hanging. The read role also serves the
 # publish and dashboard builds (a family-wide query takes minutes under load); screens are capped by gunicorn's 30 s.
 READ_TIMEOUT = {"app": 600, "etl": 1800}
+# per-session buffers of the writer (a handful of ETL connections, so the server can afford them)
+ETL_SESSION = ("SET SESSION sort_buffer_size = 16777216, join_buffer_size = 16777216,"
+               " tmp_table_size = 536870912, max_heap_table_size = 536870912")
 
 _engines: dict[str, Engine] = {}
 
@@ -93,6 +96,8 @@ def get_engine(role: str = "app") -> Engine:
             connect_args = {**connect_args, "connect_timeout": 20, "read_timeout": READ_TIMEOUT.get(role, 1800), "write_timeout": READ_TIMEOUT.get(role, 1800)}
             if reads_only:   # the socket timeout only abandons a slow SELECT: this makes the server stop it (SELECTs only, in ms)
                 connect_args["init_command"] = f"SET SESSION max_execution_time={READ_TIMEOUT[role] * 1000}"
+            else:   # the cube's GROUP BYs sort and join in memory instead of spilling to disk: ~16 % faster on Azure (22 Oct 2026)
+                connect_args["init_command"] = ETL_SESSION
         _engines[role] = create_engine(
             db.url,
             poolclass=QueuePool,

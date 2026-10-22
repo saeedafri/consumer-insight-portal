@@ -1,12 +1,12 @@
 // Audiences: a group of respondents from any cuts and answers combined (e.g. Gen Z women who used GenAI to shop), shown
-// against everyone else on any question, saved for the team (api/team.py). Groups under 30 show no figures.
+// against everyone else on any question, saved for the team (api/team.py). Groups under 5 people show no figures.
 import { useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { CUT_NAMES, myName, send, useAudiences, useBook, useQuestion } from "../api";
 import type { AudienceDef, AudienceResult, Question } from "../api";
 import { Card, Empty, Failure, Loading } from "../components/bits";
 import QuestionNav from "../components/QuestionNav";
-import { pct } from "../stats";
+import { HIDDEN_BASE, pct } from "../stats";
 
 const EMPTY: AudienceDef = { cuts: {}, answers: [] };
 /** What an answer condition stores: the row as srv_result names it (a multi item, or a single/grid option). */
@@ -103,7 +103,7 @@ export default function Audience() {
           <thead><tr><th>Answer</th><th className="num">Audience</th><th className="num">Everyone else</th><th className="num">Difference</th></tr></thead>
           <tbody>{result.rows.map(([label, , base, share, rest, restBase, sig]) => <tr key={label}>
             <th scope="row">{label}</th>
-            <td className="num">{share == null ? <span className="muted" title={`Only ${base} respondents`}>n&lt;30</span> : <><b>{pct(share)}</b><small style={{ display: "block" }} className="muted">n={base}</small></>}</td>
+            <td className="num">{share == null ? <span className="muted" title={`Fewer than ${HIDDEN_BASE} respondents on one side`}>n&lt;{HIDDEN_BASE}</span> : <><b>{pct(share)}</b><small style={{ display: "block" }} className="muted">n={base}</small></>}</td>
             <td className="num">{rest == null ? "–" : <>{pct(rest)}<small style={{ display: "block" }} className="muted">n={restBase}</small></>}</td>
             <td className={`num ${sig ? "sig" : "muted"}`}>{share == null || rest == null ? "–" : `${share - rest > 0 ? "+" : ""}${(share - rest).toFixed(1)} pts${sig ? (sig > 0 ? " ▲" : " ▼") : ""}`}</td>
           </tr>)}</tbody>

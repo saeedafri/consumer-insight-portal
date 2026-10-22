@@ -75,32 +75,34 @@ class SearchIndex:
         alt = lambda g: "(" + " OR ".join(f"({term(t)})" if " " in t else term(t) for t in g) + ")"
         return f" {join} ".join(alt(g) for g in groups if any(WORD.findall(t) for t in g))
 
-    def search(self, query: str, limit: int = 40) -> dict:
+    def search(self, query: str, limit: int = 40, offset: int = 0) -> dict:
         groups, corrections, expansions = self.understand(query)
-        how, ids = "words", []
+        how, ids, total = "words", [], 0
         with self.lock:
             if groups:
-                ids = self._match("words", self._fts(groups, "AND"), limit)
+                ids, total = self._match("words", self._fts(groups, "AND"), limit, offset)
                 if not ids:
                     fragments = [w for g in groups for t in g for w in WORD.findall(t) if len(w) >= 3]
                     if fragments:
-                        how, ids = "fragments", self._match("grams", " OR ".join(f'"{w}"' for w in fragments), limit)
+                        how, (ids, total) = "fragments", self._match("grams", " OR ".join(f'"{w}"' for w in fragments), limit, offset)
                 if not ids:
-                    how, ids = "any word", self._match("words", self._fts(groups, "OR"), limit)
+                    how, (ids, total) = "any word", self._match("words", self._fts(groups, "OR"), limit, offset)
         hidden = ("answers", "titles")   # searched, but too long to send back
-        return {"results": [{k: v for k, v in self.docs[i].items() if k not in hidden} for i in ids], "understood": {"corrected": corrections, "expanded": expansions, "matched_by": how}}
+        return {"results": [{k: v for k, v in self.docs[i].items() if k not in hidden} for i in ids], "total": total, "understood": {"corrected": corrections, "expanded": expansions, "matched_by": how}}
 
-    def _match(self, table: str, expr: str, limit: int) -> list[int]:
+    def _match(self, table: str, expr: str, limit: int, offset: int = 0) -> tuple[list[int], int]:
+        """One page of matches, best first (`limit` from `offset`), and how many match in all ("51–100 of 412")."""
         if not expr:
-            return []
+            return [], 0
         weights = "bm25(words, 10.0, 4.0, 2.0, 1.0)" if table == "words" else "bm25(grams)"
         try:   # rank by relevance, then the latest-asked wording first among near-ties
             rows = self.db.execute(f"SELECT rowid, {weights} FROM {table} WHERE {table} MATCH ? ORDER BY 2 LIMIT ?",
-                                   (expr, limit * 3)).fetchall()
+                                   (expr, (offset + limit) * 3)).fetchall()
+            total = self.db.execute(f"SELECT COUNT(*) FROM {table} WHERE {table} MATCH ?", (expr,)).fetchone()[0]
         except sqlite3.OperationalError:   # a stray operator in user text: treat it as no match
-            return []
+            return [], 0
         ranked = sorted(rows, key=lambda r: (round(r[1], 1), -_recency(self.docs[r[0]])))
-        return [r[0] for r in ranked[:limit]]
+        return [r[0] for r in ranked[offset:offset + limit]], total
 
 
 def _recency(doc: dict) -> int:

@@ -4,6 +4,7 @@ import { savedTheme, setTheme } from "../theme";
 import type { Theme } from "../theme";
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { useWaves } from "../api";
+import PinDialog from "./PinDialog";
 import type { Wave } from "../api";
 import { fmtDate } from "../stats";
 import { perf } from "../perf";
@@ -63,6 +64,8 @@ export default function Shell() {
         <NavLink to="/search"><Icon d="M10 3a7 7 0 015.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1110 3zm0 2a5 5 0 100 10 5 5 0 000-10z" />Search questions</NavLink>
         <NavLink to="/schedule"><Icon d="M7 2v2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2h-2V2h-2v2H9V2zm-2 8h14v10H5zm2 2v2h2v-2zm4 0v2h2v-2zm4 0v2h2v-2z" />Launch schedule</NavLink>
         <NavLink to="/ask"><Icon d="M4 4h16v12H8l-4 4zm4 5v2h2V9zm4 0v2h2V9zm4 0v2h2V9z" />Ask CIP</NavLink>
+        <NavLink to="/boards"><Icon d="M16 3l5 5-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z" />Boards</NavLink>
+        <NavLink to="/whats-new"><Icon d="M12 2l2.4 6.9H22l-6 4.4 2.3 7-6.3-4.5L5.7 20.3 8 13.3 2 8.9h7.6z" />What's new</NavLink>
       </nav>
       {wave && <nav aria-label="This wave">
         <p className="rail-label">{wave.survey_family === "CSI-US" ? "Weekly tracker" : "Survey"} · {fmtDate(wave.wave_date)}</p>
@@ -88,6 +91,7 @@ export default function Shell() {
       />
       {/* keyed on the theme: charts rebuild with the new palette, data stays cached */}
       <main id="main" tabIndex={-1} key={theme}><Outlet /></main>
+      <PinDialog />
       {showPerf && <Suspense fallback={null}><PerfHUD /></Suspense>}
     </div>
   </div>;

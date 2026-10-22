@@ -12,7 +12,7 @@ export default defineConfig({
   },
   server: { proxy: { "/api": "http://127.0.0.1:8000", "/auth": "http://127.0.0.1:8000" } },
   build: {
-    chunkSizeWarningLimit: 600,   // the charts chunk (ECharts) is ≈ 550 KB minified, 190 KB gzipped
+    chunkSizeWarningLimit: 600,   // the charts chunk (ECharts core, bar/line/pie, plain legend) is ≈ 549 KB minified, 187 KB gzipped
     rolldownOptions: {   // charts change least: their own long-cached chunk
       output: { codeSplitting: { groups: [{ name: "charts", test: /node_modules[\\/](echarts|zrender)/ }] } },
     },

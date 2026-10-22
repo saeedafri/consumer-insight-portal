@@ -30,7 +30,7 @@ import yaml
 from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
-from app.data.payloads import HIDDEN_BASE
+from app.data.payloads import HIDDEN_BASE, TEST_BASE
 
 log = logging.getLogger("cip.api.dashboards")
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "dashboards.yml"
@@ -81,8 +81,8 @@ def comparisons(waves: list[dict], wave: dict, ly_rule: str = "same_calendar_wee
 
 
 def significant(p1: float, n1: int, p2: float, n2: int) -> bool:
-    """Two-sided two-proportion z-test at 95% (percentages in, as web/src/stats.ts)."""
-    if not n1 or not n2:
+    """Two-sided two-proportion z-test at 95% (percentages in, as web/src/stats.ts); never with under TEST_BASE a side."""
+    if not n1 or not n2 or min(n1, n2) < TEST_BASE:
         return False
     a, b = p1 / 100, p2 / 100
     pooled = (a * n1 + b * n2) / (n1 + n2)
@@ -204,7 +204,7 @@ def move(r: dict, key: str) -> Optional[float]:
 def takeaways(rows: list[dict], cfg: dict) -> list[str]:
     """Key-takeaway sentences written from the numbers (so they can never disagree with them), from each
     tile's, list's and segment's `say` in config/dashboards.yml. A change is mentioned only when significant."""
-    rows = [r for r in rows if "suppressed" not in r["flags"]]   # under 30 people: never quoted
+    rows = [r for r in rows if "suppressed" not in r["flags"]]   # under HIDDEN_BASE people: never quoted
     by = {(r["metric_code"], r["segment"], r["rank_no"]): r for r in rows}
     prior = cfg.get("prior_label", "the previous wave")
     def changes(r):

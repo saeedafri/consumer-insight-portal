@@ -57,8 +57,16 @@ ANSWER_ROWS = """
 ANSWER_CUTS = ", ".join(f"COALESCE(p.{d}, '') AS {d}" for d in CUBE_DIMS if d != "total")
 
 
-def _value(dim: str) -> str:
-    return "'Total'" if dim == "total" else f"x.{dim}"
+# Every cut in one statement: the cuts are rows of a small derived table, and each answer row meets all seven.
+# One INSERT per cohort and question kind, not one per cut: 4 round trips to Azure for a wave instead of 28.
+DIMS_TABLE = "(" + " UNION ALL ".join(f"SELECT '{d}' AS dim" for d in CUBE_DIMS) + ")"
+
+
+def _rows_by_cut(table: str, cohort_id: Optional[int], alias: str) -> str:
+    """The temporary table's rows once per cut, with that cut's value as dv (computed once, so GROUP BY can name it)."""
+    whens = " ".join(f"WHEN '{d}' THEN {alias}.{d}" for d in CUBE_DIMS if d != "total")
+    return (f"(SELECT {alias}.*, d.dim, CASE d.dim WHEN 'total' THEN 'Total' {whens} END AS dv"
+            f" FROM {table} {alias}{_cohort_join(cohort_id, alias)} CROSS JOIN {DIMS_TABLE} d)")
 
 
 def _cohort_join(cohort_id: Optional[int], alias: str = "x") -> str:
@@ -67,44 +75,42 @@ def _cohort_join(cohort_id: Optional[int], alias: str = "x") -> str:
     return f" JOIN cip_respondent_cohort rc_{alias} ON rc_{alias}.respondent_id = {alias}.rid AND rc_{alias}.cohort_id = :cohort"
 
 
-def _single_sql(dim: str, cohort_id: Optional[int]) -> str:
+def _single_sql(cohort_id: Optional[int]) -> str:
     """Single-choice questions and grid rows: base = who answered (per row)."""
-    dv = _value(dim)
     return f"""
         INSERT INTO cip_agg_cell ({_COLUMNS})
         SELECT :sid,
-               CONCAT(x.qid, ':', COALESCE(x.iid, 0), ':', x.oid, ':', :coh, ':', 0, ':', :dim, ':', {dv}),
+               CONCAT(x.qid, ':', COALESCE(x.iid, 0), ':', x.oid, ':', :coh, ':', 0, ':', x.dim, ':', x.dv),
                CONCAT(x.qid, ':', COALESCE(x.iid, 0), ':', x.oid),
-               x.qid, x.iid, x.oid, :cohort, :dim, {dv},
-               COUNT(*), SUM(COUNT(*)) OVER (PARTITION BY x.qid, x.iid, {dv}),
+               x.qid, x.iid, x.oid, :cohort, x.dim, x.dv,
+               COUNT(*), SUM(COUNT(*)) OVER (PARTITION BY x.qid, x.iid, x.dim, x.dv),
                SUM(x.age), COUNT(x.age), SUM(x.income), COUNT(x.income)
-          FROM cip_tmp_cube x{_cohort_join(cohort_id)}
+          FROM {_rows_by_cut("cip_tmp_cube", cohort_id, "c")} x
          WHERE x.multi = 0
-         GROUP BY x.qid, x.iid, x.oid, {dv}"""
+         GROUP BY x.qid, x.iid, x.oid, x.dim, x.dv"""
 
 
-def _multi_sql(dim: str, cohort_id: Optional[int]) -> str:
+def _multi_sql(cohort_id: Optional[int]) -> str:
     """Multi-select items: base = everyone who answered the question ("Total
     Answering"), so an item routed away from someone counts as not chosen."""
-    dv, dv_y = _value(dim), _value(dim).replace("x.", "y.")
     return f"""
         INSERT INTO cip_agg_cell ({_COLUMNS})
         SELECT :sid,
-               CONCAT(x.qid, ':', x.iid, ':', 0, ':', :coh, ':', 0, ':', :dim, ':', {dv}),
+               CONCAT(x.qid, ':', x.iid, ':', 0, ':', :coh, ':', 0, ':', x.dim, ':', x.dv),
                CONCAT(x.qid, ':', x.iid, ':', 0),
-               x.qid, x.iid, NULL, :cohort, :dim, {dv},
+               x.qid, x.iid, NULL, :cohort, x.dim, x.dv,
                SUM(CASE WHEN x.code = 1 THEN 1 ELSE 0 END), MAX(b.answered),
                SUM(CASE WHEN x.code = 1 THEN x.age END),
                SUM(CASE WHEN x.code = 1 AND x.age IS NOT NULL THEN 1 ELSE 0 END),
                SUM(CASE WHEN x.code = 1 THEN x.income END),
                SUM(CASE WHEN x.code = 1 AND x.income IS NOT NULL THEN 1 ELSE 0 END)
-          FROM cip_tmp_cube x{_cohort_join(cohort_id)}
-          JOIN (SELECT y.qid, {dv_y} AS dv, COUNT(DISTINCT y.rid) AS answered
-                  FROM cip_tmp_cube2 y{_cohort_join(cohort_id, "y")}
+          FROM {_rows_by_cut("cip_tmp_cube", cohort_id, "c")} x
+          JOIN (SELECT y.qid, y.dim, y.dv, COUNT(DISTINCT y.rid) AS answered
+                  FROM {_rows_by_cut("cip_tmp_cube2", cohort_id, "c2")} y
                  WHERE y.multi = 1
-                 GROUP BY y.qid, {dv_y}) b ON b.qid = x.qid AND b.dv = {dv}
+                 GROUP BY y.qid, y.dim, y.dv) b ON b.qid = x.qid AND b.dim = x.dim AND b.dv = x.dv
          WHERE x.multi = 1
-         GROUP BY x.qid, x.iid, {dv}"""
+         GROUP BY x.qid, x.iid, x.dim, x.dv"""
 
 
 def _fill_rows(conn, survey_id: int) -> None:
@@ -136,9 +142,8 @@ def build_cube(survey_id: int, cohort_ids: Optional[Sequence[Optional[int]]] = N
     written = 0
     for cohort_id in targets:
         params = {"sid": survey_id, "cohort": cohort_id, "coh": cohort_id or 0}
-        for dim in CUBE_DIMS:
-            for sql in (_single_sql(dim, cohort_id), _multi_sql(dim, cohort_id)):
-                written += conn.execute(text(sql), {**params, "dim": dim}).rowcount
+        for sql in (_single_sql(cohort_id), _multi_sql(cohort_id)):
+            written += conn.execute(text(sql), params).rowcount
     return written
 
 
@@ -150,9 +155,9 @@ def refresh_cohorts(survey_id: int) -> int:
 
     One transaction: if the rebuild fails, the new memberships roll back with
     it, so the next attempt still sees the change."""
-    signature = lambda conn, cid: tuple(conn.execute(text(
-        "SELECT COUNT(*), COALESCE(SUM(respondent_id), 0) FROM cip_respondent_cohort"
-        " WHERE cohort_id = :c AND survey_id = :s"), {"c": cid, "s": survey_id}).one())
+    signature = lambda conn, cid: frozenset(conn.execute(text(   # the members themselves: a count and a sum can collide
+        "SELECT respondent_id FROM cip_respondent_cohort WHERE cohort_id = :c AND survey_id = :s"),
+        {"c": cid, "s": survey_id}).scalars())
     has_cells = lambda conn, cid: conn.execute(text(
         "SELECT 1 FROM cip_agg_cell WHERE survey_id = :s AND cohort_id = :c LIMIT 1"),
         {"s": survey_id, "c": cid}).first() is not None
@@ -162,7 +167,7 @@ def refresh_cohorts(survey_id: int) -> int:
             before = signature(conn, c["cohort_id"])
             cohorts.derive(c["cohort_id"], [survey_id], conn)
             after = signature(conn, c["cohort_id"])
-            if after != before or (after[0] and not has_cells(conn, c["cohort_id"])):
+            if after != before or (after and not has_cells(conn, c["cohort_id"])):
                 changed.append(c["cohort_id"])
         # most decisions touch no cohort's questions: then nothing is rebuilt
         return build_cube(survey_id, changed, conn) if changed else 0
