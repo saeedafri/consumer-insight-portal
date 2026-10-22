@@ -1,0 +1,7 @@
+# Anonymous peer review 4
+
+**Strongest: E.** It tests incremental budget value against the buyer’s subscription bundle and Coresight’s own service. Cannibalization and analyst opportunity cost make the proposed economics credible. Its purchase-or-replacement criterion can reject an attractive interface contributing no additional decision evidence.
+
+**Biggest blind spot: B.** Its bounded remediation programme is useful, but a release owner, scorecard and sponsor can efficiently validate a product buyers still regard as redundant. It needs an explicit counterfactual: which expenditure or unresolved decision warrants this purchase, and what useful evidence does CIP uniquely contribute?
+
+**What all missed:** No response sufficiently separates verbal preference from procurement under an actual subscription portfolio. The alternative may be an enterprise licence available at zero marginal user cost, including redistribution rights and trusted historical benchmarks. Test a permission-cleared CIP brief alongside that accessible alternative, with the same decision deadline and no vendor coaching. Ask the budget owner to select a concrete paid pilot, identify its budget source and specify whether it replaces, complements or duplicates an existing contract. Treat useful exclusive evidence, materially better decision resolution or verified total-cost savings as candidate advantages; public feature comparisons establish none of them.

@@ -1,0 +1,7 @@
+# Anonymous peer review 1
+
+**Strongest: E.** It connects release verification to a narrow commercial acceptance test. Allowed/denied checks across static files and caches, a pinned release, and reproducing figures after a new wave make “trust” testable. Its adapter option avoids turning remediation into a platform rewrite. Buyer-defined thresholds beat feature-count parity.
+
+**Biggest blind spot: D.** It introduces an assistant prototype, follow-up research service and partner qualification alongside the brief. With unknown capacity and demand, these become three additional experiments before the core workflow earns repeat use. “Saved audience” needs a feasibility gate: question availability and usable sample size may prevent stable recurring cuts. The response acknowledges uncertainty but supplies no stopping rules for these expansions.
+
+**What all missed:** The research supply chain needs an explicit commercial and methodological assessment: sample sourcing, recruitment bias, repeat-respondent handling, questionnaire continuity, fielding cadence and cost per usable recurring audience. Correct software cannot compensate for research that fails the buyer’s required population or repeatability. Assign a research owner to document these constraints and test the brief against them before claiming a durable data advantage. Public competitor marketing remains insufficient to establish comparative task performance.

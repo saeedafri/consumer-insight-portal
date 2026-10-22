@@ -1,0 +1,7 @@
+# Peer review 2
+
+**Strongest: D.** It turns methodological adequacy into an investment gate tied to the buyer’s decision, audience, effect size and timing. Its warning that pooling needs a defined time estimand and stable instruments prevents apparent precision from concealing incompatible evidence. This makes feasibility actionable.
+
+**Biggest blind spot: C.** Research-request intake may reveal demand, but a priced follow-up option is not evidence that research can supply the required population, incidence, turnaround or decision sensitivity. It risks moving the wedge into bespoke research without testing feasible recruitment, design quality or incremental margin against established services. Require a research feasibility and cost assessment before presenting the option as deliverable.
+
+**What all missed:** An explicit empirical test of selection and measurement validity against independent evidence. Adequate bases and stable questions cannot establish population validity. For the chosen decision, inspect recruitment/coverage, response propensity, quality exclusions and relevant external benchmarks; document discrepancies and what weighting cannot repair. Separately test whether CIP supplies a distinctive, useful fact absent from the buyer’s existing evidence bundle. Faster delivery of biased or already available information cannot establish superiority. Where independent validation is unavailable, narrow claims to the observed respondent population and preserve the uncertainty.

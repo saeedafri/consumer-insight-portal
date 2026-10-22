@@ -1,0 +1,280 @@
+{
+  "date": "2026-10-21",
+  "files": [
+    {
+      "path": "docs/REA Codex/00-README.md",
+      "bytes": 3132,
+      "sha256": "80f8bef4e0cf10e7a2bed86d9f0aac4ddab62f6bbe8068e7366d3a40ef8b31f8"
+    },
+    {
+      "path": "docs/REA Codex/01-system-and-data.md",
+      "bytes": 6401,
+      "sha256": "2ca9b6dbdc983bba7532d40671cd6967bf5b428b251f4d46cf7e44933717fd08"
+    },
+    {
+      "path": "docs/REA Codex/02-gap-register.md",
+      "bytes": 8603,
+      "sha256": "5e5a0f792d5b6fde4b10baf028e6f1c42def50f5c4d0726bd847537634cdb2f3"
+    },
+    {
+      "path": "docs/REA Codex/03-recommendations.md",
+      "bytes": 7750,
+      "sha256": "77601928f063ae5874f7c2fd864b179072e8452d5153a5911061274b08217a4e"
+    },
+    {
+      "path": "docs/REA Codex/04-verification.md",
+      "bytes": 6540,
+      "sha256": "77875e1883d7de3f78fe3359544076e9e456a6d3a56cefd8c4f605cf108dbd80"
+    },
+    {
+      "path": "docs/REA Codex/05-implementation-specifications.md",
+      "bytes": 8979,
+      "sha256": "22baad120dec438733de452cee7b123907ec179c13503ee17ca05006cd6a45ce"
+    },
+    {
+      "path": "docs/REA Codex/backend-evidence.md",
+      "bytes": 21690,
+      "sha256": "31ee6c037b2d5a52c4fcfcdc4db18576f911fbd338a64313db4308790fa48a51"
+    },
+    {
+      "path": "docs/REA Codex/competitor-landscape.md",
+      "bytes": 29670,
+      "sha256": "8c90e322d03ab2406bc79166d579a7ef959b054ef87e909fdd05e8ee096c7cb1"
+    },
+    {
+      "path": "docs/REA Codex/competitor-sources.json",
+      "bytes": 35877,
+      "sha256": "417422f95880a4a4c80ec28b8817eb52e5f3a748249643bbdeac42b294075096"
+    },
+    {
+      "path": "docs/REA Codex/evidence/circana-public-page.json",
+      "bytes": 23411,
+      "sha256": "4e396e38f029d95e831b2d811bea35659f4ce6c1bac9c52682cb988c86bd055c"
+    },
+    {
+      "path": "docs/REA Codex/evidence/competitor-retrieval.json",
+      "bytes": 37653,
+      "sha256": "993b594df09f763f0d772478a92bbadd3e3cd449a832ac400b88308ff772a763"
+    },
+    {
+      "path": "docs/REA Codex/evidence/final-verification.json",
+      "bytes": 561,
+      "sha256": "c7ae5a6ed89a0020cc869fbf908b4f3c04791d378ea7f0e5f6a08f8eb740ebed"
+    },
+    {
+      "path": "docs/REA Codex/evidence/pytest-isolated.txt",
+      "bytes": 356,
+      "sha256": "8b284743bf626f6eafe6307f2144882e0214f557e9f6ecb206a2d50f8dd69947"
+    },
+    {
+      "path": "docs/REA Codex/evidence/rea-evidence-bundle.json",
+      "bytes": 33052756,
+      "sha256": "756f7cd0be03729f3adafd5f5bc4b6feb71ad8071ce2e2d8074442a3dee748de"
+    },
+    {
+      "path": "docs/REA Codex/evidence/rea-session.json",
+      "bytes": 80211,
+      "sha256": "70ef273b6ec6421c1bebcbcfd67ead27bdac279dc8e8c4d0ec896647de3d8551"
+    },
+    {
+      "path": "docs/REA Codex/evidence/rea-static-summary.json",
+      "bytes": 12909,
+      "sha256": "9d838783c84f6374528ffd0fee94d956cbde947bc6a4ad60ceb622e6303e6320"
+    },
+    {
+      "path": "docs/REA Codex/evidence/run-isolated-tests.py",
+      "bytes": 942,
+      "sha256": "39cdfe5829fa4a60b49e837340dd05322ac7db0230e52449c09ccfe9ed85ae35"
+    },
+    {
+      "path": "docs/REA Codex/evidence/runtime-contract-summary.json",
+      "bytes": 665,
+      "sha256": "0f25fb3e2166f690825dedecddf449755af9eee1e63432cace9cca438c94f794"
+    },
+    {
+      "path": "docs/REA Codex/evidence/runtime-journeys.json",
+      "bytes": 440540,
+      "sha256": "102b361de4c103a7c3b12d36ba3bb49b24d0a11ca2b0d676eb5a4c9c5d7398ec"
+    },
+    {
+      "path": "docs/REA Codex/evidence/runtime-library.json",
+      "bytes": 426955,
+      "sha256": "4c87df995c9e64d2c92f9285300044ff0f4e4f42bf984464ac59f8438c13b8fb"
+    },
+    {
+      "path": "docs/REA Codex/evidence/runtime-summary.json",
+      "bytes": 129843,
+      "sha256": "42a7acbe0688215831efb89005674984c50248bd787b8d736ffeb627085a6378"
+    },
+    {
+      "path": "docs/REA Codex/evidence/source-manifest.json",
+      "bytes": 20118,
+      "sha256": "fd044d89ecb969dfe75498ce56184fe05ea7043198e00b99121d0d8e5078bd56"
+    },
+    {
+      "path": "docs/REA Codex/evidence/worktree-status.txt",
+      "bytes": 870,
+      "sha256": "2e9586fb22433b465f8e9698745d9a181dd05c7a7628e7d6252bad380d8cc96e"
+    },
+    {
+      "path": "docs/REA Codex/frontend-evidence.md",
+      "bytes": 21876,
+      "sha256": "5e03b6ab274fdb2f7d28b7b372ef017e2919af74f9b475f40f39dca61e3d8806"
+    },
+    {
+      "path": "docs/REA Codex/gap-register.json",
+      "bytes": 12767,
+      "sha256": "b5afbf685e2c1a685ed58e82ea1ba18f06a51d24c64231662f2344dd0b5fb04a"
+    },
+    {
+      "path": "docs/LLM Council Codex/00-README.md",
+      "bytes": 3581,
+      "sha256": "a3a365ea84ca912dbf41c7b1c68a5a2ecb88671cfce00c11d485d4ea6657acd5"
+    },
+    {
+      "path": "docs/LLM Council Codex/01-framed-question.md",
+      "bytes": 4490,
+      "sha256": "7caef0e5d481487055a33cb84f6fd3944e10e397f8e55c73229207f0c8a5a35b"
+    },
+    {
+      "path": "docs/LLM Council Codex/02-final-review-question.md",
+      "bytes": 3448,
+      "sha256": "062799dae487167905ec3f04495b65204face9a545045252a98093bfdb60e753"
+    },
+    {
+      "path": "docs/LLM Council Codex/03-final-recommendations.md",
+      "bytes": 10429,
+      "sha256": "e7e2a24ccb85eeb174c84ec8ded268dee8eee3591b273562ec819ab584c85407"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/06-chairman-verdict.md",
+      "bytes": 5108,
+      "sha256": "e934924dc1038148cf1e0c03c5c7c9ba6e93951de3c9d3ae422e2e4afbd0f30f"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/advisors/contrarian.md",
+      "bytes": 2037,
+      "sha256": "7df4064e45e314d5ebb14b205b93cdf6fb0ab114ffbe61b4d6a95d0a03714c14"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/advisors/executor.md",
+      "bytes": 2076,
+      "sha256": "54a04a60a23fb70c01b94f930b397da970c6eeb9637f4706fa4c17353bd5dd1d"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/advisors/expansionist.md",
+      "bytes": 2167,
+      "sha256": "eca35512dc7e3960560b289312f75d3badfce8764fb877cde3874709aa92d5a4"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/advisors/first-principles.md",
+      "bytes": 2161,
+      "sha256": "3b5944abded48fcad6877fd855146e9218f7b58fc11420111f68890129805848"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/advisors/outsider.md",
+      "bytes": 2046,
+      "sha256": "327739be2d225d9f946adc7026df9549dec53eeec8e9e9cd148812837fe9f748"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/anonymization-map.json",
+      "bytes": 112,
+      "sha256": "41afa12d7f6a5eae8d747523b18e31a09d0b7d8e7ccf0ae707e897ecf60a37dd"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/peer-reviews/00-anonymized-responses.md",
+      "bytes": 10520,
+      "sha256": "b329aef8343e831681cce154b680374b85c3290f3e3210526b68a53ceb3da8da"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/peer-reviews/review-1.md",
+      "bytes": 1443,
+      "sha256": "d51c5e70201a757a3b322fc15d06a4243190cdbdc27d119fee8e5204df0b801b"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/peer-reviews/review-2.md",
+      "bytes": 1458,
+      "sha256": "04df938e89a81084e233f9344e6fd9bbdd39adc73da27072e884cc73b48412b9"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/peer-reviews/review-3.md",
+      "bytes": 1556,
+      "sha256": "a50c5d0a49b30df27430763f19f4a4eb0d1eea67b7dec2e23102ee57a05b1468"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/peer-reviews/review-4.md",
+      "bytes": 1497,
+      "sha256": "f6b679009d5a72ad95a3c032ce7125785c47157b306249663e3da2d1928017c8"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-1/peer-reviews/review-5.md",
+      "bytes": 1484,
+      "sha256": "aa55493389e4e6139cc5db87eeefa3bb37ee8dc33d04fd9eef6efea414ffb1b4"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/06-chairman-verdict.md",
+      "bytes": 5547,
+      "sha256": "4947c311cf2e353af196a5a54326bab136c338d71bbea9cf2aa9f57efa9c35a8"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/advisors/contrarian.md",
+      "bytes": 2112,
+      "sha256": "e25f60c3020aa13e3c4ee28680fe9909075837de73f51a0429ec507dc72d436d"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/advisors/executor.md",
+      "bytes": 2135,
+      "sha256": "08708213c16df54f2fc8367ad83dd856bc2941d3a558599dbd725e6d388c8dc3"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/advisors/expansionist.md",
+      "bytes": 2109,
+      "sha256": "66a4c196e439c0a35fae92e17d20f73dc43253cc49b1d4d98dd4f0c89d2d1fc6"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/advisors/first-principles.md",
+      "bytes": 2191,
+      "sha256": "53aa9a8db5dfe8a366c4066ac6ac2bbf7126db011ce3df3777ee56ebaa59d219"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/advisors/outsider.md",
+      "bytes": 2209,
+      "sha256": "c1290b96b44f373a7dbe9ed018cc8bd16356530b35f6bb2592a147475f3d335e"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/anonymization-map.json",
+      "bytes": 112,
+      "sha256": "cda77cd8c7ba39a67e44cdda0e4855ba59b1ae5a5db476a56b0ba8a716a5df40"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/peer-reviews/00-anonymized-responses.md",
+      "bytes": 10806,
+      "sha256": "45af91ba3d0837e1663a3340b7518ee6e9b85dce85e95f179d10f801a61c2a38"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/peer-reviews/review-1.md",
+      "bytes": 1578,
+      "sha256": "700910d12272208145d6086dc1185cfa0429466caa102502bc8782fc29165ec8"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/peer-reviews/review-2.md",
+      "bytes": 1510,
+      "sha256": "bc66b2cf837ba9dad8a3350e47c61bc7f1a961047e680254ddbd2001600ec0ce"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/peer-reviews/review-3.md",
+      "bytes": 1475,
+      "sha256": "e06ed381e96ef6879e3138d490b3d9cb295fa221b0cd536db73387e77ca4a8d9"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/peer-reviews/review-4.md",
+      "bytes": 1449,
+      "sha256": "95a221dd3b9b32c9d08124e4c7cfe24f9cf76364f752f149fc8b812e37942ed3"
+    },
+    {
+      "path": "docs/LLM Council Codex/council-2/peer-reviews/review-5.md",
+      "bytes": 1542,
+      "sha256": "35744f2fa22055a7914a6d7a9fbb629cb0adfc12ca9477e1cedbeb8d73469da0"
+    }
+  ]
+}

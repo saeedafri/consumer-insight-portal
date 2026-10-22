@@ -1,0 +1,7 @@
+# Anonymous peer review 4
+
+**Strongest: B.** It translates capabilities into a concrete buyer deliverable and distinguishes survey explanations from purchase measurement. Its five-buyer replay provides a practical way to separate workflow friction, questionnaire gaps and missing data. It also selects more comparable survey-intelligence alternatives while treating Circana, NIQ and Numerator as potentially complementary. This is the clearest defense against a feature-count roadmap.
+
+**Biggest blind spot: D.** Parallel discovery is sound, but a cited-assistant prototype, follow-up research service and purchase-partner qualification create three additional experiments before the core brief has demonstrated demand. It gives no rule for deciding which experiment deserves scarce analyst time. A service-assisted brief can also conceal product friction and weak self-service adoption; preparation time must distinguish customer effort from staff effort.
+
+**Shared omission:** None specifies an actual comparative buying test. Replay the same recent task with CIP and the buyer's current subscription, spreadsheet or analyst service, using equivalent question coverage, geography, period, base and deliverable requirements. Record missing evidence separately from usability, total customer-plus-staff effort, reproducibility, access cost and renewal/switching willingness. Where vendors cannot answer equivalent questions, mark them non-comparable rather than scoring them as workflow failures.

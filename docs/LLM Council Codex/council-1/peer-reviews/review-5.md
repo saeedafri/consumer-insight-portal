@@ -1,0 +1,7 @@
+# Anonymous peer review 5
+
+**Strongest: A.** It separates necessary remediation from willingness to pay and tests whether missing evidence, rather than workflow friction, constrains adoption. Its analyst-assisted pilot can disprove the proposed investment before a platform commitment. Including spreadsheets, analyst services and existing subscriptions better reflects real purchasing substitutes than a vendor feature matrix. The warning that narrower audiences can destroy usable bases exposes a material hidden assumption behind audience-builder economics.
+
+**Biggest blind spot: D.** Follow-up research, licensed purchase context and an assistant each introduce a separate cost and operating model. Pursuing all three alongside the initial brief risks diluting the smallest useful experiment. Rights and demand caveats help, but the response does not require a contribution-margin test covering analyst time, fieldwork minimums, turnaround variability and ongoing licence obligations. A monetizable brief can still be an unscalable service.
+
+**Shared omission.** None specifies who buys, who uses and who approves the subscription, or what existing expenditure CIP would replace. Repeat use and stated willingness to pay are insufficient. Test paid commitment or a concrete procurement step, track fully loaded cost per recurring brief, and establish a stop rule if manual support fails to decline. Keep revenue and defensibility hypotheses separate from engineering acceptance.

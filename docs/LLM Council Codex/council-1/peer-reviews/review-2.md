@@ -1,0 +1,7 @@
+# Anonymous peer review 2
+
+**Strongest: A.** It separates mandatory remediation from a saleable advantage, challenges whether workflow friction is the binding constraint, and recognizes that smaller intersections can make audience features commercially useless. Testing analyst service and spreadsheets as substitutes improves investment decisions beyond vendor feature comparisons. Its supervised pilot limits sunk engineering cost.
+
+**Biggest blind spot: D.** Parallel assistant, follow-up research and purchase-partner experiments create three operational and economic surfaces before establishing a buyer or adequate recurring coverage. Fielding feasibility, questionnaire ownership, turnaround, minimum sample costs and gross margin could overwhelm a narrow brief business. A saved audience is premature without demonstrated question overlap and usable cells. D qualifies these risks without specifying stop rules.
+
+**Shared omission:** All need a data-adequacy and economic gate before selecting the pilot: required geography, population, field dates, routing, comparable repeated questions, usable bases and minimum detectable differences for the actual decision. Pair this with delivery cost per brief, achievable price, licence restrictions and analyst capacity. Repeat use and willingness to pay can validate a subsidized bespoke service that cannot scale. None establishes when existing data is too weak to support even the proposed narrow wedge.

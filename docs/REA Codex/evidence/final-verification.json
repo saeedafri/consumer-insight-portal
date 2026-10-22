@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-21",
+  "local_links": "pass",
+  "json_files_parsed": 14,
+  "councils": 2,
+  "independent_advisors": 10,
+  "independent_peer_reviews": 10,
+  "competitor_entries": 23,
+  "supplemental_sources": 11,
+  "retrieval_records": 34,
+  "gap_count": 31,
+  "source_files_verified_unchanged": 128,
+  "application_source_drift": [],
+  "isolated_python_tests": {
+    "passed": 253,
+    "excluded_snapshot_cases": 13,
+    "full_suite_certified": false
+  },
+  "runtime_failures_preserved": [
+    "Trends incompatible response schema",
+    "Compare404"
+  ]
+}

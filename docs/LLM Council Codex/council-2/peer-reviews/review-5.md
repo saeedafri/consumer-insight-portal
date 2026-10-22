@@ -1,0 +1,7 @@
+# Anonymous peer review 5
+
+**Strongest: D.** It connects audience incidence, decision-relevant differences, instrument stability and wave pooling to a concrete buyer/research feasibility gate. It avoids treating n=400 or repeated observations as automatic adequacy and keeps product facts separate from inference. This provides the clearest scientific constraint on the commercial wedge.
+
+**Biggest blind spot: C.** A research-request loop may differentiate CIP, but a priced supplier response does not establish lawful collection, respondent consent, redistribution rights or representative recruitment. Customer requests can select attractive questions while amplifying sampling bias and creating expensive bespoke work. Require an estimand, recruitment/coverage assessment, rights clearance and explicit service economics before presenting follow-up research as a viable expansion.
+
+**All missed:** No response makes selection bias a falsifiable validation requirement. Quotas, weighting, larger bases and uncertainty intervals cannot establish population validity alone. For the chosen decision, require recruitment/nonresponse and coverage evidence, weighting diagnostics, sensitivity analysis and comparison with an independent relevant benchmark; describe residual uncertainty. Also require a rights matrix covering source ingestion, derived aggregates, exports, recipient reuse and retention. Test incremental decision value against that rights-cleared, scientifically supported baseline before claiming a competitive differentiator.

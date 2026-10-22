@@ -1,0 +1,237 @@
+{
+  "evidence_id": "ev_b056c9b0a851c27af952d6992af763b720af4005bd392bbe8bcf26f901beb061",
+  "subject": null,
+  "provider": {
+    "id": "rea-playwright-browser-scenario",
+    "name": "REA Playwright browser scenario capture provider",
+    "version": "1"
+  },
+  "analysis_profile": null,
+  "predicate_type": "rea.browser-scenario-capture",
+  "operation": "capture_browser_scenario",
+  "parameters": {
+    "browser": {
+      "mode": "launch",
+      "executable_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "headless": true
+    },
+    "start_url": {
+      "url": "https://www.circana.com/solutions/unify-plus",
+      "query": []
+    },
+    "environment": {
+      "viewport": {
+        "width": 1280,
+        "height": 720,
+        "device_scale_factor": 1
+      },
+      "locale": "en-US",
+      "timezone": "UTC",
+      "color_scheme": "light",
+      "reduced_motion": "reduce",
+      "service_workers": "block"
+    },
+    "actions": [
+      {
+        "step_id": "settle-public-page",
+        "action": "wait_for_timeout",
+        "duration_ms": 3000
+      }
+    ],
+    "storage": {
+      "cookies": [],
+      "local_storage": [],
+      "session_storage": []
+    },
+    "secrets": [],
+    "capture": {
+      "after_each_step": [],
+      "at_end": [
+        "url",
+        "accessibility"
+      ],
+      "events": [
+        "page-errors"
+      ],
+      "network": {
+        "request_body": false,
+        "response_body": false,
+        "header_values": false
+      }
+    },
+    "scenario_sha256": "56585da6d57a60762ac30d5b9ee6ead28c6dcebab9c3d2cc278d2dd9615ff5b6"
+  },
+  "raw_result": null,
+  "normalized_result": {
+    "browser": {
+      "mode": "launch",
+      "process_ownership": "provider-owned",
+      "cleanup": "terminated-owned-process",
+      "product": "Chromium",
+      "version": "155.0.8059.85"
+    },
+    "scenario": {
+      "start_origin": "https://www.circana.com",
+      "action_count": 1,
+      "secret_references": [],
+      "network_content": {
+        "request_body": false,
+        "response_body": false,
+        "header_values": false
+      },
+      "event_families": [
+        "page-errors"
+      ]
+    },
+    "duration_ms": 14014,
+    "steps": [
+      {
+        "step_index": 0,
+        "step_id": "scenario_start",
+        "action": "goto_start",
+        "elapsed_ms": 10750,
+        "before_url": {
+          "url": "about:blank",
+          "origin": null,
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "after_url": {
+          "url": "https://www.circana.com/solutions/unify-plus",
+          "origin": "https://www.circana.com",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "event_sequence_start": 1,
+        "event_sequence_end": 0,
+        "artifacts": {
+          "screenshot": {
+            "state": "not_requested"
+          },
+          "dom": {
+            "state": "not_requested"
+          },
+          "accessibility": {
+            "state": "not_requested"
+          },
+          "url": {
+            "state": "not_requested"
+          },
+          "history": {
+            "state": "not_requested"
+          },
+          "storage": {
+            "state": "not_requested"
+          }
+        },
+        "completeness": {
+          "status": "complete",
+          "equality_eligible": true,
+          "missing_sections": [],
+          "truncated_sections": []
+        },
+        "status": "completed",
+        "error": null
+      },
+      {
+        "step_index": 1,
+        "step_id": "settle-public-page",
+        "action": "wait_for_timeout",
+        "elapsed_ms": 3049,
+        "before_url": {
+          "url": "https://www.circana.com/solutions/unify-plus",
+          "origin": "https://www.circana.com",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "after_url": {
+          "url": "https://www.circana.com/solutions/unify-plus",
+          "origin": "https://www.circana.com",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "event_sequence_start": 1,
+        "event_sequence_end": 0,
+        "artifacts": {
+          "screenshot": {
+            "state": "not_requested"
+          },
+          "dom": {
+            "state": "not_requested"
+          },
+          "accessibility": {
+            "state": "captured",
+            "value": {
+              "sha256": "7adccf769a5a1c576588a0e2a58df7708133cc97d7d3b5931de709a5dff2c7e8",
+              "bytes": 15591,
+              "text": "- document:\n  - region \"top of page\"\n  - group:\n    - banner:\n      - img \"Circana Navigation\"\n      - group:\n        - img \"Left Sidebar.jpg\"\n        - list:\n          - listitem:\n            - button \"Resources\"\n          - listitem:\n            - button \"Industries\"\n          - listitem:\n            - button \"Solutions\"\n          - listitem:\n            - button \"Company\"\n        - link \"Circana Logo\":\n          - /url: https://www.circana.com\n          - img \"Circana Logo\"\n        - textbox \"Search\"\n        - list \"Social Bar\":\n          - listitem:\n            - link \"LinkedIn\":\n              - /url: https://www.linkedin.com/company/wearecircana/\n              - img \"LinkedIn\"\n          - listitem:\n            - link \"Instagram\":\n              - /url: https://www.instagram.com/wearecircana\n              - img \"Instagram\"\n          - listitem:\n            - link \"Youtube\":\n              - /url: https://www.youtube.com/@WeAreCircana\n              - img \"Youtube\"\n        - link \"Contact Us\":\n          - /url: https://www.circana.com/company/contact-us\n        - button \"Login\"\n        - button \"Localization\"\n        - img \"Right Sidebar.jpg\"\n    - main:\n      - group:\n        - link \"Technology\":\n          - /url: https://www.circana.com/solution-areas/technology\n        - paragraph: Unify+\n      - group:\n        - group:\n          - img \"Unify+\"\n          - paragraph: Technology\n          - heading \"Unify+\" [level=1]\n          - paragraph: The Unify+ solution helps you visualize trends, work together, and build custom reports — all in one place. Your team can adjust data in real time and automate repetitive tasks to focus on the insights that matter.\n          - button \"Schedule a Demo\"\n        - group:\n          - group:\n            - list:\n              - listitem:\n                - paragraph: Fast Automated Insights for Smarter, Faster Decisions\n                - paragraph: Data alerts and performance narratives allow you to get to the insights and recommendations to drive business impact.\n              - listitem:\n                - paragraph: Custom, Craft Bespoke, Presentation-ready Views\n                - paragraph: Combine custom-built views with unmatched flexibility. Shape insights exactly how and where you need them. Whether you're crafting presentations or manipulating data, the Unify+ solution adapts to your business and accelerates decision-making.\n              - listitem:\n                - paragraph: Curiosity Seamlessly Transformed into Capability\n                - paragraph: Conversational and agentic AI embedded into the Unify+ solution allows teams to automate routine analysis, reduce the time to insight, and focus on high-value decision-making.\n      - group:\n        - paragraph: Join more than 7,000 clients and partners worldwide\n        - list:\n          - listitem\n          - listitem\n          - listitem\n          - listitem\n          - listitem\n      - group:\n        - group:\n          - heading \"Create Customized Reporting\" [level=2]\n          - list:\n            - listitem:\n              - heading \"Connect the Dots, Together\" [level=3]\n              - paragraph: The Unify+ solution makes it easy for you and your team to explore data, build clear visuals, and share what you find. Its simple, intuitive design helps you create and customize reports that fit your data practice, enabling personalized insights that reinforce a collective story.\n            - listitem:\n              - heading \"Answer Your Key Business Questions\" [level=3]\n              - paragraph: Your team can access the exact reports and updates they need for their specific roles, whether that means whipping up custom reports, building tailored storyboards, or staying in the loop.\n        - group:\n          - img \"Unify+ - abstract purple image\"\n      - group:\n        - img \"Innovation.jpg\"\n        - heading \"Get Complete Visibility on Your Brand’s Data\" [level=2]\n        - paragraph: Enhance your data with Circana’s proprietary data to spot what others miss. Your team can easily build, tweak, templatize, and share reports using simple tools that work the way you do. Plus, our hands-on training will help get everyone up to speed.\n        - button \"Schedule a Demo\"\n      - group\n      - group:\n        - group:\n          - heading \"How Top CPG, General Merchandise, and Retail Brands Use the Unify+ Solution\" [level=2]\n        - group:\n          - list:\n            - listitem:\n              - heading \"Assess Performance Relative to Competitors by Market\" [level=3]\n              - paragraph: Forget one-size-fits-all dashboards. You need fresh, flexible insights that shift as fast as the market. With the Unify+ solution, you can create tailored views that help your team fine-tune product strategy, adjust pricing, localize placement, and personalize promotions – all in one place.\n            - listitem:\n              - heading \"Track Performance Across Every Channel\" [level=3]\n              - paragraph: It’s tough to stay ahead when your data is scattered across channels. The Unify+ solution syncs everything in one place, giving you a clear, complete view of your business. That means fewer blind spots, faster decisions, and the confidence to act on risks and opportunities before your competitors do.\n            - listitem:\n              - heading \"Find and Reach Your Ideal Customers\" [level=3]\n              - paragraph: Combine your data with Circana’s advanced audience insights to pinpoint high-value consumers based on real purchase behavior, media habits, and predictive signals. Whether you’re launching a new product or optimizing a campaign, you’ll receive clear insights and recommended actions that help your team outpace the competition.\n            - listitem:\n              - heading \"Forecast Your Growth Against the Market\" [level=3]\n              - paragraph: The Unify+ solution gives your team intuitive dashboards and AI-powered insights to evaluate pricing and promotions, measure past product strategies, predict likely outcomes, and forecast future performance.\n            - listitem:\n              - heading \"Let AI Handle the Busywork\" [level=3]\n              - paragraph: In the Unify+ solution, AI automates routine tasks and complex, data crunching workflows. Your team spends less time figuring out what happened and more time deciding what to do next.\n      - group\n      - group\n      - group:\n        - group:\n          - img \"Unify+- Screen depicting login screen\"\n          - heading \"Leverage Our Unparalleled Technology to Drive Optimization\" [level=2]\n          - paragraph: See how Unify+ brings together Circana’s advanced analytics, cross‑industry data, and GenAI‑powered intelligence to help you make faster, smarter decisions. Schedule a demo to explore how the platform delivers automated insights, intuitive visualizations, and a unified view of performance—so your teams can move from data to action with confidence.\n          - iframe\n      - group\n      - group:\n        - group:\n          - heading \"Get The Most Out of Circana’s Data with Our Technology Solutions\" [level=5]\n          - list:\n            - listitem:\n              - link \"Liquid AI\":\n                - /url: https://www.circana.com/solutions/liquid-ai\n              - paragraph: Bring together top data, industry knowledge, and smart science to deliver fast, clear insights. Turn tasks that used to take weeks into minutes, making intelligence easy to access across your team with AI built just for your industry and data assets.\n              - link \"Liquid AI\":\n                - /url: https://www.circana.com/solutions/liquid-ai\n            - listitem:\n              - link \"Intelligence Suite\":\n                - /url: https://www.circana.com/solutions/intelligence-suite\n              - paragraph: Combine data integration, data science, and application development for limitless flexibility from a single location.\n              - link \"Intelligence Suite\":\n                - /url: https://www.circana.com/solutions/intelligence-suite\n            - listitem:\n              - link \"Liquid Data Engage\":\n                - /url: https://www.circana.com/solutions/liquid-data-engage\n              - paragraph: AI-powered insights, curated reports, and integrated data — all in one solution built for retailers to drive fast, confident decisions.\n              - link \"Liquid Data Engage\":\n                - /url: https://www.circana.com/solutions/liquid-data-engage\n            - listitem:\n              - link \"Liquid Data Collaborate\":\n                - /url: https://www.circana.com/solutions/liquid-data-collaborate\n              - paragraph: A unified analytics solution integrating over $4T ACV in loyalty, retail media, and supply chain data — powering 50+ global retail programs and delivering a single source of truth.\n              - link \"Liquid Data Collaborate\":\n                - /url: https://www.circana.com/solutions/liquid-data-collaborate\n            - listitem:\n              - link \"Liquid Data Go\":\n                - /url: https://www.circana.com/solutions/liquid-data-go\n              - paragraph: Turnkey insights solution that delivers affordable, actionable market, retailer, and consumer intelligence for emerging and mid-market CPG and general merchandise brands.\n              - link \"Liquid Data Go\":\n                - /url: https://www.circana.com/solutions/liquid-data-go\n        - group\n      - group\n      - group:\n        - heading \"Leverage Unparalleled Technology with Circana\" [level=2]\n        - heading \"Circana’s Liquid Data platform makes it easy to utilize cross-industry data and advanced analytics. Not only can our platform help organize your data, but it also makes it much easier to turn that data into clear answers to your business questions.\" [level=6]\n        - link \"Technology\":\n          - /url: https://www.circana.com/solution-areas/technology\n    - contentinfo:\n      - group:\n        - group:\n          - img \"Circana Logo\"\n          - paragraph: Complexity into Clarity.\n          - paragraph: Circana transforms complexity into clarity with the most complete view of the consumer, inspiring actions that unlock business growth.\n          - list \"Social Bar\":\n            - listitem:\n              - link \"LinkedIn\":\n                - /url: https://www.linkedin.com/company/wearecircana/\n            - listitem:\n              - link \"Instagram\":\n                - /url: https://www.instagram.com/wearecircana\n            - listitem:\n              - link \"Youtube\":\n                - /url: https://www.youtube.com/@WeAreCircana\n        - group:\n          - paragraph: Insights\n          - navigation \"Site\":\n            - list:\n              - listitem:\n                - link \"Industry Rankings\":\n                  - /url: https://www.circana.com/industry-index\n              - listitem:\n                - link \"Blog\":\n                  - /url: https://www.circana.com/news?type=Blog\n              - listitem:\n                - link \"Press Releases\":\n                  - /url: https://www.circana.com/news?type=press+releases\n              - listitem:\n                - link \"Podcasts\":\n                  - /url: https://www.circana.com/podcast\n              - listitem:\n                - link \"Media Coverage\":\n                  - /url: https://www.circana.com/news?type=media+coverage\n              - listitem:\n                - link \"Webinars\":\n                  - /url: https://www.circana.com/news?type=webinars\n              - listitem:\n                - link \"Entertainment Monthly Insights\":\n                  - /url: https://www.circana.com/news?type=entertainment+monthly+insights\n              - listitem:\n                - link \"Product Training\":\n                  - /url: https://www.circana.com/news/product-training\n              - listitem:\n                - link \"Analyst Reports\":\n                  - /url: https://www.circana.com/news/analyst-reports\n        - group:\n          - paragraph: Solutions\n          - link \"Solution Selector\":\n            - /url: https://www.circana.com/solutions-selector\n          - navigation \"Site\":\n            - list:\n              - listitem:\n                - link \"Measure Demand\":\n                  - /url: https://www.circana.com/solutions?tab=measure%20demand\n              - listitem:\n                - link \"Accelerate Demand\":\n                  - /url: https://www.circana.com/solutions?tab=accelerate%20demand\n        - group:\n          - paragraph: Who we are\n          - navigation \"Site\":\n            - list:\n              - listitem:\n                - link \"Our Behaviors\":\n                  - /url: https://www.circana.com/company/circana-behaviors\n              - listitem:\n                - link \"Culture of Inclusion and Belonging\":\n                  - /url: https://www.circana.com/company/culture-of-inclusion-and-belonging\n              - listitem:\n                - link \"Philanthropy\":\n                  - /url: https://www.circana.com/company/philanthropy\n              - listitem:\n                - link \"Company\":\n                  - /url: https://www.circana.com/company\n              - listitem:\n                - link \"Offices\":\n                  - /url: https://www.circana.com/company/offices\n        - group:\n          - paragraph: Careers at Circana\n          - navigation \"Site\":\n            - list:\n              - listitem:\n                - link \"Circana Careers\":\n                  - /url: https://www.circana.com/company/careers\n              - listitem:\n                - link \"Job Openings\":\n                  - /url: https://jobs.circana.com/careers?filter_department=-Scanscape+Field\n              - listitem:\n                - button \"Recruitment Fraud Alert\"\n    - contentinfo:\n      - paragraph: © 2026 Circana\n      - paragraph: \"|\"\n      - paragraph:\n        - link \"Terms of Use\":\n          - /url: https://www.circana.com/terms-and-conditions\n      - paragraph: \"|\"\n      - paragraph:\n        - link \"Privacy Notices\":\n          - /url: https://www.circana.com/the-circana-group-global-privacy-policy-and-notice\n      - paragraph: \"|\"\n      - paragraph:\n        - link \"Modern Slavery Statement\":\n          - /url: https://www.circana.com/_files/ugd/ad0f45_004149eac3b04d61b7512da165c9eec8.pdf\n      - paragraph: \"|\"\n      - paragraph: \"|\"\n      - button \"Privacy Settings\"\n      - paragraph: \"|\"\n      - link \"Data Privacy Framework\":\n        - /url: https://www.circana.com/_files/ugd/51a29a_4073dc99aca045c09bc2ffd878639b21.pdf\n      - link:\n        - /url: https://privacyportal.onetrust.com/webform/95580356-b46a-4234-8f47-d824de4dbbc6/2de05774-2e3d-45b0-a7c2-45bb6ba50ab1\n      - paragraph:\n        - link \"Your Privacy Choices\":\n          - /url: https://privacyportal.onetrust.com/webform/95580356-b46a-4234-8f47-d824de4dbbc6/3aabe289-acb0-490c-98ff-401c081d5000\n  - region \"bottom of page\"\n  - dialog \"Privacy\":\n    - text: Circana, LLC uses cookies, pixels and similar technologies (collectively “cookies”), including third-party cookies, on this service to provide certain features, personalize your experience, perform analytics, improve our services, and serve you with online advertising. You can change your preferences at any time through our Privacy Settings. For more information, see our\n    - link \"Privacy Notice\":\n      - /url: https://www.circana.com/the-circana-group-global-privacy-policy-and-notice\n    - text: .\n    - button \"Privacy Settings, Opens the preference center dialog\": Privacy Settings\n    - button \"Reject Non-Essential\"\n    - button \"Accept All\""
+            }
+          },
+          "url": {
+            "state": "captured",
+            "value": {
+              "url": "https://www.circana.com/solutions/unify-plus",
+              "origin": "https://www.circana.com",
+              "query_parameter_names": [],
+              "redacted": false
+            }
+          },
+          "history": {
+            "state": "not_requested"
+          },
+          "storage": {
+            "state": "not_requested"
+          }
+        },
+        "completeness": {
+          "status": "complete",
+          "equality_eligible": true,
+          "missing_sections": [],
+          "truncated_sections": []
+        },
+        "status": "completed",
+        "error": null
+      }
+    ],
+    "events": {
+      "retained": 0,
+      "dropped": 0,
+      "items": []
+    },
+    "completeness": {
+      "status": "complete",
+      "equality_eligible": true,
+      "missing_sections": [],
+      "truncated_sections": []
+    },
+    "limitations": [
+      "Event sequence records provider receipt order; simultaneous browser causality is not inferred.",
+      "Network content is retained only when selected; Playwright response-body bytes are API results and are not guaranteed to match wire bytes.",
+      "Request bytes are limited to what Playwright exposes; not_exposed does not establish body absence or multipart file coverage.",
+      "Network content reads settle within 5 seconds each and the observer does not request bodies from unfinished responses.",
+      "Playwright scenario events do not expose request initiator stacks; receipt order does not prove causality.",
+      "Storage values are hashed only after declared-secret redaction."
+    ]
+  },
+  "confidence": "observed",
+  "authority": "controlled-replay",
+  "environment": {
+    "id": "Chromium@155.0.8059.85",
+    "platform": "unknown",
+    "architecture": "unknown",
+    "isolation": "process"
+  },
+  "limitations": [
+    "Artifact identity is unavailable for this observation.",
+    "Event sequence records provider receipt order; simultaneous browser causality is not inferred.",
+    "Network content is retained only when selected; Playwright response-body bytes are API results and are not guaranteed to match wire bytes.",
+    "Request bytes are limited to what Playwright exposes; not_exposed does not establish body absence or multipart file coverage.",
+    "Network content reads settle within 5 seconds each and the observer does not request bodies from unfinished responses.",
+    "Playwright scenario events do not expose request initiator stacks; receipt order does not prove causality.",
+    "Storage values are hashed only after declared-secret redaction.",
+    "Browser host platform and architecture were not observed."
+  ],
+  "relationship_coverage": null,
+  "locations": [],
+  "evidence_links": []
+}

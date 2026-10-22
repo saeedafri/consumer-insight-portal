@@ -1,0 +1,848 @@
+{
+  "accessed_on": "2026-10-21",
+  "scope": "Exact previously selected official URLs; no expanded market search. Captures are retrieval evidence, not paid-product tests.",
+  "hash_definition": "SHA256 of retrieved Jina Markdown, web.open text or REA artifact as indicated; not a hash of origin HTML. Full temporary response paths may expire.",
+  "records": [
+    {
+      "id": "C01",
+      "url": "https://www.circana.com/solutions/unify-plus",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_rendered_page_captured_via_REA",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Cross-industry data, custom reporting, collaboration, alerts, conversational and agentic AI.",
+      "attempts": [
+        {
+          "backend": "REA",
+          "artifact": "evidence/circana-public-page.json",
+          "artifact_sha256": "4e396e38f029d95e831b2d811bea35659f4ce6c1bac9c52682cb988c86bd055c",
+          "source": "primary REA workstream"
+        }
+      ],
+      "limits": "Public Unify+ product page captured via REA. Separate Analysis Builder announcement initially timed out in web.open but its body was later recovered via Jina Reader; see S01."
+    },
+    {
+      "id": "C02",
+      "url": "https://nielseniq.com/global/en/products/discover/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Integrated retail and consumer intelligence in an AI-supported platform.",
+      "attempts": [
+        {
+          "id": "C02",
+          "url": "https://nielseniq.com/global/en/products/discover/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 36188,
+          "sha256": "f584b5e338a7d15c6f83ab43c138295f7b63a7cf8cb87edd1c9affb47950ab5b",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "9dd88b2a298499b1e9b89ca82eeb981659e077c3c36ae7383c94824a86cf8f5c",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "retrieval_batch_0",
+          "content_lines": 109
+        }
+      ],
+      "limits": "No customer tenant or exact module entitlements inspected."
+    },
+    {
+      "id": "C03",
+      "url": "https://www.numerator.com/solutions/insights/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Daily shopper data, longitudinal segmentation, competitive benchmarking and basket analysis.",
+      "attempts": [
+        {
+          "id": "C03",
+          "url": "https://www.numerator.com/solutions/insights/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 30700,
+          "sha256": "da3d40690bd96a5cf6c915541dbf76d426ea7a4fdb2a73bcfee2d86a6f17e9c3",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "6117fd5eb2c495a4c84b3b0bf6589e9603ada2bbd8abd0ad933e3152aa57e0ef",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "retrieval_batch_0",
+          "content_lines": 56
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "b29b16c732053b51c11de9aa3dfaf24780212065946d02836a38950f418ce753",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "body_upgrade",
+          "content_lines": 161
+        }
+      ],
+      "limits": "Public advertised capabilities; panel scale claims not independently audited."
+    },
+    {
+      "id": "C04",
+      "url": "https://www.gwi.com/platform",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Shared audiences, crosstabs, dashboards, API, survey-grounded AI and Canvas slides.",
+      "attempts": [
+        {
+          "id": "C04",
+          "url": "https://www.gwi.com/platform",
+          "backend": "agent-reach web via Jina Reader",
+          "accessed_on": "2026-10-21",
+          "bytes": 31775,
+          "sha256": "814ce69fb4eb665d300680309dcf82dacd7d4cbb9124440a1617660f7c93e245",
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Module, market and audience-base availability varies; no tenant test."
+    },
+    {
+      "id": "C05",
+      "url": "https://yougov.com/business/products/profiles",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Weekly updates, group comparisons, z-scores, recontact, activation, API and MCP.",
+      "attempts": [
+        {
+          "id": "C05",
+          "url": "https://yougov.com/business/products/profiles",
+          "backend": "agent-reach web via Jina Reader",
+          "accessed_on": "2026-10-21",
+          "bytes": 32095,
+          "sha256": "721e53aa1c6b345a8b4b9f2358f4511e05ad985d373cd0abc456c4db0ce61ea3",
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Updated canonical page supersedes stale search snippet counts; no private panel inspection."
+    },
+    {
+      "id": "C06",
+      "url": "https://www.statista.com/consumer-insights/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Saved audiences, crosstabs, brand benchmarking, Consumer AI, API/MCP and deck export.",
+      "attempts": [
+        {
+          "id": "C06",
+          "url": "https://www.statista.com/consumer-insights/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 18003,
+          "sha256": "58fcabdf5809cb1c2e598a47ed057f671d729f30d68c88907d155d0c3bdfc72a",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "web.open returned403; Jina subsequently retrieved substantive official page body."
+    },
+    {
+      "id": "C07",
+      "url": "https://pro.morningconsult.com/our-products",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "High-frequency survey-backed consumer, brand, economic and political intelligence plus AI.",
+      "attempts": [
+        {
+          "id": "C07",
+          "url": "https://pro.morningconsult.com/our-products",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 2623,
+          "sha256": "39f2554f475e72e3540213f84333a7e45f81faf170494a48c0be270dcb207966",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Initial web.open redirected to inaccessible intel host; Jina later retrieved substantive official product page body."
+    },
+    {
+      "id": "C08",
+      "url": "https://www.mrisimmons.com/platform/catalyst-platform/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Shared audience definitions, boards, interactive reports, geo mapping and media activation.",
+      "attempts": [
+        {
+          "id": "C08",
+          "url": "https://www.mrisimmons.com/platform/catalyst-platform/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 13023,
+          "sha256": "4845c11b02b336e73a9b9190c94d87c6b097eb4240de1bcac2319060fed8ead1",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "8ef088de72f0f5be27f65ae33d760957442b62275f2ff7335f7f7ec50bb07b94",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "retrieval_batch_3",
+          "content_lines": 120
+        }
+      ],
+      "limits": "No licensed tenant; geographic precision and activation terms untested."
+    },
+    {
+      "id": "C09",
+      "url": "https://www.mintel.com/products/leap-market-intelligence-ai/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_alternate_announcement_body_opened; primary_product_page_unavailable",
+      "full_primary_page_body_retrieved": false,
+      "short_paraphrase": "AI research answers grounded in proprietary market data and human analysis.",
+      "attempts": [
+        {
+          "id": "C09",
+          "url": "https://www.mintel.com/products/leap-market-intelligence-ai/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 305,
+          "sha256": "e44438040cd65ca99949fc80806209cb1c0ea5ac7c67aa73dbf3bbd1671abef8",
+          "error_flags": [
+            "Target URL returned error"
+          ],
+          "result": "blocked_or_incomplete"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "51a13e6ecb45952f94ad440eebf205ad61752dfb9df7162086d3e0e0a0aa48a7",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "retry_open_0",
+          "content_lines": 104
+        }
+      ],
+      "limits": "Primary product page timed out in web.open and returned maintenance503 via Jina. Official 9 January 2024 announcement body opened successfully through web.open; this corroborates launch and grounding, not independent validation of every current feature."
+    },
+    {
+      "id": "C10",
+      "url": "https://www.euromonitor.com/solutions/passport?mid=PF",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Comparable global statistics, forecasts, expert reports, dashboards, API and Passport AI.",
+      "attempts": [
+        {
+          "id": "C10",
+          "url": "https://www.euromonitor.com/solutions/passport?mid=PF",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 52385,
+          "sha256": "0d8ba8673dc398a939e64be0e714dcc4dfc9c3021b742c6e113d92462b45c325",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "web.open returned403; Jina subsequently retrieved substantive official page body."
+    },
+    {
+      "id": "C11",
+      "url": "https://www.kantar.com/marketplace/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Self-service ad, concept, package, price and brand tests with expert support.",
+      "attempts": [
+        {
+          "id": "C11",
+          "url": "https://www.kantar.com/marketplace/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 81877,
+          "sha256": "107eb003be6bd2846d25339ebf3404ebcbe6dc689e31cfc3fb0496c42d19947a",
+          "error_flags": [
+            "captcha"
+          ],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Sales prediction and uniqueness claims unvalidated here; avoid copying as fact."
+    },
+    {
+      "id": "C12",
+      "url": "https://www.ipsos.com/en-ca/fastfacts",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_opened_via_web",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "DIY survey setup, targeting, logic, dashboards and PPT/PDF/Excel/SPSS outputs.",
+      "attempts": [
+        {
+          "id": "C12",
+          "url": "https://www.ipsos.com/en-ca/fastfacts",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 1939,
+          "sha256": "f6f9d1b12dac7002f538998d9c63d927cf6eab524693c15e4031d8d382000513",
+          "error_flags": [
+            "Target URL returned error"
+          ],
+          "result": "blocked_or_incomplete"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "3315ad98d560b5f2685eaf66b1db965314e904b309cca5fd03263d02eaca2969",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "retry_open_0",
+          "content_lines": 33
+        }
+      ],
+      "limits": "Jina returned target error or rate limit; web.open subsequently retrieved relevant official body content."
+    },
+    {
+      "id": "C13",
+      "url": "https://www.displayr.com/market-research/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Survey-aware weights, significance, advanced methods, live dashboards and refreshed PowerPoint reporting.",
+      "attempts": [
+        {
+          "id": "C13",
+          "url": "https://www.displayr.com/market-research/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 19638,
+          "sha256": "d9484912f7542b1d021e7fc64255b05cffa4f7bf528b8231c04b3af163f0ea46",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "c24df99f4d9f3bfd12275ef87955ed5d4a77c2568f57178aad1f469947cb2ddc",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "retrieval_batch_6",
+          "content_lines": 44
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "03eccb08132d35b5c652dced02062f5d9ed4e8f47797330004eafdc07d59e037",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "body_upgrade",
+          "content_lines": 113
+        }
+      ],
+      "limits": "Advertised automation and AI need tenant validation; absence of weighting locally is a policy choice."
+    },
+    {
+      "id": "C14",
+      "url": "https://www.qualtrics.com/en-gb/market-research/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Market, innovation, UX and brand research with connected studies and agentic workflows.",
+      "attempts": [
+        {
+          "id": "C14",
+          "url": "https://www.qualtrics.com/en-gb/market-research/",
+          "backend": "agent-reach web via Jina Reader",
+          "accessed_on": "2026-10-21",
+          "bytes": 9131,
+          "sha256": "7d959fc6ff1e622469dfe98bd705e513b6423a053d7db77f127308ce89c05d4b",
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Synthetic reliability claims not independent validation; licenses and configuration differ."
+    },
+    {
+      "id": "C15",
+      "url": "https://www.forsta.com/resources/data-sheets/reporting/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Crosstabs, stat testing, weighting, templates, batch decks, mixed data and access controls.",
+      "attempts": [
+        {
+          "id": "C15",
+          "url": "https://www.forsta.com/resources/data-sheets/reporting/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 40784,
+          "sha256": "0b3750c8f41743ef18340b09456ef4b5424eedf3276554f27eec70eca09106ab",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "0c6bb7a016ae210bbfcf3fede8ebfa86c9fe08624ce038fadbea611586ba3247",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "retrieval_batch_6",
+          "content_lines": 148
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "81151f63ba1ea708845467cc8d8a4d9c03e714d12f6374d4467beded73bfeb23",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "body_upgrade",
+          "content_lines": 246
+        }
+      ],
+      "limits": "Older official datasheet corroborated by newer official product page; module continuity untested."
+    },
+    {
+      "id": "C16",
+      "url": "https://help.crunch.io/hc/en-us/articles/360040477891-Getting-Started-with-Dataset-Preparation-in-Crunch",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Survey structures, weights, reusable filters, multitables and client dashboards.",
+      "attempts": [
+        {
+          "id": "C16",
+          "url": "https://help.crunch.io/hc/en-us/articles/360040477891-Getting-Started-with-Dataset-Preparation-in-Crunch",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 15225,
+          "sha256": "4026e3dc2588715ae087147279dc1677b832edb71846b173c7db87ee8dd5f173",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "b7934faa626be682478a399fed0abfb73a8ca29f2749e7831f3a63a4c5ea6535",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "retrieval_batch_6",
+          "content_lines": 36
+        }
+      ],
+      "limits": "Help documentation proves supported design, not benchmarked production performance."
+    },
+    {
+      "id": "C17",
+      "url": "https://www.askattest.com/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Surveys and interviews, research copilot, Results API, MCP and human quality review.",
+      "attempts": [
+        {
+          "id": "C17",
+          "url": "https://www.askattest.com/",
+          "backend": "agent-reach web via Jina Reader",
+          "accessed_on": "2026-10-21",
+          "bytes": 25315,
+          "sha256": "8b314e7e38646b881ab225caf04a1a507ea9b7a5b0c39f4156b79a08c742a921",
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Panel reach is respondent access, not per-study sample size; synthetic claims not presumed."
+    },
+    {
+      "id": "C18",
+      "url": "https://www.gotracksuit.com/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_opened_via_web",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Always-on brand tracking with funnel measures and competitor comparisons.",
+      "attempts": [
+        {
+          "id": "C18",
+          "url": "https://www.gotracksuit.com/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 321,
+          "sha256": "dc29c659a82d5ca37e3638a4b31cfa41a14d52570c0f5177b309fd8a48c54b9b",
+          "error_flags": [
+            "Target URL returned error"
+          ],
+          "result": "blocked_or_incomplete"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "3e8d66a3cb5b076dfa28259f51939c0f1707a21de750aadd976de3e359aee207",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "retry_open_0",
+          "content_lines": 189
+        }
+      ],
+      "limits": "Jina returned target error or rate limit; web.open subsequently retrieved relevant official body content."
+    },
+    {
+      "id": "C19",
+      "url": "https://aytm.com/platform/platform-overview",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Audience sampling, survey authoring, live reports, crosstabs, significance and export.",
+      "attempts": [
+        {
+          "id": "C19",
+          "url": "https://aytm.com/platform/platform-overview",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 21639,
+          "sha256": "078834a4a34d78990cf1c4e78d1dc79866e6ed88ec2d439c0b07bb0c1cf228df",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Global access counts are not one uniform proprietary sample; no tenant execution."
+    },
+    {
+      "id": "C20",
+      "url": "https://help.surveymonkey.com/en/surveymonkey/solutions/surveymonkey-audience/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Survey creation, audience purchasing, incoming results and methodology templates.",
+      "attempts": [
+        {
+          "id": "C20",
+          "url": "https://help.surveymonkey.com/en/surveymonkey/solutions/surveymonkey-audience/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 7686,
+          "sha256": "e24486fa38fd30cb78e6e1fd2604a5b2c7b685c2c17ab9fc6a1cdbf7d46a840a",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Sample balancing, targeting and regional availability require provider confirmation; older indexed wording is not assumed to describe every current plan."
+    },
+    {
+      "id": "C21",
+      "url": "https://www.brandwatch.com/products/consumer-research/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Online conversation archive, AI summaries, custom classifiers, first-party uploads and alerts.",
+      "attempts": [
+        {
+          "id": "C21",
+          "url": "https://www.brandwatch.com/products/consumer-research/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 23999,
+          "sha256": "228e1176bcc885fac71089f29677111b2f29ba956495ba03db83fe4032aa89eb",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Archive/source volume are vendor claims; platform access depends on licensed sources."
+    },
+    {
+      "id": "C22",
+      "url": "https://www.placer.ai/solutions/cpg",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Trade areas, audience journeys, store clustering, daily refresh and aggregate API.",
+      "attempts": [
+        {
+          "id": "C22",
+          "url": "https://www.placer.ai/solutions/cpg",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 35312,
+          "sha256": "a4715206d788abe613f25c3111d384e92d0c6c775357071075f6d64536890f6c",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Location estimates and projections must not be presented as census counts or sales."
+    },
+    {
+      "id": "C23",
+      "url": "https://www.dynata.com/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Profiled sample access, survey programming, connected data, dashboards, activation and brand lift.",
+      "attempts": [
+        {
+          "id": "C23",
+          "url": "https://www.dynata.com/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 26117,
+          "sha256": "b8825523efa07d869b0d85eca7f395bbe98cc1fedb3785f92918e539952f09f8",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Avoid independent-vendor double counting of products; panel reach and marketing superlatives unverified."
+    },
+    {
+      "id": "S01",
+      "url": "https://www.circana.com/post/circana-enhances-unify-with-ai-powered-analysis-builder-for-faster-more-intuitive-reporting",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Presentation-ready charts, written summaries and PowerPoint/Excel/PDF export announced; exported chart editability not verified.",
+      "attempts": [
+        {
+          "id": "S01",
+          "url": "https://www.circana.com/post/circana-enhances-unify-with-ai-powered-analysis-builder-for-faster-more-intuitive-reporting",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 52344,
+          "sha256": "9dd1c75f21b292fd96ff5bb5a69939b23393ab5861a68038a9ea8bc3da14fd6a",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": "Initial web.open returned navigation; subsequent web requests timed out. Exact article body was later recovered through Jina Reader and checked for date, Analysis Builder and exports. Exported chart editability remains unverified."
+    },
+    {
+      "id": "S02",
+      "url": "https://nielseniq.com/global/en/news-center/2024/nielseniq-niq-unleashes-the-power-of-a-connected-user-experience-with-consumer-panel-and-retail-measurement-data-integrated-on-the-niq-discover-platform/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Connected retail and panel analysis with guided flows, advanced models and AI assistance. Article body gives July 10, 2024; displayed header July 9.",
+      "attempts": [
+        {
+          "id": "S02",
+          "url": "https://nielseniq.com/global/en/news-center/2024/nielseniq-niq-unleashes-the-power-of-a-connected-user-experience-with-consumer-panel-and-retail-measurement-data-integrated-on-the-niq-discover-platform/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 41983,
+          "sha256": "884e2d03229dcecfce8a2805425456890958bf883e491ecab7ea533ca13aa650",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": null
+    },
+    {
+      "id": "S03",
+      "url": "https://help.numerator.com/en/articles/11878350-all-about-insights",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_search_index_excerpt_only; direct_help_page_401",
+      "full_primary_page_body_retrieved": false,
+      "short_paraphrase": "Receipt-verified omnichannel panel; profiles and longitudinal purchase history; complements POS.",
+      "attempts": [
+        {
+          "id": "S03",
+          "url": "https://help.numerator.com/en/articles/11878350-all-about-insights",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 439,
+          "sha256": "c7c3e1bcf7fb79940376eb7634e2e69f069b2f27c1dcd2abcf5a2547888df248",
+          "error_flags": [
+            "Target URL returned error"
+          ],
+          "result": "blocked_or_incomplete"
+        }
+      ],
+      "limits": "web.open and Jina both returned401; official search-index excerpt retained. Primary Numerator product page C03 was fully retrieved."
+    },
+    {
+      "id": "S04",
+      "url": "https://www.gwi.com/platform/spark",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Plain-language analysis of GWI survey evidence within GWI and external AI workflows.",
+      "attempts": [
+        {
+          "id": "S04",
+          "url": "https://www.gwi.com/platform/spark",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 31295,
+          "sha256": "51fcae619a264956d760051bf56f43fcd0916666ec6976786bb151e355cd4ea7",
+          "error_flags": [
+            "captcha"
+          ],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": null
+    },
+    {
+      "id": "S05",
+      "url": "https://www.statista.com/getting-started/consumer-insights-survey-modules",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Separate survey modules with distinct purpose and cadence; not one uniform dataset.",
+      "attempts": [
+        {
+          "id": "S05",
+          "url": "https://www.statista.com/getting-started/consumer-insights-survey-modules",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 19789,
+          "sha256": "d3654d9b64380c5d1d4ba4572f5771bc205bf6e4849d4ccac5de4556e9e2de71",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": null
+    },
+    {
+      "id": "S06",
+      "url": "https://www.statista.com/getting-started/consumer-insights-charts",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Question-level source data and visible country, wave and target group underpin AI answers.",
+      "attempts": [
+        {
+          "id": "S06",
+          "url": "https://www.statista.com/getting-started/consumer-insights-charts",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 45038,
+          "sha256": "7ec068e6c46e070becf1531e6de32f5675a925e591522b4ce388c946ca53efa7",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": null
+    },
+    {
+      "id": "S07",
+      "url": "https://www.forsta.com/platform/market-research/data-visualization/",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_opened_via_web",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Current official product page corroborates dashboards, crosstabs, Research Agent and survey-platform connections.",
+      "attempts": [
+        {
+          "id": "S07",
+          "url": "https://www.forsta.com/platform/market-research/data-visualization/",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "error": "HTTP Error 429: Too Many Requests",
+          "result": "blocked_or_incomplete"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "e33d756262c53a17c6e1b70814482b709bbcfce7684eae34f1e72ee68fa52511",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/forsta-current-web.txt",
+          "body_confirmed": true
+        }
+      ],
+      "limits": "Jina returned target error or rate limit; web.open subsequently retrieved relevant official body content."
+    },
+    {
+      "id": "S08",
+      "url": "https://help.gotracksuit.com/en/articles/15066382-tracksuit-api-data-dictionary-metrics-fields",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_retrieved_via_Jina_Reader",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Named funnel definitions expose conditional bases; usage is claimed usage, not sales.",
+      "attempts": [
+        {
+          "id": "S08",
+          "url": "https://help.gotracksuit.com/en/articles/15066382-tracksuit-api-data-dictionary-metrics-fields",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "http_status": 200,
+          "bytes": 10963,
+          "sha256": "6dd94ab95d65d9e0d1854a117a514190c6acd37ab46d16d61fe4ecc978822981",
+          "error_flags": [],
+          "result": "substantive_official_page_content"
+        }
+      ],
+      "limits": null
+    },
+    {
+      "id": "S09",
+      "url": "https://help.gotracksuit.com/en/articles/15533177-a-marketer-s-guide-to-the-tracksuit-api",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_opened_via_web",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Read-only REST API serves brand health, demographics and competitor data.",
+      "attempts": [
+        {
+          "id": "S09",
+          "url": "https://help.gotracksuit.com/en/articles/15533177-a-marketer-s-guide-to-the-tracksuit-api",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "error": "HTTP Error 429: Too Many Requests",
+          "result": "blocked_or_incomplete"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "f8b285d918893a3398ad7114dee4d099e5f62093ed2b178a04d2caf94e429bb4",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "retry_open_3",
+          "content_lines": 128
+        }
+      ],
+      "limits": "Jina returned target error or rate limit; web.open subsequently retrieved relevant official body content."
+    },
+    {
+      "id": "S10",
+      "url": "https://help.askattest.com/en/articles/3648246-how-to-find-the-insights-in-your-survey-results",
+      "accessed_on": "2026-10-21",
+      "final_verification": "official_page_body_opened_via_web",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Research goals guide AI summaries, dashboard filters and group comparisons.",
+      "attempts": [
+        {
+          "id": "S10",
+          "url": "https://help.askattest.com/en/articles/3648246-how-to-find-the-insights-in-your-survey-results",
+          "accessed_on": "2026-10-21",
+          "backend": "agent-reach web via Jina Reader",
+          "error": "HTTP Error 429: Too Many Requests",
+          "result": "blocked_or_incomplete"
+        },
+        {
+          "backend": "web.open",
+          "capture_sha256": "f0d27c5878779f3b95c1bf90f592c135f08f99b5aa402d89c1a8dba3ad2a5941",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "batch_key": "retry_open_6",
+          "content_lines": 51
+        }
+      ],
+      "limits": "Jina returned target error or rate limit; web.open subsequently retrieved relevant official body content."
+    },
+    {
+      "id": "S11",
+      "url": "https://www.mintel.com/press-centre/announcing-mintel-leap-the-new-market-intelligence-ai-helping-brands-answer-strategic-questions-instantly/",
+      "accessed_on": "2026-10-21",
+      "published_on": "2024-01-09",
+      "final_verification": "official_announcement_body_opened_via_web",
+      "full_primary_page_body_retrieved": true,
+      "short_paraphrase": "Mintel Leap launch and grounding in proprietary research and analyst content.",
+      "attempts": [
+        {
+          "backend": "web.open",
+          "capture_sha256": "d977b76b3ca3a4546a68f70be6fed83024a24c02a117d2ba6b5de2eef4907e99",
+          "capture_file_temporary": "/tmp/cip-competitor-retrieval/web-captures.json",
+          "matching_record_paths": [
+            "retry_open_0"
+          ]
+        }
+      ],
+      "limits": "Alternate corroboration for unavailable C09 product page; launch accuracy claims remain vendor promises."
+    }
+  ],
+  "date_check": "No explicitly dated feature announcement after2026-10-21 used. Forsta datasheet publisher date2021-12-17; Mintel alternate2024-01-09. Undated pages not assigned release dates."
+}

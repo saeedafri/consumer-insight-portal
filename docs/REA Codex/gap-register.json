@@ -1,0 +1,284 @@
+{
+  "date": "2026-10-21",
+  "findings": [
+    {
+      "id": "G01",
+      "priority_class": "P0 source",
+      "finding": "Dashboard product policy differs from generic APIs and static files; restricted users could receive content outside intended product scope",
+      "evidence": "B01, FE01",
+      "owner_closure": "Security/API: define survey/product/org rules and prove identical allow/deny across API, static, search, caches and links",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G02",
+      "priority_class": "P0 source/unknown integration",
+      "finding": "React/API production OIDC issuer/session revocation bridge not established; 401 points to local-only dev login",
+      "evidence": "B02, FE14",
+      "owner_closure": "Identity/API: verify production login, return URL, expiry, logout, revocation and entitlement refresh",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G03",
+      "priority_class": "P0 runtime",
+      "finding": "Running Trends reached error page; Compare returned404 despite source route",
+      "evidence": "REA journey ev_61f8c3a5d16688522572d471889ec4cab23da6b776b7608ab88a02c2cfa05874",
+      "owner_closure": "Release owner: version-match frontend/backend/data contract, expose build IDs, reproduce and pass representative journeys",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G04",
+      "priority_class": "P1 statistics",
+      "finding": "Independent z-tests compare overlapping Total/subgroups and cross-dimension banners",
+      "evidence": "FE02, B04",
+      "owner_closure": "Research statistician/frontend: disjoint comparison groups or validated overlap-aware method",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G05",
+      "priority_class": "P1 disclosure",
+      "finding": "Small cells suppressed in some UI paths while ordinary API/book rows retain figures",
+      "evidence": "B05",
+      "owner_closure": "Research/privacy/API: decide caution vs privacy policy; serialize consistently; test differencing if privacy intended",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G06",
+      "priority_class": "P1 provenance",
+      "finding": "Source text hardcodes US adult population even though country is a data property",
+      "evidence": "FE03",
+      "owner_closure": "Research/data/frontend: dataset-specific population, field dates, supplier, weighting and limitations",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G07",
+      "priority_class": "P1 export",
+      "finding": "Grid CSV uses first-group bases; comparison labels may say last week for nonweekly intervals",
+      "evidence": "FE08",
+      "owner_closure": "Frontend/research: group-specific bases and actual comparison dates; independent screen/export parity",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G08",
+      "priority_class": "P1 reliability",
+      "finding": "Incremental publish can retain dropped-question trends",
+      "evidence": "B06",
+      "owner_closure": "Data platform: invalidate previous/current dependency union; full/incremental equivalence fixture",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G09",
+      "priority_class": "P1 reliability",
+      "finding": "Publish gate checks picker/books only; source release across build not version-pinned",
+      "evidence": "B07",
+      "owner_closure": "Data platform: artifact inventory, semantic contracts, hashes and stable source release",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G10",
+      "priority_class": "P1 assurance",
+      "finding": "Count verification described too broadly; unavailable source reconciliation can exit success with zero checked",
+      "evidence": "B08",
+      "owner_closure": "ETL/research: distinct completeness states, expected/checked cells, mismatch and unavailable fail gates",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G11",
+      "priority_class": "P1 provisioning",
+      "finding": "Checked-in grant plan does not cover current serving table family",
+      "evidence": "B11",
+      "owner_closure": "Platform/DBA: fresh least-privilege install and effective-grants verification",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G12",
+      "priority_class": "P1 release evidence",
+      "finding": "PRODUCT counts and historic documents conflict with current runtime; dirty tree cannot identify deployed release",
+      "evidence": "PRODUCT.md, README.md, runtime capture",
+      "owner_closure": "Release/docs: generated inventory with build, schema, source and metric-definition revision",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G13",
+      "priority_class": "P2 methodological capability",
+      "finding": "Weight schema exists but no calibrated weighted serving; basic MOE/testing cannot represent complex designs",
+      "evidence": "B03\u2013B04",
+      "owner_closure": "Research: approve population/targets, weights/trim, effective n and design effects before implementation",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G14",
+      "priority_class": "P2 reproducibility",
+      "finding": "Cohort definitions versioned but old materialized memberships/cells removed; saved analysis tracks current data",
+      "evidence": "B09",
+      "owner_closure": "Data/research: explicit live vs frozen mode, pinned dataset/mapping/cohort/weight revisions",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G15",
+      "priority_class": "P1 correctness",
+      "finding": "Cohort refresh count+sum signature can miss changed membership",
+      "evidence": "B10",
+      "owner_closure": "Data platform: exact membership change detection and collision fixture",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G16",
+      "priority_class": "P2 workflow",
+      "finding": "React lacks durable user-created workspaces, team comments, governed reports and reusable analysis state",
+      "evidence": "FE06, C01/C04/C13/C16",
+      "owner_closure": "Product/full stack: saved analysis spec, permissions, versions, frozen/live distinction",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G17",
+      "priority_class": "P2 workflow",
+      "finding": "React lacks native XLSX/PPT reporting; legacy XLSX and current CSV/PNG/print cover narrower needs",
+      "evidence": "FE07, C01/C04/C13",
+      "owner_closure": "Product/export: reproducible branded report job, exact denominators, citations and retry/cancel",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G18",
+      "priority_class": "P2 workflow",
+      "finding": "No buyer-owned metric alert subscription; ETL alerts are operational",
+      "evidence": "FE13, C01/C07/C18",
+      "owner_closure": "Product/jobs/research: sufficient n, effect threshold, corrected tests, comparable versions, delivery preferences",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G19",
+      "priority_class": "P2 audiences",
+      "finding": "Behavioral cohorts exist internally but client audience builder is fixed demographic/two-cut",
+      "evidence": "FE11, C04/C05/C08/C16",
+      "owner_closure": "Product/data: reusable typed boolean audience expressions, asked/answered rules and correct deduped bases",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G20",
+      "priority_class": "P2 resilience",
+      "finding": "Malformed/stale URL params and empty catalogue assumptions can crash views",
+      "evidence": "FE09/FE15",
+      "owner_closure": "Frontend: schema-valid query state, missing wave/range/group handling and meaningful empty states",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G21",
+      "priority_class": "P2 accessibility",
+      "finding": "Keyboard/touch parity for tooltip, chart and drawer interactions incomplete in inspected source",
+      "evidence": "FE10",
+      "owner_closure": "Design/frontend: manual assisted-tech journey, contrast and mobile interaction verification",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G22",
+      "priority_class": "P2 interoperability",
+      "finding": "Internal endpoints are not scoped customer APIs/connectors with lifecycle/support contract",
+      "evidence": "FE capability boundary, C04/C17",
+      "owner_closure": "API/product: authenticated release-pinned exports/API, quotas, documentation and customer agreements",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G23",
+      "priority_class": "P2 AI",
+      "finding": "Search is lexical and takeaways templated; no governed generative assistant",
+      "evidence": "FE12, C01/C04/C07/C09",
+      "owner_closure": "AI/research: cited structured queries, policy enforcement, abstention and gold-question evaluation",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G24",
+      "priority_class": "P2 qualitative",
+      "finding": "Numeric/text stored but excluded from categorical fast cube; no auditable open-text coding workflow",
+      "evidence": "B12, C13/C14/C21",
+      "owner_closure": "Research/data: separate typed numeric/text metrics, PII redaction and human coding evaluation",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G25",
+      "priority_class": "P2 export safety",
+      "finding": "CSV/XLSX literal values not consistently protected from formula interpretation",
+      "evidence": "B13, FE16",
+      "owner_closure": "Export owner: literal-text policy preserving deliberate numeric/formula fields",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G26",
+      "priority_class": "P2 methodological UX",
+      "finding": "Four-wave average can imply contiguous/comparable weeks unless window validates dates/versions",
+      "evidence": "Trends.tsx:148-150",
+      "owner_closure": "Research/frontend: gap-aware same-version windows, require stated count/base and label equal-wave vs pooled mean",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G27",
+      "priority_class": "P3 data moat",
+      "finding": "No demonstrated POS, purchase-receipt, loyalty or media-exposure integration",
+      "evidence": "C01/C02/C03/C22, FE data boundary",
+      "owner_closure": "Commercial/data: license sources, evaluate match/join granularity and privacy before integrations",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G28",
+      "priority_class": "P3 reach",
+      "finding": "Country field/configuration is not verified multi-market panel coverage",
+      "evidence": "README countries, FE03, C04/C06/C10",
+      "owner_closure": "Research/commercial: validate demand, licensed sample design and comparability per market",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G29",
+      "priority_class": "P3 predictive",
+      "finding": "Preview is not demand simulation; forecasting/causal pricing/promotion models absent in inspected surface",
+      "evidence": "FE12, C01/C11",
+      "owner_closure": "Research/data science: distinct model, holdout baseline, uncertainty, observed covariates and decision validation",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G30",
+      "priority_class": "P2 validation",
+      "finding": "Legacy analysis tests depend on populated local snapshot; isolated run lacks those tables",
+      "evidence": "tests/test_analysis.py:1-34; test execution",
+      "owner_closure": "QA: explicit fixture/read-only snapshot contract; do not claim full suite green",
+      "status": "proposed_open",
+      "verified_fixed": false
+    },
+    {
+      "id": "G31",
+      "priority_class": "P2 discovery",
+      "finding": "Search caps60 results without total/cursor; strong lexical lookup can silently omit broad matches",
+      "evidence": "FE05",
+      "owner_closure": "Search/API: pagination, filters, total-hit count and coverage disclosure before conversational answer generation",
+      "status": "proposed_open",
+      "verified_fixed": false
+    }
+  ]
+}

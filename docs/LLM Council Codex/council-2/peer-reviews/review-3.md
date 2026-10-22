@@ -1,0 +1,7 @@
+# Anonymous peer review 3
+
+**Strongest: B.** It turns validation into accountable execution: release and method owners, bounded slice, capacity ceiling, review date, payment/reuse signals, and immediate quarantine of invalid or unauthorized outputs. Separating universal access obligations from slice correctness and deferred capabilities prevents both unsafe scope cuts and indefinite remediation. Owners must set commercial thresholds before spending.
+
+**Biggest blind spot: C.** Coverage mapping is valuable, but offering priced follow-up research can become bespoke services before recurring demand is demonstrated. Supplier quotations omit procurement delay, fieldwork failure, research supervision, rework and maintaining comparability. Require a capped manual experiment and explicit margin/lead-time acceptance before treating research requests as product expansion.
+
+**What all missed:** No response specifies who may stop the pilot when the sponsor wants to continue, how sunk costs are excluded from renewal decisions, or what happens to customer commitments after stopping. Establish independent commercial/method vetoes, a fixed review date, and a cash-plus-capacity budget. Price routine refreshes and exception-heavy weeks separately; include minimum supplier commitments and displaced analyst contribution. If feasibility, paid repeat demand or sustainable delivery fails, cease expansion, honor contracted deliverables safely, and archive decision evidence.

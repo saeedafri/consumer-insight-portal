@@ -1,0 +1,44 @@
+{
+  "book_status": 200,
+  "book_keys": [
+    "wave",
+    "columns",
+    "n",
+    "questions"
+  ],
+  "wave_keys": [
+    "survey_id",
+    "title",
+    "wave_label",
+    "wave_date",
+    "survey_family",
+    "study_type",
+    "qualified_n",
+    "prior_survey_id",
+    "ly_survey_id",
+    "ly_status"
+  ],
+  "default_question": "q1",
+  "trend": {
+    "status": 200,
+    "keys": [
+      "qcode",
+      "dim",
+      "value",
+      "waves",
+      "series"
+    ],
+    "wave_count": 193,
+    "contains_current_wave": true,
+    "wave_keys": [
+      "survey_id",
+      "wave_date"
+    ]
+  },
+  "compare": {
+    "status": 404,
+    "keys": [
+      "error_body_kind"
+    ]
+  }
+}

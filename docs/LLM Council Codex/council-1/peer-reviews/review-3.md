@@ -1,0 +1,7 @@
+# Anonymous peer review 3
+
+**Strongest: E.** It turns a broad strategy into falsifiable execution: identify the actual release, prove allowed/denied paths, validate only the brief's required metrics, and reproduce a pinned analysis after another wave. Its screen/export agreement and buyer-agreed success thresholds distinguish a usable research deliverable from feature completion. Concurrent buyer observation avoids unnecessary discovery delay.
+
+**Biggest blind spot: D.** The cited-assistant prototype, follow-up fielding service and purchase-partner qualification introduce three experiments before the core buyer/evidence constraint is established. Each requires separate rights, methodological and commercial validation; together they risk diluting scarce capacity. Cited text alone does not prove correct calculation, appropriate inference or complete evidence. D acknowledges uncertainties but provides no sequencing or stop criteria for these experiments.
+
+**Shared omission:** None defines a controlled competitor/substitute task comparison or a defensible pilot sample. Specify buyer segment and recruitment, use the same recent decision and available evidence, distinguish data-coverage advantages from workflow advantages, and score accuracy, completion effort, unresolved questions and repeat demand. Predefine success and stopping rules before observation. Official marketing claims should remain hypotheses until demonstrations or authorized trials test the relevant tasks; buyer enthusiasm alone cannot establish competitive superiority.
