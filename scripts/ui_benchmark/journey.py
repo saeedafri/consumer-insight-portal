@@ -74,7 +74,7 @@ class Tab:
         start = time.perf_counter()
         if a.action == "native":
             await self.call("Runtime.evaluate", {"expression":
-                f"(s => {{ s.value = {json.dumps(a.value)}; s.dispatchEvent(new Event('change', {{bubbles: true}})); }})(document.querySelector('select'))"})
+                f"(s => {{ s.value = {json.dumps(a.value)}; s.dispatchEvent(new Event('change', {{bubbles: true}})); }})(document.querySelector({json.dumps(a.input)}))"})
         elif a.action == "popover":  # Dash 4 dropdown: real mouse click opens it, then pick the option
             r = await self.call("Runtime.evaluate", {"returnByValue": True, "expression":
                 f"(b => {{ const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }})(document.querySelector({json.dumps(a.input)}))"})
@@ -130,7 +130,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     for name in ("--url", "--pid", "--ready", "--after", "--action"):
         p.add_argument(name, required=True)
-    p.add_argument("--input", default="input")
+    p.add_argument("--input", default="input", help="the control: a <select> for native, the typeahead's input otherwise")
     p.add_argument("--value", default="Beauty")
     p.add_argument("--steps", default="1,5,10,20,40")
     args = p.parse_args()

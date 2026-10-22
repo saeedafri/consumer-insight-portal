@@ -107,3 +107,12 @@ def test_a_new_small_cell_rule_rebuilds_every_wave(csi_db, tmp_path, monkeypatch
     assert json.loads((publish.build(tmp_path, jobs=1) / "manifest.json").read_text())["rebuilt_waves"] == 0
     monkeypatch.setattr(payloads, "HIDDEN_BASE", 10)                                  # the rule changed: nothing is reused
     assert json.loads((publish.build(tmp_path, jobs=1) / "manifest.json").read_text())["rebuilt_waves"] == 2
+
+
+def test_a_publish_empties_the_nginx_answer_cache(tmp_path, monkeypatch):
+    cache = tmp_path / "nginx-cache"
+    (cache / "a" / "bc").mkdir(parents=True)
+    (cache / "a" / "bc" / "f00").write_text("old cross-tab")
+    monkeypatch.setenv("CIP_NGINX_CACHE", str(cache))
+    publish.empty_nginx_cache()
+    assert cache.is_dir() and list(cache.iterdir()) == []                 # the folder stays, its answers go

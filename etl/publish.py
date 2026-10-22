@@ -50,6 +50,7 @@ from app.data import payloads
 
 log = logging.getLogger("cip.publish")
 ROOT = Path(os.environ.get("CIP_PUBLISH_DIR") or Path(__file__).resolve().parents[1] / "data/published")
+WARM_WAVES = 3   # the newest waves people open first after a publish
 KEEP = 3
 BACKUP = os.environ.get("CIP_PUBLISH_BACKUP_URL", "").strip()   # https://<account>.blob.core.windows.net/<container>?<sas>
 
@@ -205,6 +206,17 @@ def swap(root: Path, target: Path) -> None:
     versions = sorted(p for p in root.glob(".build-*") if p.is_dir())
     for old in versions[:-KEEP]:
         shutil.rmtree(old, ignore_errors=True)
+    empty_nginx_cache()
+
+
+def empty_nginx_cache() -> None:
+    """nginx keeps every cross-tab, trend and search answer until new data is published (deploy/nginx.conf): drop them
+    now, so the next request of each is computed from the new version. nginx treats a missing cache file as a miss."""
+    cache = os.environ.get("CIP_NGINX_CACHE")
+    if not cache:
+        return
+    for entry in Path(cache).iterdir():
+        shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() else entry.unlink(missing_ok=True)
 
 
 def blob(name: str) -> str:
@@ -246,12 +258,48 @@ def publish(root: Path = ROOT, jobs: int = 4) -> Path:
     out = build(root, jobs)
     swap(root, out)
     log.info("Published %s", out.name)
+    try:
+        warm_nginx(out)
+    except Exception as exc:                       # people still get every answer; the first asker waits a little
+        log.warning("Warming the nginx cache failed: %s", exc)
     if BACKUP:
         try:
             backup(out)
         except Exception as exc:                   # the portal is live from disk either way; the next publish retries
             log.warning("Backup to Azure Blob storage failed: %s", str(exc).split("?")[0])
     return out
+
+
+def warm_nginx(out: Path, waves: int = WARM_WAVES) -> int:
+    """Ask nginx (CIP_NGINX_URL) for every cross-tab of the newest waves, as the screen asks for them (each question,
+    both orders of every pair of cuts, 1, 2 and 4 weeks), so the first people to open a new wave find every answer
+    already cached instead of a few thousand of them queueing on the API at once."""
+    base = os.environ.get("CIP_NGINX_URL", "").rstrip("/")
+    if not base:
+        return 0
+    from urllib.parse import quote
+    from urllib.request import Request, urlopen
+    from app.core.session import issue
+    from etl.serving import CUTS
+    newest = sorted(json.loads(gzip.decompress((out / "api/v1/waves.json.gz").read_bytes())),
+                    key=lambda w: (w["wave_date"], w["survey_id"]), reverse=True)[:waves]
+    urls = [f"{base}/api/v1/waves/{w['survey_id']}/crosstab?q={quote(q['id'], safe='')}&by={a},{b}&weeks={weeks}"
+            for w in newest for q in json.loads(gzip.decompress((out / f"api/v1/waves/{w['survey_id']}/book.json.gz").read_bytes()))["questions"]
+            for a in CUTS for b in CUTS if a != b for weeks in (1, 2, 4)]
+    cookie = f'cip_session="{issue("publish@cip", hours=1)}"'
+
+    def get(url: str) -> bool:
+        try:
+            with urlopen(Request(url, headers={"Cookie": cookie, "Accept-Encoding": "gzip"}), timeout=60) as r:
+                r.read()
+                return r.status == 200
+        except OSError:
+            return False
+    start = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=4) as pool:   # 4 at a time: the API keeps answering people meanwhile
+        ok = sum(pool.map(get, urls))
+    log.info("Warmed nginx: %d of %d cross-tabs of %d waves in %.0f s", ok, len(urls), len(newest), time.perf_counter() - start)
+    return ok
 
 
 def rollback(root: Path = ROOT) -> Path:

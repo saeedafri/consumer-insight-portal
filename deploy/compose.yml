@@ -1,8 +1,9 @@
 # The whole portal on one Debian server: nginx (static files + published payloads) in front of the API.
 # The ETL runs on the host (cron/systemd) and writes $CIP_PUBLISH_DIR, which nginx reads.
 #   CIP_PUBLISH_DIR=/srv/cip/published docker compose -f deploy/compose.yml up -d
-# Production and staging budget: 1 core, the whole portal under 1 GB (API 768 MB cap, nginx 128 MB). Measured 22 Oct 2026:
-# API at 1 core / 1 GB served 50 analysts at about 670 requests/s, p95 under 10 ms warm, peak 410 MB (.planning/wiki/STRESS_BENCHMARK.md).
+# Production and staging budget: 1 core, the whole portal about 1 GB (API 768 MB cap, nginx 256 MB). Measured 22 Oct 2026 on one
+# shared core: nginx serves about 13,500 requests/s; 10,000 people clicking in the same instant all answered in under 1 s
+# (.planning/wiki/STRESS_BENCHMARK.md).
 services:
   api:
     image: cip-portal
@@ -16,8 +17,11 @@ services:
   nginx:
     image: cip-web
     build: { context: .., dockerfile: deploy/Dockerfile, target: nginx }
+    env_file: ${CIP_ENV_FILE:-/etc/cip/api.env}   # CIP_SESSION_SECRET: nginx checks the signed cookie itself (cip_auth.js)
     ports: ["8080:8080"]
-    volumes: ["${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro"]
+    # the answers cache lives on the host, so the ETL's publish can empty it (CIP_NGINX_CACHE, etl/publish.py);
+    # the folder must be writable by nginx's user (uid 101)
+    volumes: ["${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro", "${CIP_NGINX_CACHE:-/srv/cip/nginx-cache}:/var/cache/nginx/data"]
     depends_on: [api]
     restart: unless-stopped
-    mem_limit: 128m
+    mem_limit: 256m   # 20,000 open connections measured at about 90 MB

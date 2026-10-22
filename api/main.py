@@ -42,6 +42,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.database import get_engine
+from app.core.session import SESSION_HOURS, issue, sign
 from app.data import payloads
 from api import assistant, exports, team
 from api.search import SearchIndex
@@ -53,7 +54,6 @@ log = logging.getLogger("cip.api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s")   # [PERF] lines show
 WEB = Path(__file__).resolve().parents[1] / "web" / "dist"
 COOKIE = "cip_session"
-SESSION_HOURS = 12
 SECRET = os.environ.get("CIP_SESSION_SECRET", "").encode()
 LOCAL = os.environ.get("APP_ENV", "").lower() == "local"   # dev sign-in only when explicitly local
 REFRESH_SECONDS = 60
@@ -223,13 +223,6 @@ async def not_found(request: Request, exc: LookupError) -> Response:
 
 
 # ── Sessions: an HMAC-signed cookie, checked in microseconds with no database call ────────────────
-def _sign(value: str) -> str:
-    return base64.urlsafe_b64encode(hmac.new(SECRET, value.encode(), hashlib.sha256).digest()).decode().rstrip("=")
-
-
-def issue(email: str, products: str = "*") -> str:
-    value = f"{email}|{products}|{int(time.time()) + SESSION_HOURS * 3600}"
-    return f"{base64.urlsafe_b64encode(value.encode()).decode()}.{_sign(value)}"
 
 
 def user(request: Request) -> dict:
@@ -240,7 +233,7 @@ def user(request: Request) -> dict:
         email, products, expires = value.split("|")
     except ValueError:
         raise HTTPException(401, "Sign in required")
-    if not hmac.compare_digest(signature, _sign(value)) or int(expires) < time.time():
+    if not hmac.compare_digest(signature, sign(value)) or int(expires) < time.time():
         raise HTTPException(401, "Sign in required")
     request.state.email = email   # the team routes (api/team.py) record who did what from the session, not a typed name
     return {"email": email, "products": products.split(",")}

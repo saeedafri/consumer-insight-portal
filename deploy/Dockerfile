@@ -27,12 +27,14 @@ EXPOSE 8000
 # 2 workers on 1 core: one keeps answering while the other waits on the database. The default soft limit of
 # 1,024 open files caps a worker at about a thousand open connections; raise it up to the hard limit.
 ARG CIP_BUILD=unknown
-# 1 GB budget: 2 workers × (≈110 MB code + a 128 MB response cache) stays under 500 MB
-ENV WEB_CONCURRENCY=2 CIP_BUILD=$CIP_BUILD CIP_CACHE_MB=128
+# nginx caches every repeated answer (deploy/nginx.conf), so the API's own cache only needs the few it is asked for:
+# 2 workers × (≈110 MB code + 32 MB of answers) ≈ 300 MB
+ENV WEB_CONCURRENCY=2 CIP_BUILD=$CIP_BUILD CIP_CACHE_MB=32
 CMD ["sh", "-c", "ulimit -n $(ulimit -Hn); exec gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY} -b 0.0.0.0:8000 --access-logfile - --timeout 30 --graceful-timeout 20"]
 
 FROM nginx:1.29-trixie AS nginx
 COPY deploy/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/cip_proxy.conf /etc/nginx/cip_proxy.conf
 COPY deploy/cip_headers.conf /etc/nginx/cip_headers.conf
+COPY deploy/cip_auth.js /etc/nginx/cip_auth.js
 COPY --from=web /w/dist /srv/cip/web
