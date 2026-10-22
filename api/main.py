@@ -9,6 +9,7 @@
   /api/v1/search               questions across every survey and wave, from an in-memory catalogue
   /api/v1/waves/{id}/crosstab  one question by two cuts combined (e.g. generation × gender), optionally
                                pooled over the last 2–4 weekly waves: one GROUP BY on srv_answer, same cache
+  /api/v1/questions/<family>/<study>/<qcode>   one question, every wave and cut, compact (Compare, Trends)
   /api/v1/dashboards/...       the sample dashboard's stored payloads (api/dashboards.py), from memory
 
     gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:8000
@@ -24,8 +25,11 @@ import json
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from dataclasses import dataclass
+from functools import lru_cache
+from typing import Optional
 from pathlib import Path
 
 from collections import OrderedDict, defaultdict
@@ -39,6 +43,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.database import get_engine
 from app.data import payloads
+from api import assistant, exports, team
 from api.search import SearchIndex
 from etl import launch_schedule
 from etl.publish import ROOT as PUBLISH_ROOT
@@ -142,6 +147,10 @@ def _load_catalogue() -> SearchIndex:
                 " JOIN cip_question q ON q.question_id = i.question_id")):
             if lbl:
                 labels[(sid, qc)].add(lbl)
+        measure = {(sid, qc): (cid, name) for sid, qc, cid, name in conn.execute(text(   # the harmonised concept: a measure
+            "SELECT m.survey_id, q.qcode, MIN(c.concept_id), MIN(COALESCE(c.concept_group, c.concept_name)) FROM cip_concept_map m"
+            " JOIN cip_concept c ON c.concept_id = m.concept_id JOIN cip_question q ON q.question_id = m.question_id"
+            " WHERE m.status = 'confirmed' AND m.concept_option_id IS NULL GROUP BY m.survey_id, q.qcode"))}
     groups: dict = {}
     for r in rows:
         key = (r["qcode"].upper(), " ".join(r["qtext"].lower().split()))
@@ -150,6 +159,8 @@ def _load_catalogue() -> SearchIndex:
         g.update(last=str(r["wave_date"]), survey_id=r["survey_id"], title=r["title"], waves=g["waves"] + 1)
         g["_answers"] |= labels.get((r["survey_id"], r["qcode"]), set())
         g["_titles"].add(r["title"])
+        if (r["survey_id"], r["qcode"]) in measure:
+            g["measure_id"], g["measure"] = measure[(r["survey_id"], r["qcode"])]
     docs = [{**{k: v for k, v in g.items() if not k.startswith("_")},
              "answers": " · ".join(sorted(g["_answers"]))[:4000], "titles": " · ".join(sorted(g["_titles"]))[:2000]}
             for g in groups.values()]
@@ -172,24 +183,28 @@ async def _refresh_forever() -> None:
             log.exception("Dashboard refresh failed; still serving the previous payloads")
 
 
-# OpenAPI: the typed contract a future chatbot's tools are generated from (docs/Ui-Design-Claude/20)
-app = FastAPI(title="Coresight Consumer Insight Portal API", version="1", docs_url=None, redoc_url=None,
-              openapi_url="/api/v1/openapi.json")
-
-
-@app.exception_handler(LookupError)
-async def not_found(request: Request, exc: LookupError) -> Response:
-    return Response(json.dumps({"detail": str(exc).strip("'")}), status_code=404, media_type="application/json")
-
-
-@app.on_event("startup")
-async def startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     if not SECRET:
         raise RuntimeError("CIP_SESSION_SECRET is not set")
     await run_in_threadpool(_load)
     await run_in_threadpool(_changed)
     await run_in_threadpool(_load_schedule)
-    asyncio.get_running_loop().create_task(_refresh_forever())
+    task = asyncio.get_running_loop().create_task(_refresh_forever())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
+# OpenAPI: the typed contract a future chatbot's tools are generated from (docs/Ui-Design-Claude/20)
+app = FastAPI(title="Coresight Consumer Insight Portal API", version="1", docs_url=None, redoc_url=None,
+              openapi_url="/api/v1/openapi.json", lifespan=lifespan)
+
+
+@app.exception_handler(LookupError)
+async def not_found(request: Request, exc: LookupError) -> Response:
+    return Response(json.dumps({"detail": str(exc).strip("'")}), status_code=404, media_type="application/json")
 
 
 # ── Sessions: an HMAC-signed cookie, checked in microseconds with no database call ────────────────
@@ -359,17 +374,78 @@ async def crosstab(survey_id: int, request: Request, q: str, by: str, weeks: int
         me = next((w for w in waves if w["survey_id"] == survey_id), None)
         pool = payloads.chain({w["survey_id"]: w for w in waves if me and w["survey_family"] == me["survey_family"]}, survey_id, weeks)
         parts = {w["survey_id"]: json.loads(found.body) for w in pool if (found := _published("waves", str(w["survey_id"]), "cuts", q))}
-        if survey_id in parts:
+        if parts.get(survey_id, {}).get("counts"):   # a published file without counts is never trusted: read live
             return _json(payloads.crosstab_from(survey_id, q, cuts, pool, parts))
         return _json(payloads.crosstab(survey_id, q, cuts, weeks))
     return _send(request, await _cached((SERVING, "crosstab", survey_id, q, cuts, weeks), build))
 
 
+@app.get("/api/v1/questions/{family}/{study_type}/{qcode}")
+async def question(family: str, study_type: str, qcode: str, request: Request, who: dict = Depends(user)) -> Response:
+    """One question across every wave of its family and every cut, in compact columns: Compare and Trends pick waves
+    and cuts from it on screen. The ETL publishes one per question (a static read); others are built once and cached."""
+    return _send(request, await _cached((SERVING, "question", family, study_type, qcode),
+                                        lambda: _published("questions", family, study_type, qcode) or _json(payloads.question(family, study_type, qcode))))
+
+
+app.include_router(team.router, dependencies=[Depends(user)])   # saved views, alerts, audiences (api/team.py)
+
+def _book_data(survey_id: int) -> Optional[dict]:
+    return _parsed_book(survey_id, PUBLISHED_VERSION)
+
+
+@lru_cache(maxsize=128)   # parsed once per published version: Ask CIP reads up to 12 books per question
+def _parsed_book(survey_id: int, version: str) -> Optional[dict]:
+    found = _published("waves", str(survey_id), "book")
+    try:
+        return json.loads(found.body) if found else payloads.book(survey_id)
+    except LookupError:
+        return None
+
+
+@app.post("/api/v1/ask")
+async def ask(request: Request, who: dict = Depends(user)) -> dict:
+    """A question in plain words, answered only from published figures with every source cited (api/assistant.py)."""
+    body = await request.json()
+    search = CATALOGUE.search if CATALOGUE else (lambda q, n: {"results": []})
+    return await run_in_threadpool(assistant.ask, str(body.get("question") or ""), search, _book_data)
+
+
+EXPORT_TYPES = {"xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation"}
+
+
+@app.post("/api/v1/export/{kind}")
+async def export(kind: str, request: Request, who: dict = Depends(user)) -> Response:
+    """The table a screen offers as CSV, as an Excel workbook or a PowerPoint slide (api/exports.py)."""
+    if kind not in EXPORT_TYPES:
+        raise HTTPException(404, "Exports are xlsx or pptx")
+    try:
+        spec = exports.check(await request.json())
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(422, str(exc))
+    body = await run_in_threadpool(exports.xlsx if kind == "xlsx" else exports.pptx, spec)
+    return Response(body, media_type=EXPORT_TYPES[kind], headers={"Content-Disposition": f'attachment; filename="{spec["name"]}.{kind}"'})
+
+
 @app.get("/healthz")
 async def healthz() -> dict:
+    pool_info = {}
+    try:
+        p = get_engine("app").pool
+        pool_info = {
+            "size": p.size(),
+            "checkedin": p.checkedin(),
+            "checkedout": p.checkedout(),
+            "overflow": p.overflow(),
+            "status": p.status()
+        }
+    except Exception:
+        pass
     return {"dashboards": len(STORE), "published": str(STAMP[1]) if STAMP else None,
             "serving_waves": SERVING[0] if SERVING else 0, "serving_built": str(SERVING[1]) if SERVING else None,
-            "cached_results": len(RESULTS), "cached_mb": round(CACHED_BYTES / 2**20, 1), "catalogue": len(CATALOGUE.docs) if CATALOGUE else 0}
+            "cached_results": len(RESULTS), "cached_mb": round(CACHED_BYTES / 2**20, 1), "catalogue": len(CATALOGUE.docs) if CATALOGUE else 0,
+            "pool": pool_info}
 
 
 @app.get("/auth/check", status_code=204)
@@ -379,7 +455,7 @@ async def auth_check(who: dict = Depends(user)) -> Response:
 
 
 @app.get("/auth/dev-login")
-async def dev_login(email: str = "analyst@coresight.com", next: str = "/") -> Response:
+async def dev_login(request: Request, email: str = "analyst@coresight.com", next: str = "/") -> Response:
     """Local development and load tests only; production signs in through the identity provider (OIDC)."""
     if not LOCAL:
         raise HTTPException(404)

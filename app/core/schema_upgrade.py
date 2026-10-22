@@ -19,7 +19,7 @@ from app.core.database import apply_sql
 SQL_DIR = Path(__file__).resolve().parents[2] / "sql"
 SQL_FILES = [SQL_DIR / "001_schema.sql", SQL_DIR / "002_views.sql",
              SQL_DIR / "003_seed_topics.sql", SQL_DIR / "005_serving.sql",
-             SQL_DIR / "006_dashboards.sql"]
+             SQL_DIR / "006_dashboards.sql", SQL_DIR / "007_team.sql"]
 
 # NOT NULL: MySQL lets repeated NULLs through a unique key, and source_ref is
 # part of the wave identity (uq_survey_source).
@@ -50,6 +50,9 @@ COLUMNS: list[tuple[str, str, str]] = [
     ("cip_question", "is_virtual", "TINYINT(1) NOT NULL DEFAULT 0"),
     ("cip_item", "left_label", "VARCHAR(500) NULL"),
     ("cip_item", "right_label", "VARCHAR(500) NULL"),
+    ("cip_forsta_survey", "quota_json", "TEXT NULL"),
+    ("cip_forsta_survey", "attempts", "SMALLINT NOT NULL DEFAULT 0"),
+    ("cip_forsta_survey", "quota_at", "DATETIME NULL"),
 ]
 
 # v1 waves all came from Forsta: their path is their source reference.
@@ -59,12 +62,20 @@ BACKFILL = ["UPDATE cip_survey SET source_ref = forsta_path WHERE source_ref IS 
 # Columns that must be NOT NULL but may exist NULL-able from an earlier run.
 NOT_NULL: list[tuple[str, str, str]] = [("cip_survey", "source_ref", SOURCE_REF)]
 
+# A SET that gained members: (table, column, MySQL definition, the newest member). Adding members at the end is
+# a metadata-only change in MySQL 8; SQLite stores the set as text and needs nothing.
+WIDEN: list[tuple[str, str, str, str]] = [
+    ("srv_result", "flags", "SET('small_base','base_changed_prior','base_changed_ly','wording_changed_prior',"
+     "'wording_changed_ly') NOT NULL DEFAULT ''", "wording_changed_ly"),
+    ("cip_dash_metric", "flags", "SET('small_base','base_changed_prior','base_changed_ly','prior_missing','ly_missing',"
+     "'suppressed') NOT NULL DEFAULT ''", "suppressed"),
+]
+
 # (table, index, kind, columns)
 INDEXES: list[tuple[str, str, str, str]] = [
     ("cip_survey", "uq_survey_source", "UNIQUE", "platform, source_ref, wave_label"),
     ("cip_respondent", "ix_respondent_key", "INDEX", "survey_id, respondent_key"),
     ("cip_answer", "ix_answer_cover", "INDEX", "survey_id, field_id, value_code, respondent_id"),
-    ("cip_answer", "ft_answer_text", "FULLTEXT", "value_text"),
     ("cip_agg_cell", "ix_agg_map", "INDEX", "survey_id, map_key, cohort_id, dim"),
     ("cip_survey", "ix_survey_pick", "INDEX", "load_status, study_type, wave_date"),
     # a reload's DELETE ... WHERE survey_id scanned all 233 MB of lines without it: 13 s, 115 s under load
@@ -72,7 +83,11 @@ INDEXES: list[tuple[str, str, str, str]] = [
 ]
 
 # Indexes another one covers: each costs a write per answer row and serves nothing.
-DROP_INDEXES: list[tuple[str, str]] = [("cip_answer", "ix_answer_field")]   # ix_answer_cover leads the same way
+DROP_INDEXES: list[tuple[str, str]] = [
+    ("cip_answer", "ix_answer_field"),          # ix_answer_cover leads the same way
+    ("cip_answer", "ix_answer_respondent"),     # uq_answer leads with respondent_id (and serves its foreign key)
+    ("cip_answer", "ft_answer_text"),           # never queried: search reads cip_search; rebuilt on every reload
+]
 
 
 def plan(engine: Engine) -> list[str]:
@@ -96,6 +111,11 @@ def plan(engine: Engine) -> list[str]:
     nullable = {t: {c["name"]: c["nullable"] for c in insp.get_columns(t)}
                 for t in {t for t, _, _ in NOT_NULL} & tables}
     statements += tighten_statements(nullable, is_sqlite)
+
+    for table, column, definition, newest in WIDEN:
+        if not is_sqlite and table in tables and newest not in str(
+                next(c["type"] for c in insp.get_columns(table) if c["name"] == column).values):
+            statements.append(f"ALTER TABLE {table} MODIFY COLUMN {column} {definition}")
 
     for table, name, kind, cols in INDEXES:
         if table not in tables or name in {i["name"] for i in insp.get_indexes(table)}:

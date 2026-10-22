@@ -30,6 +30,7 @@ import yaml
 from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
+from app.data.payloads import HIDDEN_BASE
 
 log = logging.getLogger("cip.api.dashboards")
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "dashboards.yml"
@@ -132,6 +133,8 @@ def metric(code, label, now, prior, ly, waves, cfg, segment="Total", rank=0) -> 
     row = {"metric_code": code, "segment": segment, "rank_no": rank, "label": label, "n": n, "base_n": base,
            "pct": round(100 * n / base, 3), "prior_pct": None, "prior_base_n": None, "ly_pct": None, "ly_base_n": None}
     flags = ["small_base"] if base < cfg["small_base"] else []
+    if base < HIDDEN_BASE:
+        flags.append("suppressed")
     for key, other, other_wave in (("prior", prior, prior_wave), ("ly", ly, ly_wave)):
         if other is None:
             flags.append(f"{key}_missing")
@@ -201,6 +204,7 @@ def move(r: dict, key: str) -> Optional[float]:
 def takeaways(rows: list[dict], cfg: dict) -> list[str]:
     """Key-takeaway sentences written from the numbers (so they can never disagree with them), from each
     tile's, list's and segment's `say` in config/dashboards.yml. A change is mentioned only when significant."""
+    rows = [r for r in rows if "suppressed" not in r["flags"]]   # under 30 people: never quoted
     by = {(r["metric_code"], r["segment"], r["rank_no"]): r for r in rows}
     prior = cfg.get("prior_label", "the previous wave")
     def changes(r):
@@ -244,6 +248,9 @@ def payload(header: dict, rows: list[dict]) -> dict:
     """The browser's whole dashboard in one small document: no further requests, no client maths."""
     w, prior, ly = header["wave"], header["prior"], header["ly"]
     def number(r):
+        if "suppressed" in r["flags"]:   # fewer than HIDDEN_BASE people: the base only, as on every other screen
+            return {"label": r["label"], "segment": r["segment"], "pct": None, "n": None, "base": r["base_n"],
+                    "vs_prior": None, "vs_ly": None, "ly_pct": None, "flags": [f for f in r["flags"].split(",") if f]}
         return {"label": r["label"], "segment": r["segment"], "pct": round(r["pct"], 1), "n": r["n"], "base": r["base_n"],
                 "vs_prior": _pts(r["pct"], r["prior_pct"]), "vs_ly": _pts(r["pct"], r["ly_pct"]),
                 "ly_pct": None if r["ly_pct"] is None else round(r["ly_pct"], 1),

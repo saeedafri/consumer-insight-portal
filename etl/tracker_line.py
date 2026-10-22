@@ -79,12 +79,13 @@ def lines(conn, survey_id: int) -> list[tuple[int, Any, dict]]:
         items.setdefault(qcode, []).append(item)
     answers: dict[int, dict] = {}
     for rid, qcode, multi, item, code, label, number, said in conn.execute(text("""
-            SELECT a.respondent_id, q.qcode, q.is_multi, i.item_label, a.value_code, a.value_label,
-                   a.value_number, a.value_text
+            SELECT a.respondent_id, q.qcode, q.is_multi, i.item_label, a.value_code,
+                   COALESCE(a.value_label, o.value_label, i.item_label), a.value_number, a.value_text
               FROM cip_answer a
               JOIN cip_field f ON f.field_id = a.field_id
               JOIN cip_question q ON q.question_id = f.question_id AND q.qcode IN :codes
               LEFT JOIN cip_item i ON i.item_id = f.item_id
+              LEFT JOIN cip_option o ON o.question_id = f.question_id AND o.value_code = a.value_code
              WHERE a.survey_id = :s""").bindparams(bindparam("codes", expanding=True)),
             {"s": survey_id, "codes": codes}):
         mine = answers.setdefault(rid, {})

@@ -25,11 +25,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import logging
 import math
 import os
 import re
-import tempfile
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -40,7 +40,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.exc import OperationalError
 
 from app.core.config import config
-from app.core.database import get_engine
+from app.core.database import bulk_insert, get_engine
 from app.data import cube, harmonise
 from etl import forsta_api, launch_schedule, serving, survey_calendar, tracker_line
 from etl.forsta_client import ForstaError
@@ -50,7 +50,6 @@ from etl.run_pipeline import _dt, _rebuild_profiles, _rebuild_question_bases, wa
 log = logging.getLogger("cip.forsta")
 
 TRACKER_FAMILY = "CSI-US"
-_CHUNK = 5000                       # answer rows per batched INSERT
 
 
 # ── the register ───────────────────────────────────────────────────────────
@@ -79,26 +78,46 @@ def _when(value: Any) -> Optional[datetime]:
 FIELD_HOURS = 9          # the data team's window: launch ~18:00 IST, fieldwork over by 03:00 IST
 
 
-def fielded(client, meta: dict, now: Optional[datetime] = None) -> bool:
-    """A live survey whose fieldwork is over though Forsta has not closed it yet: its quota is reached
-    (a weekly tracker wave at the plan's 400 qualified; any other study when every unconditional quota sheet
-    is full) or FIELD_HOURS have passed since launch. Read-only: the survey stays open in Forsta."""
+def quota_cells(client, path: str) -> Optional[list[dict]]:
+    """How much quota is left: one entry per quota cell, labelled from the quota's own defines (Male, South,
+    U25K45to59). None when Forsta gives no quota (hibernated, or no quota set). Read-only."""
+    try:
+        quota = client.survey_quota(path)
+    except Exception as exc:
+        log.warning("Quota of %s not readable: %s", path, exc)
+        return None
+    names = {k: v.get("description") or k for k, v in (quota.get("defines") or {}).items()}
+    cells = []
+    for sheet, parts in (quota.get("sheets") or {}).items():
+        for part in parts:
+            for cell in part.get("cells", []):
+                marker = quota.get("markers", {}).get(cell["marker"], {})
+                if marker.get("limit"):
+                    cells.append({"sheet": part.get("description") or sheet, "conditional": bool(part.get("sheetCond")),
+                                  "cell": " + ".join(names.get(c, c) for c in cell.get("components", [])),
+                                  "limit": marker["limit"], "complete": marker.get("complete", 0)})
+    return cells or None
+
+
+def fielded(meta: dict, cells: Optional[list[dict]], now: Optional[datetime] = None) -> bool:
+    """A live survey whose fieldwork is over though Forsta has not closed it yet: FIELD_HOURS since launch; or no
+    quota left (every unconditional cell full, or qualified at a whole sheet's target); or a weekly tracker wave at
+    the plan's 400 qualified. Forsta often stops a wave at 400 with a cell or two short (19 Oct 2026: Midwest 80/85),
+    so the 400 rule is what fires for trackers. Read-only: the survey stays open in Forsta."""
     launched = _when(meta.get("dateLaunched"))
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     if launched and now - launched >= timedelta(hours=FIELD_HOURS):
         return True
     qualified = meta.get("qualified") or 0
-    if study_type(meta) == "tracker":
-        return qualified >= launch_schedule.QUOTA
-    try:
-        quota = client.survey_quota(str(meta["path"]).strip("/"))
-    except Exception as exc:                       # no quota to read: the time limit still applies
-        log.warning("Quota of %s not readable: %s", meta.get("path"), exc)
-        return False
-    targets = [sum(quota["markers"].get(c["marker"], {}).get("limit", 0) for c in sheet[0]["cells"])
-               for sheet in quota.get("sheets", {}).values() if not sheet[0].get("sheetCond")]
-    targets = [t for t in targets if t]
-    return bool(targets) and qualified >= min(targets)
+    if study_type(meta) == "tracker" and qualified >= launch_schedule.QUOTA:
+        return True
+    counted = [c for c in cells or [] if not c["conditional"]]
+    if counted and all(c["complete"] >= c["limit"] for c in counted):
+        return True
+    targets = Counter()
+    for c in counted:
+        targets[c["sheet"]] += c["limit"]
+    return bool(targets) and qualified >= min(targets.values())
 
 
 def discover(client) -> dict[str, int]:
@@ -118,9 +137,10 @@ def discover(client) -> dict[str, int]:
         closed_now = _when(m.get("closedDate"))
         reopened = (closed_now and str(closed_now)[:19] != closed) or (m.get("total") not in (None, total))
         live = m.get("state") == "live"
+        cells = quota_cells(client, path) if live else None
         if previous == "loaded" and (live or not reopened):   # loaded while fielding: reloaded once Forsta closes it
             state = "loaded"
-        elif live and fielded(client, m):
+        elif live and fielded(m, cells):
             state = "due"
         elif m.get("state") != "closed":
             state = "testing"
@@ -133,7 +153,7 @@ def discover(client) -> dict[str, int]:
                      "stype": study_type(m), "created": _when(m.get("createdOn")),
                      "launched": _when(m.get("dateLaunched")), "closed": _when(m.get("closedDate")),
                      "qn": m.get("qualified"), "tn": m.get("total"), "seen": datetime.now(timezone.utc).replace(tzinfo=None),
-                     "lstate": state, "sid": survey_id})
+                     "lstate": state, "sid": survey_id, "quota": json.dumps(cells) if cells else None})
     columns = {"title": "title", "fstate": "state", "hib": "hibernated", "tags": "tags", "stype": "study_type",
                "created": "created_on", "launched": "launched_at", "closed": "closed_at", "qn": "qualified_n",
                "tn": "total_n", "lstate": "load_state"}
@@ -145,6 +165,10 @@ def discover(client) -> dict[str, int]:
             conn.execute(text("UPDATE cip_forsta_survey SET last_seen = :seen WHERE forsta_path IN :paths")
                          .bindparams(bindparam("paths", expanding=True)),
                          {"seen": rows[0]["seen"], "paths": [r["path"] for r in rows]})
+            live = [r for r in rows if r["quota"]]   # quota left, for the schedule page; kept after the wave closes
+            if live:
+                conn.execute(text("UPDATE cip_forsta_survey SET quota_json = :quota, quota_at = :seen WHERE forsta_path = :path"), live)
+    moved = [r for r in rows if r["path"] not in stored or (r["fstate"], r["lstate"]) != (stored[r["path"]]["state"], stored[r["path"]]["load_state"])]
     if changed:
         with eng.begin() as conn:
             conn.execute(text("""
@@ -158,8 +182,16 @@ def discover(client) -> dict[str, int]:
                     launched_at = VALUES(launched_at), closed_at = VALUES(closed_at),
                     qualified_n = VALUES(qualified_n), total_n = VALUES(total_n), last_seen = VALUES(last_seen),
                     load_state = VALUES(load_state)"""), changed)
+            if moved:
+                record(conn, [(r["path"], r["seen"], r["fstate"], r["lstate"], r["qn"]) for r in moved])
             survey_calendar.rebuild(conn)
     return dict(Counter(r["lstate"] for r in rows))
+
+
+def record(conn, events: list[tuple]) -> None:
+    """Status history: (path, seen_at, Forsta state, load state, qualified) per observed change."""
+    conn.execute(text("INSERT INTO cip_forsta_event (forsta_path, seen_at, state, load_state, qualified_n)"
+                      " VALUES (:p, :at, :st, :ls, :q)"), [dict(zip(("p", "at", "st", "ls", "q"), e)) for e in events])
 
 
 def _meta(client, path: str) -> dict:
@@ -170,9 +202,14 @@ def _mark(path: str, state: str, survey_id: Optional[int] = None, error: Optiona
     with get_engine("etl").begin() as conn:
         conn.execute(text(
             "UPDATE cip_forsta_survey SET load_state = :st, last_error = :err,"
+            " attempts = CASE WHEN :st = 'failed' THEN attempts + 1 ELSE 0 END,"
             " survey_id = COALESCE(:sid, survey_id), loaded_at = CASE WHEN :st = 'loaded' THEN :now ELSE loaded_at END"
             " WHERE forsta_path = :p"),
             {"st": state, "err": (error or None) and error[:1000], "sid": survey_id, "now": datetime.now(timezone.utc).replace(tzinfo=None), "p": path})
+        if state in ("loaded", "failed"):
+            row = conn.execute(text("SELECT state, qualified_n FROM cip_forsta_survey WHERE forsta_path = :p"), {"p": path}).first()
+            if row:
+                record(conn, [(path, datetime.now(timezone.utc).replace(tzinfo=None), row[0], state, row[1])])
 
 
 # ── one wave ───────────────────────────────────────────────────────────────
@@ -350,16 +387,21 @@ def _write(survey_id: int, records: list[dict], run: int) -> int:
                 conn.execute(text(f"DELETE FROM {table} WHERE respondent_id IN :ids")
                              .bindparams(bindparam("ids", expanding=True)), {"ids": gone})
         fields = _fields(conn, survey_id)
-        rows = []
-        for rec in records:
-            rid = ids[str(rec["uuid"])[:64]]
-            for name, value in rec.items():
-                field = fields.get(name)
-                stored = field and _answer(field, value)
-                if stored:
-                    rows.append({"rid": rid, "sid": survey_id, "fid": field["id"], **stored})
         conn.execute(text("DELETE FROM cip_answer WHERE survey_id = :s"), {"s": survey_id})
-        insert_answers(conn, rows)
+
+        def _stream_answers():
+            for rec in records:
+                rid = ids.get(str(rec.get("uuid"))[:64])
+                if not rid:
+                    continue
+                for name, value in rec.items():
+                    field = fields.get(name)
+                    if field:
+                        stored = _answer(field, value)
+                        if stored:
+                            yield {"rid": rid, "sid": survey_id, "fid": field["id"], **stored}
+
+        insert_answers(conn, _stream_answers())
     return len(people)
 
 
@@ -367,48 +409,9 @@ ANSWER_COLUMNS = "respondent_id, survey_id, field_id, value_code, value_label, v
 ANSWER_KEYS = ("rid", "sid", "fid", "code", "label", "num", "txt")
 
 
-def insert_answers(conn, rows: list[dict]) -> None:
-    """LOAD DATA LOCAL INFILE on MySQL — 147,635 answers in 14 s instead of 36 s
-    of batched INSERTs over the VPN (wave 412, 19 Oct 2026). Batched INSERTs on
-    SQLite, or when the server refuses LOCAL INFILE or warns about any row."""
-    if not rows:
-        return
-    if conn.dialect.name == "mysql":
-        try:
-            if _load_data(conn, rows):
-                return
-        except OperationalError as exc:            # local_infile switched off on the server
-            log.warning("LOAD DATA refused (%s); using batched INSERTs", exc.orig)
-    statement = text(f"INSERT INTO cip_answer ({ANSWER_COLUMNS}) VALUES ({', '.join(':' + k for k in ANSWER_KEYS)})")
-    for i in range(0, len(rows), _CHUNK):
-        conn.execute(statement, rows[i:i + _CHUNK])
-
-
-def tsv(value: Any) -> str:
-    """One LOAD DATA field: NULL as \\N, the escape characters escaped."""
-    if value is None:
-        return r"\N"
-    return (str(value).replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n")
-            .replace("\r", "\\r").replace("\0", "\\0"))
-
-
-def _load_data(conn, rows: list[dict]) -> bool:
-    """False (and the wave's answers removed again) if MySQL warned about any row:
-    LOCAL turns errors into warnings, and a truncated value must never be kept."""
-    with tempfile.NamedTemporaryFile("w", suffix=".tsv", encoding="utf-8", newline="\n", delete=False) as f:
-        f.writelines("\t".join(tsv(r[k]) for k in ANSWER_KEYS) + "\n" for r in rows)
-    try:
-        conn.exec_driver_sql(
-            f"LOAD DATA LOCAL INFILE '{Path(f.name).as_posix()}' INTO TABLE cip_answer CHARACTER SET utf8mb4"
-            f" FIELDS TERMINATED BY '\\t' ESCAPED BY '\\\\' LINES TERMINATED BY '\\n' ({ANSWER_COLUMNS})")
-        warnings = conn.exec_driver_sql("SHOW WARNINGS LIMIT 5").all()
-    finally:
-        os.remove(f.name)
-    if warnings:
-        log.warning("LOAD DATA warned %s; reloading the answers with batched INSERTs", warnings)
-        conn.execute(text("DELETE FROM cip_answer WHERE survey_id = :s"), {"s": rows[0]["sid"]})
-        return False
-    return True
+def insert_answers(conn, rows) -> None:
+    """The wave's answers (dicts keyed by ANSWER_KEYS), streamed into cip_answer (database.bulk_insert)."""
+    bulk_insert(conn, "cip_answer", ANSWER_COLUMNS.split(", "), (tuple(r[k] for k in ANSWER_KEYS) for r in rows))
 
 
 def verify(survey_id: int, datamap: dict, records: list[dict]) -> list[str]:
@@ -466,13 +469,16 @@ def reconcile_survey(survey_id: int, client=None) -> tuple[int, list[str]]:
 
 
 # ── the run ────────────────────────────────────────────────────────────────
+MAX_ATTEMPTS = 3   # a wave failing this many runs in a row waits for a hand run (--survey) instead of a full fetch every run
+
+
 def run_due(client) -> dict[str, list[str]]:
-    """Load every due (and previously failed) wave, oldest first; a failure is
+    """Load every due (and previously failed, up to MAX_ATTEMPTS) wave, oldest first; a failure is
     recorded and the run carries on."""
     with get_engine("etl").connect() as conn:
         due = [p for (p,) in conn.execute(text(
-            "SELECT forsta_path FROM cip_forsta_survey WHERE load_state IN ('due', 'failed')"
-            " ORDER BY closed_at, forsta_path"))]
+            "SELECT forsta_path FROM cip_forsta_survey WHERE load_state = 'due' OR (load_state = 'failed' AND attempts < :n)"
+            " ORDER BY closed_at, forsta_path"), {"n": MAX_ATTEMPTS})]
     result: dict[str, list[str]] = {"loaded": [], "failed": []}
     listed = {str(m["path"]).strip("/"): m for m in client.surveys()} if due else {}   # one list call per run
     for path in due:
@@ -519,6 +525,10 @@ def main() -> int:
             index_survey(sid, concepts=i == len(ids))      # concept rows once, at the end
         log.info("Indexed %d waves", len(ids))
         return 0
+    lock = get_engine("etl").connect()   # the same lock as scripts/weekly_forsta.py: never two loads at once
+    if args.reconcile is False and not lock.execute(text("SELECT GET_LOCK('cip_etl', 0)")).scalar():
+        log.error("Another CIP run holds the lock (scripts/weekly_forsta.py?); try again when it finishes")
+        return 1
     client = _client()
     if args.discover:
         log.info("Register: %s", discover(client))

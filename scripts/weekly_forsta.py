@@ -31,11 +31,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import inspect  # noqa: E402
+from sqlalchemy import inspect, text  # noqa: E402
 
 from app.core.config import config  # noqa: E402
 from app.core.database import get_engine, healthcheck  # noqa: E402
-from api import dashboards  # noqa: E402
+from api import dashboards, team  # noqa: E402
 from etl import forsta_etl, integrity, launch_schedule, notify, publish  # noqa: E402
 from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
 
@@ -104,6 +104,11 @@ def run(client=None) -> int:
             dashboards.build_for([forsta_etl.survey_id_of(path) for path in result["loaded"]])
         except Exception as exc:                    # last week's dashboards stay live; say so
             tell(notify.failure, "building the topic dashboards", str(exc))
+        try:                                        # the team's metric alerts (api/team.py), judged once per new wave
+            for message in team.due_alerts([forsta_etl.survey_id_of(path) for path in result["loaded"]]):
+                tell(notify.teams, message)
+        except Exception as exc:
+            tell(notify.failure, "checking the metric alerts", str(exc))
     if result["loaded"] or not (publish.ROOT / "current").exists():   # the standard screens as prebuilt files
         try:
             publish.publish()
@@ -184,4 +189,8 @@ def setup_logging() -> None:
 if __name__ == "__main__":
     setup_logging()
     planned = launch_schedule.planned_today()
-    sys.exit(watch(planned) if planned else run())
+    with get_engine("etl").connect() as lock:   # one run at a time: a hand-run --due and launchd would load a wave twice
+        if not lock.execute(text("SELECT GET_LOCK('cip_etl', 0)")).scalar():
+            log.info("Another CIP run holds the lock; this one stops")
+            sys.exit(0)
+        sys.exit(watch(planned) if planned else run())   # the lock goes with the connection

@@ -7,9 +7,10 @@ screens stay fast whatever the number of users. Only search and not-yet-publishe
   <root>/.build-<version>/api/v1/waves.json.gz                      the survey picker
                           api/v1/waves/<id>/book.json.gz            every wave's questions × banner (one per wave)
                           api/v1/dashboards/<code>/<id>.json.gz     module dashboards (the business Databank tiles)
-                          api/v1/trends/<family>/<study>/<qcode>/<dim>/<value>.json.gz
+                          api/v1/questions/<family>/<study>/<qcode>.json.gz   (every wave and cut: Compare, Trends)
                                                                     every question of every multi-wave family × banner
                           api/v1/waves/<id>/cuts/<qcode>.json.gz    answers counted by every cut (any two-cut crosstab)
+                          api/v1/waves/<id>/people.json.gz          respondent bitsets for Audiences (read by the API only)
                           manifest.json                             version, counts, each wave's built_at
   <root>/current → .build-<version>                                 swapped atomically after the gates pass
 
@@ -42,7 +43,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
 from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
@@ -61,7 +61,7 @@ def write(path: Path, data) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     target = path.with_name(path.name + ".json.gz")
     target.unlink(missing_ok=True)   # it may be a hard link to the live version's file: never write through it
-    target.write_bytes(gzip.compress(body, 9))
+    target.write_bytes(gzip.compress(body, 6))
     return len(body)
 
 
@@ -94,7 +94,8 @@ def build(root: Path = ROOT, jobs: int = 4) -> Path:
         shutil.copytree(live / rel, out / rel, copy_function=os.link)
         return True
 
-    fresh = [sid for sid in ids if before.get(str(sid)) != waves[str(sid)][0] or not reuse(f"api/v1/waves/{sid}")]
+    fresh = [sid for sid in ids if before.get(str(sid)) != waves[str(sid)][0]
+             or not (live / f"api/v1/waves/{sid}/people.json.gz").exists() or not reuse(f"api/v1/waves/{sid}")]
     by_wave: dict = {}
     for code, survey_id, _ in boards:
         by_wave.setdefault(survey_id, []).append(code)
@@ -103,7 +104,8 @@ def build(root: Path = ROOT, jobs: int = 4) -> Path:
     def wave(sid: int) -> int:   # the book, and per question what any two-cut crosstab needs
         with get_engine("app").connect() as conn:
             cuts = payloads.question_cuts(conn, [sid])
-        return write(out / f"api/v1/waves/{sid}/book", payloads.book(sid)) + sum(
+            people = payloads.people(conn, sid)
+        return write(out / f"api/v1/waves/{sid}/book", payloads.book(sid)) + write(out / f"api/v1/waves/{sid}/people", people) + sum(
             write(out / f"api/v1/waves/{sid}/cuts/{qcode}", part) for (_, qcode), part in cuts.items())
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         size += sum(pool.map(wave, fresh))
@@ -116,30 +118,42 @@ def build(root: Path = ROOT, jobs: int = 4) -> Path:
     gone = bool(set(before) - set(waves))   # a wave removed: every trend of its family loses a point
     changed = {waves[str(sid)][1:] for sid in fresh}
     multi = [f for f, m in members.items() if len(m) > 1]
-    full = [f for f in multi if gone or not reuse(f"api/v1/trends/{f[0]}/{f[1]}")]
-    # a new or reloaded wave changes only the trends of the questions it asked (a trend lists the waves that asked
-    # it): the family's other files stay linked to the live version, so a 268-wave tracker rebuilds ~60 questions
-    # ponytail: a reload that drops a question leaves that question's old trend; a full rebuild (delete current) clears it
+    full = [f for f in multi if gone or not reuse(f"api/v1/questions/{f[0]}/{f[1]}")]
+    # a new or reloaded wave changes only the files of the questions it asked (a question file lists the waves that
+    # asked it): the family's other files stay linked to the live version, so a 268-wave tracker rebuilds ~60 questions
     partial = [f for f in multi if f in changed and f not in full]
     redo = full + partial
     questions = []
     if redo:
-        with get_engine("app").connect() as conn:   # trends: one query per question gives all its banner columns
+        with get_engine("app").connect() as conn:   # one query per question gives every wave and every cut
             questions = conn.execute(text(
                 "SELECT DISTINCT w.survey_family, w.study_type, r.qcode FROM srv_result r JOIN srv_wave w ON w.survey_id = r.survey_id"
                 " WHERE r.dim = 'total' AND r.survey_id IN :ids").bindparams(bindparam("ids", expanding=True)),
                 {"ids": [sid for f in full for sid in members[f]] + [sid for sid in fresh if waves[str(sid)][1:] in partial] or [-1]}).all()
 
-    def trends(q) -> tuple[int, int]:
+    # a reloaded wave may have dropped a question: every linked file that lists a fresh wave is rebuilt too (and
+    # removed when no wave asks it any more), so no file keeps a reloaded wave's old answers
+    redone = {tuple(q) for q in questions}
+    for family, study in partial:
+        for path in (out / "api/v1/questions" / family / study).glob("*.json.gz"):
+            listed = {w[0] for w in json.loads(gzip.decompress(path.read_bytes()))["waves"]}
+            if listed & set(fresh):
+                redone.add((family, study, path.name.removesuffix(".json.gz")))
+    questions = sorted(redone)
+
+    def question(q) -> int:   # Compare and Trends both read it
         family, study, qcode = q
-        made = payloads.family_trends(family, study, qcode)
-        return len(made), sum(write(out / "api/v1/trends" / family / study / qcode / dim / value, t) for (dim, value), t in made.items())
+        data, target = payloads.question(family, study, qcode), out / "api/v1/questions" / family / study / qcode
+        if not data["waves"]:   # no wave asks it any more
+            target.with_name(target.name + ".json.gz").unlink(missing_ok=True)
+            return 0
+        return write(target, data)
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        done = list(pool.map(trends, questions))
-    size += sum(b for _, b in done)
+        done = list(pool.map(question, questions))
+    size += sum(done)
     manifest = {"version": version, "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "serving_version": serving, "waves": len(ids), "books": len(ids), "dashboards": len(boards),
-                "rebuilt_waves": len(fresh), "rebuilt_families": len(redo), "trends_written": sum(n for n, _ in done),
+                "rebuilt_waves": len(fresh), "rebuilt_families": len(redo), "questions_written": len(done),
                 "bytes_written": size, "seconds": round(time.perf_counter() - start, 1),
                 "built": {sid: at for sid, (at, _, _) in waves.items()}}
     check(out, manifest, ids)
@@ -186,6 +200,8 @@ def blob(name: str) -> str:
 
 def backup(version: Path) -> None:
     """The version as one tar in Azure Blob storage, then `latest` pointing at it (block blob, one PUT each)."""
+    import requests   # only backups use it; the API imports this module and its image has no requests
+
     with tempfile.TemporaryFile() as tar_file:
         with tarfile.open(fileobj=tar_file, mode="w") as tar:     # the payloads are gzip already
             tar.add(version, arcname=version.name)
@@ -197,6 +213,7 @@ def backup(version: Path) -> None:
 
 
 def restore(root: Path = ROOT) -> Path:
+    import requests   # only backups use it; the API imports this module and its image has no requests
     if not BACKUP:
         raise RuntimeError("CIP_PUBLISH_BACKUP_URL is not set: rebuild with `python -m etl.publish` instead")
     name = requests.get(blob("latest"), timeout=60).text.strip()

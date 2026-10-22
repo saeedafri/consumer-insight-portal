@@ -167,20 +167,19 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
         return
 
     explicit = (survey_map.load_config().get("profile") or {}).get(family or "", {})
-    with eng.begin() as conn:
-        for dimension, qcode in mapping.items():
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO cip_profile_map (survey_id, dimension, qcode, resolved_by)
-                    VALUES (:sid, :dim, :qcode, :how)
-                    ON DUPLICATE KEY UPDATE
-                        qcode = VALUES(qcode), resolved_by = VALUES(resolved_by)
-                    """
-                ),
-                {"sid": survey_id, "dim": dimension, "qcode": qcode,
-                 "how": "config" if explicit.get(dimension) == qcode else "detected"},
-            )
+    with eng.begin() as conn:   # one statement for every dimension: each round trip is ~250 ms from India
+        conn.execute(
+            text(
+                """
+                INSERT INTO cip_profile_map (survey_id, dimension, qcode, resolved_by)
+                VALUES (:sid, :dim, :qcode, :how)
+                ON DUPLICATE KEY UPDATE
+                    qcode = VALUES(qcode), resolved_by = VALUES(resolved_by)
+                """
+            ),
+            [{"sid": survey_id, "dim": dimension, "qcode": qcode,
+              "how": "config" if explicit.get(dimension) == qcode else "detected"} for dimension, qcode in mapping.items()],
+        )
     log.info("Profile mapping for survey_id=%s: %s", survey_id,
              ", ".join(f"{k}<-{v}" for k, v in sorted(mapping.items())))
 
@@ -190,9 +189,11 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
         rows = conn.execute(
             text(
                 """
-                SELECT a.respondent_id, f.field_name, a.value_label
+                SELECT a.respondent_id, f.field_name, COALESCE(a.value_label, o.value_label, i.item_label)
                   FROM cip_answer a
                   JOIN cip_field f ON f.field_id = a.field_id
+                  LEFT JOIN cip_option o ON o.question_id = f.question_id AND o.value_code = a.value_code
+                  LEFT JOIN cip_item i ON i.item_id = f.item_id
                  WHERE a.survey_id = :sid AND f.field_name IN :names
                 """
             ).bindparams(bindparam("names", expanding=True)),
@@ -284,7 +285,31 @@ def _rebuild_question_bases(survey_id: int) -> None:
             ),
             {"sid": survey_id},
         )
+        drop_derived_labels(conn, survey_id)
     log.info("Rebuilt question bases for survey_id=%s", survey_id)
+
+
+# An answer's label is its option's label (single choice) or its item's label (a multi-select or grid row), so
+# storing it on every answer row repeated ~33 bytes 26 M times (~860 MB). Readers rebuild it as
+# COALESCE(a.value_label, o.value_label, i.item_label); the column keeps only labels found nowhere else.
+
+
+def drop_derived_labels(conn, survey_id: int) -> int:
+    """Clear each answer label the option and item tables already hold; every loader runs it after writing a wave."""
+    if conn.dialect.name == "mysql":
+        return conn.execute(text("""
+            UPDATE cip_answer a JOIN cip_field f ON f.field_id = a.field_id
+              LEFT JOIN cip_option o ON o.question_id = f.question_id AND o.value_code = a.value_code
+              LEFT JOIN cip_item i ON i.item_id = f.item_id
+               SET a.value_label = NULL
+             WHERE a.survey_id = :sid AND a.value_label = COALESCE(o.value_label, i.item_label)"""), {"sid": survey_id}).rowcount
+    return conn.execute(text("""
+        UPDATE cip_answer SET value_label = NULL
+         WHERE survey_id = :sid AND value_label = (
+               SELECT COALESCE(o.value_label, i.item_label) FROM cip_field f
+                 LEFT JOIN cip_option o ON o.question_id = f.question_id AND o.value_code = cip_answer.value_code
+                 LEFT JOIN cip_item i ON i.item_id = f.item_id WHERE f.field_id = cip_answer.field_id)"""),
+        {"sid": survey_id}).rowcount
 
 
 # ═══════════════════════════════════════════════════════════════════════════

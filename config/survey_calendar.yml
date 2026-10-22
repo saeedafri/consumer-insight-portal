@@ -35,3 +35,22 @@ annual:            # their own survey once a year (~2,000 respondents)
   - {code: AMAZON_APPAREL,         name: "Amazon apparel (annual)",    title: 'amazon apparel'}
   - {code: ONLINE_GROCERY,         name: "Online grocery (annual)",    title: 'online grocery'}
   - {code: BACK_TO_SCHOOL,         name: "Back-to-school (annual)",    title: 'back-to-school'}
+events:            # recurring retail events, found anywhere in a title (any platform, any year): "Prime Day 2025" and
+                   # "... + Prime Day" are the same event, so Compare can line one year's Prime Day up with the last
+  - {code: SUPER_BOWL,     name: "Super Bowl",           title: 'super ?bowl'}
+  - {code: VALENTINES,     name: "Valentine's Day",      title: 'valentine'}
+  - {code: EASTER,         name: "Easter",               title: 'easter'}
+  - {code: MOTHERS_DAY,    name: "Mother's Day",         title: "mother'?s'? day"}
+  - {code: MEMORIAL_DAY,   name: "Memorial Day",         title: 'memorial day'}
+  - {code: FATHERS_DAY,    name: "Father's Day",         title: "father'?s'? day"}
+  - {code: JULY_4,         name: "July 4th",             title: 'july 4|4th of july|fourth of july'}
+  - {code: PRIME_DAY,      name: "Prime Day",            title: 'prime day'}
+  - {code: BACK_TO_SCHOOL, name: "Back to school",       title: 'back[- ]to[- ]school'}
+  - {code: LABOR_DAY,      name: "Labor Day",            title: 'labor day'}
+  - {code: BIG_DEAL_DAYS,  name: "Prime Big Deal Days",  title: 'big deal days?'}
+  - {code: HALLOWEEN,      name: "Halloween",            title: 'halloween'}
+  - {code: THANKSGIVING,   name: "Thanksgiving",         title: 'thanksgiving'}
+  - {code: BLACK_FRIDAY,   name: "Black Friday",         title: 'black friday'}
+  - {code: CYBER_MONDAY,   name: "Cyber Monday",         title: 'cyber monday'}
+  - {code: HOLIDAY,        name: "Holiday season",       title: 'holiday|christmas'}
+  - {code: NEW_YEAR,       name: "New Year",             title: 'new year'}

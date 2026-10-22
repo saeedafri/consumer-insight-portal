@@ -149,32 +149,6 @@ def wave_report(survey_id: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFram
 
 
 @st.cache_data(ttl=TTL, show_spinner=False)
-def item_incidence(survey_id: int, question_id: int) -> pd.DataFrame:
-    return query_df(
-        """
-        SELECT item_label, pct, selected_n, base_n, is_exclusive
-          FROM v_cip_item_incidence
-         WHERE survey_id = :sid AND question_id = :qid
-         ORDER BY pct DESC
-        """,
-        {"sid": survey_id, "qid": question_id},
-    )
-
-
-@st.cache_data(ttl=TTL, show_spinner=False)
-def single_distribution(survey_id: int, question_id: int) -> pd.DataFrame:
-    return query_df(
-        """
-        SELECT value_code, answer_label AS value_label, n, pct, base_n, is_nonresponse
-          FROM v_cip_single_distribution
-         WHERE survey_id = :sid AND question_id = :qid
-         ORDER BY value_code
-        """,
-        {"sid": survey_id, "qid": question_id},
-    )
-
-
-@st.cache_data(ttl=TTL, show_spinner=False)
 def trend(survey_family: str, qcode: str) -> pd.DataFrame:
     return query_df(
         """

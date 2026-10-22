@@ -7,6 +7,7 @@ import logging
 
 import sqlalchemy as sa
 
+from app.core import database
 from etl import crosstab_export, forsta_etl, integrity
 from tests.test_forsta_etl import FakeForsta, record
 
@@ -32,9 +33,9 @@ def test_marks_letter_each_column_against_its_group_only():
 
 
 def test_load_data_fields_escape_what_mysql_would_read_as_structure():
-    assert forsta_etl.tsv(None) == r"\N"
-    assert forsta_etl.tsv("a\tb\\c\nd\re") == "a\\tb\\\\c\\nd\\re"
-    assert forsta_etl.tsv(2.5) == "2.5"
+    assert database.tsv(None) == r"\N"
+    assert database.tsv("a\tb\\c\nd\re") == "a\\tb\\\\c\\nd\\re"
+    assert database.tsv(2.5) == "2.5"
 
 
 def test_integrity_heals_derived_rows_and_reports_base_problems(csi_db):

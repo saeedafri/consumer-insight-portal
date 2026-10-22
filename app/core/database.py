@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Optional, Sequence
+import re
+import tempfile
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -11,8 +12,8 @@ from functools import lru_cache
 from pathlib import Path
 
 from sqlalchemy import create_engine, event, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from . import sqlite_compat
@@ -20,8 +21,11 @@ from .config import config
 
 logger = logging.getLogger(__name__)
 
+# seconds a single statement may wait for MySQL before failing instead of hanging. The read role also serves the
+# publish and dashboard builds (a family-wide query takes minutes under load); screens are capped by gunicorn's 30 s.
+READ_TIMEOUT = {"app": 600, "etl": 1800}
+
 _engines: dict[str, Engine] = {}
-_sessions: dict[str, sessionmaker] = {}
 
 
 def dialect(role: str = "app") -> str:
@@ -71,7 +75,7 @@ def get_engine(role: str = "app") -> Engine:
             _install_sqlite_translation(engine)
             with engine.connect() as conn:
                 conn.execute(text("PRAGMA foreign_keys=ON"))
-            logger.info("Created SQLite engine role=%s path=%s", role, db.database)
+            logger.info("Created SQLite engine role=%s path=%s ", role, db.database)
             return engine
         if not db.host or not db.database:
             raise RuntimeError(
@@ -85,6 +89,10 @@ def get_engine(role: str = "app") -> Engine:
         reads_only = role == "app"
         # The writer bulk-loads answers with LOAD DATA LOCAL INFILE (etl/forsta_etl.py).
         connect_args = db.connect_args if reads_only else {**db.connect_args, "local_infile": True}
+        if db.url.startswith("mysql"):   # a hung query fails instead of blocking the run (and the launchd slots after it)
+            connect_args = {**connect_args, "connect_timeout": 20, "read_timeout": READ_TIMEOUT.get(role, 1800), "write_timeout": READ_TIMEOUT.get(role, 1800)}
+            if reads_only:   # the socket timeout only abandons a slow SELECT: this makes the server stop it (SELECTs only, in ms)
+                connect_args["init_command"] = f"SET SESSION max_execution_time={READ_TIMEOUT[role] * 1000}"
         _engines[role] = create_engine(
             db.url,
             poolclass=QueuePool,
@@ -99,25 +107,6 @@ def get_engine(role: str = "app") -> Engine:
         )
         logger.info("Created engine role=%s host=%s db=%s", role, db.host, db.database)
     return _engines[role]
-
-
-def get_sessionmaker(role: str = "app") -> sessionmaker:
-    if role not in _sessions:
-        _sessions[role] = sessionmaker(bind=get_engine(role), expire_on_commit=False, future=True)
-    return _sessions[role]
-
-
-@contextmanager
-def session_scope(role: str = "etl") -> Generator[Session, None, None]:
-    session = get_sessionmaker(role)()
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
 
 
 def query_df(sql: str, params: Optional[dict] = None, role: str = "app") -> pd.DataFrame:
@@ -145,6 +134,63 @@ def execute_many(sql: str, rows: Sequence[dict], role: str = "etl", chunk: int =
     return total
 
 
+_UNESCAPED = {"t": "\t", "n": "\n", "r": "\r", "0": "\0", "\\": "\\"}
+
+
+def tsv(value: Any) -> str:
+    """One LOAD DATA field: NULL as \\N, the escape characters escaped."""
+    if value is None:
+        return r"\N"
+    return (str(value).replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n")
+            .replace("\r", "\\r").replace("\0", "\\0"))
+
+
+def untsv(value: str) -> Optional[str]:
+    """tsv() reversed in one pass, so an escaped backslash next to a t or n is never misread."""
+    return None if value == r"\N" else re.sub(r"\\(.)", lambda m: _UNESCAPED.get(m.group(1), m.group(1)), value)
+
+
+def bulk_insert(conn, table: str, columns: Sequence[str], rows: Iterable[Sequence]) -> None:
+    """Rows into a table in the caller's transaction. On MySQL one LOAD DATA LOCAL INFILE: a compact upload instead
+    of thousands of INSERT values (from India the link, not the server, is the cost: 13 k serving rows took 18 s as
+    INSERTs). A row the server warns about fails the load (the transaction rolls back), never a silently changed
+    value. Batched INSERTs on SQLite, or when the server refuses LOCAL INFILE (re-read from the same file)."""
+    marks = ", ".join(f":c{i}" for i in range(len(columns)))
+    statement = text(f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({marks})")
+
+    def batched(source):
+        batch = []
+        for row in source:
+            batch.append({f"c{i}": v for i, v in enumerate(row)})
+            if len(batch) == 5000:
+                conn.execute(statement, batch)
+                batch = []
+        if batch:
+            conn.execute(statement, batch)
+    if conn.dialect.name != "mysql":
+        return batched(rows)
+    with tempfile.NamedTemporaryFile("w", suffix=".tsv", encoding="utf-8", newline="\n", delete=False) as f:
+        path = Path(f.name)
+        for row in rows:
+            f.write("\t".join(tsv(v) for v in row) + "\n")
+    try:
+        try:
+            conn.exec_driver_sql(
+                f"LOAD DATA LOCAL INFILE '{path.as_posix()}' INTO TABLE {table} CHARACTER SET utf8mb4"
+                f" FIELDS TERMINATED BY '\\t' ESCAPED BY '\\\\' LINES TERMINATED BY '\\n' ({', '.join(columns)})")
+        except OperationalError as exc:
+            if getattr(exc.orig, "args", [None])[0] not in (1148, 2068, 3948):   # anything but "LOCAL INFILE is off"
+                raise
+            logger.warning("LOAD DATA refused (%s); using batched INSERTs", exc.orig)
+            with path.open(encoding="utf-8") as lines:
+                return batched([untsv(v) for v in line.rstrip("\n").split("\t")] for line in lines)
+        warned = conn.exec_driver_sql("SHOW WARNINGS LIMIT 5").all()
+        if warned:
+            raise RuntimeError(f"LOAD DATA into {table} warned {warned}: nothing is kept")
+    finally:
+        path.unlink(missing_ok=True)
+
+
 def apply_sql(path, engine: Engine) -> int:
     """Apply one .sql file to `engine`. On SQLite the MySQL DDL is converted on
     the fly (see sqlite_compat) so there is only one schema file to maintain."""
@@ -167,11 +213,6 @@ def apply_sql(path, engine: Engine) -> int:
     logger.info("Applied %s (%d statements, dialect=%s)",
                 path, applied, "sqlite" if is_sqlite else "mysql")
     return applied
-
-
-def run_sql_file(path: str, role: str = "etl") -> None:
-    """Apply a .sql migration with the engine for `role`."""
-    apply_sql(path, get_engine(role))
 
 
 def healthcheck(role: str = "app") -> tuple[bool, str]:

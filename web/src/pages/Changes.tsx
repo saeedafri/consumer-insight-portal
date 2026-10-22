@@ -1,11 +1,14 @@
 // Every answer of the wave against last week or the same week last year, most significant first.
+import CountUp from "../components/CountUp";
 import { useMemo } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { useBook } from "../api";
-import { Card, Failure, IconDownload, Loading } from "../components/bits";
-import { downloadCsv } from "../csv";
+import { Card, Failure, Loading, ExportButtons } from "../components/bits";
+import { downloadTable } from "../csv";
 import { isProfile, moves } from "../moves";
 import { fmtDate, pct, pts } from "../stats";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function Changes() {
   const id = Number(useParams().id);
@@ -54,17 +57,17 @@ export default function Changes() {
     <div className="grid g4" style={{ marginBottom: 18 }}>
       <div className="card kpi lead">
         <div className="k-label">Significant shifts</div>
-        <div className="k-value">{sigMoves.length}</div>
+        <div className="k-value"><CountUp text={String(sigMoves.length)} /></div>
         <div className="k-note">of {comparableMoves.length} answers evaluated (95 % conf.)</div>
       </div>
       <div className="card kpi">
         <div className="k-label">Largest increase</div>
-        <div className="k-value" style={{ color: "var(--sig)" }}>{topGainer ? `+${topGainer[key]!.toFixed(1)} pts` : "—"}</div>
+        <div className="k-value" style={{ color: "var(--sig)" }}><CountUp text={topGainer ? `+${topGainer[key]!.toFixed(1)} pts` : "—"} /></div>
         <div className="k-note clamp"><b>{topGainer ? topGainer.label : "None"}</b>{topGainer ? ` · now ${pct(topGainer.now)}` : ""}</div>
       </div>
       <div className="card kpi">
         <div className="k-label">Largest decrease</div>
-        <div className="k-value" style={{ color: "var(--blue)" }}>{topDecliner ? `${topDecliner[key]!.toFixed(1)} pts` : "—"}</div>
+        <div className="k-value" style={{ color: "var(--blue)" }}><CountUp text={topDecliner ? `${topDecliner[key]!.toFixed(1)} pts` : "—"} /></div>
         <div className="k-note clamp"><b>{topDecliner ? topDecliner.label : "None"}</b>{topDecliner ? ` · now ${pct(topDecliner.now)}` : ""}</div>
       </div>
       <div className="card kpi">
@@ -75,16 +78,22 @@ export default function Changes() {
     </div>
 
     <Card>
-      <div className="toolbar">
-        <div className="seg" role="group" aria-label="Compare against">
-          <button aria-pressed={against === "prior"} onClick={() => set("vs", "")}>vs last week</button>
-          <button aria-pressed={against === "ly"} onClick={() => set("vs", "ly")} disabled={noLy} title={noLy ? "Last year's week is not loaded" : undefined}>vs last year{noLy ? " (not loaded)" : ""}</button>
-        </div>
-        <div className="seg" role="group" aria-label="Direction of change">
-          <button aria-pressed={dir === "all"} onClick={() => set("dir", "")}>All shifts</button>
-          <button aria-pressed={dir === "up"} onClick={() => set("dir", "up")}>▲ Gainers</button>
-          <button aria-pressed={dir === "down"} onClick={() => set("dir", "down")}>▼ Decliners</button>
-        </div>
+      <div className="toolbar" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Tabs value={against} onValueChange={v => set("vs", v === "ly" ? "ly" : "")}>
+          <TabsList>
+            <TabsTrigger value="prior">vs last week</TabsTrigger>
+            <TabsTrigger value="ly" disabled={noLy} title={noLy ? "Last year's week is not loaded" : undefined}>
+              vs last year{noLy ? " (not loaded)" : ""}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <Tabs value={dir} onValueChange={d => set("dir", d === "all" ? "" : d)}>
+          <TabsList>
+            <TabsTrigger value="all">All shifts</TabsTrigger>
+            <TabsTrigger value="up">▲ Gainers</TabsTrigger>
+            <TabsTrigger value="down">▼ Decliners</TabsTrigger>
+          </TabsList>
+        </Tabs>
         <label className="check"><input type="checkbox" checked={onlySig} onChange={e => set("all", e.target.checked ? "" : "1")} /> Significant only</label>
         <label className="check" title="Age, gender, income, relationship… shift with each week's sample: context, not news">
           <input type="checkbox" checked={profile} onChange={e => set("profile", e.target.checked ? "1" : "")} /> Include respondent demographics</label>
@@ -92,17 +101,14 @@ export default function Changes() {
           <option value="all">All sections ({sections.length})</option>{sections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <span style={{ flex: 1 }} />
-        <button className="btn" onClick={() => downloadCsv(`changes-${book.wave.wave_date}`, ["Code", "Question", "Answer", "Now %", "Then %", "Change pts", "Significant"],
+        <ExportButtons onExport={format => downloadTable(format, `changes-${book.wave.wave_date}`, ["Code", "Question", "Answer", "Now %", "Then %", "Change pts", "Significant"],
           rows.map(m => [m.q.id, m.q.text, m.label, m.now, against === "ly" ? m.ly : m.prior, m[key]?.toFixed(1), (against === "ly" ? m.sigLy : m.sig) ? "yes" : "no"]),
-          [`${book.wave.title}, wave of ${fmtDate(book.wave.wave_date)}`, `Compared against ${against === "ly" ? "the same week last year" : "last week"}`])}>
-          <IconDownload />
-          Download CSV
-        </button>
+          [`${book.wave.title}, wave of ${fmtDate(book.wave.wave_date)}`, `Compared against ${against === "ly" ? "the same week last year" : "last week"}`])} />
       </div>
       {rows.length === 0 ? (
         <div style={{ textAlign: "center", padding: "36px 16px" }}>
           <p className="muted" style={{ margin: "0 0 12px" }}>No changes match these filters{onlySig ? ". Uncheck “Significant only” or select all shifts to view movements." : "."}</p>
-          <button className="btn" onClick={() => setParams({})}>Reset all filters</button>
+          <Button variant="outline" size="sm" onClick={() => setParams({})}>Reset all filters</Button>
         </div>
       ) : (
         <>
@@ -125,7 +131,7 @@ export default function Changes() {
               const qText = m.q.short || m.q.text;
               return <tr key={m.q.id + m.label}>
                 <th scope="row">{m.label}</th>
-                <td><Link to={`/w/${id}/trends/${encodeURIComponent(m.q.id)}`}><code style={{ color: "var(--red)", fontWeight: 700 }}>{m.q.id}</code></Link> <span className="muted">{qText.length > 88 ? qText.slice(0, 86) + "…" : qText}</span></td>
+                <td><Link to={`/w/${id}/trends/${encodeURIComponent(m.q.id)}`}><code style={{ color: "var(--ink)", fontWeight: 700 }}>{m.q.id}</code></Link> <span className="muted">{qText.length > 88 ? qText.slice(0, 86) + "…" : qText}</span></td>
                 <td className="num"><b>{pct(m.now)}</b></td>
                 <td className="num muted">{pct(against === "ly" ? m.ly : m.prior)}</td>
                 <td className={`num ${sig ? "sig" : "muted"}`}>{pts(d)}</td>

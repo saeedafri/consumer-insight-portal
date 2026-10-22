@@ -1,5 +1,6 @@
 // A wave at a glance: the biggest significant moves, then one chart per section. Every number is
 // computed from the wave, so the page works for any survey, not one written by hand.
+import CountUp from "../components/CountUp";
 import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useBook, useWaves } from "../api";
@@ -10,6 +11,8 @@ import QuestionChart from "../components/QuestionChart";
 import Profiled from "../components/Profiled";
 import { biggest, isProfile, moves } from "../moves";
 import { fmtDate, pct, pts } from "../stats";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Printer as PrinterIcon } from "lucide-react";
 
 export default function Overview() {
   const id = Number(useParams().id);
@@ -32,12 +35,12 @@ export default function Overview() {
       <p className="lede">Wave of {fmtDate(w.wave_date)} · {w.qualified_n.toLocaleString("en-US")} qualified respondents · {book.questions.length} {book.questions.length === 1 ? "question" : "questions"}. {lead ? <>{lead.q.text} {up.length > 1 && <>· {up.length} answers moved significantly against {prior ? fmtDate(prior.wave_date) : "last week"}.</>}</> : w.title}</p>
     </div>
       <div className="toolbar">
-        <Link className="btn primary" to={`/w/${id}/questions`}>{book.questions.length === 1 ? "Explore the question" : `Explore all ${book.questions.length} questions`}</Link>
-        <Link className="btn" to={`/w/${id}/changes`}>What changed</Link>
-        <button className="btn" onClick={() => window.print()} title="Print briefing or save as PDF">
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z" fill="currentColor"/></svg>
+        <Link className={buttonVariants({ variant: "default" })} to={`/w/${id}/questions`}>{book.questions.length === 1 ? "Explore the question" : `Explore all ${book.questions.length} questions`}</Link>
+        <Link className={buttonVariants({ variant: "outline" })} to={`/w/${id}/changes`}>What changed</Link>
+        <Button variant="outline" onClick={() => window.print()} title="Print briefing or save as PDF">
+          <PrinterIcon size={14} />
           Print report
-        </button>
+        </Button>
       </div>
     </div>
 
@@ -47,13 +50,13 @@ export default function Overview() {
 
     <Profiled id="Overview:Kpis">
       <div className="grid g5" style={{ marginBottom: 16 }}>
-        <div className="card kpi lead"><div className="k-label">Qualified respondents</div><div className="k-value">{w.qualified_n.toLocaleString("en-US")}</div>
+        <div className="card kpi lead"><div className="k-label">Qualified respondents</div><div className="k-value"><CountUp text={w.qualified_n.toLocaleString("en-US")} /></div>
           <div className="k-note">{Object.entries(book.n).filter(([k]) => k !== "Total").slice(0, 2).map(([k, v]) => `${k} ${v}`).join(" · ")}</div></div>
         {(up.length ? up : all.filter(m => m.q.type === "single" && !isProfile(m))).filter((m, i, list) =>
           list.findIndex(x => x.q.id === m.q.id) === i).slice(0, 4).map(m =>   // one card per question
           <button key={m.q.id + m.label} className="card kpi" onClick={() => navigate(`/w/${id}/questions/${encodeURIComponent(m.q.id)}`)}>
             <div className="k-label clamp">{m.q.short || m.q.text}</div>
-            <div className="k-value">{pct(m.now)}</div>
+            <div className="k-value"><CountUp text={pct(m.now)} /></div>
             <div className="k-note"><b>{m.label.length > 48 ? m.label.slice(0, 46) + "…" : m.label}</b><br />
               <Change now={m.now} base={m.g.base} before={m.prior} beforeBase={m.r.prior_base} label="vs last week" routing={m.routing} /></div>
           </button>)}
@@ -62,7 +65,7 @@ export default function Overview() {
 
     <div className="grid g3" style={{ marginBottom: 16 }}>
       <Card className="span2" title="Biggest significant moves this week" sub={prior ? `Against the wave of ${fmtDate(prior.wave_date)} · two-proportion test, Benjamini–Hochberg corrected · routing changes excluded` : "No prior week to compare against"}
-            aside={<Link to={`/w/${id}/changes`} className="btn">What changed</Link>}>
+            aside={<Link to={`/w/${id}/changes`} className={buttonVariants({ variant: "outline", size: "sm" })}>What changed</Link>}>
         {up.length ? <div className="table-wrap"><table className="data">
           <thead><tr><th>Answer</th><th className="num">Now</th><th className="num">Last week</th><th className="num">Change</th></tr></thead>
           <tbody>{up.slice(0, 8).map(m => <tr key={m.q.id + m.label}>
@@ -88,7 +91,7 @@ export default function Overview() {
       {sections.map(q => <Card key={q.id} title={<Link to={`/w/${id}/questions/${encodeURIComponent(q.id)}`} style={{ color: "inherit", textDecoration: "none" }}>{q.short || q.text}</Link>}
                               sub={<>{q.section} · {q.id} · {q.type.replace("_", " ")}</>} aside={<BaseNote base={q.groups[0].base} />}>
         <QuestionChart question={{ ...q, groups: q.groups.map(g => ({ ...g, rows: g.rows.slice(0, 10) })) }} view={firstOf(q)} columns={["Total"]} sort wave={fmtDate(w.wave_date)} />
-        <SourceLine wave={fmtDate(w.wave_date)} base={`base n=${q.groups[0].base}`} asked={q.base_desc} />
+        <SourceLine wave={fmtDate(w.wave_date)} base={`base n=${q.groups[0].base}`} asked={q.base_desc} from={w} />
       </Card>)}
     </div>
   </Profiled>;

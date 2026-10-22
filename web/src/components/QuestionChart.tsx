@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import type { Column, Group, Question, Row } from "../api";
 import { isFiller } from "../api";
 import { C, blues, labelOn, scaleColours } from "../theme";
-import { count, moe, pct, pts, significant, SMALL_BASE } from "../stats";
+import { count, HIDDEN_BASE, moe, pct, pts, significant, SMALL_BASE } from "../stats";
 import EChart, { axisText, tooltip } from "./EChart";
 import type { Chart } from "./EChart";
 import Profiled from "./Profiled";
@@ -27,15 +27,17 @@ const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt
 export function tip(row: Row, column: Column, group: Group, question: Question, wave: string): string {
   const v = row[column];
   const base = group.bases[column] ?? group.base;
+  if (v == null) return `<div style="font-weight:600">${esc(row.label)}</div><div style="color:${C.ink2}">${column}: only ${base} respondents, so no figure is shown (fewer than ${HIDDEN_BASE})</div>`;
   const lines = [`<div style="font-weight:600;margin-bottom:4px">${esc(row.label)}</div>`,
     `<div style="font-size:20px;font-weight:700;color:${C.red}">${pct(v)} <span style="font-size:12px;font-weight:500;color:${C.ink2}">±${moe(v ?? 0, base).toFixed(1)} pts</span></div>`,
     `<div style="color:${C.ink2}">${column}${group.label ? ` · ${esc(group.label)}` : ""} · ≈${count(v ?? 0, base).toLocaleString("en-US")} of ${base.toLocaleString("en-US")} respondents</div>`];
   if (base < SMALL_BASE) lines.push(`<div style="color:${C.warn};margin-top:4px">Small base (under ${SMALL_BASE}): read with caution</div>`);
   if (column === "Total") {
-    const vsPrior = row.flags.includes("base_changed_prior") ? "base changed, not comparable"
+    const vsPrior = row.flags.includes("wording_changed_prior") ? "a different question last week (code reused)"
+      : row.flags.includes("base_changed_prior") ? "base changed, not comparable"
       : row.prior == null || !row.prior_base ? "not available"
       : `${pts((v ?? 0) - row.prior)} (${pct(row.prior)}) ${significant(v ?? 0, base, row.prior, row.prior_base) ? "<b>significant</b>" : "not significant"}`;
-    const vsLy = row.ly == null ? "not loaded" : `${pts((v ?? 0) - row.ly)} (${pct(row.ly)})`;
+    const vsLy = row.flags.includes("wording_changed_ly") ? "a different question last year" : row.ly == null ? "not loaded" : `${pts((v ?? 0) - row.ly)} (${pct(row.ly)})`;
     lines.push(`<div style="margin-top:6px;border-top:1px solid ${C.mist};padding-top:6px">vs last week: ${vsPrior}<br/>vs last year: ${vsLy}</div>`);
   }
   lines.push(`<div style="color:${C.grey};margin-top:4px;font-size:11px">${esc(question.id)} · wave of ${wave}</div>`);
@@ -54,6 +56,8 @@ export default function QuestionChart({ question, group = 0, view, columns, sort
   const g = question.groups[Math.min(group, question.groups.length - 1)];
   const rows = ordered(g.rows, sort, columns[0]);
   const option = useMemo(() => build(question, g, rows, view, columns, wave), [question, g, rows, view, columns, wave]);
+  if (rows.every(r => columns.every(c => r[c] == null)))
+    return <p className="muted" style={{ padding: "24px 4px" }}>Only {(g.bases[columns[0]] ?? g.base).toLocaleString("en-US")} respondents answered{columns[0] === "Total" ? "" : ` in ${columns[0]}`}: no figure is shown under {HIDDEN_BASE}, as on every screen and export.</p>;
   if (view === "table") return <QuestionTable question={question} rows={rows} group={g} columns={columns} />;
   const h = height ?? (view === "bars" ? Math.max(180, rows.length * (columns.length > 1 ? 18 * columns.length + 12 : 34) + 40)
     : view === "stacked" ? Math.max(160, (question.groups.length > 1 ? question.groups.length : 1) * 46 + 80) : 340);
@@ -127,7 +131,7 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
       label: { show: !multiSeries || rows.length <= 8, position: horizontal ? "right" : "top", color: C.ink, fontSize: 11,
                fontWeight: 600, formatter: (p: { value: number }) => `${p.value.toFixed(multiSeries ? 0 : 1)}%` },
       data: rows.map(r => ({
-        value: r[col] ?? 0, row: r, group: g,
+        value: r[col] ?? null, row: r, group: g,   // null: under 30 people, no bar
         itemStyle: { color: !multiSeries && (r[col] ?? 0) === top && !isFiller(r.label) ? C.red : palette[si],
                      opacity: (g.bases[col] ?? g.base) < SMALL_BASE ? 0.55 : 1 },
       })),
@@ -143,9 +147,9 @@ export function QuestionTable({ question, rows, group, columns }: { question: Qu
     <tbody>{rows.map(r => {
       const sig = r.prior != null && r.prior_base ? significant(r.Total ?? 0, group.base, r.prior, r.prior_base) : false;
       return <tr key={r.label}><th scope="row">{r.label}</th>
-        {columns.map(c => <td key={c} className={`num ${(group.bases[c] ?? 0) < SMALL_BASE ? "small" : ""}`}>{pct(r[c])}</td>)}
+        {columns.map(c => <td key={c} className={`num ${(group.bases[c] ?? 0) < SMALL_BASE ? "small" : ""}`}>{r[c] == null && (group.bases[c] ?? 0) > 0 ? "n<30" : pct(r[c])}</td>)}
         {columns.includes("Total") && <><td className="num muted">{pct(r.prior)}</td>
-          <td className={`num ${sig ? "sig" : "muted"}`}>{r.flags.includes("base_changed_prior") ? "base changed" : r.prior == null ? "–" : pts((r.Total ?? 0) - r.prior)}</td></>}
+          <td className={`num ${sig ? "sig" : "muted"}`}>{r.flags.includes("wording_changed_prior") ? "question changed" : r.flags.includes("base_changed_prior") ? "base changed" : r.prior == null ? "–" : pts((r.Total ?? 0) - r.prior)}</td></>}
       </tr>;
     })}</tbody>
   </table></div>;

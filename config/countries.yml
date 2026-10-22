@@ -1,0 +1,26 @@
+# Countries CIP reports on. A wave's country is cip_survey.country, and its family is per country (CSI-US), so waves
+# are only ever compared, trended or pooled within one country. `cuts` lists each cut's values in display order
+# (Compare and exports use it; a value not listed is shown after these).
+# China is configured ahead of its data: no wave carries CN yet. Fill its cuts from the first China questionnaire's
+# profile questions; US bands (census regions, US income) do not carry over.
+US:
+  name: United States
+  family: CSI-US
+  language: en
+  currency: USD
+  active: true
+  cuts:
+    gender: [Male, Female]
+    generation: [GenZ, Millennial, GenX, Boomer]
+    age_band: [18-29, 30-44, 45-60, Over 60]
+    income_band: ["under $25,000", "$25,000 - $49,999", "$50,000 - $99,999", "$100,000 - $149,999", "$150,000 - $199,999",
+                  "$200,000 or greater", prefer not to say]
+    census_region: [Northeast, Midwest, South, West]
+    urbanicity: [Urban, Suburban, Rural]
+CN:
+  name: China
+  family: CSI-CN
+  language: zh
+  currency: CNY
+  active: false
+  cuts: {}

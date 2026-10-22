@@ -84,11 +84,9 @@ def two_wave_db(tmp_path):
 
     import app.core.database as database
     database._engines.clear()
-    database._sessions.clear()
     database._conflict_targets.cache_clear()
     yield db
     database._engines.clear()
-    database._sessions.clear()
     if old:
         os.environ["LOCAL_SQLITE_PATH"] = old
 

@@ -19,19 +19,22 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
-from typing import Optional
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.exc import OperationalError
 
-from app.core.database import get_engine
+from app.core.database import bulk_insert, get_engine
 from app.data.cube import ANSWER_CUTS, ANSWER_ROWS, CUBE_DIMS
+from app.data.harmonise import normalise_text
 
 log = logging.getLogger("cip.serving")
 SMALL_BASE = 50       # respondents: below this a percentage is flagged
 BASE_SHIFT = 10.0     # points: a question's base share of qualified respondents moving more than this is a routing change
 PRIOR_DAYS = 14       # a tracker's previous wave must be at most this old to count as "prior week"
 CUTS = tuple(d for d in CUBE_DIMS if d != "total")
+RESULT_COLUMNS = ("survey_id", "qcode", "dim", "dim_value", "item_id", "option_id", "question_id", "qtype", "item_label",
+                  "option_code", "option_label", "sort_order", "concept_option_id", "n", "base_n", "pct", "prior_pct",
+                  "prior_base_n", "ly_pct", "ly_base_n", "flags")
 
 
 def _day(value) -> date:
@@ -65,8 +68,12 @@ def comparison(conn, survey_id: int) -> dict:
 
 
 def cube_rows(conn, survey_ids: list[int]) -> list[dict]:
-    """Labelled cube cells for these waves: Total and every cut, technical and virtual questions left out."""
-    return [dict(r) for r in conn.execute(text(
+    """Labelled cube cells for these waves: Total and every cut, technical and virtual questions left out, each with
+    its question's normalised wording (read once per question, not once per cell)."""
+    wording = {qid: normalise_text(t) for qid, t in conn.execute(text(
+        "SELECT question_id, qtext FROM cip_question WHERE survey_id IN :ids").bindparams(bindparam("ids", expanding=True)),
+        {"ids": survey_ids})}
+    return [{**r, "qtext": wording.get(r["question_id"], "")} for r in conn.execute(text(
         "SELECT c.survey_id, c.question_id, q.qcode, q.qtype, COALESCE(c.item_id, 0) AS item_id,"
         "       COALESCE(c.option_id, 0) AS option_id, COALESCE(i.item_label, '') AS item_label,"
         "       o.value_code AS option_code, o.value_label AS option_label,"
@@ -85,8 +92,18 @@ def _key(r: dict) -> tuple:
     return r["qcode"], r["item_label"], r["option_code"], r["dim"], r["dim_value"]
 
 
+def same_question(a: dict, b: dict) -> bool:
+    """Two waves' cells under one question code are the same question: the same wording, or answers harmonised to
+    the same concept (a reworded question someone linked). Codes are reused for new topics (Q13 was footwear one
+    week and Cyber Monday the next), so a matching code and answer label alone prove nothing."""
+    if a["concept_option_id"] and a["concept_option_id"] == b["concept_option_id"]:
+        return True
+    return a["qtext"] == b["qtext"]   # cube_rows normalised them
+
+
 def rows_for(wave: dict, cells: list[dict]) -> list[dict]:
-    """Finished serving rows: percentage, comparisons matched on question code + answer + cut, and flags."""
+    """Finished serving rows: percentage, comparisons with the same question (code + answer + cut, and same_question),
+    and flags."""
     by_wave: dict[int, dict] = {}
     for c in cells:
         by_wave.setdefault(c["survey_id"], {})[_key(c)] = c
@@ -99,6 +116,9 @@ def rows_for(wave: dict, cells: list[dict]) -> list[dict]:
         flags = ["small_base"] if c["base_n"] < SMALL_BASE else []
         for name, other in (("prior", wave["prior"]), ("ly", wave["ly"])):
             match = by_wave.get(other, {}).get(_key(c)) if other else None
+            if match and not same_question(c, match):
+                flags.append(f"wording_changed_{name}")
+                match = None
             row[f"{name}_pct"] = round(100 * match["n"] / match["base_n"], 3) if match else None
             row[f"{name}_base_n"] = match["base_n"] if match else None
             # the base share is only comparable on the same cut, so judge routing on Total
@@ -139,14 +159,8 @@ def _build_wave(survey_id: int) -> int:
             {"s": survey_id, "f": wave["survey_family"] or "", "t": wave["study_type"] or "", "d": wave["wave_date"],
              "q": wave["qualified"].get(survey_id, 0), "p": wave["prior"], "l": wave["ly"], "ls": wave["ly_status"],
              "r": len(rows)})
-        if rows:
-            conn.execute(text(
-                "INSERT INTO srv_result (survey_id, qcode, dim, dim_value, item_id, option_id, question_id, qtype,"
-                " item_label, option_code, option_label, sort_order, concept_option_id, n, base_n, pct, prior_pct,"
-                " prior_base_n, ly_pct, ly_base_n, flags) VALUES (:survey_id, :qcode, :dim, :dim_value, :item_id,"
-                " :option_id, :question_id, :qtype, :item_label, :option_code, :option_label, :sort_order,"
-                " :concept_option_id, :n, :base_n, :pct, :prior_pct, :prior_base_n, :ly_pct, :ly_base_n, :flags)"), rows)
-        store_answers(conn, survey_id)
+        bulk_insert(conn, "srv_result", RESULT_COLUMNS, (tuple(r[c] for c in RESULT_COLUMNS) for r in rows))
+        store_answers(conn, survey_id)   # always: deleting the srv_wave row above cascades to srv_answer
     return len(rows)
 
 
@@ -200,7 +214,7 @@ def build_all(jobs: int = 1, missing_only: bool = False) -> int:
         ids = [r[0] for r in conn.execute(text(
             "SELECT s.survey_id FROM cip_survey s WHERE s.load_status = 'verified'"
             + (" AND NOT EXISTS (SELECT 1 FROM srv_wave w WHERE w.survey_id = s.survey_id)" if missing_only else "")
-            + " ORDER BY s.wave_date, s.survey_id"))]
+            + " ORDER BY s.wave_date DESC, s.survey_id DESC"))]   # newest first: the waves people open come back first
     total, start = 0, time.perf_counter()
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         for i, n in enumerate(pool.map(build_wave, ids), 1):

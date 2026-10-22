@@ -122,21 +122,24 @@ def _concepts(conn) -> dict[int, Concept]:
                 for cid, code, qtype, match, name in conn.execute(text(
                     "SELECT concept_id, concept_code, qtype, match_text, concept_name"
                     " FROM cip_concept ORDER BY concept_id"))}
-    # The wording a concept was confirmed on is the truth. Re-normalising it
-    # here means a change to normalise_text() applies to every existing
-    # concept — stored match_text is only the fallback. Newest first, so the
-    # earliest wording is the one left standing.
+    # The wording a concept was confirmed on is the truth. Earliest confirmed wording
+    # per concept is preserved. Ordering by map_id ASC and tracking seen cids avoids
+    # redundant normalise_text() calls across historical waves.
+    seen: set[int] = set()
     for cid, qtext, row in conn.execute(text(
             "SELECT m.concept_id, q.qtext, i.item_label FROM cip_concept_map m"
             " JOIN cip_question q ON q.question_id = m.question_id"
             " LEFT JOIN cip_item i ON i.item_id = m.item_id"
             " WHERE m.status = 'confirmed' AND m.concept_option_id IS NULL"
-            " ORDER BY m.map_id DESC")):
-        concepts[cid].match_text = normalise_text(f"{qtext} :: {row}" if row else qtext)
+            " ORDER BY m.map_id ASC")):
+        if cid not in seen and cid in concepts:
+            seen.add(cid)
+            concepts[cid].match_text = normalise_text(f"{qtext} :: {row}" if row else qtext)
     for cid, coid, code, label in conn.execute(text(
             "SELECT concept_id, concept_option_id, option_code, option_label FROM cip_concept_option")):
-        concepts[cid].options[normalise_text(label)] = coid
-        concepts[cid].option_codes.add(code)
+        if cid in concepts:
+            concepts[cid].options[normalise_text(label)] = coid
+            concepts[cid].option_codes.add(code)
     return concepts
 
 
@@ -153,10 +156,23 @@ def _decide(unit: Unit, concepts: dict[int, Concept], used: set[int]):
         if not added:
             return "exact", concept, 1.0, "same wording and answers"
         return "changed", concept, 1.0, f"same wording; adds: {', '.join(added)}"[:1000]
-    scored = [(difflib.SequenceMatcher(None, unit.match_text, c.match_text).ratio(), c) for c in pool]
-    ratio, best = max(scored, key=lambda s: s[0], default=(0.0, None))
-    if best is not None and ratio >= SIMILAR_THRESHOLD:
-        return "similar", best, round(ratio, 4), f"{ratio:.0%} similar wording to {best.code}"
+
+    # Optimized string similarity: use O(1) length ratio and quick_ratio upper bounds
+    # before running full O(N^2) SequenceMatcher.ratio().
+    unit_text = unit.match_text
+    best_ratio, best_concept = 0.0, None
+    for c in pool:
+        matcher = difflib.SequenceMatcher(None, unit_text, c.match_text)
+        if matcher.real_quick_ratio() < SIMILAR_THRESHOLD or matcher.real_quick_ratio() <= best_ratio:
+            continue
+        if matcher.quick_ratio() < SIMILAR_THRESHOLD or matcher.quick_ratio() <= best_ratio:
+            continue
+        ratio = matcher.ratio()
+        if ratio > best_ratio:
+            best_ratio, best_concept = ratio, c
+
+    if best_concept is not None and best_ratio >= SIMILAR_THRESHOLD:
+        return "similar", best_concept, round(best_ratio, 4), f"{best_ratio:.0%} similar wording to {best_concept.code}"
     return "new", None, 1.0, "new concept"
 
 

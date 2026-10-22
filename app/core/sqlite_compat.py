@@ -24,8 +24,14 @@ uses, nothing more:
 """
 from __future__ import annotations
 
+import datetime
 import re
+import sqlite3
 from typing import Optional
+
+# Python 3.12+ deprecated default sqlite3 date/datetime adapters; register explicit ISO-format adapters
+sqlite3.register_adapter(datetime.date, lambda d: d.isoformat())
+sqlite3.register_adapter(datetime.datetime, lambda dt: dt.isoformat())
 
 _COMMENT = re.compile(r"\s+COMMENT\s+('(?:[^']|'')*'|\"(?:[^\"]|\"\")*\")", re.I)
 _TABLE_OPTS = re.compile(r"\)\s*ENGINE=\w+.*?$", re.I | re.S)
@@ -91,6 +97,7 @@ def rewrite_dml(sql: str, targets: Optional[dict[str, str]] = None) -> str:
     out = re.sub(r"\bNOW\(\s*\)", "CURRENT_TIMESTAMP", out, flags=re.I)
     out = re.sub(r"\bUTC_TIMESTAMP\(\s*\)", "CURRENT_TIMESTAMP", out, flags=re.I)
     out = re.sub(r"\bIFNULL\b", "COALESCE", out, flags=re.I)
+    out = re.sub(r"\bTIMESTAMPDIFF\s*\(\s*SECOND\s*,\s*([^,]+),\s*([^)]+)\)", r"(CAST((julianday(\2) - julianday(\1)) * 86400 AS INTEGER))", out, flags=re.I)
     return out
 
 

@@ -7,10 +7,16 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from decimal import Decimal
+from functools import lru_cache
+from pathlib import Path
+
+import yaml
 
 from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
+from app.data.harmonise import normalise_text
+from etl import survey_calendar
 from etl.serving import CUTS, SMALL_BASE
 
 COLUMNS = ("qcode", "dim", "dim_value", "item_label", "option_code", "option_label", "n", "base_n",
@@ -19,7 +25,15 @@ CROSSTAB_COLUMNS = ("v1", "v2", "item_label", "option_code", "option_label", "n"
 BANNER = (("Total", "total", "Total"), ("Male", "gender", "Male"), ("Female", "gender", "Female"),
           ("Gen Z", "generation", "GenZ"), ("Millennial", "generation", "Millennial"), ("Gen X", "generation", "GenX"),
           ("Boomer", "generation", "Boomer"))   # dashboard column, srv_result dim, dim_value
-HIDDEN_BASE = 30   # respondents: below this a two-cut cell shows no number at all, only "suppressed"
+HIDDEN_BASE = 30   # respondents: below this no screen, file or export shows a figure, only the base ("n<30")
+COUNTRIES = Path(__file__).resolve().parents[2] / "config" / "countries.yml"
+# Where a wave came from, for every screen's source line and export: platform, fielding window, source reference
+SOURCE = "s.country, s.platform, s.source_ref, s.field_start, s.field_end"
+
+
+@lru_cache(maxsize=1)
+def countries() -> dict:
+    return yaml.safe_load(COUNTRIES.read_text(encoding="utf-8"))
 
 
 def encode(data) -> bytes:
@@ -42,13 +56,14 @@ def waves(dashboards: dict) -> list[dict]:
     with get_engine("app").connect() as conn:
         rows = conn.execute(text(
             "SELECT w.survey_id, s.title, s.wave_label, w.wave_date, w.survey_family, w.study_type, w.qualified_n,"
-            " w.prior_survey_id, w.ly_survey_id, w.ly_status, w.rows_built FROM srv_wave w JOIN cip_survey s ON s.survey_id = w.survey_id"
-            " ORDER BY w.wave_date DESC, w.survey_id DESC")).mappings().all()
+            f" w.prior_survey_id, w.ly_survey_id, w.ly_status, w.rows_built, {SOURCE} FROM srv_wave w"
+            " JOIN cip_survey s ON s.survey_id = w.survey_id ORDER BY w.wave_date DESC, w.survey_id DESC")).mappings().all()
         modules = defaultdict(list)
         for survey_id, name in conn.execute(text(
                 "SELECT survey_id, module_name FROM cip_wave_module WHERE survey_id IS NOT NULL ORDER BY is_lead DESC, module_name")):
             modules[survey_id].append(name)
-    return [{**r, "modules": modules.get(r["survey_id"], []), "dashboards": sorted(dashboards.get(r["survey_id"], []))} for r in rows]
+    return [{**r, "modules": modules.get(r["survey_id"], []), "events": survey_calendar.events(r["title"]),
+             "dashboards": sorted(dashboards.get(r["survey_id"], []))} for r in rows]
 
 
 def book(survey_id: int) -> dict:
@@ -60,7 +75,7 @@ def book(survey_id: int) -> dict:
     with get_engine("app").connect() as conn:
         wave = conn.execute(text(
             "SELECT w.survey_id, s.title, s.wave_label, w.wave_date, w.survey_family, w.study_type, w.qualified_n,"
-            " w.prior_survey_id, w.ly_survey_id, w.ly_status FROM srv_wave w JOIN cip_survey s ON s.survey_id = w.survey_id"
+            f" w.prior_survey_id, w.ly_survey_id, w.ly_status, {SOURCE} FROM srv_wave w JOIN cip_survey s ON s.survey_id = w.survey_id"
             " WHERE w.survey_id = :s"), {"s": survey_id}).mappings().first()
         if wave is None:
             raise LookupError("No such wave")
@@ -98,12 +113,13 @@ def book(survey_id: int) -> dict:
             group = groups.setdefault(group_label, {"label": group_label, "base": 0, "bases": {}, "rows": {}})
             group["bases"][name] = r["base_n"]
             row = group["rows"].setdefault(row_label, {"label": row_label, "code": r["option_code"]})
-            row[name] = round(float(r["pct"]), 1)
+            shown = lambda pct, base: None if pct is None or (base or 0) < HIDDEN_BASE else round(float(pct), 1)   # noqa: E731
+            row[name] = shown(r["pct"], r["base_n"])
             if name == "Total":
                 group["base"] = r["base_n"]
-                row["prior"] = None if r["prior_pct"] is None else round(float(r["prior_pct"]), 1)
+                row["prior"] = shown(r["prior_pct"], r["prior_base_n"])
                 row["prior_base"] = r["prior_base_n"]
-                row["ly"] = None if r["ly_pct"] is None else round(float(r["ly_pct"]), 1)
+                row["ly"] = shown(r["ly_pct"], r["ly_base_n"])
                 row["ly_base"] = r["ly_base_n"]
                 row["flags"] = r["flags"] or ""
         section = q["topic_name"] if q["topic_name"] not in (None, "Unclassified") else module_section(q["qcode"], modules)
@@ -113,11 +129,45 @@ def book(survey_id: int) -> dict:
     return {"wave": dict(wave), "columns": [name for name, _, _ in BANNER], "n": n, "questions": out}
 
 
-def _trend(qcode: str, dim: str, value: str, waves: list[dict], rows: list) -> dict:
+def versions(rows) -> dict[int, int]:
+    """Which waves asked the same question under one code: {survey_id: group}. Waves join
+    a group on the same wording or a shared harmonised answer (etl/serving.same_question). A code reused for a new topic starts a new version, so a trend or comparison never joins the two."""
+    texts, concepts = {}, defaultdict(set)
+    for r in rows:
+        texts[r["survey_id"]] = r["qtext"] or ""
+        if r["concept_option_id"]:
+            concepts[r["concept_option_id"]].add(r["survey_id"])
+    parent = {sid: sid for sid in texts}
+    def root(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    def join(group):
+        group = [root(g) for g in group]
+        for g in group[1:]:
+            parent[g] = group[0]
+    by_text = defaultdict(list)
+    for sid, t in texts.items():
+        by_text[normalise_text(t)].append(sid)
+    for group in [*by_text.values(), *map(list, concepts.values())]:
+        join(group)
+    return {sid: root(sid) for sid in texts}
+
+
+def _trend(qcode: str, dim: str, value: str, waves: list[dict], rows: list, version: dict | None = None) -> dict:
     """One trend from a family's waves and the question's rows for one cut value: answers matched across waves by
-    label and code (as srv_result's comparisons are), the latest wave's wording first."""
+    label and code, the latest wave's wording first. Each wave carries its question version (versions()); screens
+    draw one version at a time."""
     asked = {r["survey_id"] for r in rows}
     waves = [dict(w) for w in waves if w["survey_id"] in asked]
+    version = version if version is not None else versions(rows)
+    number: dict = {}
+    wording = {r["survey_id"]: r["qtext"] for r in rows}
+    texts: dict = {}
+    for w in waves:                  # oldest first: version 1 is the first wording
+        w["version"] = number.setdefault(version.get(w["survey_id"]), len(number) + 1)
+        texts[w["version"]] = wording.get(w["survey_id"]) or texts.get(w["version"])   # the version's latest wording
     at = {w["survey_id"]: i for i, w in enumerate(waves)}
     series: dict = {}
     for r in sorted(rows, key=lambda r: -at[r["survey_id"]]):
@@ -126,7 +176,8 @@ def _trend(qcode: str, dim: str, value: str, waves: list[dict], rows: list) -> d
             "sort": r["sort_order"], "pct": [None] * len(waves), "base": [None] * len(waves)})
         s["pct"][at[r["survey_id"]]] = round(float(r["pct"]), 1)
         s["base"][at[r["survey_id"]]] = r["base_n"]
-    return {"qcode": qcode, "dim": dim, "value": value, "waves": waves, "series": sorted(series.values(), key=lambda s: s["sort"])}
+    return {"qcode": qcode, "dim": dim, "value": value, "waves": waves, "versions": [texts[v] for v in sorted(texts)],
+            "series": sorted(series.values(), key=lambda s: s["sort"])}
 
 
 def _family(conn, family: str, study_type: str) -> list[dict]:
@@ -136,8 +187,16 @@ def _family(conn, family: str, study_type: str) -> list[dict]:
 
 
 TREND_COLUMNS = [(dim, value) for _, dim, value in BANNER]   # the trends the ETL publishes (etl/publish.py)
-_TREND_ROWS = ("SELECT survey_id, dim, dim_value, item_label, option_code, option_label, sort_order, base_n, pct"
+_TREND_ROWS = ("SELECT survey_id, dim, dim_value, item_label, option_code, option_label, sort_order, base_n, pct, concept_option_id"
                " FROM srv_result WHERE survey_id IN :ids AND qcode = :q AND dim IN :d")
+
+
+def worded(conn, rows, qcode: str) -> list[dict]:
+    """rows with each wave's question wording added (read once per wave, not once per row)."""
+    ids = sorted({r["survey_id"] for r in rows})
+    texts = dict(conn.execute(text("SELECT survey_id, qtext FROM cip_question WHERE survey_id IN :ids AND qcode = :q")
+                              .bindparams(bindparam("ids", expanding=True)), {"ids": ids or [-1], "q": qcode}).all())
+    return [{**r, "qtext": texts.get(r["survey_id"], "")} for r in rows]
 
 
 def family_trend(family: str, study_type: str, qcode: str, dim: str, value: str) -> dict:
@@ -147,19 +206,13 @@ def family_trend(family: str, study_type: str, qcode: str, dim: str, value: str)
         waves = _family(conn, family, study_type)
         rows = conn.execute(text(_TREND_ROWS + " AND dim_value = :v").bindparams(bindparam("ids", expanding=True), bindparam("d", expanding=True)),
                             {"ids": [w["survey_id"] for w in waves] or [-1], "q": qcode, "d": [dim], "v": value}).mappings().all()
+        rows = worded(conn, rows, qcode)
+        if dim != "total":   # versions come from Total, so every column of a question numbers them alike
+            total = conn.execute(text(_TREND_ROWS + " AND dim_value = 'Total'").bindparams(
+                bindparam("ids", expanding=True), bindparam("d", expanding=True)),
+                {"ids": [w["survey_id"] for w in waves] or [-1], "q": qcode, "d": ["total"]}).mappings().all()
+            return _trend(qcode, dim, value, waves, rows, versions(worded(conn, total, qcode)))
     return _trend(qcode, dim, value, waves, rows)
-
-
-def family_trends(family: str, study_type: str, qcode: str) -> dict:
-    """Every banner column's trend for one question in one query: {(dim, value): trend} (for publishing)."""
-    with get_engine("app").connect() as conn:
-        waves = _family(conn, family, study_type)
-        rows = conn.execute(text(_TREND_ROWS).bindparams(bindparam("ids", expanding=True), bindparam("d", expanding=True)),
-                            {"ids": [w["survey_id"] for w in waves] or [-1], "q": qcode, "d": sorted({d for d, _ in TREND_COLUMNS})}).mappings().all()
-    by: dict = {}
-    for r in rows:
-        by.setdefault((r["dim"], r["dim_value"]), []).append(r)
-    return {(d, v): _trend(qcode, d, v, waves, by.get((d, v), [])) for d, v in TREND_COLUMNS}   # empty when nobody in that group answered
 
 
 def trend(survey_id: int, qcode: str, dim: str, value: str) -> dict:
@@ -201,6 +254,39 @@ def pool(conn, survey_id: int, weeks: int) -> list[dict]:
     return chain(family, survey_id, weeks)
 
 
+def people(conn, survey_id: int) -> dict:
+    """Who gave which answer in one wave, for Audiences (api/team.py): each respondent is one bit, so every cut value
+    and every answer row is a bitset (hex) and an audience is ANDs plus bit counts, no database. A 2,300-person wave
+    is ~250 KB raw. Respondent-level: published next to the book but never served (nginx and the API expose no route).
+    {"cuts": {dim: {value: hex}}, "questions": {qcode: {"text": normalised wording, "rows": [[item_id, option_id,
+    item_label, option_code, option_label], ...] in sort order, "bits": {"item_id,option_id": hex}}}}"""
+    rows = conn.execute(text(f"SELECT respondent_id, qcode, item_id, option_id, {', '.join(CUTS)} FROM srv_answer"
+                             " WHERE survey_id = :s"), {"s": survey_id}).all()
+    seat = {rid: i for i, rid in enumerate(sorted({r[0] for r in rows}))}
+    bits: dict = defaultdict(int)
+    cuts: dict = {dim: defaultdict(int) for dim in CUTS}
+    seen = set()
+    for r in rows:
+        bit = 1 << seat[r[0]]
+        bits[(r[1], r[2], r[3])] |= bit
+        if r[0] not in seen:   # a respondent's cuts are the same on every row
+            seen.add(r[0])
+            for dim, value in zip(CUTS, r[4:]):
+                if value is not None:
+                    cuts[dim][value] |= bit
+    questions: dict = {}
+    for a in conn.execute(text(
+            "SELECT r.qcode, r.item_id, r.option_id, r.item_label, r.option_code, r.option_label, q.qtext FROM srv_result r"
+            " JOIN cip_question q ON q.question_id = r.question_id WHERE r.survey_id = :s AND r.dim = 'total'"
+            " ORDER BY r.qcode, r.sort_order"), {"s": survey_id}):
+        q = questions.setdefault(a[0], {"text": normalise_text(a[6]), "rows": [], "bits": {}})
+        q["rows"].append(list(a[1:6]))
+    for (qcode, item, option), b in bits.items():
+        if qcode in questions:
+            questions[qcode]["bits"][f"{item},{option}"] = format(b, "x")
+    return {"cuts": {dim: {v: format(b, "x") for v, b in values.items()} for dim, values in cuts.items()}, "questions": questions}
+
+
 def question_cuts(conn, ids: list[int], qcode: str | None = None) -> dict:
     """{(survey_id, qcode): {"answers": [...], "counts": [[item_id, option_id, *CUTS, n], ...]}}: srv_answer counted
     by every cut at once and the question's answer labels, enough for any two-cut crosstab. The ETL publishes one
@@ -214,8 +300,9 @@ def question_cuts(conn, ids: list[int], qcode: str | None = None) -> dict:
             f" GROUP BY survey_id, qcode, item_id, option_id, {cuts}").bindparams(bindparam("ids", expanding=True)), params):
         out[(r[0], r[1])]["counts"].append(list(r[2:]))
     for a in conn.execute(text(
-            "SELECT survey_id, qcode, item_id, option_id, item_label, option_code, option_label, sort_order, flags"
-            f" FROM srv_result WHERE {where} AND dim = 'total'").bindparams(bindparam("ids", expanding=True)), params).mappings():
+            "SELECT r.survey_id, r.qcode, r.item_id, r.option_id, r.item_label, r.option_code, r.option_label, r.sort_order,"
+            " r.flags, r.concept_option_id, q.qtext FROM srv_result r JOIN cip_question q ON q.question_id = r.question_id"
+            f" WHERE r.{where.replace(' AND qcode', ' AND r.qcode')} AND r.dim = 'total'").bindparams(bindparam("ids", expanding=True)), params).mappings():
         out[(a["survey_id"], a["qcode"])]["answers"].append({k: a[k] for k in list(a.keys())[2:]})
     return dict(out)
 
@@ -233,6 +320,11 @@ def crosstab_from(survey_id: int, qcode: str, by: tuple, waves: list[dict], part
     Respondents with no value for a cut are left out, as in srv_result. Cells nobody chose come back as n = 0."""
     first, second = (2 + CUTS.index(cut) for cut in by)
     answers = [{**a, "survey_id": sid} for sid, part in parts.items() for a in part["answers"]]
+    if answers and "qtext" in answers[0]:   # pool only waves that asked this wave's question, not a reused code
+        version = versions(answers)
+        mine = version.get(survey_id)
+        parts = {sid: part for sid, part in parts.items() if version.get(sid) == mine}
+        answers = [a for a in answers if version.get(a["survey_id"]) == mine]
     counts = [(sid, c[0], c[1], c[first], c[second], c[-1]) for sid, part in parts.items() for c in part["counts"]]
     if not any(a["survey_id"] == survey_id for a in answers):
         raise LookupError("That question is not in that wave")
@@ -276,3 +368,55 @@ def crosstab_from(survey_id: int, qcode: str, by: tuple, waves: list[dict], part
     return {"survey_id": survey_id, "qcode": qcode, "by": list(by), "weeks": len(waves),
                   "waves": [{"survey_id": w["survey_id"], "wave_date": w["wave_date"]} for w in waves],
                   "warnings": warnings, "columns": CROSSTAB_COLUMNS, "rows": rows}
+
+
+
+_QUESTION_ROWS = ("SELECT survey_id, dim, dim_value, item_label, option_code, option_label, sort_order, n, base_n, concept_option_id"
+                  " FROM srv_result WHERE survey_id IN :ids AND qcode = :q")
+
+
+def question(family: str, study_type: str, qcode: str) -> dict:
+    """One question across every wave of its family, for every cut at once: what Compare and Trends draw from, so
+    picking waves or a cut on screen needs no further request. The ETL publishes one per question (etl/publish.py)."""
+    with get_engine("app").connect() as conn:
+        waves = _family(conn, family, study_type)
+        rows = conn.execute(text(_QUESTION_ROWS).bindparams(bindparam("ids", expanding=True)),
+                            {"ids": [w["survey_id"] for w in waves] or [-1], "q": qcode}).mappings().all()
+        rows = worded(conn, rows, qcode)
+    country = next((code for code, c in countries().items() if c.get("family") == family), "US")
+    return question_from(qcode, waves, rows, countries().get(country, {}).get("cuts", {}))
+
+
+def question_from(qcode: str, waves: list[dict], rows: list[dict], order: dict) -> dict:
+    """Compact columns, small after gzip: waves [[survey_id, date, version]], each version's wording, answers
+    [[item_label, code, label]], cuts [[dim, value]] in display order, then one entry per cell in w, c, a (indexes
+    into those lists), n (people who chose it) and b (its base). A percentage is 100 * n / b."""
+    rows = [r for r in rows if r["dim_value"] != ""]          # no value for the cut: not a group
+    version = versions([r for r in rows if r["dim"] == "total"])
+    asked = {r["survey_id"] for r in rows}
+    wording = {r["survey_id"]: r["qtext"] for r in rows}
+    number: dict = {}
+    texts: dict = {}
+    out_waves = []
+    for w in waves:                                          # oldest first: version 1 is the first wording
+        if w["survey_id"] in asked:
+            v = number.setdefault(version.get(w["survey_id"], -w["survey_id"]), len(number) + 1)
+            texts[v] = wording[w["survey_id"]]
+            out_waves.append([w["survey_id"], str(w["wave_date"])[:10], v])
+    at = {w[0]: i for i, w in enumerate(out_waves)}
+    answers: dict = {}
+    for r in sorted(rows, key=lambda r: -at[r["survey_id"]]):   # the latest wording of each answer
+        answers.setdefault((r["item_label"], r["option_code"]), (r["sort_order"], r["option_label"] or r["item_label"]))
+    keys = sorted(answers, key=lambda k: answers[k][0])
+    answer = {k: i for i, k in enumerate(keys)}
+    present = {(r["dim"], r["dim_value"]) for r in rows}
+    rank = lambda d, v: (order.get(d, []).index(v) if v in order.get(d, []) else len(order.get(d, [])), v)   # noqa: E731
+    cuts = [("total", "Total")] + sorted((c for c in present if c[0] != "total"),
+                                         key=lambda c: (CUTS.index(c[0]) if c[0] in CUTS else 99, *rank(*c)))
+    cut = {c: i for i, c in enumerate(cuts)}
+    cells = sorted((at[r["survey_id"]], cut[(r["dim"], r["dim_value"])], answer[(r["item_label"], r["option_code"])],
+                    int(r["n"]), int(r["base_n"])) for r in rows)
+    return {"qcode": qcode, "waves": out_waves, "versions": [texts[v] for v in sorted(texts)],
+            "answers": [[k[0], k[1], answers[k][1]] for k in keys], "cuts": [list(c) for c in cuts],
+            **{name: [c[i] for c in cells] for i, name in enumerate(("w", "c", "a", "n", "b"))},
+            "n": [c[3] if c[4] >= HIDDEN_BASE else None for c in cells]}   # under HIDDEN_BASE only the base is published

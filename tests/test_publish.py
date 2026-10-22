@@ -29,7 +29,7 @@ def test_publish_writes_the_api_bytes_swaps_atomically_and_rolls_back(csi_db, tm
     assert live.resolve() == second.resolve()
     time.sleep(1.1)                                                                  # built_at has one-second resolution
     serving.build_wave(412)                                                          # the ETL reloads one wave
-    live_trend = next((second / "api/v1/trends").rglob("*.json.gz"))
+    live_trend = next((second / "api/v1/questions").rglob("*.json.gz"))
     before = live_trend.read_bytes()
     third_dir = publish.build(tmp_path, jobs=1)
     third = json.loads((third_dir / "manifest.json").read_text())
@@ -70,8 +70,8 @@ def test_a_lost_disk_comes_back_from_the_blob_backup(tmp_path, monkeypatch):
         return Reply()
 
     monkeypatch.setattr(publish, "BACKUP", "https://acct.blob.core.windows.net/cip?sv=x&sig=y")
-    monkeypatch.setattr(publish.requests, "put", put)
-    monkeypatch.setattr(publish.requests, "get", lambda url, **k: Reply(store[url.split("?")[0].rsplit("/", 1)[1]]))
+    monkeypatch.setattr("requests.put", put)
+    monkeypatch.setattr("requests.get", lambda url, **k: Reply(store[url.split("?")[0].rsplit("/", 1)[1]]))
     version = tmp_path / "old" / ".build-20261021T000000Z"
     (version / "api" / "v1").mkdir(parents=True)
     (version / "api" / "v1" / "waves.json.gz").write_bytes(b"payload")
@@ -79,3 +79,20 @@ def test_a_lost_disk_comes_back_from_the_blob_backup(tmp_path, monkeypatch):
     restored = publish.restore(tmp_path / "new")
     assert (tmp_path / "new" / "current" / "api" / "v1" / "waves.json.gz").read_bytes() == b"payload"
     assert restored.name == version.name
+
+
+def test_a_reload_that_drops_a_question_leaves_no_stale_question_file(csi_db, tmp_path):
+    import sqlalchemy as sa
+    with csi_db.begin() as conn:
+        seed(conn, 266, date(2026, 10, 5), qualified=401, xm1_yes=92, xm1_base=149)
+        seed(conn, 412, date(2026, 10, 12), qualified=404, xm1_yes=125, xm1_base=404)
+    serving.build_wave(266), serving.build_wave(412)
+    publish.publish(tmp_path, jobs=1)
+    target = tmp_path / "current/api/v1/questions/CSI-US/tracker/XM1.json.gz"
+    assert [w[0] for w in json.loads(gzip.decompress(target.read_bytes()))["waves"]] == [266, 412]
+    time.sleep(1.1)
+    with csi_db.begin() as conn:                     # the reload of 412 no longer has XM1
+        conn.execute(sa.text("DELETE FROM cip_agg_cell WHERE survey_id = 412"))
+    serving.build_wave(412)
+    publish.publish(tmp_path, jobs=1)
+    assert [w[0] for w in json.loads(gzip.decompress(target.read_bytes()))["waves"]] == [266]

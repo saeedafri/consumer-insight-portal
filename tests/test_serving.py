@@ -13,16 +13,16 @@ from etl import forsta_etl, serving
 served = lambda data: json.loads(payloads.encode(data))   # what the API sends
 
 
-def seed(conn, survey_id, day, qualified, xm1_yes, xm1_base, path=None):
+def seed(conn, survey_id, day, qualified, xm1_yes, xm1_base, path=None,
+         qtext="Did you make any holiday purchases in the last seven days?"):
     """A verified CSI-US tracker wave with one cubed question (XM1 yes/no), Total and one generation cut."""
     conn.execute(sa.text("INSERT INTO cip_survey (survey_id, forsta_host, forsta_path, title, wave_label, wave_date,"
                          " survey_family, study_type, load_status) VALUES (:s, 'h', :p, 'Tracker', :d, :d, 'CSI-US',"
                          " 'tracker', 'verified')"), {"s": survey_id, "p": path or f"p{survey_id}", "d": day})
     conn.execute(sa.text("INSERT INTO cip_respondent (survey_id, record_no, is_qualified) VALUES (:s, :r, 1)"),
                  [{"s": survey_id, "r": r} for r in range(qualified)])
-    qid = conn.execute(sa.text("INSERT INTO cip_question (survey_id, qcode, qtext, qtype) VALUES (:s, 'XM1',"
-                               " 'Did you make any holiday purchases in the last seven days?', 'single')"),
-                       {"s": survey_id}).lastrowid
+    qid = conn.execute(sa.text("INSERT INTO cip_question (survey_id, qcode, qtext, qtype) VALUES (:s, 'XM1', :t, 'single')"),
+                       {"s": survey_id, "t": qtext}).lastrowid
     for code, n in ((1, xm1_yes), (2, xm1_base - xm1_yes)):
         oid = conn.execute(sa.text("INSERT INTO cip_option (question_id, value_code, value_label) VALUES (:q, :c, :l)"),
                            {"q": qid, "c": code, "l": "Yes" if code == 1 else "No"}).lastrowid
@@ -53,6 +53,24 @@ def test_a_wave_gets_finished_rows_with_its_prior_week_and_honest_flags(csi_db):
     with csi_db.connect() as conn:
         wave = conn.execute(sa.text("SELECT prior_survey_id, ly_survey_id, ly_status FROM srv_wave WHERE survey_id = 412")).one()
     assert tuple(wave) == (266, None, "not_loaded")              # last year's week is hibernated: reported, not substituted
+
+
+def test_a_reused_code_is_not_compared_with_last_weeks_different_question(csi_db):
+    with csi_db.begin() as conn:   # 4 Dec 2023: Q13 was footwear the week before, Cyber Monday this week; both Yes/No
+        seed(conn, 134, date(2023, 11, 27), qualified=400, xm1_yes=120, xm1_base=400,
+             qtext="Have you purchased any footwear in the past three months?")
+        seed(conn, 135, date(2023, 12, 4), qualified=400, xm1_yes=200, xm1_base=400,
+             qtext="Did you do any shopping on Cyber Monday this year?")
+        seed(conn, 136, date(2023, 12, 11), qualified=400, xm1_yes=190, xm1_base=400,
+             qtext="Did you do any shopping on  Cyber Monday this year? (Select one)")   # spacing and instructions only
+    for sid in (134, 135, 136):
+        serving.build_wave(sid)
+    yes = rows(csi_db, 135)["Yes"]
+    assert yes.prior_pct is None and yes.flags == "wording_changed_prior"
+    assert float(rows(csi_db, 136)["Yes"].prior_pct) == 50.0      # same question, reformatted: still compared
+    trend = served(payloads.family_trend("CSI-US", "tracker", "XM1", "generation", "GenZ"))
+    assert [w["version"] for w in trend["waves"]] == [1, 2, 2]   # a trend line never joins footwear to Cyber Monday
+    assert trend["versions"][0].startswith("Have you purchased any footwear")
 
 
 def test_loading_last_years_week_fills_this_years_comparison(csi_db):
@@ -184,3 +202,30 @@ def test_the_result_cache_stays_under_its_byte_cap(monkeypatch):
     for i in range(10):
         asyncio.run(main._cached(("k", i), lambda i: main._json({"pad": "x" * 500, "i": i}), i))
     assert main.CACHED_BYTES <= 3_000 and ("k", 9) in main.RESULTS and ("k", 0) not in main.RESULTS
+
+
+def test_the_question_file_holds_every_wave_and_cut_with_its_versions(csi_db):
+    with csi_db.begin() as conn:
+        seed(conn, 134, date(2023, 11, 27), qualified=400, xm1_yes=120, xm1_base=400,
+             qtext="Have you purchased any footwear in the past three months?")
+        seed(conn, 135, date(2023, 12, 4), qualified=400, xm1_yes=200, xm1_base=400,
+             qtext="Did you do any shopping on Cyber Monday this year?")
+        seed(conn, 136, date(2023, 12, 11), qualified=400, xm1_yes=190, xm1_base=400,
+             qtext="Did you do any shopping on Cyber Monday this year?")
+    for sid in (134, 135, 136):
+        serving.build_wave(sid)
+    data = served(payloads.question("CSI-US", "tracker", "XM1"))
+    assert data["waves"] == [[134, "2023-11-27", 1], [135, "2023-12-04", 2], [136, "2023-12-11", 2]]
+    assert data["versions"][1] == "Did you do any shopping on Cyber Monday this year?"
+    assert data["answers"] == [["", 1, "Yes"], ["", 2, "No"]] and data["cuts"] == [["total", "Total"], ["generation", "GenZ"]]
+    cells = list(zip(data["w"], data["c"], data["a"], data["n"], data["b"]))
+    assert (2, 0, 0, 190, 400) in cells and (1, 1, 0, 20, 40) in cells and len(cells) == 12
+
+
+def test_rebuilding_a_wave_keeps_its_answers_for_two_cut_crosstabs(csi_db):
+    from tests.test_forsta_etl import FakeForsta
+    sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
+    count = lambda: csi_db.connect().execute(sa.text("SELECT COUNT(*) FROM srv_answer WHERE survey_id = :s"), {"s": sid}).scalar()   # noqa: E731
+    before = count()
+    serving.build_wave(sid)                       # its srv_wave row is replaced, which cascades to srv_answer
+    assert before > 0 and count() == before

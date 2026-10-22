@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS cip_dash_metric (
     prior_base_n  INT           NULL,
     ly_pct        DECIMAL(6,3)  NULL,
     ly_base_n     INT           NULL,
-    flags         SET('small_base','base_changed_prior','base_changed_ly','prior_missing','ly_missing') NOT NULL DEFAULT '',
+    flags         SET('small_base','base_changed_prior','base_changed_ly','prior_missing','ly_missing','suppressed') NOT NULL DEFAULT '',
     PRIMARY KEY (build_id, metric_code, segment, rank_no),
     CONSTRAINT fk_dash_metric_build FOREIGN KEY (build_id) REFERENCES cip_dash_build (build_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci

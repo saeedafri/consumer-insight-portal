@@ -1,7 +1,9 @@
 // The question list every analysis screen shares: grouped by section, filterable by text or code.
 import { useMemo, useState } from "react";
 import type { Question } from "../api";
+import { SMALL_BASE } from "../stats";
 import Profiled from "./Profiled";
+import { X } from "lucide-react";
 
 export default function QuestionNav({ questions, current, onPick }:
   { questions: Question[]; current?: string; onPick: (q: Question) => void }) {
@@ -41,12 +43,12 @@ export default function QuestionNav({ questions, current, onPick }:
               border: 0,
               color: "var(--ink-2)",
               cursor: "pointer",
-              padding: "4px 6px",
-              fontSize: 13,
-              lineHeight: 1
+              padding: "2px",
+              display: "inline-flex",
+              alignItems: "center"
             }}
           >
-            ✕
+            <X size={14} />
           </button>
         )}
       </div>
@@ -55,6 +57,7 @@ export default function QuestionNav({ questions, current, onPick }:
           <h4>{section}</h4>
           {qs.map(q => <button key={q.id} className={q.id === current ? "on" : ""} aria-current={q.id === current} onClick={() => onPick(q)}>
             <code>{q.id}</code><span>{q.short || q.text}</span>
+            <small className={q.groups[0].base < SMALL_BASE ? "small" : ""} title="Respondents who answered">n={q.groups[0].base}</small>
           </button>)}
         </div>)}
         {!sections.length && <p className="muted pad">No question matches “{filter}”.</p>}

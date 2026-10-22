@@ -12,6 +12,7 @@ RUN npm run build
 FROM python:3.13-slim-trixie AS api
 RUN pip install --no-cache-dir "fastapi==0.150.0" "uvicorn[standard]==0.54.0" "gunicorn==26.2.0" \
       "sqlalchemy>=2.0.46" "pymysql>=1.1.0" "cryptography>=46.0.0" "python-dotenv>=1.0.0" "pyyaml>=6.0" \
+      "openpyxl>=3.1.5" "python-pptx==1.0.2" "anthropic==2.0.0" \
  && useradd --system --create-home --uid 10001 cip
 WORKDIR /srv/cip
 COPY api/ api/
@@ -31,4 +32,5 @@ CMD ["sh", "-c", "ulimit -n $(ulimit -Hn); exec gunicorn api.main:app -k uvicorn
 FROM nginx:1.29-trixie AS nginx
 COPY deploy/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/cip_proxy.conf /etc/nginx/cip_proxy.conf
+COPY deploy/cip_headers.conf /etc/nginx/cip_headers.conf
 COPY --from=web /w/dist /srv/cip/web

@@ -27,6 +27,8 @@ decipher>=16.0.0            # official Forsta/Decipher "beacon" API client (opti
 
 # ── Excel fallback ingestion ──────────────────────────────────────────────
 openpyxl>=3.1.5
+python-pptx==1.0.2         # PowerPoint export (api/exports.py)
+anthropic==2.0.0           # Ask CIP (api/assistant.py); without credentials it answers with cited figures only
 
 # ── Config / ops ──────────────────────────────────────────────────────────
 python-dotenv>=1.0.0

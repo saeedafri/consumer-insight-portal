@@ -68,22 +68,34 @@ def test_weeks_match_forsta_and_flag_a_missing_topic(workbook, csi_db, monkeypat
     assert weeks["2027-01-18"]["status"] == "planned"
 
 
-def test_fieldwork_ends_at_quota_or_the_time_limit_without_touching_forsta():
+def test_fieldwork_ends_when_no_quota_is_left_or_the_time_limit_without_touching_forsta():
     from datetime import timedelta
-    from etl.forsta_etl import FIELD_HOURS, fielded
+    from etl.forsta_etl import FIELD_HOURS, fielded, quota_cells
 
-    class Quota:   # an ad hoc study's quota sheets: Regions 2,000 (the target); a conditional sheet is ignored
+    class Quota:   # Forsta's quota shape (19 Oct 2026 wave): Regions and Gender count; the income flow is conditional
+        def __init__(self, south, male):
+            self.south, self.male = south, male
+
         def survey_quota(self, path):
-            return {"markers": {"/R/a": {"limit": 1200}, "/R/b": {"limit": 800}, "/X/c": {"limit": 50}},
-                    "sheets": {"Regions": [{"sheetCond": None, "cells": [{"marker": "/R/a"}, {"marker": "/R/b"}]}],
-                               "Extra": [{"sheetCond": "condition.X", "cells": [{"marker": "/X/c"}]}]}}
+            return {"defines": {"S": {"description": "South"}, "W": {"description": "West"}, "m": {"description": "Male"},
+                                "f": {"description": "Female"}},
+                    "markers": {"/R/S": {"limit": 1200, "complete": self.south}, "/R/W": {"limit": 800, "complete": 800},
+                                "/G/m": {"limit": 1000, "complete": self.male}, "/G/f": {"limit": 1000, "complete": 1000},
+                                "/F/x": {"limit": 50, "complete": 3}},
+                    "sheets": {"Regions": [{"sheetCond": None, "description": "Regions", "cells": [{"marker": "/R/S", "components": ["S"]}, {"marker": "/R/W", "components": ["W"]}]}],
+                               "Gender": [{"sheetCond": None, "description": "Gender", "cells": [{"marker": "/G/m", "components": ["m"]}, {"marker": "/G/f", "components": ["f"]}]}],
+                               "FLOWINC": [{"sheetCond": "condition.F", "description": "FLOWINC", "cells": [{"marker": "/F/x", "components": ["x"]}]}]}}
 
+    open_cells = quota_cells(Quota(south=1100, male=990), "s/2")
+    assert open_cells[0] == {"sheet": "Regions", "conditional": False, "cell": "South", "limit": 1200, "complete": 1100}
+    full = quota_cells(Quota(south=1200, male=1000), "s/2")
     launch = datetime(2026, 10, 26, 12, 30)
     tracker = {"path": "s/1", "title": "Shopping and Spending - inc Apparel", "dateLaunched": "2026-10-26T12:30:00Z"}
     adhoc = {"path": "s/2", "title": "Online Grocery 2026", "dateLaunched": "2026-10-26T12:30:00Z"}
     soon = launch + timedelta(hours=2)
-    assert not fielded(Quota(), {**tracker, "qualified": 399}, soon)
-    assert fielded(Quota(), {**tracker, "qualified": 400}, soon)
-    assert fielded(Quota(), {**tracker, "qualified": 120}, launch + timedelta(hours=FIELD_HOURS))
-    assert not fielded(Quota(), {**adhoc, "qualified": 1999}, soon)
-    assert fielded(Quota(), {**adhoc, "qualified": 2000}, soon)
+    assert not fielded({**tracker, "qualified": 399}, None, soon)
+    assert fielded({**tracker, "qualified": 400}, None, soon)               # Forsta stops trackers at 400, cells short
+    assert fielded({**tracker, "qualified": 120}, None, launch + timedelta(hours=FIELD_HOURS))
+    assert not fielded({**adhoc, "qualified": 1990}, open_cells, soon)      # quota left in South and Male
+    assert fielded({**adhoc, "qualified": 2000}, full, soon)                # no quota left: the conditional flow is ignored
+    assert fielded({**adhoc, "qualified": 2000}, open_cells, soon)          # a whole sheet's target reached

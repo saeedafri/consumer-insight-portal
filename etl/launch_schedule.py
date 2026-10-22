@@ -15,6 +15,7 @@ by Tuesday night) and then closes itself; the register (cip_forsta_survey) is re
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from datetime import date, datetime, timedelta
@@ -23,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
 from etl import survey_calendar
@@ -115,8 +116,15 @@ def weeks(today: Optional[date] = None) -> dict:
     plan = load_plan()
     with get_engine("app").connect() as conn:
         rows = [dict(r) for r in conn.execute(text(
-            "SELECT forsta_path, title, state, launched_at, closed_at, qualified_n, load_state, survey_id"
+            "SELECT forsta_path, title, state, launched_at, closed_at, qualified_n, load_state, survey_id, quota_json, quota_at"
             " FROM cip_forsta_survey WHERE title LIKE '%% - inc %%'")).mappings()]
+        history: dict = {}
+        if rows:
+            for e in conn.execute(text("SELECT forsta_path, seen_at, state, load_state, qualified_n FROM cip_forsta_event"
+                                       " WHERE forsta_path IN :p ORDER BY seen_at, event_id").bindparams(bindparam("p", expanding=True)),
+                                  {"p": [r["forsta_path"] for r in rows]}).mappings():
+                history.setdefault(e["forsta_path"], []).append({"at": str(e["seen_at"])[:19].replace(" ", "T") + "Z", "state": e["state"],
+                                                                 "load_state": e["load_state"], "qualified": e["qualified_n"]})
     for r in rows:
         for k in ("launched_at", "closed_at"):        # SQLite hands back text
             if isinstance(r[k], str):
@@ -149,7 +157,10 @@ def weeks(today: Optional[date] = None) -> dict:
             "survey_id": survey and survey["load_state"] == "loaded" and survey["survey_id"] or None,
             "title": survey and survey["title"], "qualified": survey and survey["qualified_n"], "quota": QUOTA,
             "launched": survey and survey["launched_at"] and survey["launched_at"].isoformat() + "Z",
-            "closed": survey and survey["closed_at"] and survey["closed_at"].isoformat() + "Z", "notes": notes})
+            "closed": survey and survey["closed_at"] and survey["closed_at"].isoformat() + "Z", "notes": notes,
+            "quota_cells": json.loads(survey["quota_json"]) if survey and survey["quota_json"] else None,
+            "quota_at": survey and survey["quota_at"] and str(survey["quota_at"])[:19].replace(" ", "T") + "Z",
+            "history": history.get(survey["forsta_path"], []) if survey else []})
     last = plan["weeks"][-1]["date"] if plan["weeks"] else None
     topics = []
     for topic, pattern in TOPICS.items():         # each topic's rotation: last fielded, next planned

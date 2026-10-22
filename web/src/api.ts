@@ -18,11 +18,14 @@ export interface Wave {
   study_type: string; qualified_n: number; prior_survey_id: number | null; ly_survey_id: number | null;
   ly_status: "loaded" | "not_loaded" | "none"; modules?: string[]; dashboards?: string[];
   rows_built?: number;   // 0: the wave is registered but has no results yet (some legacy archive loads)
+  country?: string; platform?: "forsta" | "qualtrics" | "surveymonkey"; source_ref?: string;
+  field_start?: string | null; field_end?: string | null;   // UTC; recorded for Forsta waves only
+  events?: string[];     // recurring retail events in the title (config/survey_calendar.yml events), e.g. Prime Day
 }
 
 // A module dashboard (api/dashboards.py, config/dashboards.yml): the business team's "this week at a glance"
-export interface Metric { label: string; segment: string; pct: number; n: number; base: number; vs_prior: number | null;
-                          vs_ly: number | null; ly_pct: number | null; flags: string[] }
+export interface Metric { label: string; segment: string; pct: number | null; n: number | null; base: number;   // pct, n: null under 30 people
+                          vs_prior: number | null; vs_ly: number | null; ly_pct: number | null; flags: string[] }
 export interface WaveRef { survey_id: number | null; wave_no: number; season: number; week_of: string; loaded: boolean }
 export interface Dashboard {
   dashboard: string; title: string; wave: WaveRef; prior: WaveRef | null; last_year: WaveRef | null; ly_rule: string;
@@ -30,7 +33,7 @@ export interface Dashboard {
   takeaways: string[]; small_base: number; data_as_of: string | null;
   tile_labels?: Record<string, string>; highlights?: { list: string; title: string; of: string }[]; prior_label?: string;
 }
-export interface Row extends Partial<Record<Column, number>> {
+export interface Row extends Partial<Record<Column, number | null>> {   // null: under 30 people, no figure
   label: string; code: number | null; prior: number | null; prior_base: number | null;
   ly: number | null; ly_base: number | null; flags: string;
 }
@@ -41,7 +44,8 @@ export interface Question {
 }
 export interface Book { wave: Wave; columns: Column[]; n: Record<Column, number>; questions: Question[] }
 export interface Trend {
-  qcode: string; dim: string; value: string; waves: { survey_id: number; wave_date: string }[];
+  qcode: string; dim: string; value: string; waves: { survey_id: number; wave_date: string; version: number }[];
+  versions: string[];   // each version's wording, oldest first: one code reused for different questions
   series: { item_label: string; code: number | null; label: string; pct: (number | null)[]; base: (number | null)[] }[];
 }
 export interface Crosstab {
@@ -49,7 +53,8 @@ export interface Crosstab {
   waves: { survey_id: number; wave_date: string }[]; warnings: string[];
   columns: string[]; rows: (string | number | null)[][];
 }
-export interface Hit { qcode: string; text: string; type: string; family: string; first: string; last: string; waves: number; survey_id: number; title: string }
+export interface Hit { qcode: string; text: string; type: string; family: string; first: string; last: string; waves: number; survey_id: number; title: string;
+  measure_id?: number; measure?: string }   // the harmonised concept: wordings of one measure share it
 
 /** The server asked us to come back in a few seconds (a burst of uncached requests). */
 export class Busy extends Error { constructor() { super("The portal is busy; retrying in a few seconds…"); } }
@@ -115,10 +120,19 @@ export const useBook = (id: number) =>
 export const useDashboard = (code: string | undefined, id: number) =>
   useQuery({ queryKey: ["dashboard", code, id], enabled: !!code && id > 0, ...forever,
              queryFn: () => get<Dashboard>(`/api/v1/dashboards/${code}/${id}`) });
-/** A question across its tracker family: a published static file for multi-wave families (served by nginx). */
-export const useTrend = (wave: Wave | undefined, q: string, dim = "total", value = "Total") =>
-  useQuery({ queryKey: ["trend", wave?.survey_family, wave?.study_type, q, dim, value], enabled: !!q && !!wave, ...forever,
-             queryFn: () => get<Trend>(`/api/v1/trends/${[wave!.survey_family, wave!.study_type, q, dim, value].map(encodeURIComponent).join("/")}`) });
+/** One question across every wave of its family and every cut, as compact columns (app/data/payloads.question_from):
+ *  cell k is waves[w[k]] × cuts[c[k]] × answers[a[k]], n[k] people of b[k]. Compare and Trends slice it on screen. */
+export interface QuestionFile {
+  qcode: string; waves: [number, string, number][]; versions: string[];   // [survey_id, date, version]; wording per version
+  answers: [string, number | null, string][]; cuts: [string, string][];   // [item_label, code, label]; [dim, value]
+  w: number[]; c: number[]; a: number[]; n: (number | null)[]; b: number[];   // n: null under 30 people
+}
+export const CUT_NAMES: Record<string, string> = { gender: "Gender", age_band: "Age band", generation: "Generation", income_band: "Household income",
+                                                   census_region: "Census region", urbanicity: "Urbanicity" };
+/** Published per question (a static gzip read); fetched once per question, then every wave pick and cut is local. */
+export const useQuestion = (wave: Wave | undefined, q: string) =>
+  useQuery({ queryKey: ["question", wave?.survey_family, wave?.study_type, q], enabled: !!q && !!wave, ...forever,
+             queryFn: () => get<QuestionFile>(`/api/v1/questions/${[wave!.survey_family, wave!.study_type, q].map(encodeURIComponent).join("/")}`) });
 export const useCrosstab = (id: number, q: string, by: [string, string], weeks: number, on: boolean) =>
   useQuery({ queryKey: ["crosstab", id, q, by, weeks], enabled: on && !!q, ...forever,
              queryFn: () => get<Crosstab>(`/api/v1/waves/${id}/crosstab?q=${encodeURIComponent(q)}&by=${by.join(",")}&weeks=${weeks}`) });
@@ -132,9 +146,43 @@ export const isFiller = (label: string) => /^(none of (these|the above)|other\s*
 export type LaunchWeek = { date: string; cycle: number; sector: string; topics: string[];
   status: "loaded" | "in_field" | "closed" | "load_failed" | "setting_up" | "planned" | "not_found";
   survey_id: number | null; title: string | null; qualified: number | null; quota: number;
-  launched: string | null; closed: string | null; notes: string[] };
+  launched: string | null; closed: string | null; notes: string[];
+  quota_cells: QuotaCell[] | null; quota_at: string | null;   // quota left per cell, last read while live
+  history: { at: string; state: string; load_state: string; qualified: number | null }[] };
+export type QuotaCell = { sheet: string; cell: string; limit: number; complete: number; conditional: boolean };
 export type TopicRotation = { topic: string; sectors: string[]; last: string | null; fielded: number; next: string | null; next_sector: string | null };
 export type Schedule = { source: string; imported: string; quota: number; plan_ends: string | null; corrected: string[]; topics: TopicRotation[]; weeks: LaunchWeek[] };
 /** Refetched every minute: the API rebuilds it from the Forsta register on every poll. */
 export const useSchedule = () => useQuery({ queryKey: ["schedule"], queryFn: () => get<Schedule>("/api/v1/schedule"),
                                             staleTime: 60_000, refetchInterval: 60_000 });
+
+/** A write to the portal's own team store (saved views, alerts, audiences) or a question to Ask CIP. */
+export async function send<T>(method: "POST" | "DELETE", url: string, body?: unknown): Promise<T> {
+  const r = await fetch(url, { method, credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: body == null ? undefined : JSON.stringify(body) });
+  if (r.status === 401) { location.href = "/auth/dev-login?next=" + encodeURIComponent(location.pathname); throw new Error("Sign in required"); }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`);
+  return (r.status === 204 ? null : r.json()) as T;
+}
+
+export interface TeamView { view_id: number; name: string; url: string; note: string | null; saved_by: string; created_at: string }
+export interface Alert { alert_id: number; name: string; qcode: string; answer_label: string; dim: string; dim_value: string; against: "prior" | "ly";
+                         created_by: string; created_at: string; last_fired: number | null }
+export interface AudienceDef { cuts: Record<string, string[]>; answers: { qcode: string; qtext: string; item_label: string; option_code: number | null; label: string }[] }
+export interface Audience { audience_id: number; name: string; definition: AudienceDef; created_by: string }
+export interface AudienceResult { qcode: string; multi: boolean; skipped: string[]; rows: [string, number | null, number, number | null, number | null, number, number][] }
+export interface Answer { answer: string; no_source: boolean; mode: "claude" | "figures" | "none";
+                          sources: { id: string; survey_id: number; wave_date: string; title: string; qcode: string; question: string; base: number; answers: [string, number][]; link: string }[] }
+export const useTeamViews = () => useQuery({ queryKey: ["team-views"], queryFn: () => get<TeamView[]>("/api/v1/team/views") });
+export const useAlerts = () => useQuery({ queryKey: ["alerts"], queryFn: () => get<Alert[]>("/api/v1/alerts") });
+export const useAudiences = () => useQuery({ queryKey: ["audiences"], queryFn: () => get<Audience[]>("/api/v1/audiences") });
+
+/** Who is saving: asked once, kept in this browser (there is no sign-in yet). */
+export function myName(): string | null {
+  let name: string | null = null;
+  try { name = localStorage.getItem("cip_name"); } catch { /* private window */ }
+  if (!name) {
+    name = window.prompt("Your name, so the team sees who saved it:")?.trim() || null;
+    try { if (name) localStorage.setItem("cip_name", name); } catch { /* not kept */ }
+  }
+  return name;
+}

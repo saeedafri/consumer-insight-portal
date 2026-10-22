@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS srv_result (
     prior_base_n      INT           NULL,
     ly_pct            DECIMAL(6,3)  NULL,
     ly_base_n         INT           NULL,
-    flags             SET('small_base','base_changed_prior','base_changed_ly') NOT NULL DEFAULT '',
+    flags             SET('small_base','base_changed_prior','base_changed_ly','wording_changed_prior','wording_changed_ly') NOT NULL DEFAULT '',
     PRIMARY KEY (survey_id, qcode, dim, dim_value, item_id, option_id),
     KEY ix_srv_concept (concept_option_id, dim, dim_value, survey_id),
     CONSTRAINT fk_srv_result_wave FOREIGN KEY (survey_id) REFERENCES srv_wave (survey_id) ON DELETE CASCADE

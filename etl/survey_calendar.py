@@ -48,6 +48,11 @@ def _slug(text_: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", text_.upper()).strip("_")[:40] or "OTHER"
 
 
+def events(title: str) -> list[str]:
+    """Recurring retail events a survey covers, from its title (config events): ["Prime Day"]."""
+    return [e["name"] for e in load_config().get("events", []) if re.search(e["title"], str(title or ""), re.I)]
+
+
 def classify(title: str, questions: Iterable[str] = (), tags: Iterable[str] = ()) -> list[dict]:
     """[{code, name, kind, is_lead}] for one survey. kind: sector, topic,
     seasonal, event (a one-off "+ X" in a tracker title), annual, adhoc."""

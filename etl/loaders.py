@@ -126,7 +126,7 @@ def load_definitions(survey_id: int, questions: list,
     Batched: a constant number of statements per wave (each round trip is
     ~250 ms from the India office), whatever the number of questions."""
     with get_engine("etl").begin() as conn:
-        topic_ids: dict[str, Optional[int]] = {}
+        topic_ids: dict[str, Optional[int]] = dict(conn.execute(text("SELECT topic_code, topic_id FROM cip_topic")).all())
         question_rows = []
         for order, q in enumerate(questions, start=1):
             topic_code = classify_group(q.qcode, q.qtext, family)

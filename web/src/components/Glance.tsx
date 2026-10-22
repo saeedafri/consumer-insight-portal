@@ -1,17 +1,25 @@
 // The business team's Databank block for a module wave: "This week at a glance" tiles and "Key takeaways",
 // every number from config/dashboards.yml built by api/dashboards.py (vs prior week and vs last year).
+import CountUp from "./CountUp";
 import type { Metric } from "../api";
 import { useDashboard } from "../api";
 import { fmtDate } from "../stats";
 import { Card, Failure, Loading } from "./bits";
 import Profiled from "./Profiled";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 const RULE: Record<string, string> = { same_wave_number: "same wave number last season", same_calendar_week: "same calendar week last year",
                                        nearest_year_ago: "closest wave a year earlier" };
 
 function Delta({ d, label, flags }: { d: number | null; label: string; flags: string[] }) {
-  if (flags.includes(`base_changed_${label === "vs LY" ? "ly" : "prior"}`))
-    return <span className="chip warn" title="Who was asked this question changed, so the two numbers are not comparable">{label}: base changed</span>;
+  if (flags.includes(`base_changed_${label === "vs LY" ? "ly" : "prior"}`)) {
+    return (
+      <Tooltip>
+        <TooltipTrigger render={<span className="chip warn">{label}: base changed</span>} />
+        <TooltipContent side="top">Who was asked this question changed, so the two numbers are not comparable</TooltipContent>
+      </Tooltip>
+    );
+  }
   if (d == null) return <span className="chip none">{label}: –</span>;
   return <span className="chip flat"><span className="nowrap">{d > 0 ? "▲" : d < 0 ? "▼" : "±"} {Math.abs(d).toFixed(1)} pts</span> <small>{label}</small></span>;
 }
@@ -20,10 +28,12 @@ function Tile({ title, m, value, note, prior }: { title: string; m: Metric | nul
   if (!m) return null;
   return <div className="glance-tile" title={`n=${m.n} of ${m.base}`}>
     <div className="k-label">{title}</div>
-    <div className={`k-value${value && value.length > 14 ? " k-text" : ""}`}>{value ?? `${m.pct.toFixed(1)}%`}</div>
+    <div className={`k-value${value && value.length > 14 ? " k-text" : ""}`}>{value ?? (m.pct == null ? "n<30" : <CountUp text={`${m.pct.toFixed(1)}%`} />)}</div>
     {note && <div className="k-note">{note}</div>}
     <div className="k-note"><Delta d={m.vs_ly} label="vs LY" flags={m.flags} /> <Delta d={m.vs_prior} label={`vs ${prior}`} flags={m.flags} /></div>
-    {m.flags.includes("small_base") && <div className="k-note" style={{ color: "var(--warn)", fontWeight: 600 }}>Small base (n={m.base})</div>}
+    {m.flags.includes("small_base") && <div className="k-note" style={{ marginTop: 2 }}>
+      <span style={{ color: "var(--warn)", fontWeight: 600 }}>Small base (n={m.base})</span>
+    </div>}
   </div>;
 }
 
@@ -49,7 +59,7 @@ export default function Glance({ code, id }: { code: string; id: number }) {
       <div className="glance-tiles" style={columns(Object.values(d.tiles).filter(Boolean).length + highlights.length)}>
         {Object.entries(d.tiles).map(([k, m]) => <Tile key={k} title={label(k)} m={m} prior={prior} />)}
         {highlights.map(h => { const top = d.lists[h.list]?.[0]; return top && <Tile key={h.list} title={h.title} m={top} value={top.label} prior={prior}
-          note={`${top.pct.toFixed(1)}% ${h.of}${top.ly_pct != null ? ` · last year ${top.ly_pct.toFixed(1)}%` : ""}`} />; })}
+          note={`${top.pct == null ? "n<30" : `${top.pct.toFixed(1)}%`} ${h.of}${top.ly_pct != null ? ` · last year ${top.ly_pct.toFixed(1)}%` : ""}`} />; })}
       </div>
       <Card title="Key takeaways" sub="Written from the numbers above, so they can never disagree with them">
         <ul className="takeaways">{d.takeaways.map(t => { const [head, ...rest] = t.split(": "); return <li key={t}><b>{head}:</b> {rest.join(": ")}</li>; })}</ul>

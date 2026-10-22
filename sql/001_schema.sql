@@ -255,9 +255,7 @@ CREATE TABLE IF NOT EXISTS cip_answer (
   value_text    TEXT            NULL               COMMENT 'open-ended verbatim',
   PRIMARY KEY (answer_id),
   UNIQUE KEY uq_answer (respondent_id, field_id),
-  KEY ix_answer_respondent (respondent_id),
   KEY ix_answer_cover (survey_id, field_id, value_code, respondent_id),
-  FULLTEXT KEY ft_answer_text (value_text),
   CONSTRAINT fk_answer_respondent FOREIGN KEY (respondent_id)
     REFERENCES cip_respondent (respondent_id) ON DELETE CASCADE,
   CONSTRAINT fk_answer_field FOREIGN KEY (field_id)
@@ -717,10 +715,27 @@ CREATE TABLE IF NOT EXISTS cip_forsta_survey (
   survey_id    INT UNSIGNED NULL                  COMMENT 'cip_survey row once loaded',
   loaded_at    DATETIME     NULL,
   last_error   VARCHAR(1000) NULL,
+  attempts     SMALLINT     NOT NULL DEFAULT 0    COMMENT 'failed loads in a row; retried automatically up to MAX_ATTEMPTS',
+  quota_json   TEXT         NULL                  COMMENT 'last quota read while live: [{sheet, cell, limit, complete, conditional}]',
+  quota_at     DATETIME     NULL,
   PRIMARY KEY (forsta_path),
   KEY ix_forsta_due (load_state, closed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Register of every Forsta survey the key can see, and what the ETL did with it.';
+
+-- One row each time a survey's Forsta state or load state changes, as the ETL saw it: the history the register's
+-- single current row cannot keep (launched 18:02, quota full 03:10, closed 06:40, loaded 06:44).
+CREATE TABLE IF NOT EXISTS cip_forsta_event (
+  event_id     INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  forsta_path  VARCHAR(255) NOT NULL,
+  seen_at      DATETIME     NOT NULL              COMMENT 'UTC, when the ETL noticed the change',
+  state        VARCHAR(30)  NOT NULL              COMMENT 'Forsta state',
+  load_state   VARCHAR(20)  NOT NULL,
+  qualified_n  INT          NULL,
+  PRIMARY KEY (event_id),
+  KEY ix_event_path (forsta_path, seen_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Status history of Forsta surveys: a row per observed change, read-only from Forsta.';
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Search: one row per survey, question and concept, rebuilt after each load.

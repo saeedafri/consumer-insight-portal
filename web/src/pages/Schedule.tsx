@@ -1,10 +1,12 @@
 // The data team's launch plan week by week, against what Forsta fielded: status, progress to quota, and
 // anything that differs from the plan (a missing topic, another lead sector).
+import CountUp from "../components/CountUp";
 import { useState } from "react";
 import { Link } from "react-router";
 import { LaunchWeek, useSchedule } from "../api";
 import { Card, Failure, Loading } from "../components/bits";
 import { fmtDate } from "../stats";
+import { Button } from "@/components/ui/button";
 
 const STATUS: Record<LaunchWeek["status"], [string, string]> = {
   loaded: ["In the portal", "ok"], in_field: ["In field", "live"], closed: ["Closed · loading", "warn"],
@@ -17,9 +19,29 @@ const ist = (iso: string) => new Date(iso).toLocaleString("en-IN", { timeZone: "
 function Quota({ w }: { w: LaunchWeek }) {
   if (w.qualified == null || !["in_field", "closed", "loaded", "load_failed"].includes(w.status)) return <span className="muted">—</span>;
   const share = Math.min(100, Math.round((w.qualified / w.quota) * 100));
-  return <div className={`quota ${share >= 100 ? "done" : ""}`} title={`${w.qualified} of ${w.quota} qualified completes`}>
-    <span className="bar"><i style={{ width: `${share}%` }} /></span><small>{w.qualified}/{w.quota}</small>
-  </div>;
+  const sheets = [...new Set((w.quota_cells ?? []).map(c => c.sheet))];
+  return <>
+    <div className={`quota ${share >= 100 ? "done" : ""}`} title={`${w.qualified} of ${w.quota} qualified completes`}>
+      <span className="bar"><i style={{ width: `${share}%` }} /></span><small>{w.qualified}/{w.quota}</small>
+    </div>
+    {w.quota_cells && <details className="quota-left">
+      <summary>Quota left: {w.quota_cells.filter(c => !c.conditional).reduce((n, c) => n + Math.max(0, c.limit - c.complete), 0)}</summary>
+      {sheets.map(s => <div key={s}><b>{s}</b>{w.quota_cells!.find(c => c.sheet === s)!.conditional && <span className="muted"> (only some respondents)</span>}
+        {w.quota_cells!.filter(c => c.sheet === s).map(c => <div key={c.cell} className="quota-cell">
+          <span>{c.cell}</span><span className={c.complete >= c.limit ? "muted" : ""}>{c.complete}/{c.limit}{c.complete >= c.limit ? " full" : ` · ${c.limit - c.complete} left`}</span></div>)}
+      </div>)}
+      {w.quota_at && <small className="muted">as of {ist(w.quota_at)} IST</small>}
+    </details>}
+  </>;
+}
+
+const STEP: Record<string, string> = { live: "live", closed: "closed", testing: "testing" };
+const LOAD: Record<string, string> = { due: "fieldwork over", loaded: "in the portal", failed: "load failed", hibernated: "hibernated" };
+
+/** What the pipeline saw, in order: launched, fieldwork over (quota or time), closed, loaded. */
+function History({ w }: { w: LaunchWeek }) {
+  if (w.history.length < 2) return null;
+  return <small className="muted history">{w.history.map(h => `${LOAD[h.load_state] ?? STEP[h.state] ?? h.state} ${ist(h.at)}`).join(" → ")}</small>;
 }
 
 export default function Schedule() {
@@ -39,7 +61,7 @@ export default function Schedule() {
   return <>
     <div className="page-head"><div>
       <h1>Launch schedule</h1>
-      <p className="lede">The data team's 12-week sector plan, checked each week against Forsta. A wave launches Monday around 18:00 IST. The portal loads it as soon as its quota of {data!.quota} qualified completes is reached or 9 hours have passed (03:00 IST), whichever comes first, and refreshes it when Forsta closes the survey.</p>
+      <p className="lede">The data team's 12-week sector plan, checked each week against Forsta. A wave launches Monday around 18:00 IST. The portal loads it as soon as no quota is left (every quota cell full, or {data!.quota} qualified, where Forsta usually stops) or 9 hours have passed (03:00 IST), whichever comes first, and refreshes it when Forsta closes the survey. Open “Quota left” on a live wave to see each cell.</p>
     </div></div>
     <div className="grid g4" style={{ marginBottom: 18 }}>
       <div className="card kpi lead">
@@ -54,7 +76,7 @@ export default function Schedule() {
       </div>
       <div className="card kpi">
         <div className="k-label">Planned waves delivered</div>
-        <div className="k-value">{delivered}/{past.length}</div>
+        <div className="k-value"><CountUp text={`${delivered}/${past.length}`} /></div>
         <div className="k-note">since {fmtDate(weeks[0].date)}</div>
       </div>
       <div className="card kpi">
@@ -83,7 +105,7 @@ export default function Schedule() {
       </div>
     </Card>
     <Card title="Week by week" sub={`From ${data!.source}, imported ${fmtDate(data!.imported)}`}
-          aside={<button className="btn" onClick={() => setAll(a => !a)}>{all ? "Recent and upcoming" : "All weeks since Jul 2025"}</button>}>
+          aside={<Button variant="outline" size="sm" onClick={() => setAll(a => !a)}>{all ? "Recent and upcoming" : "All weeks since Jul 2025"}</Button>}>
       <div className="table-wrap">
         <table className="data schedule">
           <thead><tr><th>Monday</th><th>Lead sector</th><th>Planned topics</th><th>Status</th><th>Quota</th><th>Survey in Forsta</th></tr></thead>
@@ -92,7 +114,8 @@ export default function Schedule() {
             <td>{w.sector}</td>
             <td>{w.topics.length ? w.topics.map(t => <span key={t} className="tag">{t}</span>) : <span className="muted">—</span>}</td>
             <td><span className={`chip ${STATUS[w.status][1]}`}>{STATUS[w.status][0]}</span>
-              {w.launched && <small className="muted" style={{ display: "block", marginTop: 4 }}>{ist(w.launched)}{w.closed ? ` → ${ist(w.closed)}` : ""} IST</small>}</td>
+              {w.launched && <small className="muted" style={{ display: "block", marginTop: 4 }}>{ist(w.launched)}{w.closed ? ` → ${ist(w.closed)}` : ""} IST</small>}
+              <History w={w} /></td>
             <td><Quota w={w} /></td>
             <td className="title-cell">{w.survey_id ? <Link to={`/w/${w.survey_id}`}>{w.title}</Link> : w.title ?? <span className="muted">—</span>}
               {w.notes.map(n => <span key={n} className="note">{n}</span>)}</td>

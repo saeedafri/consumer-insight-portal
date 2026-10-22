@@ -290,14 +290,21 @@ def already_told(subject: str) -> bool:
         told = json.loads(STATE.read_text())
     except (OSError, ValueError):
         told = {}
-    if now - told.get(subject, 0) < REPEAT_HOURS * 3600:
-        return True
+    return now - told.get(subject, 0) < REPEAT_HOURS * 3600
+
+
+def mark_told(subject: str) -> None:
+    """Start the repeat window, only once the message really went out: a failed send must not silence the alert."""
+    now = time.time()
+    try:
+        told = json.loads(STATE.read_text())
+    except (OSError, ValueError):
+        told = {}
     told[subject] = now
     try:
         STATE.write_text(json.dumps({k: v for k, v in told.items() if now - v < 86400}))
     except OSError:
         pass
-    return False
 
 
 def failure(what: str, detail: str) -> bool:
@@ -311,7 +318,10 @@ def failure(what: str, detail: str) -> bool:
             f'font-size:16px;font-weight:600">Pipeline failure</div><p style="font-size:14px"><b>{html.escape(what)}</b></p>'
             f'<pre style="background:#f6f6f6;padding:10px;font-size:12px;white-space:pre-wrap">{html.escape(detail)}</pre>'
             f'<p style="font-size:12px;color:#6b6a68">The next scheduled run tries again. Log: logs/forsta-etl.log</p></div>')
-    return send(subject, f"{what}\n\n{detail}\n\nThe next scheduled run tries again. Logs: logs/forsta-etl.log\n", recipients("failure"), page=page)
+    sent = send(subject, f"{what}\n\n{detail}\n\nThe next scheduled run tries again. Logs: logs/forsta-etl.log\n", recipients("failure"), page=page)
+    if sent:
+        mark_told(subject)
+    return sent
 
 
 def idle_run() -> bool:

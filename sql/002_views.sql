@@ -14,7 +14,7 @@ SELECT
     q.qcode, q.qtext, q.qtext_short, q.qtype, q.base_n AS question_base_n,
     i.item_code, i.item_label,
     f.field_name,
-    a.value_code, a.value_label, a.value_number,
+    a.value_code, COALESCE(a.value_label, o.value_label, i.item_label) AS value_label, a.value_number,
     p.weight
 FROM cip_answer     a
 JOIN cip_respondent r ON r.respondent_id = a.respondent_id
@@ -24,6 +24,7 @@ JOIN cip_field      f ON f.field_id      = a.field_id
 LEFT JOIN cip_question q ON q.question_id = f.question_id
 LEFT JOIN cip_topic    t ON t.topic_id    = q.topic_id
 LEFT JOIN cip_item     i ON i.item_id     = f.item_id
+LEFT JOIN cip_option   o ON o.question_id = f.question_id AND o.value_code = a.value_code
 WHERE COALESCE(q.is_technical, 0) = 0;
 
 -- "% who selected each item", computed on the question's OWN answering base.
@@ -210,7 +211,7 @@ SELECT a.survey_id, s.platform, s.study_type, s.survey_family, s.wave_date,
        q.qcode, q.qtext AS question, q.qtype AS question_type, t.topic_name AS topic,
        c.concept_code, c.concept_name, m.status AS mapping_status,
        i.item_label AS row_label,
-       a.value_code AS answer_code, a.value_label AS answer_label,
+       a.value_code AS answer_code, COALESCE(a.value_label, o.value_label, i.item_label) AS answer_label,
        a.value_number AS answer_number, a.value_text AS answer_text
   FROM cip_answer a
   JOIN cip_survey     s ON s.survey_id = a.survey_id AND s.load_status = 'verified'
@@ -218,6 +219,7 @@ SELECT a.survey_id, s.platform, s.study_type, s.survey_family, s.wave_date,
   JOIN cip_field      f ON f.field_id = a.field_id
   JOIN cip_question   q ON q.question_id = f.question_id AND q.is_technical = 0 AND q.is_virtual = 0
   LEFT JOIN cip_item  i ON i.item_id = f.item_id
+  LEFT JOIN cip_option o ON o.question_id = f.question_id AND o.value_code = a.value_code
   LEFT JOIN cip_topic t ON t.topic_id = q.topic_id
   LEFT JOIN cip_profile p ON p.respondent_id = a.respondent_id
   LEFT JOIN cip_concept_map m ON m.survey_id = a.survey_id AND m.status <> 'rejected'   -- the unit's row, by its unique key

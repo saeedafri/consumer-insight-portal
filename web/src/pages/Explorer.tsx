@@ -3,15 +3,21 @@ import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { COLUMNS, isFiller, present, useBook } from "../api";
 import type { Column } from "../api";
-import { BaseNote, Card, Change, copyLink, Empty, Failure, IconDownload, IconImage, IconLink, Loading, SourceLine, sourceText } from "../components/bits";
+import { BaseNote, Card, Change, copyLink, Empty, Failure, Loading, provenance, SourceLine, sourceText, ExportButtons } from "../components/bits";
 import { downloadPng } from "../components/EChart";
 import type { Chart } from "../components/EChart";
 import QuestionChart, { VIEWS, viewsFor } from "../components/QuestionChart";
 import type { View } from "../components/QuestionChart";
 import QuestionNav from "../components/QuestionNav";
-import { downloadCsv } from "../csv";
-import { fmtDate, pct, SMALL_BASE } from "../stats";
+import AlertMe from "../components/AlertMe";
+import { downloadTable } from "../csv";
+import type { Format } from "../csv";
+import { fmtDate, HIDDEN_BASE, pct, SMALL_BASE } from "../stats";
 import { perf } from "../perf";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { ChevronLeft, ChevronRight, Image as ImageIcon, Link as LinkIcon } from "lucide-react";
 
 const CUTS: { key: string; label: string; cols: Column[] }[] = [
   { key: "total", label: "Total", cols: ["Total"] },
@@ -45,15 +51,15 @@ export default function Explorer() {
     setParams(p, { replace: true });
   };
   const g = question.groups[group];
-  const top = [...g.rows].filter(r => !isFiller(r.label)).sort((a, b) => (b.Total ?? 0) - (a.Total ?? 0))[0];
+  const top = [...g.rows].filter(r => !isFiller(r.label) && r.Total != null).sort((a, b) => (b.Total ?? 0) - (a.Total ?? 0))[0];
   const small = cut.cols.filter(c => (g.bases[c] ?? 0) < SMALL_BASE);
   const wave = fmtDate(book.wave.wave_date);
   const qIndex = book.questions.findIndex(x => x.id === question.id);
   const prevQ = qIndex > 0 ? book.questions[qIndex - 1] : null;
   const nextQ = qIndex >= 0 && qIndex < book.questions.length - 1 ? book.questions[qIndex + 1] : null;
-  const exportCsv = () => downloadCsv(`${question.id}-${book.wave.wave_date}`, ["Answer", ...cut.cols.map(c => `${c} %`), "Last week %"],
+  const exportAs = (format: Format) => downloadTable(format, `${question.id}-${book.wave.wave_date}`, ["Answer", ...cut.cols.map(c => `${c} %`), "Last week %"],
     g.rows.map(r => [r.label, ...cut.cols.map(c => r[c]), r.prior]),
-    [`${question.id}: ${question.text}`, `${book.wave.title}, wave of ${wave}`, `Base: ${cut.cols.map(c => `${c} n=${g.bases[c]}`).join(", ")}`, "Source: Coresight Research US Consumer Survey"]);
+    [`${question.id}: ${question.text}`, `${book.wave.title}, wave of ${wave}`, `Base: ${cut.cols.map(c => `${c} n=${g.bases[c]}`).join(", ")}`, `Source: Coresight Research US Consumer Survey${book.wave.platform ? ` · ${provenance(book.wave)}` : ""}`]);
   return <div className="split">
     <QuestionNav questions={book.questions} current={question.id} onPick={q => navigate(`/w/${id}/questions/${encodeURIComponent(q.id)}?${params}`)} />
     <div className="stack">
@@ -67,54 +73,95 @@ export default function Explorer() {
             <code>{question.id}</code>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button
-              className="icon-btn"
-              style={{ width: 28, height: 28, borderRadius: 6, fontSize: 13 }}
-              disabled={!prevQ}
-              onClick={() => prevQ && navigate(`/w/${id}/questions/${encodeURIComponent(prevQ.id)}?${params}`)}
-              title={prevQ ? `Previous: ${prevQ.id} (${prevQ.short || prevQ.text})` : "First question"}
-              aria-label="Previous question"
-            >
-              ‹
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon-xs"
+                    disabled={!prevQ}
+                    onClick={() => prevQ && navigate(`/w/${id}/questions/${encodeURIComponent(prevQ.id)}?${params}`)}
+                    aria-label="Previous question"
+                  >
+                    <ChevronLeft size={14} />
+                  </Button>
+                }
+              />
+              <TooltipContent side="top">
+                {prevQ ? `Previous: ${prevQ.id} (${prevQ.short || prevQ.text})` : "First question"}
+              </TooltipContent>
+            </Tooltip>
             <span style={{ fontSize: 11.5, color: "var(--ink-2)", fontWeight: 600 }}>{qIndex + 1} of {book.questions.length}</span>
-            <button
-              className="icon-btn"
-              style={{ width: 28, height: 28, borderRadius: 6, fontSize: 13 }}
-              disabled={!nextQ}
-              onClick={() => nextQ && navigate(`/w/${id}/questions/${encodeURIComponent(nextQ.id)}?${params}`)}
-              title={nextQ ? `Next: ${nextQ.id} (${nextQ.short || nextQ.text})` : "Last question"}
-              aria-label="Next question"
-            >
-              ›
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon-xs"
+                    disabled={!nextQ}
+                    onClick={() => nextQ && navigate(`/w/${id}/questions/${encodeURIComponent(nextQ.id)}?${params}`)}
+                    aria-label="Next question"
+                  >
+                    <ChevronRight size={14} />
+                  </Button>
+                }
+              />
+              <TooltipContent side="top">
+                {nextQ ? `Next: ${nextQ.id} (${nextQ.short || nextQ.text})` : "Last question"}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
         <div className="qhead"><code>{question.id}</code><span>{question.section}</span><span>· {question.type.replace("_", " ")}</span><BaseNote base={g.base} /></div>
         <p className="qtext">{question.text}</p>
-        {question.base_desc && <p className="muted" style={{ margin: "0 0 6px" }}>Asked of: {question.base_desc}</p>}
+        {question.base_desc ? <p className="muted" style={{ margin: "0 0 6px" }}>Asked of: {question.base_desc}</p>
+          : g.base < book.n.Total && <p className="muted" style={{ margin: "0 0 6px" }}>Asked of {g.base.toLocaleString("en-US")} of the wave's {book.n.Total.toLocaleString("en-US")} respondents; the rest were routed past it. Percentages use these {g.base.toLocaleString("en-US")}.</p>}
         {top && <p className="top-answer">Top answer{g.label ? ` for ${g.label}` : ""}: <b>{top.label}</b> at <em>{pct(top.Total)}</em>{" "}
-          <Change now={top.Total} base={g.base} before={top.prior} beforeBase={top.prior_base} label="vs last week" routing={top.flags.includes("base_changed_prior")} /></p>}
+          <Change now={top.Total ?? undefined} base={g.base} before={top.prior} beforeBase={top.prior_base} label="vs last week" routing={top.flags.includes("base_changed_prior")} /></p>}
       </Card>
       <Card>
-        <div className="toolbar">
-          <div className="seg" role="group" aria-label="Chart type">
-            {VIEWS.filter(v => allowed.includes(v.key)).map(v => <button key={v.key} aria-pressed={view === v.key} onClick={() => set("view", v.key)}>{v.label}</button>)}
-          </div>
-          {view !== "donut" && view !== "stacked" && <div className="seg" role="group" aria-label="Columns">
-            {cuts.map(c => <button key={c.key} aria-pressed={cut.key === c.key} onClick={() => set("cut", c.key)}>{c.label}</button>)}
-          </div>}
+        <div className="toolbar" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Tabs value={view} onValueChange={v => set("view", v)}>
+            <TabsList>
+              {VIEWS.filter(v => allowed.includes(v.key)).map(v => (
+                <TabsTrigger key={v.key} value={v.key}>{v.label}</TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          {view !== "donut" && view !== "stacked" && (
+            <Tabs value={cut.key} onValueChange={k => set("cut", k)}>
+              <TabsList>
+                {cuts.map(c => (
+                  <TabsTrigger key={c.key} value={c.key}>{c.label}</TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          )}
           {question.groups.length > 1 && view !== "stacked" && <select aria-label="Grid row" value={group} onChange={e => set("row", e.target.value)}>
             {question.groups.map((x, i) => <option key={x.label} value={i}>{x.label}</option>)}
           </select>}
           <label className="check"><input type="checkbox" checked={sort} onChange={e => { perf.startFilterChange("sort", String(e.target.checked)); setSort(e.target.checked); }} /> Sort by value</label>
           <span style={{ flex: 1 }} />
-          <button className="btn" onClick={exportCsv}><IconDownload /> Download CSV</button>
-          {view !== "table" && <button className="btn" onClick={() => chart.current && downloadPng(chart.current, `${question.id}: ${question.text}`,
-            sourceText(wave, `base n=${g.base}`), `${question.id}-${book.wave.wave_date}`)}><IconImage /> Download PNG</button>}
-          <button className="btn" onClick={e => copyLink(e.currentTarget)}><IconLink /> <span>Copy link</span></button>
-          <Link className="btn" to={`/w/${id}/crosstab/${encodeURIComponent(question.id)}`}>Cross-tab matrix</Link>
-          <Link className="btn" to={`/w/${id}/trends/${encodeURIComponent(question.id)}`}>Trends</Link>
+          <ExportButtons onExport={exportAs} />
+          <AlertMe surveyId={id} question={question} group={g} />
+          {view !== "table" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => chart.current && downloadPng(chart.current, `${question.id}: ${question.text}`,
+                sourceText(wave, `base n=${g.base}`, book.wave), `${question.id}-${book.wave.wave_date}`)}
+            >
+              <ImageIcon size={14} />
+              Download PNG
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={e => copyLink(e.currentTarget)}>
+            <LinkIcon size={14} />
+            <span>Copy link</span>
+          </Button>
+          <Link className={buttonVariants({ variant: "outline", size: "sm" })} to={`/w/${id}/crosstab/${encodeURIComponent(question.id)}`}>Cross-tab matrix</Link>
+          <Link className={buttonVariants({ variant: "outline", size: "sm" })} to={`/w/${id}/trends/${encodeURIComponent(question.id)}`}>Trends</Link>
+          <Link className={buttonVariants({ variant: "outline", size: "sm" })} to={`/w/${id}/compare/${encodeURIComponent(question.id)}`}>Compare waves</Link>
         </div>
         <QuestionChart question={question} group={group} view={view} columns={view === "donut" || view === "stacked" ? ["Total"] : cut.cols} sort={sort} wave={wave}
           onReady={c => { chart.current = c; }} />
@@ -122,9 +169,9 @@ export default function Explorer() {
           {(view === "bars" || view === "columns") && cut.cols.length === 1 && <>
             <span><i style={{ background: "var(--red)" }} />Top answer</span><span><i style={{ background: "var(--sky)" }} />Other answers</span></>}
           <span>Hover any bar for n, base, margin of error and the change vs last week.</span>
-          {small.length > 0 && <span style={{ color: "var(--warn)" }}>Small base (n&lt;{SMALL_BASE}): {small.join(", ")}, shown faded</span>}
+          {small.length > 0 && <span style={{ color: "var(--warn)" }}>Small base (n&lt;{SMALL_BASE}): {small.join(", ")}, shown faded; under {HIDDEN_BASE} no figure is shown</span>}
         </div>
-        <SourceLine wave={wave} base={cut.cols.map(c => `${c} n=${g.bases[c] ?? 0}`).join(", ")} asked={question.base_desc} />
+        <SourceLine wave={wave} base={cut.cols.map(c => `${c} n=${g.bases[c] ?? 0}`).join(", ")} asked={question.base_desc} from={book.wave} />
       </Card>
     </div>
   </div>;

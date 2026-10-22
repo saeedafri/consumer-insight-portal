@@ -5,6 +5,7 @@ import { useBook } from "../api";
 import { BaseNote, Card, Empty, Failure, Loading } from "../components/bits";
 import QuestionChart from "../components/QuestionChart";
 import { fmtDate, pct } from "../stats";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 export default function Survey() {
   const { id: raw, q: code } = useParams();
@@ -50,7 +51,7 @@ export default function Survey() {
     <div className="grid g3" style={{ marginBottom: 18 }}>
       <div className="span2">
         <Card className="respondent">
-          <div className="qhead"><span style={{ color: "var(--red)", fontWeight: 700 }}>{q.section}</span><span>· Question {at + 1} of {book.questions.length}</span><code>{q.id}</code></div>
+          <div className="qhead"><span style={{ color: "var(--ink)", fontWeight: 700 }}>{q.section}</span><span>· Question {at + 1} of {book.questions.length}</span><code>{q.id}</code></div>
           <h2>{q.text}</h2>
           <p className="muted">{multi ? "Select all that apply." : "Select one."}{q.base_desc ? ` Asked of: ${q.base_desc}.` : ""}</p>
           {q.groups.length > 1 ? <div className="table-wrap"><table className="data">
@@ -68,11 +69,11 @@ export default function Survey() {
                 {on && r.Total != null && <b style={{ marginLeft: "auto", color: "var(--sig)", fontVariantNumeric: "tabular-nums", fontSize: 13 }}>{pct(r.Total)}</b>}
               </button>;
             })}</div>}
-          <div className="toolbar" style={{ marginTop: 20 }}>
-            <button className="btn" disabled={at === 0} onClick={() => go(at - 1)} title="Previous question (←)">‹ Previous</button>
-            <button className="btn primary" disabled={at >= book.questions.length - 1} onClick={() => go(at + 1)} title="Next question (→)">Next question ›</button>
+          <div className="toolbar" style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10 }}>
+            <Button variant="outline" disabled={at === 0} onClick={() => go(at - 1)} title="Previous question (←)">‹ Previous</Button>
+            <Button variant="default" disabled={at >= book.questions.length - 1} onClick={() => go(at + 1)} title="Next question (→)">Next question ›</Button>
             <span style={{ flex: 1 }} />
-            <Link className="btn" to={`/w/${id}/questions/${encodeURIComponent(q.id)}`}>Open in Question Explorer →</Link>
+            <Link className={buttonVariants({ variant: "outline" })} to={`/w/${id}/questions/${encodeURIComponent(q.id)}`}>Open in Question Explorer →</Link>
           </div>
         </Card>
       </div>

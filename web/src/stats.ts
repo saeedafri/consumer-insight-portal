@@ -40,6 +40,7 @@ export function versusRest(col: number, colBase: number, total: number, totalBas
 }
 
 export const SMALL_BASE = 50;
+export const HIDDEN_BASE = 30;   // under this the data carries no figure (app/data/payloads.HIDDEN_BASE): screens show the base only
 export const pct = (v: number | null | undefined) => (v == null ? "–" : `${v.toFixed(1)}%`);
 export const pts = (d: number) => `${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d).toFixed(1)} pts`;
 export const count = (p: number, base: number) => Math.round((p / 100) * base);

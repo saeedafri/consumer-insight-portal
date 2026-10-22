@@ -19,6 +19,7 @@ export const tooltip = () => ({
 export const axisText = () => ({ color: C.ink, fontFamily: "Montserrat Variable, sans-serif", fontSize: 11 });
 
 export type Chart = echarts.ECharts;
+export const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** A PNG a reader can paste into a deck: the question on top, the chart, the source and base underneath. */
 export async function downloadPng(chart: Chart, title: string, source: string, file: string) {
@@ -82,12 +83,16 @@ export default function EChart({ option, height, onClick, label, onReady }:
     };
     c.on("finished", onFinished);
 
+    // Bars grow from the axis when a question opens; a new cut or sort moves the same bars to their new values
+    // instead of redrawing, so the change itself is visible. Parts a new chart type does not share are replaced.
     c.setOption({
-      animationDuration: 250,
+      animation: !REDUCED_MOTION,
+      animationDuration: 480, animationEasing: "cubicOut",
+      animationDurationUpdate: 320, animationEasingUpdate: "cubicInOut",
       textStyle: axisText(),
       aria: { enabled: true, label: { general: { withoutTitle: `${label}. ` } } },
       ...option
-    }, { notMerge: true });
+    }, { replaceMerge: ["series", "xAxis", "yAxis", "grid", "legend", "dataZoom", "visualMap"] });
   }, [option, label]);
   useEffect(() => {
     const c = chart.current!;

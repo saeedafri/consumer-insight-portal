@@ -172,6 +172,8 @@ def test_discovery_registers_every_survey_with_what_to_do_about_it(csi_db):
                                 "selfserve/58f/260602": ("hibernated", "tracker"), "selfserve/58f/261000": ("testing", "tracker")}
     forsta_etl.discover(FakeForsta())                                        # idempotent
     assert len(register(csi_db)) == 4
+    events = loaded(csi_db, "SELECT forsta_path, load_state FROM cip_forsta_event ORDER BY forsta_path")
+    assert len(events) == 4                                                   # one per survey seen; a rerun adds none
 
 
 def loaded(engine, sql, **params):
@@ -188,10 +190,13 @@ def test_a_wave_loads_codes_directly_and_keeps_no_personal_data(csi_db):
     keys = {r[0] for r in loaded(csi_db, "SELECT respondent_key FROM cip_respondent WHERE survey_id = :s", s=sid)}
     assert hashlib.sha256(b"panel-1").hexdigest() in keys
     assert not loaded(csi_db, "SELECT 1 FROM cip_respondent WHERE sample_rid IS NOT NULL OR browser = 'Mozilla/5.0'")
-    answer = lambda field: loaded(csi_db, "SELECT a.value_code, a.value_label, a.value_number, a.value_text FROM cip_answer a"
-                                          " JOIN cip_field f ON f.field_id = a.field_id JOIN cip_respondent r"
-                                          " ON r.respondent_id = a.respondent_id WHERE a.survey_id = :s AND f.field_name = :f"
-                                          " AND r.forsta_uuid = 'u1'", s=sid, f=field)[0]
+    answer = lambda field, label="COALESCE(a.value_label, o.value_label, i.item_label)": loaded(   # as readers rebuild it
+        csi_db, f"SELECT a.value_code, {label}, a.value_number, a.value_text FROM cip_answer a"
+                " JOIN cip_field f ON f.field_id = a.field_id JOIN cip_respondent r ON r.respondent_id = a.respondent_id"
+                " LEFT JOIN cip_option o ON o.question_id = f.question_id AND o.value_code = a.value_code"
+                " LEFT JOIN cip_item i ON i.item_id = f.item_id"
+                " WHERE a.survey_id = :s AND f.field_name = :f AND r.forsta_uuid = 'u1'", s=sid, f=field)[0]
+    assert answer("D5", label="a.value_label")[1] is None          # the option table holds it: not repeated per answer
     assert answer("D5")[:2] == (2, "$25,000 - $49,999")
     assert answer("q1r2")[:2] == (0, "Other (please specify)")
     assert answer("HX6r2")[:2] == (2, "Right statement")
@@ -436,3 +441,23 @@ def test_a_wave_loaded_another_way_on_the_same_path_is_never_reused(csi_db):
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
     assert sid != old
     assert loaded(csi_db, "SELECT wave_label FROM cip_survey WHERE survey_id = :s", s=old)[0][0] == "2026-09-14"
+
+
+def test_a_wave_that_keeps_failing_stops_being_fetched_every_run(csi_db):
+    forsta_etl.discover(FakeForsta())
+    for _ in range(forsta_etl.MAX_ATTEMPTS):
+        forsta_etl._mark("selfserve/58f/260905", "failed", error="403 from Forsta")
+    loaded_paths = []
+
+    class Counting(FakeForsta):
+        def survey_data(self, path, *a, **k):
+            loaded_paths.append(path)
+            return super().survey_data(path, *a, **k)
+    forsta_etl.run_due(Counting())
+    assert "selfserve/58f/260905" not in loaded_paths and "selfserve/58f/260907" in loaded_paths
+
+
+def test_the_bulk_load_file_reads_back_exactly_what_respondents_wrote():
+    from app.core.database import tsv, untsv
+    for said in ["a\tb", "C:\\temp\\new", "line1\r\nline2", "back\\tslash", "nul\0x", None]:
+        assert untsv(tsv(said)) == said      # the fallback path re-reads the file: verbatims must not change

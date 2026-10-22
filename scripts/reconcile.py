@@ -39,8 +39,9 @@ def main() -> int:
             checked, problems = reconcile_survey(int(s.survey_id))
         else:
             checked, problems = reconcile_legacy(int(s.survey_id))
-        bad += len(problems)
-        print(f"{s.wave_label}  {s.title}\n  {checked - len(problems)}/{checked} answers match the source")
+        bad += len(problems) + (checked == 0)   # nothing checked (source unreachable or hibernated) is not a pass
+        print(f"{s.wave_label}  {s.title}\n  {checked - len(problems)}/{checked} answers match the source"
+              + ("  ✗ nothing could be checked" if checked == 0 else ""))
         for p in problems[:40]:
             print("   ✗", p)
     return 1 if bad else 0

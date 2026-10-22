@@ -32,3 +32,19 @@ def own_notify_state(tmp_path, monkeypatch):
     silence a real alert for 6 hours."""
     from etl import notify
     monkeypatch.setattr(notify, "STATE", tmp_path / "notify-state.json")
+
+
+@pytest.fixture(autouse=True)
+def no_real_messages(monkeypatch, request):
+    """Tests run with the real .env, which holds live SMTP and Teams settings: nothing a test does may reach a
+    person. Every send is recorded on notify.sent instead; tests of send() itself (test_notify) fake SMTP."""
+    import smtplib
+    from etl import notify
+    monkeypatch.setattr(notify.requests, "post", lambda *a, **k: (_ for _ in ()).throw(AssertionError("a test tried to post")))
+    if request.module.__name__.endswith("test_notify"):
+        return
+    monkeypatch.setattr(smtplib, "SMTP", lambda *a, **k: (_ for _ in ()).throw(AssertionError("a test tried to email")))
+    sent: list = []
+    monkeypatch.setattr(notify, "sent", sent, raising=False)
+    monkeypatch.setattr(notify, "send", lambda subject, *a, **k: sent.append(("email", subject)) or True)
+    monkeypatch.setattr(notify, "teams", lambda headline: sent.append(("teams", headline)))

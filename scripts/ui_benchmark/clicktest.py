@@ -22,6 +22,7 @@ SCREENS = {   # path, the check that its data is on screen
     "trends": ("/trends", "document.querySelectorAll('canvas').length > 0 || /only one wave|Pick at least one answer|No respondents in|fielded once/.test(document.body.innerText)"),
     "changes": ("/changes", "document.querySelector('h1')?.textContent.length > 5 && (document.querySelectorAll('table.data').length > 0 || /No changes match these filters/.test(document.body.innerText))"),
     "survey": ("/survey", "document.querySelectorAll('.option, table.data button').length > 0"),
+    "compare": ("/compare", "document.querySelectorAll('table.compare td').length > 0 || /nothing to compare/.test(document.body.innerText)"),
 }
 NO_ERROR = "!document.querySelector('.state.error')"
 

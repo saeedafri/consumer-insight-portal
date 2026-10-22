@@ -25,9 +25,9 @@ verdict and the chatbot readiness.
 |---|---|
 | Source data | 4 exports analysed: 09/21/26 and 09/28/26, raw + cross-tab each ([05](docs/05-source-data-analysis.md)) |
 | Database | **`cip_stg`** (moved from `dwh_stg` on 14 Oct 2026), account `mohdsaeedafri` — 33 `cip_` tables, 12 `v_cip_` views, and the 7 `dwh_sm*` Qualtrics/SurveyMonkey source tables (copied from `dwh_stg` on 19 Oct 2026, row counts and checksums equal; `scripts/move_legacy_source.py`). Nothing in `cip_stg` reads `dwh_stg` any more. Analysts start from `v_cip_wave`, `v_cip_respondent`, `v_cip_answer_long` |
-| Data loaded | Forsta: both 2026 waves (404 + 403). History: 141 Qualtrics waves Aug 2022 – Apr 2025 from `dwh_sm*` + the May 2025 Excel export — 144 waves, 71,474 qualified respondents, 10.4 M answer rows |
+| Data loaded | 371 verified waves, 18 Jan 2018 – 19 Oct 2026, 190,448 qualified respondents: Forsta 84 (Jul 2025 on, loaded by the API), Qualtrics 142 and SurveyMonkey 145 (history from `dwh_sm*` + the May 2025 Excel export). 268 weekly tracker waves since 28 Dec 2020, 24 annual, 79 ad hoc. All US (`config/countries.yml`; China is configured, no data yet) |
 | Verified | `scripts/reconcile.py`: 667/667 and 788/788 published cells reproduced from raw answers ([09](docs/09-data-verification.md)); all 141 legacy waves match their source (41,124 answer counts, 0 differences); Beauty retailer check vs the analysts' workbook: Amazon.com 492 = 492 |
-| Forsta API | adapter + unattended weekly run (`scripts/weekly_forsta.py`) built and proven equal to the Excel path; the key on file is **rejected (401)** — the first live run is one command once IT's key is in `.env` ([03](docs/03-forsta-integration.md), [04](docs/04-it-requirements-checklist.md)) |
+| Forsta API | live, read only (GET). Runs from launchd on this Mac only on planned Mondays (`config/launch_schedule.yml`, 17:30 IST, Teams heads-up first) plus Friday 09:00; polls every 30 min until the wave is in. Forsta has no webhooks, so polling is the design. Every observed state change is a row in `cip_forsta_event`; quota left per cell is kept for the `/schedule` page ([03](docs/03-forsta-integration.md)) |
 | Portal | Overview · Questions · Analysis Builder · Cross-tabs · Trends · Data Health; cohort filters, breaks, grids, Excel export on every table |
 | Dynamic surveys | rotating weekly modules load without code changes; topics resolved from `config/survey_map.yml` |
 | Harmonisation | every wave's questions linked to canonical concepts on load (828 concepts, 251 span several waves); 985 uncertain matches wait on the **Mappings** page (`/mappings`, filter by wave, 25 per page) |
@@ -41,6 +41,27 @@ and open http://127.0.0.1:8000/auth/dev-login. **Deploy:** `deploy/compose.yml` 
 
 **Run the Streamlit staff pages against `cip_stg`** (VPN on): `.venv/bin/streamlit run app/main.py` — sign-in is bypassed locally (`APP_ENV=LOCAL` + `DEBUG=true`); OIDC/SSO to follow, as in MDP/SIP
 **Run it offline** on a SQLite copy: `bash scripts/run_local.sh`
+
+## Shared test link (in use by the team, keep as is)
+
+The data and business teams are testing on
+`https://beneath-velocity-slot-graphics.trycloudflare.com/auth/dev-login?next=/w/415`, a Cloudflare tunnel to the API on
+this Mac (`127.0.0.1:8000`, `APP_ENV=LOCAL`). Do not change the tunnel or restart it under a new name: the link
+would change. It signs anyone with the link in as an analyst (dev login), which is accepted for this test period;
+real sign-in (`app/core/auth.py`, [08](docs/08-authentication.md)) replaces it before wider use.
+
+## Definitions in use (agreed 21 Oct 2026, the review's recommended defaults)
+
+| Rule | Value |
+|---|---|
+| Weighting | none: every percentage is unweighted, of qualified respondents (`cip_weight` is empty by design) |
+| Base | each question's own: respondents who were asked it and answered (skip logic means bases differ by question) |
+| Small base | under 50: shown, flagged and faded |
+| Suppressed | under 30: two-cut cross-tab and Compare cells show no number |
+| Significance | two-proportion z-test at 95 %; What changed also applies Benjamini–Hochberg |
+| Comparable | the same question: identical wording (spacing and instructions ignored) or answers harmonised to one concept. A code reused for another question is a new **version**: no "vs last week", a break in Trends, listed apart in Compare (`etl/serving.same_question`, `app/data/payloads.versions`) |
+| Fieldwork over | 9 h after launch, or no quota left (every unconditional cell full, or qualified at a whole sheet's target), or 400 qualified for a weekly tracker wave; then the portal loads it and reloads once Forsta closes it. Forsta is never changed |
+| Events | recurring retail events tagged from titles (`config/survey_calendar.yml` `events`), for same-event comparisons |
 
 ---
 
