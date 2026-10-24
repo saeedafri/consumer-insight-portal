@@ -1,7 +1,7 @@
 // "Alert me": tell the team on Teams when this answer moves significantly against the previous wave or last year
 // (api/team.py; the pipeline checks every alert once per new wave, same question wording only, 30+ people each side to be tested).
 import { useState } from "react";
-import { myName, send } from "../api";
+import { myName, queries, send } from "../api";
 import type { Group, Question } from "../api";
 
 export default function AlertMe({ surveyId, question, group }: { surveyId: number; question: Question; group: Group }) {
@@ -11,12 +11,12 @@ export default function AlertMe({ surveyId, question, group }: { surveyId: numbe
   const [note, setNote] = useState("");
   const multi = question.type.endsWith("multi");
   const save = async () => {
-    const r = group.rows[row], by = myName();
-    if (!by) return setNote("Your name is needed so the team knows whose alert it is.");
+    const r = group.rows[row], by = await myName();
     const answer = group.label ? `${group.label} · ${r.label}` : r.label;
     try {
       await send("POST", "/api/v1/alerts", { survey_id: surveyId, qcode: question.id, item_label: multi ? r.label : group.label,
         option_code: multi ? null : r.code, answer_label: answer, name: `${question.id} · ${answer}`, against, by });
+      void queries.invalidateQueries({ queryKey: ["alerts"] });
       setNote(`Alert set: the team hears on Teams, and you by email, when “${answer}” moves significantly.`);
     } catch (e) { setNote(e instanceof Error ? e.message : String(e)); }
   };

@@ -42,13 +42,13 @@ typography:
     lineHeight: 1.35
     letterSpacing: "normal"
   body:
-    fontFamily: "Montserrat Variable, Montserrat, system-ui, sans-serif"
+    fontFamily: "Roboto Variable, Roboto, system-ui, sans-serif"
     fontSize: "14px"
     fontWeight: 400
     lineHeight: 1.5
     letterSpacing: "normal"
   label:
-    fontFamily: "Montserrat Variable, Montserrat, system-ui, sans-serif"
+    fontFamily: "Roboto Variable, Roboto, system-ui, sans-serif"
     fontSize: "12px"
     fontWeight: 600
     lineHeight: 1.4
@@ -117,7 +117,7 @@ Coresight 2026 Brand Palette is applied with strict intentionality:
 
 ## Typography
 
-- **Primary Typeface**: Montserrat Variable (`@fontsource-variable/montserrat`) with system-ui fallback.
+- **Typefaces** (as coresight.com, 23 Oct 2026): Montserrat Variable (`@fontsource-variable/montserrat`) for headings, navigation, buttons and KPIs; Roboto Variable (`@fontsource-variable/roboto`) for body, data, labels and chart text. system-ui fallback.
 - **Numeric Discipline**: All data tables, percentages, base counts, and delta chips enforce `font-variant-numeric: tabular-nums` to ensure exact column alignment and instant vertical comparison.
 - **Scale**:
   - Page Headings: `28px` / Weight 600 / Line-height 1.2.

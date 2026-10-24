@@ -61,3 +61,33 @@ def test_a_failure_posted_only_to_teams_still_counts_as_told(monkeypatch, tmp_pa
     monkeypatch.setattr(notify, "send", lambda *a, **k: False)            # no mail password on this machine
     monkeypatch.setattr(notify, "teams", lambda headline: True)
     assert notify.failure("run crashed", "trace") and notify.already_told("CIP pipeline FAILED: run crashed")
+
+
+def test_raw_data_is_forstas_labelled_export_with_its_datamap():
+    import io
+    import openpyxl
+    from etl import crosstab_export
+
+    class Forsta:
+        def survey_datamap(self, path):
+            return {"variables": [
+                {"label": "uuid", "type": "text"},
+                {"label": "q1r1", "type": "multiple", "rowTitle": "Gone to a bar", "colTitle": None},
+                {"label": "D1", "type": "single", "values": [{"value": 1, "title": "Male"}, {"value": 2, "title": "Female"}]},
+                {"label": "D2", "type": "single", "values": [{"value": 20, "title": "36"}]},
+                {"label": "D9", "type": "single", "values": []}, {"label": "qtime", "type": "float"}]}
+
+        def survey_data(self, path, cond):
+            assert cond == "qualified"
+            return [{"uuid": "a1", "q1r1": "1", "D1": "2", "D2": "20", "qtime": "143.945"}, {"uuid": "b2", "q1r1": "0", "D1": "1"}]
+
+        def _get(self, endpoint, format):
+            assert endpoint.endswith("/datamap") and format == "text"
+            return type("R", (), {"content": "[D1]: What is your gender?\nValues: 1-2\n\t1\tKohl’s\n".encode()})()
+
+    book = openpyxl.load_workbook(io.BytesIO(crosstab_export.raw_data(Forsta(), "selfserve/58f/1")))
+    assert [list(r) for r in book["A1"].iter_rows(values_only=True)] == [
+        ["uuid", "q1r1", "D1", "D2", "D9", "qtime"], ["a1", "Gone to a bar", "Female", 36, None, 143.945],
+        ["b2", "NO TO: Gone to a bar", "Male", None, None, None]]
+    assert [list(r) for r in book["Datamap"].iter_rows(values_only=True)] == [
+        ["[D1]: What is your gender?", None, None], ["Values: 1-2", None, None], [None, 1, "Kohl’s"]]

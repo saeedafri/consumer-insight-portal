@@ -1,7 +1,7 @@
 // Reading a question file (api.ts QuestionFile): cells by wave × cut × answer, and the Trends view of one cut.
 import type { QuestionFile, Trend } from "./api";
 
-export type Cell = { n: number | null; base: number; pct: number | null };   // n, pct: null under 30 people
+export type Cell = { n: number | null; base: number; pct: number | null };   // n, pct: null under HIDDEN_BASE people
 export type Cells = (w: number, c: number, a: number) => Cell | undefined;
 
 /** A lookup over the file's cells, built once per file. */

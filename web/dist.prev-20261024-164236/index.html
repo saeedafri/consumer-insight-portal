@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#2D2A29" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <title>Consumer Insight Portal · Coresight Research</title>
+    <script>
+      // Theme before first paint: the saved choice, else the system setting (no flash of the wrong theme)
+      try { var t = localStorage.getItem("cip-theme"); } catch (e) {}
+      document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    </script>
+    <!-- no font preload: measured on slow 4G it delays first paint and the app by ~0.2 s (it shares the link with the CSS
+         and JS); the shell paints in the fallback font and swaps (docs/REA Claude Opus 2026-10-23/83-ui-redesign.md) -->
+    <!-- the app shell below paints as soon as the CSS arrives, long before the script has run; React replaces it -->
+    <style>:root{--paper:#fafafa;--surface:#fff;--ink:#2d2a29;--rail:#2d2a29;--line:#e5e3e1;--fill:#f2f1f0;--red:#d62e2f;--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light}:root[data-theme=dark]{--paper:#1b1918;--surface:#242120;--ink:#fafafa;--rail:#121010;--line:#3d3937;--fill:#332f2d;--lightningcss-light: ;--lightningcss-dark:initial;color-scheme:dark}body{background:var(--paper);margin:0}.boot{grid-template-rows:56px 1fr;grid-template-columns:248px 1fr;min-height:100vh;display:grid}.boot-head{background:var(--surface);border-bottom:1px solid var(--line);color:var(--ink);grid-column:1/-1;align-items:center;padding:0 20px;font:600 14px/20px Montserrat,system-ui,sans-serif;display:flex}.boot-rail{background:var(--rail);border-right:1px solid #2d2a29}.boot-main{padding:26px 28px}.boot-main b,.boot-main s{background:var(--fill);border-radius:6px;display:block}.boot-main b{border-left:5px solid var(--red);border-radius:0 6px 6px 0;width:min(620px,90%);height:34px}.boot-main s{width:min(480px,70%);height:16px;margin-top:12px}@media (width<=900px){.boot{grid-template-columns:1fr}.boot-rail{display:none}.boot-head{padding:0 16px}.boot-main{padding:18px 16px}}</style>
+    <script type="module" crossorigin src="/assets/index-D62FX3DV.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/jsx-runtime-Wy9s6hX0.js">
+    <link rel="modulepreload" crossorigin href="/assets/chunk-OB3PAWPO-B_ZfYYeA.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-C82h-TNU.css">
+  </head>
+  <body>
+    <div id="root"><div class="boot" aria-busy="true"><div class="boot-head">Coresight Research · Consumer Insight Portal</div><div class="boot-rail"></div><div><div class="boot-main"><b></b><s></s><s></s></div></div></div></div>
+  </body>
+</html>

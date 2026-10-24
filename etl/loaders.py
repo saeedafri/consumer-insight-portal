@@ -8,14 +8,43 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from contextlib import contextmanager, suppress
 from typing import Any, Optional
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
 from etl import survey_map
 
 logger = logging.getLogger(__name__)
+
+LOCK = "cip_etl"
+LOCK_IDLE_SECONDS = 7 * 24 * 3600   # the lock's session outlives a 54-hour watch (the server drops idle ones after 8 h)
+
+
+class Locked(RuntimeError):
+    """Another CIP writer holds the run lock."""
+
+
+@contextmanager
+def etl_lock():
+    """The one run lock every writer takes (scheduled run, loads, rebuilds, publish, rekey): two writers at once
+    deadlock (20 Oct 2026). Yields the lock's connection, which a long watch pings (SELECT 1) to keep. The lock
+    goes with the connection, so a killed run frees it. SQLite (tests, local) is one process: no lock."""
+    engine = get_engine("etl")
+    if engine.dialect.name != "mysql":
+        yield None
+        return
+    with engine.connect() as conn:
+        conn.execute(text(f"SET SESSION wait_timeout = {LOCK_IDLE_SECONDS}"))
+        if not conn.execute(text("SELECT GET_LOCK(:n, 0)"), {"n": LOCK}).scalar():
+            raise Locked("Another CIP run holds the lock (scripts/weekly_forsta.py?); try again when it finishes")
+        try:
+            yield conn
+        finally:
+            with suppress(Exception):   # a dropped connection has released it already; never hide the run's own error
+                conn.execute(text("DO RELEASE_LOCK(:n)"), {"n": LOCK})
+
 
 def classify_group(qcode: str, qtext: str = "", family: Optional[str] = None) -> str:
     """Topic for a question. Config-driven — see config/survey_map.yml.
@@ -238,6 +267,32 @@ def load_definitions(survey_id: int, questions: list,
                 {"sid": survey_id},
             ).all()
         }
+
+
+def drop_unlisted_items(survey_id: int, questions: list) -> int:
+    """Remove a question's answer row that the questionnaire no longer lists and nobody gave, once the wave's
+    answers are written. load_definitions updates and adds rows but never removes one, so survey 97's corrected
+    Q7 list kept a second, empty "YouTube" next to the real one. A row anyone chose (a code other than 0, a
+    number or a text) is always kept; a multi-select's "not chosen" zeros go with it. Only questions in this
+    load are looked at (the pipeline's own virtual questions are not)."""
+    listed = {(q.qcode[:50], code[:50]) for q in questions for code, _ in q.rows}
+    loaded = {qcode for qcode, _ in listed}
+    with get_engine("etl").begin() as conn:
+        rows = conn.execute(text("SELECT i.item_id, q.qcode, i.item_code FROM cip_item i JOIN cip_question q"
+                                 " ON q.question_id = i.question_id WHERE q.survey_id = :s"), {"s": survey_id}).all()
+        unlisted = [item for item, qcode, code in rows if qcode in loaded and (qcode, code) not in listed]
+        if not unlisted:
+            return 0
+        answered = {r[0] for r in conn.execute(text(
+            "SELECT DISTINCT f.item_id FROM cip_field f JOIN cip_answer a ON a.field_id = f.field_id WHERE f.item_id IN :ids"
+            " AND (COALESCE(a.value_code, 0) <> 0 OR a.value_number IS NOT NULL OR a.value_text IS NOT NULL)")
+            .bindparams(bindparam("ids", expanding=True)), {"ids": unlisted})}
+        gone = [item for item in unlisted if item not in answered]
+        if gone:
+            conn.execute(text("DELETE FROM cip_item WHERE item_id IN :ids").bindparams(bindparam("ids", expanding=True)),
+                         {"ids": gone})
+            logger.info("survey_id %s: removed %d answer rows the questionnaire no longer lists", survey_id, len(gone))
+        return len(gone)
 
 
 def _is_nonresponse(label: Optional[str]) -> bool:

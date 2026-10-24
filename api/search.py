@@ -6,7 +6,11 @@ A query is understood in four steps, each reported back so the screen can say wh
   1. spelling   words not in the index's own vocabulary are corrected to the closest one ("holidy" → "holiday")
   2. synonyms   config/search_synonyms.yml groups expand a word or phrase ("christmas" → holiday, gift, …)
   3. words      porter-stemmed FTS5 match of every word group (AND), each group an OR of its synonyms
-  4. fallback   no hit → trigram match on word fragments (partial words, glued words), then any-word match
+  4. fallback   no hit → a sentence matches on most of its words (best first); a word or two → trigram match on
+                word fragments (partial words, glued words); then any word
+
+A plain-English question ("what do people think about tariffs") drops its question words first, so it searches
+for what it is about.
 
 ≈ 3,000 documents index in well under a second and a query takes about a millisecond.
 """
@@ -22,6 +26,11 @@ import yaml
 
 SYNONYMS = Path(__file__).resolve().parents[1] / "config" / "search_synonyms.yml"
 WORD = re.compile(r"[a-z0-9]+(?:[-'][a-z0-9]+)*")
+# Words that say how a question is asked, not what about: dropped when anything else is left.
+FILLER_WORDS = set("""a about an and are as at be by can could did do does doing for from had has have how i if in into is it
+    its me much many my of on or our people person consumers consumer shoppers shopper americans should so than that the their them
+    there these they think this those to us was we were what when where which who whom why will with would you your
+    feel feeling feelings opinion opinions say says said tell show find percent percentage proportion any""".split())
 
 
 def load_synonyms(path: Path = SYNONYMS) -> list[list[str]]:
@@ -56,6 +65,7 @@ class SearchIndex:
     def understand(self, query: str) -> tuple[list[list[str]], list[str], list[str]]:
         """Word groups to AND together (each an OR of alternatives), plus the corrections and expansions made."""
         words = WORD.findall(query.lower())
+        words = [w for w in words if w not in FILLER_WORDS] or words
         fixed = [self.correct(w) for w in words]
         corrections = [f"{a} → {b}" for a, b in zip(words, fixed) if a != b]
         text = " ".join(fixed)
@@ -81,6 +91,8 @@ class SearchIndex:
         with self.lock:
             if groups:
                 ids, total = self._match("words", self._fts(groups, "AND"), limit, offset)
+                if not ids and len(groups) > 2:   # a sentence: answers that match most of it, best first
+                    how, (ids, total) = "most words", self._match("words", self._fts(groups, "OR"), limit, offset)
                 if not ids:
                     fragments = [w for g in groups for t in g for w in WORD.findall(t) if len(w) >= 3]
                     if fragments:

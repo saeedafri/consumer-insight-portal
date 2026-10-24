@@ -30,6 +30,16 @@ export function survivesFdr(ps: number[], q = 0.05): boolean[] {
   return keep;
 }
 
+/** Benjamini–Hochberg over the tests that could be run: null (no prior, routing or wording changed, too few people)
+ *  is left out of the count m instead of entering as p = 1, which would make the correction stricter than it is. */
+export function fdr(ps: (number | null)[], q = 0.05): boolean[] {
+  const tested = ps.flatMap((p, i) => (p == null ? [] : [i]));
+  const keep = survivesFdr(tested.map(i => ps[i]!), q);
+  const out = new Array(ps.length).fill(false);
+  tested.forEach((i, k) => { out[i] = keep[k]; });
+  return out;
+}
+
 /** A column against everyone else (Total minus the column), so a big column is not tested against itself. */
 export function versusRest(col: number, colBase: number, total: number, totalBase: number): -1 | 0 | 1 {
   const restBase = totalBase - colBase;
@@ -40,7 +50,8 @@ export function versusRest(col: number, colBase: number, total: number, totalBas
 }
 
 export const SMALL_BASE = 50;
-export const HIDDEN_BASE = 5;    // under this the data carries no figure (app/data/payloads.HIDDEN_BASE): screens show the base only
+export const HIDDEN_BASE = 1;    // under this the data carries no figure (app/data/payloads.HIDDEN_BASE): screens show the base only
+export const HIDDEN_NOTE = `n<${HIDDEN_BASE}`;   // what a hidden cell shows, on every screen
 export const TEST_BASE = 30;     // under this on either side a difference is never called significant (too few to test)
 export const pct = (v: number | null | undefined) => (v == null ? "–" : `${v.toFixed(1)}%`);
 export const pts = (d: number) => `${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d).toFixed(1)} pts`;

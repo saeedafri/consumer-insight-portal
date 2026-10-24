@@ -1,5 +1,6 @@
-// The question list every analysis screen shares: grouped by section, filterable by text or code.
-import { useMemo, useState } from "react";
+// The question list every analysis screen shares: grouped by section, filterable by text or code. On a phone it is
+// a "Question ▾" button that opens the same list as a sheet, so the chart is the first thing on the screen.
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Question } from "../api";
 import { SMALL_BASE } from "../stats";
 import Profiled from "./Profiled";
@@ -17,12 +18,20 @@ export default function QuestionNav({ questions, current, onPick }:
     }
     return [...out].sort(([a], [b]) => a.localeCompare(b));
   }, [questions, filter]);
-  return <Profiled id="QuestionNav">
-    <nav className="qnav" aria-label="Questions">
-      <label className="sr-only" htmlFor="qfilter">Filter questions</label>
+  const [sheet, setSheet] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = dialog.current;
+    if (sheet && d && !d.open) d.showModal();
+  }, [sheet]);
+  const pick = (q: Question) => { dialog.current?.close(); onPick(q); };
+  const at = questions.findIndex(q => q.id === current);
+  const here = questions[at];
+  const list = (where: string) => <nav className="qnav" aria-label="Questions">
+      <label className="sr-only" htmlFor={`qfilter-${where}`}>Filter questions</label>
       <div style={{ position: "relative", margin: "12px 12px 6px" }}>
         <input
-          id="qfilter"
+          id={`qfilter-${where}`}
           type="search"
           value={filter}
           onChange={e => setFilter(e.target.value)}
@@ -55,13 +64,22 @@ export default function QuestionNav({ questions, current, onPick }:
       <div className="qnav-list">
         {sections.map(([section, qs]) => <div key={section}>
           <h4>{section}</h4>
-          {qs.map(q => <button key={q.id} className={q.id === current ? "on" : ""} aria-current={q.id === current} onClick={() => onPick(q)}>
+          {qs.map(q => <button key={q.id} className={q.id === current ? "on" : ""} aria-current={q.id === current} onClick={() => pick(q)}>
             <code>{q.id}</code><span>{q.short || q.text}</span>
             <small className={q.groups[0].base < SMALL_BASE ? "small" : ""} title="Respondents who answered">n={q.groups[0].base}</small>
           </button>)}
         </div>)}
         {!sections.length && <p className="muted pad">No question matches “{filter}”.</p>}
       </div>
-    </nav>
+    </nav>;
+  return <Profiled id="QuestionNav">
+    <button className="qnav-open" onClick={() => setSheet(true)} aria-haspopup="dialog">
+      {here && <code>{here.id}</code>}<span>{here ? here.short || here.text : "Questions"}</span><small>{at + 1} of {questions.length}</small><span aria-hidden className="caret">▾</span>
+    </button>
+    {list("side")}
+    <dialog ref={dialog} className="qsheet" aria-label="Questions" onClose={() => setSheet(false)}
+            onClick={e => { if (e.target === e.currentTarget) e.currentTarget.close(); }}>
+      {sheet && list("sheet")}
+    </dialog>
   </Profiled>;
 }

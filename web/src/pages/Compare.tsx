@@ -8,17 +8,18 @@ import { answerLabel, cellsOf } from "../question";
 import type { Cell, Cells } from "../question";
 
 type Shown = Cell & { pct: number };
-const shown = (c: Cell | undefined): c is Shown => c?.pct != null;   // has a figure (30+ people)
-import { Card, copyLink, Empty, Failure, Loading, provenance, SourceLine, ExportButtons } from "../components/bits";
+const shown = (c: Cell | undefined): c is Shown => c?.pct != null;   // has a figure (HIDDEN_BASE or more people)
+import { Card, copyLink, Empty, Failure, IconLink, Menu, Skeleton, SkeletonScreen, SourceLine, sourceText, ExportButtons } from "../components/bits";
+import type { Wave } from "../api";
 import QuestionNav from "../components/QuestionNav";
+import QuestionTabs from "../components/QuestionTabs";
 import { downloadTable } from "../csv";
 import type { Format } from "../csv";
 import { fmtDate, HIDDEN_BASE as HIDDEN, pct, pts, significant, SMALL_BASE } from "../stats";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Link as LinkIcon } from "lucide-react";
 
 const LAST = [4, 8, 13];
+const PICKS = [...LAST.map(String), "event", "own"];
 
 export default function Compare() {
   const { id: raw, q: code } = useParams();
@@ -31,7 +32,7 @@ export default function Compare() {
   const file = useQuestion(book?.wave, question?.id ?? "");   // every wave and cut: picking waves or a cut is local
   const cells = useMemo(() => file.data && cellsOf(file.data), [file.data]);
   const waves = useWaves().data;
-  if (isLoading) return <Loading what="questions" />;
+  if (isLoading) return <SkeletonScreen kind="question" />;
   if (error || !book) return <Failure error={error} />;
   if (!question) return <Empty>This wave has no questions with percentages.</Empty>;
   const set = (k: string, v: string | null) => {
@@ -44,10 +45,10 @@ export default function Compare() {
     <QuestionNav questions={book.questions} current={question.id} onPick={q => navigate(`/w/${id}/compare/${encodeURIComponent(q.id)}?${params}`)} />
     <div className="stack">
       <Card>
-        <div className="breadcrumb"><Link to={`/w/${id}`}>Overview</Link><span className="sep">›</span><span>Compare waves</span><span className="sep">›</span><code>{question.id}</code></div>
-        <p className="qtext">{question.text}</p>
+        <div className="breadcrumb qcrumbs"><Link to={`/w/${id}`}>Overview</Link><span className="sep">›</span><span>Compare waves</span><span className="sep">›</span><code>{question.id}</code></div>
+        <h1 className="qtext">{question.text}</h1>
         <div className="toolbar" style={{ marginBottom: 0, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <Tabs value={params.get("pick") ?? "4"} onValueChange={v => set("pick", v)}>
+          <Tabs value={PICKS.includes(params.get("pick") ?? "") ? params.get("pick")! : "4"} onValueChange={v => set("pick", v)}>
             <TabsList>
               {LAST.map(n => (
                 <TabsTrigger key={n} value={String(n)}>Last {n}</TabsTrigger>
@@ -65,22 +66,23 @@ export default function Compare() {
             {Object.entries(CUT_NAMES).map(([k, label]) => <option key={k} value={k}>By {label.toLowerCase()}</option>)}
           </select>
         </div>
+        <QuestionTabs id={id} q={question.id} />
       </Card>
-      {file.error ? <Failure error={file.error} /> : !file.data || !cells ? <Loading what="waves to compare" />
-        : <Table f={file.data} cell={cells} dim={dim} current={id} events={events} titles={new Map(waves?.map(w => [w.survey_id, w]) ?? [])} from={book.wave} />}
+      {file.error ? <Failure error={file.error} /> : !file.data || !cells ? <Skeleton height={420} className="card" label="waves to compare" />
+        : <Table f={file.data} cell={cells} dim={dim} current={id} events={events} titles={new Map(waves?.map(w => [w.survey_id, w]) ?? [])} from={{ ...book.wave, weighting: "unweighted" }} />}
     </div>
   </div>;
 }
 
 function Table({ f, cell, dim, current, events, titles, from }: { f: QuestionFile; cell: Cells; dim: string; current: number; events: string[];
-  titles: Map<number, { title: string; events?: string[] }>; from: Parameters<typeof provenance>[0] }) {
+  titles: Map<number, { title: string; events?: string[] }>; from: Wave }) {
   const [params, setParams] = useSearchParams();
   const me = f.waves.findIndex(w => w[0] === current);
   const version = f.waves[me]?.[2];
   const eligible = f.waves.map(([survey_id, wave_date, v], i) => ({ survey_id, wave_date, v, i })).filter(w => w.v === version && w.i <= me);
   const others = f.waves.filter(w => w[2] !== version).map(([survey_id, wave_date, v]) => ({ survey_id, wave_date, text: f.versions[v - 1] }));
   const d = { qcode: f.qcode, dim, not_comparable: others };
-  const pick = ["4", "8", "13", "event", "own"].includes(params.get("pick") ?? "") ? params.get("pick")! : "4";
+  const pick = PICKS.includes(params.get("pick") ?? "") ? params.get("pick")! : "4";
   const listed = (params.get("waves") ?? "").split(",").map(Number).filter(Boolean);
   const own = listed.length ? listed : eligible.slice(-4).map(w => w.survey_id);   // picking starts from the last 4
   const chosen = pick === "own" ? eligible.filter(w => own.includes(w.survey_id) || w.survey_id === current)
@@ -106,7 +108,8 @@ function Table({ f, cell, dim, current, events, titles, from }: { f: QuestionFil
     [byCut ? CUT_NAMES[dim] : "Answer", ...chosen.flatMap(w => [`${w.wave_date} %`, `${w.wave_date} base`])],
     rows.map(r => [r.name, ...chosen.flatMap(w => { const c = cell(w.i, r.c, r.a); return shown(c) ? [c.pct, c.base] : ["", c?.base ?? ""]; })]),
     [`${f.qcode}: ${f.versions[version - 1]}`, ...(byCut ? [`Answer: ${label(answer)}`] : []), `Waves: ${chosen.map(w => w.wave_date).join(", ")}`,
-     `Cells under n=${HIDDEN} hidden; unweighted`, `Source: Coresight Research US Consumer Survey${provenance(from) ? ` · latest wave ${provenance(from)}` : ""}`]);
+     `Cells under n=${HIDDEN} hidden`, "▲▼: single comparison with the wave to the left, 95 %, not corrected for multiple tests",
+     sourceText(from, fmtDate(chosen.at(-1)?.wave_date ?? f.waves[me][1]), "n per cell")]);
   if (eligible.length < 2) return <Card><Empty>Only this wave asked this question in this wording, so there is nothing to compare it with.{d.not_comparable.length ? " The waves below used the same code for a different question." : ""}</Empty><Other d={d} /></Card>;
   return <>
     {pick === "own" && <Card title="Pick waves" sub={`${eligible.length} waves asked this question in this wording, up to this one`}>
@@ -115,15 +118,14 @@ function Table({ f, cell, dim, current, events, titles, from }: { f: QuestionFil
         {fmtDate(w.wave_date)}</label>)}</div>
     </Card>}
     <Card title={`${chosen.length} waves${byCut ? ` by ${CUT_NAMES[dim].toLowerCase()}` : ""}`}
-          sub="Each cell: share and its base. ▲▼ = significantly different from the wave to its left (95 %). Faded = under 50 respondents."
+          sub={`Each cell: share and its base. ▲▼ = different from the wave to its left in a single 95 % comparison, not corrected for the many cells compared. Faded = under ${SMALL_BASE} respondents.`}
           aside={<div className="toolbar" style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
             {byCut && <select aria-label="Answer" value={answer} onChange={e => { const p = new URLSearchParams(params); p.set("ans", e.target.value); setParams(p, { replace: true }); }}>
               {ranked.map(k => <option key={k} value={k}>{label(k)}</option>)}</select>}
             <ExportButtons onExport={exportAs} />
-            <Button variant="outline" size="sm" onClick={e => copyLink(e.currentTarget)}>
-              <LinkIcon size={14} />
-              <span>Copy link</span>
-            </Button>
+            <Menu label="" icon={<span aria-hidden>⋯</span>} keep>
+              <button onClick={e => copyLink(e.currentTarget)}><IconLink /> <span>Copy link</span></button>
+            </Menu>
           </div>}>
       {chosen.length < 2 ? <Empty>Pick at least one more wave.</Empty> : <div className="table-wrap"><table className="data compare">
         <thead><tr><th>{byCut ? CUT_NAMES[dim] : "Answer"}</th>
@@ -147,7 +149,7 @@ function Table({ f, cell, dim, current, events, titles, from }: { f: QuestionFil
         })}</tbody>
       </table></div>}
       <SourceLine wave={fmtDate(chosen.at(-1)?.wave_date ?? f.waves[me][1])} base="n per cell" from={from}
-                  extra={`${chosen.length} waves · cells under ${HIDDEN} hidden`} />
+                  extra={`${chosen.length} waves · cells under ${HIDDEN} hidden · ▲▼ single comparisons, not corrected`} />
     </Card>
     <Other d={d} />
   </>;

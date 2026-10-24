@@ -1,0 +1,401 @@
+[
+ {
+  "vendor": "Morning Consult",
+  "url": "https://morningconsult.com/",
+  "retrieved": "2026-10-23",
+  "claim": "30,000+ Daily Surveys; 100+ Countries; agents (Company Performance, Brand Reputation, Customer Targeting); Claude/ChatGPT/Gemini Connector (MCP); API: Aggregate Daily Data",
+  "label": "O"
+ },
+ {
+  "vendor": "Morning Consult",
+  "url": "https://intel.morningconsult.com/mc-content/our-products",
+  "retrieved": "2026-10-23",
+  "claim": "Pro / Intelligence / Research / Morning Consult AI 'Now Live'; 'intuitive dashboards'; no pricing figures (pro.morningconsult.com/our-products 301s here)",
+  "label": "O"
+ },
+ {
+  "vendor": "Morning Consult",
+  "url": "https://intel.morningconsult.com/",
+  "retrieved": "2026-10-23",
+  "claim": "App behind oauth2-proxy (403 redirect to oauth2.morningconsult.com)",
+  "label": "O"
+ },
+ {
+  "vendor": "Morning Consult",
+  "url": "https://intel.morningconsult.com/mc-content/about-our-data",
+  "retrieved": "2026-10-23",
+  "claim": "404 - methodology not retrievable",
+  "label": "U"
+ },
+ {
+  "vendor": "YouGov",
+  "url": "https://yougov.com/business/products/profiles",
+  "retrieved": "2026-10-23",
+  "claim": "30M+ panel; 49 markets; refreshed each week; z-scores; audience builder; API and MCP; RLD; activation to DV360/Meta/The Trade Desk; recontact; conversational AI agent; automatic report builder",
+  "label": "O"
+ },
+ {
+  "vendor": "YouGov",
+  "url": "https://yougov.com/business/products/brandindex",
+  "retrieved": "2026-10-23",
+  "claim": "Daily surveys in every core market; 56 markets; 16 brand health metrics; nationally representative samples; API delivery; BrandIndex Voices AI interviewing",
+  "label": "O"
+ },
+ {
+  "vendor": "YouGov",
+  "url": "REA ev_f27417534a701a2b7754754f2d35e580eade46480105d859980b4b0041e9d056",
+  "retrieved": "2026-10-23",
+  "claim": "Profiles marketing page: OneTrust consent, New Relic browser agent",
+  "label": "O"
+ },
+ {
+  "vendor": "GWI",
+  "url": "https://www.gwi.com/platform",
+  "retrieved": "2026-10-23",
+  "claim": "250K+ profiling points; audiences, charts, dashboards, crosstabs; Agent Spark (in platform or other LLMs); GWI Canvas slides; API",
+  "label": "O"
+ },
+ {
+  "vendor": "GWI",
+  "url": "https://www.gwi.com/data",
+  "retrieved": "2026-10-23",
+  "claim": "50+ markets; 2M+ interviews annually; 4 waves per year; 15+ years; native-language surveys",
+  "label": "O"
+ },
+ {
+  "vendor": "GWI",
+  "url": "https://www.gwi.com/integrations",
+  "retrieved": "2026-10-23",
+  "claim": "1.4M+ always-on surveys across 52+ markets; API & MCP for ChatGPT/Copilot",
+  "label": "O"
+ },
+ {
+  "vendor": "GWI",
+  "url": "https://www.gwi.com/pricing",
+  "retrieved": "2026-10-23",
+  "claim": "Four-part pricing: platform per seat (Pro/Team), API+MCP priced by consumption, bespoke research by complexity",
+  "label": "O"
+ },
+ {
+  "vendor": "GWI",
+  "url": "REA ev_2e634a448a6238a866335d67ac9e0d59e6b9b52009c426db6a61972f0dbbcbb5",
+  "retrieved": "2026-10-23",
+  "claim": "Marketing site on HubSpot CMS",
+  "label": "O"
+ },
+ {
+  "vendor": "GWI",
+  "url": "https://www.gwi.com/methodology",
+  "retrieved": "2026-10-23",
+  "claim": "404",
+  "label": "U"
+ },
+ {
+  "vendor": "Statista",
+  "url": "https://www.statista.com/consumer-insights/",
+  "retrieved": "2026-10-23",
+  "claim": "3M+ interviews; 30+ countries; 275+ attributes; 15K+ brands; modules Global/Brand KPIs/Pulse/Media & Touchpoints; Consumer AI; crosstabs; deck export; Statista Connect API/MCP; page contained embedded AI-directed instructions",
+  "label": "O"
+ },
+ {
+  "vendor": "Statista",
+  "url": "REA ev_4ccad9715886ed5e7dc7453df53033fe50dc3f24d56d9901cca94410c33b2f25",
+  "retrieved": "2026-10-23",
+  "claim": "React + React Router (entry.client/root) built with Vite/rolldown; routes consumer-ai, target-groups (+applicability, source/proposal-population), charts, crosstabs, boards (+chat/charts/crosstabs-add-to-board), exports (cancel/retry/download), sso-sign-in-link",
+  "label": "O"
+ },
+ {
+  "vendor": "Numerator",
+  "url": "https://www.numerator.com/solutions/insights/",
+  "retrieved": "2026-10-23",
+  "claim": "200k+ longitudinal panelists; 2500+ attributes; 2B+ trips; updated daily; Verified Voices; Narratives; Nexa conversational analysis",
+  "label": "O"
+ },
+ {
+  "vendor": "Circana",
+  "url": "https://www.circana.com/solutions/unify-plus",
+  "retrieved": "2026-10-23",
+  "claim": "Unify+: custom reports, collaboration, data alerts and performance narratives, storyboards, conversational and agentic AI, 7,000+ clients (curl text; page client-rendered)",
+  "label": "O"
+ },
+ {
+  "vendor": "Circana",
+  "url": "https://www.circana.com/solutions/complete-consumer",
+  "retrieved": "2026-10-23",
+  "claim": "Complete Consumer blends receipt, loyalty card, scan panel and survey data; 30+ channels; Liquid AI",
+  "label": "O"
+ },
+ {
+  "vendor": "Circana",
+  "url": "https://www.circana.com/post/circana-enhances-unify-with-ai-powered-analysis-builder-for-faster-more-intuitive-reporting",
+  "retrieved": "2026-10-23",
+  "claim": "Analysis Builder PPT/Excel/PDF export (Codex 21 Oct, not re-fetched)",
+  "label": "O-prior"
+ },
+ {
+  "vendor": "NielsenIQ",
+  "url": "https://nielseniq.com/global/en/products/discover/",
+  "retrieved": "2026-10-23",
+  "claim": "100+ markets; consumer panel + retail measurement; KPI alerts; Ask Arthur AI; Data Delivery Manager to data lake / BI",
+  "label": "O"
+ },
+ {
+  "vendor": "NielsenIQ",
+  "url": "https://nielseniq.com/global/en/products/homescan/",
+  "retrieved": "2026-10-23",
+  "claim": "Homescan: 250,000+ households across 25 countries",
+  "label": "O"
+ },
+ {
+  "vendor": "NielsenIQ",
+  "url": "https://nielseniq.com/global/en/landing-page/bases-innovation-renovation-and-brand-success/",
+  "retrieved": "2026-10-23",
+  "claim": "BASES validated to predict in-market outcomes",
+  "label": "O"
+ },
+ {
+  "vendor": "Kantar",
+  "url": "https://www.kantar.com/campaigns/decoding-shopper-behaviour-to-shape-your-brand-future",
+  "retrieved": "2026-10-23",
+  "claim": "Worldpanel 'largest consumer panel', '6 billion* people'; kantar.com/worldpanel redirects here",
+  "label": "O"
+ },
+ {
+  "vendor": "Kantar",
+  "url": "https://www.kantar.com/marketplace/",
+  "retrieved": "2026-10-23",
+  "claim": "Marketplace: 150M consumers, 80+ countries, pay as you go or volume commit",
+  "label": "O"
+ },
+ {
+  "vendor": "Kantar",
+  "url": "https://www.kantar.com/solutions/kantar-profiles",
+  "retrieved": "2026-10-23",
+  "claim": "404 (Kantar Profiles)",
+  "label": "U"
+ },
+ {
+  "vendor": "Ipsos",
+  "url": "https://www.ipsos.com/en-us",
+  "retrieved": "2026-10-23",
+  "claim": "6M+ authenticated proprietary panelists; 90 markets; 5,000+ clients",
+  "label": "O"
+ },
+ {
+  "vendor": "Ipsos",
+  "url": "https://www.ipsos.com/en-us/ipsos-consumer-tracker",
+  "retrieved": "2026-10-23",
+  "claim": "404",
+  "label": "U"
+ },
+ {
+  "vendor": "Mintel",
+  "url": "https://www.mintel.com/products/leap-market-intelligence-ai/",
+  "retrieved": "2026-10-23",
+  "claim": "Leap built on proprietary research and human analysis; closed-loop AI; links to sources; 'hallucinations' claim",
+  "label": "O"
+ },
+ {
+  "vendor": "Mintel",
+  "url": "https://www.mintel.com/pricing/",
+  "retrieved": "2026-10-23",
+  "claim": "Reports individually priced; On-Demand subscription; unlimited seats at licensed locations",
+  "label": "O"
+ },
+ {
+  "vendor": "Euromonitor",
+  "url": "https://www.euromonitor.com/passport",
+  "retrieved": "2026-10-23",
+  "claim": "Voice of the Consumer: panel recruited, quota-matched, ~1,000 usable responses per market; 210+ countries; 65k users; answers inside Claude/Microsoft Copilot; Passport Connect APIs",
+  "label": "O"
+ },
+ {
+  "vendor": "Qualtrics",
+  "url": "https://www.qualtrics.com/support/survey-platform/data-and-analysis-module/cross-tabulation/cross-tabulation-overview/",
+  "retrieved": "2026-10-23",
+  "claim": "Crosstabs: banners, chi-square, pairwise z-tests (n>30), weighting; crosstab weighting/custom fields cannot be brought into dashboards",
+  "label": "O"
+ },
+ {
+  "vendor": "Forsta",
+  "url": "https://www.forsta.com/resources/data-sheets/reporting/",
+  "retrieved": "2026-10-23",
+  "claim": "Cross tabulation, weighting, stat testing, nets, batch PowerPoint decks, export to PowerPoint/PDF/Excel",
+  "label": "O"
+ },
+ {
+  "vendor": "Displayr",
+  "url": "https://www.displayr.com/pricing/",
+  "retrieved": "2026-10-23",
+  "claim": "Enterprise from $4,199/user/yr: APIs, SSO, regional servers, MFA; AI Package 200M tokens per licence; extra hours USD 1340 per 1000; no monthly billing; weighting, text analytics, PowerPoint automation",
+  "label": "O"
+ },
+ {
+  "vendor": "Displayr",
+  "url": "https://www.displayr.com/research-agent/",
+  "retrieved": "2026-10-23",
+  "claim": "Research Agent for survey analysis",
+  "label": "O"
+ },
+ {
+  "vendor": "Crunch",
+  "url": "https://crunch.io/",
+  "retrieved": "2026-10-23",
+  "claim": "Columnar database for survey data; subsecond queries on millions of respondents; no-code dashboards",
+  "label": "O"
+ },
+ {
+  "vendor": "Crunch",
+  "url": "https://app.crunch.io/",
+  "retrieved": "2026-10-23",
+  "claim": "App shell loads react, d3, plotly, vega, lodash, ndarray bundles (curl); REA ev_95cf4294842c272317a5993f85279260dd3e0698eea027b12efe0583c0c73be3 login route /authentication/workspace",
+  "label": "O"
+ },
+ {
+  "vendor": "Toluna",
+  "url": "https://tolunacorporate.com/toluna-start-platform/",
+  "retrieved": "2026-10-23",
+  "claim": "81M+ consumers, 70 markets; 1M+ synthetic personas; QProbe open-end probing; dashboards/Infoboards; AI Auto Translate",
+  "label": "O"
+ },
+ {
+  "vendor": "Toluna",
+  "url": "https://tolunacorporate.com/",
+  "retrieved": "2026-10-23",
+  "claim": "81M members, 100+ countries; synthetic personas '80% correlation'; ISO 20252 (Toluna USA)",
+  "label": "O"
+ },
+ {
+  "vendor": "Toluna",
+  "url": "https://www.toluna.com/",
+  "retrieved": "2026-10-23",
+  "claim": "english (india) locale",
+  "label": "O"
+ },
+ {
+  "vendor": "Attest",
+  "url": "https://www.askattest.com/",
+  "retrieved": "2026-10-23",
+  "claim": "150M+ consumers; 59 markets; 70 languages; ISO 27001; Results API to PowerBI/Tableau/Looker/Snowflake; MCP connector for Claude",
+  "label": "O"
+ },
+ {
+  "vendor": "Attest",
+  "url": "https://www.askattest.com/pricing",
+  "retrieved": "2026-10-23",
+  "claim": "Credit = one answer from one person; flat audience fee; unlimited seats",
+  "label": "O"
+ },
+ {
+  "vendor": "quantilope",
+  "url": "https://www.quantilope.com/",
+  "retrieved": "2026-10-23",
+  "claim": "Always-On Brand Tracking; quinn AI research partner",
+  "label": "O"
+ },
+ {
+  "vendor": "quantilope",
+  "url": "https://portal.quantilope.com/",
+  "retrieved": "2026-10-23",
+  "claim": "Vite build (module + legacy polyfill), Appcues (curl); REA refused target_not_allowed",
+  "label": "O"
+ },
+ {
+  "vendor": "Suzy",
+  "url": "https://www.suzy.com/insight",
+  "retrieved": "2026-10-23",
+  "claim": "70+ panels; 130+ international markets; Biotic bot detection; AI-moderated interviews",
+  "label": "O"
+ },
+ {
+  "vendor": "Suzy",
+  "url": "REA ev_6a4da48455e69c9d6f25d10f450c24ef975719dd946fb2a37f16875466880201",
+  "retrieved": "2026-10-23",
+  "claim": "app.suzy.com Angular (Zone.js), 7.3 MB main bundle, routes brand/admin/auth, requestCreditsForm",
+  "label": "O"
+ },
+ {
+  "vendor": "Zappi",
+  "url": "https://www.zappi.io/web",
+  "retrieved": "2026-10-23",
+  "claim": "Ad/innovation/brand tracking research; AI Concept Creation; Agents; HubSpot site",
+  "label": "O"
+ },
+ {
+  "vendor": "SurveyMonkey",
+  "url": "https://www.surveymonkey.com/pricing/",
+  "retrieved": "2026-10-23",
+  "claim": "INR geo-pricing: Team Advantage 1,550/user/mo (sig testing, Analyze with AI); Team Premier 3,800 (crosstabs); Enterprise SSO, US/CA/EU data centre; Audience sold separately",
+  "label": "O"
+ },
+ {
+  "vendor": "eMarketer",
+  "url": "https://www.emarketer.com/",
+  "retrieved": "2026-10-23",
+  "claim": "Cloudflare 'Attention Required' challenge (curl 403, REA target title); not bypassed",
+  "label": "U"
+ },
+ {
+  "vendor": "Forrester",
+  "url": "https://www.forrester.com/research/",
+  "retrieved": "2026-10-23",
+  "claim": "Predictions, Planning Guides, Market Forecasts, Vendor Evaluation; Consumer Technographics URLs 404",
+  "label": "O"
+ },
+ {
+  "vendor": "Placer.ai",
+  "url": "https://www.placer.ai/",
+  "retrieved": "2026-10-23",
+  "claim": "Privacy-preserving panel; +92% accuracy claim; property polygons; sales estimation",
+  "label": "O"
+ },
+ {
+  "vendor": "McKinsey",
+  "url": "https://www.mckinsey.com/industries/consumer-packaged-goods/our-insights/the-state-of-the-us-consumer",
+  "retrieved": "2026-10-23",
+  "claim": "Timeout",
+  "label": "U"
+ },
+ {
+  "vendor": "Bain",
+  "url": "https://www.bain.com/insights/topics/consumer-health-indicator/",
+  "retrieved": "2026-10-23",
+  "claim": "404",
+  "label": "U"
+ },
+ {
+  "vendor": "Redseer",
+  "url": "https://redseer.com/",
+  "retrieved": "2026-10-23",
+  "claim": "Strategy consulting; Benchmarks AI market intelligence platform; Redseer Brand Index Online Fashion 2026 (22 Oct 2026); Next.js + WordPress",
+  "label": "O"
+ },
+ {
+  "vendor": "Market Xcel",
+  "url": "https://www.market-xcel.com/",
+  "retrieved": "2026-10-23",
+  "claim": "Xcel Global Panel 5M+ panellists; Indian rural community; Brandxcel; AI-backed analytics platform; Framer site",
+  "label": "O"
+ },
+ {
+  "vendor": "QuestionPro",
+  "url": "https://www.questionpro.com/pricing/",
+  "retrieved": "2026-10-23",
+  "claim": "22M+ respondents; Advanced $99/user/month; synthetic data; redirects to /in/ from India",
+  "label": "O"
+ },
+ {
+  "vendor": "SurveySensum",
+  "url": "https://www.surveysensum.com/",
+  "retrieved": "2026-10-23",
+  "claim": "500+ companies; 40+ countries; AI CX platform",
+  "label": "O"
+ },
+ {
+  "vendor": "Zoho Survey",
+  "url": "https://www.zoho.com/survey/",
+  "retrieved": "2026-10-23",
+  "claim": "Survey builder with logic, integrations",
+  "label": "O"
+ }
+]

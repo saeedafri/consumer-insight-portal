@@ -13,6 +13,40 @@
 # `family: "*"` applies to every survey.
 # ══════════════════════════════════════════════════════════════════════════
 
+# ── Which waves are one study ───────────────────────────────────────────────
+# A study's family normally comes from its title with the year dropped (etl/forsta_etl.family,
+# etl/legacy_dwh.study_for), so a study retitled from one year to the next ("Holiday 2021 Shopping and
+# Spending", "Holiday Shopping and Spending 2025", "Holiday Shopping 2026") loses its year-on-year comparison.
+# Listed here by source reference (Forsta path, Qualtrics SV_ id, SurveyMonkey id), the waves share one family
+# and each compares with the one a year before (etl/serving.YEAR_DAYS). Applied at load; for waves already
+# loaded see docs/REA Claude Opus 2026-10-23/80-fixes-etl.md (runbook).
+family:
+  HOLIDAY_SHOPPING:             # annual
+    - "311513587"               # survey_id 361 · Holiday 2021 Shopping and Spending (SurveyMonkey)
+    - SV_5iEwVt7DCv68iMK        # 126 · Holiday 2023 Shopping and Spending (Qualtrics)
+    - selfserve/58f/holiday     # 239 · Holiday Shopping and Spending 2025
+    - selfserve/58f/260905      # 262 · Holiday Shopping 2026
+  ONLINE_GROCERY:               # annual
+    - "131312996"               # 210 · Online Grocery 2019
+    - SV_eLIemMjZOqoobj0        # 99  · Online Grocery 2023
+    - SV_b2b9j6XNAtY0F4G        # 157 · Online Grocery 2024
+    - SV_6uot1ZQiKKsjdqe        # 196 · Online Grocery 2025
+    - selfserve/58f/260503      # 511 · Online Grocery 2026
+  APPAREL_SHOPPING:             # annual (Amazon Apparel Annual Tracker 2026, 494, is left out: confirm it is this study)
+    - "165769350"               # 209 · Apparel and General Shopping Survey 2019
+    - "277793435"               # 214 · Apparel and General Shopping Survey, Feb 2020
+    - "302343805"               # 327 · Apparel Shopping Survey, Mar 2021
+    - "318304837"               # 386 · Apparel Shopping Survey, Feb 2022
+    - SV_0eweRRhLaBQ1kq2        # 90  · Annual Apparel Shopping 2023
+  BACK_TO_SCHOOL:               # ad hoc (under 1,500 completes each year)
+    - "309290717"               # 349 · US Back-to-School Survey 2021
+    - "506778513"               # 406 · Back-to-School Survey 2022
+    - SV_8GuBh4A7c34vOBw        # 106 · Back to School 2023
+    - selfserve/58f/bts25       # 509 · Back-to-school 2026
+  SHOPPING_AND_SOCIAL_MEDIA:    # annual
+    - "272687358"               # 213 · Shopping and social media 2019
+    - "302456615"               # 329 · Shopping and social media 2021
+
 topics:
   # ── CSI-US, the Consumer Sentiment & Shopping Insights wave ─────────────
   - {family: "CSI-US", priority: 10, pattern: "^q[1-6]$",                       topic: SHOPPING}

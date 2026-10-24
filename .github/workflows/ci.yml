@@ -20,8 +20,9 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - run: pip install -r requirements.txt pytest
-      - run: pytest -q tests
+      - run: pip install -r requirements.txt pytest pip-audit
+      - run: pytest -q
+      - run: pip-audit -r requirements.txt   # a known vulnerability in a dependency fails the build
 
   web:
     runs-on: ubuntu-latest

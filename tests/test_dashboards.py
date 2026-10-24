@@ -57,7 +57,10 @@ def test_takeaways_mention_only_significant_comparable_changes():
     cfg = {"tiles": [{"code": "hurts", "label": "Tariffs hurt me", "head": "Tariffs", "say": "say tariffs hurt them"}],
            "lists": [], "segments": []}
     row = {"metric_code": "hurts", "segment": "Total", "rank_no": 0, "label": "x", "pct": 44.0, "base_n": 400,
-           "prior_pct": 60.0, "prior_base_n": 400, "ly_pct": 43.0, "ly_base_n": 400, "flags": ""}
+           "prior_pct": 60.0, "prior_base_n": 400, "ly_pct": 43.0, "ly_base_n": 400, "flags": "", "sig": {"prior"}}
     assert dashboards.takeaways([row], cfg) == ["Tariffs: 44% say tariffs hurt them (down 16.0 pts vs the previous wave; 43% a year ago)."]
+    assert dashboards.takeaways([{**row, "sig": set()}], cfg) == ["Tariffs: 44% say tariffs hurt them (43% a year ago)."]   # the ETL's flag, not a test here
+    assert dashboards.takeaways([{**row, "sig": None}], cfg) == [   # a wave built before the flags: one test, said so
+        "Tariffs: 44% say tariffs hurt them (down 16.0 pts vs the previous wave, single comparison; 43% a year ago)."]
     row["flags"] = "base_changed_prior"
     assert dashboards.takeaways([row], cfg) == ["Tariffs: 44% say tariffs hurt them (43% a year ago)."]

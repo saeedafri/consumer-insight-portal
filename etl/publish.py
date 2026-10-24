@@ -74,12 +74,23 @@ def build(root: Path = ROOT, jobs: int = 4) -> Path:
     version = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     out = root / f".build-{version}"
     out.mkdir(parents=True)
+    try:
+        return _build(out, version, root, jobs)
+    except BaseException:   # a half-written version never stays: it would count toward KEEP and could be rolled back to
+        shutil.rmtree(out, ignore_errors=True)
+        raise
+
+
+def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
     live = root / "current"
     try:
         last = json.loads((live / "manifest.json").read_text())
     except (OSError, ValueError):   # first publish
         last = {}
-    rules = {"hidden_base": payloads.HIDDEN_BASE, "test_base": payloads.TEST_BASE}
+    rules = {"hidden_base": payloads.HIDDEN_BASE, "test_base": payloads.TEST_BASE,
+             "zero_cells": 1,   # 1: an asked group's unchosen answer is 0 %, not blank (24 Oct 2026); bump on any book rule
+             "weighted": 1,     # books carry Census-weighted figures (etl/weighting.py, 24 Oct 2026)
+             "open_ends": 1}    # books chart coded open-ended questions (etl/open_ends.py, 24 Oct 2026)
     rules_changed = last.get("rules", {"hidden_base": 30}) != rules   # a new small-cell rule: every file is rebuilt
     before = {} if rules_changed else last.get("built", {})
     start = time.perf_counter()
@@ -320,7 +331,9 @@ def main() -> int:
     p.add_argument("--rollback", action="store_true")
     p.add_argument("--restore", action="store_true")
     a = p.parse_args()
-    print(rollback(a.root) if a.rollback else restore(a.root) if a.restore else publish(a.root, a.jobs))
+    from etl.loaders import etl_lock   # one writer of the published files at a time (the scheduled run publishes too)
+    with etl_lock():
+        print(rollback(a.root) if a.rollback else restore(a.root) if a.restore else publish(a.root, a.jobs))
     return 0
 
 

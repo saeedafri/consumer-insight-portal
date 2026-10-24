@@ -16,16 +16,19 @@ imported) are skipped and counted.
 from __future__ import annotations
 
 import argparse
+import html
 import logging
 import re
+from collections import Counter
 from typing import Optional
 
 from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
 from app.data import cube, harmonise
-from etl import records as xp
-from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey
+from etl import records as xp, serving, survey_map
+from etl.loaders import (Locked, drop_unlisted_items, etl_lock, finish_run, index_survey, load_definitions, start_run,
+                         upsert_survey)
 
 log = logging.getLogger("cip.legacy")
 
@@ -48,10 +51,11 @@ def legacy_qtype(family: Optional[str], title: str, max_per_response: Optional[i
     return "single"
 
 
-def study_for(title: str, completes: int) -> tuple[str, str]:
+def study_for(title: str, completes: int, legacy_id: str = "") -> tuple[str, str]:
+    """(family, study type). A study config/survey_map.yml `family` lists keeps that family across its retitled years."""
     if _TRACKER.match(title or ""):
         return "CSI-US", "tracker"
-    family = re.sub(r"[^A-Z0-9]+", "_", (title or "").upper()).strip("_")[:60] or "ADHOC"
+    family = survey_map.family_for(legacy_id) or re.sub(r"[^A-Z0-9]+", "_", (title or "").upper()).strip("_")[:60] or "ADHOC"
     return family, "annual" if completes >= 1500 else "adhoc"
 
 
@@ -105,6 +109,7 @@ def _definitions(conn, legacy_id: str):
             {"lid": legacy_id}):
         if qid in answers:
             answers[qid].append((aid, xp.clean_text(label) or str(aid)))
+    relabel(conn, legacy_id, answers)
 
     parsed, amap, skipped, seen = [], [], 0, set()
     for qid, family, title, srt1, srt2 in questions:
@@ -147,6 +152,26 @@ def _definitions(conn, legacy_id: str):
         else:
             parsed.append(xp.ParsedQuestion(qcode=qcode, qtext=title, qtype="text"))
     return parsed, amap, skipped
+
+
+def relabel(conn, legacy_id: str, answers: dict[str, list]) -> None:
+    """Trust what respondents saw over dwh_smanswer's list. Some Qualtrics imports shifted the listed answer ids
+    against the responses: survey 97 (SV_414ROr6xamluGNg) Q7 lists A1-A12 Facebook…LinkedIn, but its responses
+    carry A9-A20, and A9's 818 respondents all have the text "Facebook" while the list calls A9 "LinkedIn". So an
+    answer whose every response carries one other text takes that text, and a listed answer nobody chose that only
+    repeats another answer's label is dropped (it would show as a second, empty "Facebook"). Matrix cells
+    ("<row> | <column>") keep their column labels. 2 waves of 145 have shifted ids (scan of 23 Oct 2026, 80-fixes-etl.md)."""
+    texts = {aid: (label, n) for aid, label, n in conn.execute(text("""
+        SELECT answer_id, MIN(answer_text), COUNT(DISTINCT answer_text) FROM dwh_smresponseqa
+         WHERE survey_id = :lid AND answer_id IS NOT NULL AND answer_text IS NOT NULL AND answer_text NOT LIKE '%|%'
+         GROUP BY answer_id"""), {"lid": legacy_id})}
+    # SurveyMonkey keeps the answer's HTML in the response ("In-store<em> only</em>"): the same label, not another one
+    seen = {aid: xp.clean_text(html.unescape(re.sub(r"<[^>]+>", " ", label))) for aid, (label, n) in texts.items() if n == 1}
+    same = lambda a, b: re.sub(r"\W+", "", a.lower()) == re.sub(r"\W+", "", b.lower())   # noqa: E731  spacing, entities
+    for qid, opts in answers.items():
+        opts[:] = [(aid, seen[aid] if seen.get(aid) and not same(seen[aid], label) else label) for aid, label in opts]
+        chosen = Counter(label for aid, label in opts if aid in texts)
+        opts[:] = [(aid, label) for aid, label in opts if aid in texts or label not in chosen]
 
 
 def _matrix(conn, qid: str, qcode: str, title: str, opts: list):
@@ -282,9 +307,8 @@ def _panel_profiles(survey_id: int, legacy_id: str) -> int:
 
 
 def load_legacy(legacy_id: str) -> int:
-    """Load (or reload) one legacy wave. Returns its survey_id."""
-    from etl.run_pipeline import _rebuild_profiles, _rebuild_question_bases
-
+    """Load (or reload) one legacy wave. Returns its survey_id. Its serving rows are built after (python -m
+    etl.serving --wave <survey_id>, or the integrity check's heal)."""
     eng = get_engine("etl")
     with eng.connect() as conn:
         title, created = conn.execute(text(
@@ -298,11 +322,33 @@ def load_legacy(legacy_id: str) -> int:
     completes = sum(1 for r in responses if r[1] == "completed")
     first = min((r[2] for r in responses if r[1] == "completed" and r[2]), default=created)
     wave = str(first)[:10]
-    family, study_type = study_for(title, completes)
+    family, study_type = study_for(title, completes, legacy_id)
     platform = "qualtrics" if str(legacy_id).startswith("SV_") else "surveymonkey"
     survey_id = upsert_survey(host=platform, path=legacy_id, title=xp.clean_text(title)[:500],
                               survey_family=family, wave_label=wave, wave_date=wave,
                               platform=platform, source_ref=legacy_id, study_type=study_type)
+    _status(survey_id, "loading")   # invisible while it loads, as a Forsta wave is
+    try:
+        _load(survey_id, legacy_id, platform, family, questions, amap, skipped, responses, completes, wave)
+    except Exception:
+        with eng.begin() as conn:   # a half-moved wave is never served
+            serving.drop_wave(conn, survey_id)
+        _status(survey_id, "failed")
+        raise
+    _status(survey_id, "verified")
+    return survey_id
+
+
+def _status(survey_id: int, status: str) -> None:
+    with get_engine("etl").begin() as conn:
+        conn.execute(text("UPDATE cip_survey SET load_status = :st WHERE survey_id = :s"), {"st": status, "s": survey_id})
+
+
+def _load(survey_id: int, legacy_id: str, platform: str, family: str, questions: list, amap: list, skipped: int,
+          responses: list, completes: int, wave: str) -> None:
+    from etl.run_pipeline import _rebuild_profiles, _rebuild_question_bases
+
+    eng = get_engine("etl")
     run = start_run(survey_id, "manual", "data", f"dwh_stg.dwh_sm*:{legacy_id}")
     fields = load_definitions(survey_id, questions, family)
 
@@ -328,6 +374,7 @@ def load_legacy(legacy_id: str) -> int:
         rows = [{"aid": m["aid"], "fid": fields[m["field"]], "code": m["code"], "label": m["label"][:500],
                  "match": m.get("match")} for m in amap if m["field"] in fields]
         loaded = _move_answers(conn, survey_id, legacy_id, rows)
+    drop_unlisted_items(survey_id, questions)
 
     with eng.begin() as conn:                   # profiles are rebuilt, never patched
         conn.execute(text("DELETE FROM cip_profile WHERE survey_id = :sid"), {"sid": survey_id})
@@ -341,7 +388,6 @@ def load_legacy(legacy_id: str) -> int:
              harmonise.harmonise_survey(survey_id))
     log.info("Cube: %d cells", cube.refresh_wave(survey_id))
     index_survey(survey_id)
-    return survey_id
 
 
 
@@ -416,6 +462,15 @@ def main() -> int:
     group.add_argument("--all", action="store_true", help="every wave of the era, oldest first")
     ap.add_argument("--era", choices=("qualtrics", "surveymonkey"), default="qualtrics")
     args = ap.parse_args()
+    try:
+        with etl_lock():
+            return _main(args)
+    except Locked as exc:
+        log.error("%s", exc)
+        return 1
+
+
+def _main(args) -> int:
     if args.id:
         load_legacy(args.id)
         return 0

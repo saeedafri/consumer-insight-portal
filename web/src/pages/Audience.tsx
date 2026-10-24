@@ -1,14 +1,27 @@
 // Audiences: a group of respondents from any cuts and answers combined (e.g. Gen Z women who used GenAI to shop), shown
-// against everyone else on any question, saved for the team (api/team.py). Groups under 5 people show no figures.
+// against everyone else on any question with an index (120 = 20 % more likely), and what sets it apart across the wave.
 import { useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { CUT_NAMES, myName, send, useAudiences, useBook, useQuestion } from "../api";
-import type { AudienceDef, AudienceResult, Question } from "../api";
+import { CUT_NAMES, myName, queries, send, useAudiences, useBook, useQuestion } from "../api";
+import type { AudienceDef, AudienceProfile, AudienceResult, Book, Question } from "../api";
 import { Card, Empty, Failure, Loading } from "../components/bits";
 import QuestionNav from "../components/QuestionNav";
-import { HIDDEN_BASE, pct } from "../stats";
+import { HIDDEN_BASE, HIDDEN_NOTE, pct } from "../stats";
 
 const EMPTY: AudienceDef = { cuts: {}, answers: [] };
+/** The audience from the link (?aud=), so Copy link and a saved view reproduce it; anything malformed is dropped.
+ *  The link keeps conditions short (no question wording): the wording comes back from this wave's book. */
+function readAudience(raw: string | null, book?: Book): AudienceDef {
+  try {
+    const d = JSON.parse(raw ?? "");
+    const cuts = Object.fromEntries(Object.entries(d?.cuts ?? {}).filter(([k, v]) => CUT_NAMES[k] && Array.isArray(v) && v.every(x => typeof x === "string"))) as Record<string, string[]>;
+    const answers = (Array.isArray(d?.answers) ? d.answers : []).filter((a: AudienceDef["answers"][number]) => typeof a?.qcode === "string" && typeof a.label === "string")
+      .map((a: AudienceDef["answers"][number]) => ({ qcode: a.qcode, item_label: String(a.item_label ?? ""), option_code: typeof a.option_code === "number" ? a.option_code : null,
+                     label: a.label, qtext: book?.questions.find(q => q.id === a.qcode)?.text ?? "" }));
+    return { cuts, answers };
+  } catch { return EMPTY; }
+}
+const writeAudience = (d: AudienceDef) => JSON.stringify({ cuts: d.cuts, answers: d.answers.map(({ qtext: _, ...a }) => a) });
 /** What an answer condition stores: the row as srv_result names it (a multi item, or a single/grid option). */
 const condition = (q: Question, groupLabel: string, row: { label: string; code: number | null }) => ({
   qcode: q.id, qtext: q.text, item_label: q.type.endsWith("multi") ? row.label : groupLabel, option_code: q.type.endsWith("multi") ? null : row.code,
@@ -18,16 +31,22 @@ export default function Audience() {
   const { id: raw, q: code } = useParams();
   const id = Number(raw);
   const navigate = useNavigate();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const { data: book, isLoading, error } = useBook(id);
   const question = useMemo(() => book?.questions.find(x => x.id === code) ?? book?.questions[0], [book, code]);
   const file = useQuestion(book?.wave, question?.id ?? "");
   const saved = useAudiences();
-  const [def, setDef] = useState<AudienceDef>(EMPTY);
+  const def = useMemo(() => readAudience(params.get("aud"), book), [params, book]);
+  const setDef = (next: AudienceDef | ((d: AudienceDef) => AudienceDef)) => {
+    const d = typeof next === "function" ? next(def) : next, p = new URLSearchParams(params);
+    !Object.keys(d.cuts).length && !d.answers.length ? p.delete("aud") : p.set("aud", writeAudience(d));
+    setParams(p, { replace: true });
+  };
   const [name, setName] = useState("");
   const [pickQ, setPickQ] = useState("");
   const [pickA, setPickA] = useState("");
   const [result, setResult] = useState<AudienceResult | null>(null);
+  const [profile, setProfile] = useState<AudienceProfile | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   if (isLoading) return <Loading what="questions" />;
@@ -47,20 +66,26 @@ export default function Audience() {
   const empty = !Object.keys(def.cuts).length && !def.answers.length;
   const run = async () => {
     setBusy(true); setNote("");
-    try { setResult(await send<AudienceResult>("POST", `/api/v1/waves/${id}/audience`, { qcode: question.id, definition: def })); }
+    try {
+      const profiled = send<AudienceProfile>("POST", `/api/v1/waves/${id}/audience/profile`, { definition: def }).catch(() => null);
+      setResult(await send<AudienceResult>("POST", `/api/v1/waves/${id}/audience`, { qcode: question.id, definition: def }));
+      setProfile(await profiled);   // the profile is extra: without it the question's table still shows
+    }
     catch (e) { setNote(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
   const save = async () => {
-    const by = myName();
-    if (!by || !name.trim()) return setNote(by ? "Name the audience first." : "Your name is needed to save for the team.");
-    try { await send("POST", "/api/v1/audiences", { name, definition: def, by }); setNote(`Saved “${name}” for the team.`); void saved.refetch(); }
+    if (!name.trim()) return setNote("Name the audience first.");
+    try {
+      await send("POST", "/api/v1/audiences", { name, definition: def, by: await myName() });
+      setNote(`Saved “${name}” for the team.`); void queries.invalidateQueries({ queryKey: ["audiences"] });
+    }
     catch (e) { setNote(e instanceof Error ? e.message : String(e)); }
   };
   return <div className="split">
     <QuestionNav questions={book.questions} current={question.id} onPick={q => { setResult(null); navigate(`/w/${id}/audience/${encodeURIComponent(q.id)}?${params}`); }} />
     <div className="stack">
-      <Card title="Build an audience" sub="Pick any groups and answers; everyone in the audience must match all of them. It is then shown against everyone else on the question on the right of the list.">
+      <Card as="h1" title="Build an audience" sub="Pick any groups and answers; everyone in the audience must match all of them. It is then shown against everyone else on the question on the right of the list.">
         {(saved.data?.length ?? 0) > 0 && <div className="toolbar">
           <label htmlFor="saved-aud" className="muted">Saved audiences</label>
           <select id="saved-aud" value="" onChange={e => { const a = saved.data!.find(x => String(x.audience_id) === e.target.value); if (a) { setDef(a.definition); setName(a.name); setResult(null); } }}>
@@ -94,18 +119,32 @@ export default function Audience() {
           <label className="sr-only" htmlFor="aud-name">Audience name</label>
           <input id="aud-name" className="field" placeholder="Name it to save, e.g. Gen Z GenAI shoppers" value={name} onChange={e => setName(e.target.value)} style={{ minWidth: 220 }} />
           <button className="btn" disabled={empty} onClick={() => void save()}>Save for the team</button>
-          {!empty && <button className="btn-chip" onClick={() => { setDef(EMPTY); setResult(null); setName(""); }}>Clear</button>}
+          {!empty && <button className="btn-chip" onClick={() => { setDef(EMPTY); setResult(null); setProfile(null); setName(""); }}>Clear</button>}
         </div>
         {note && <p className="muted" style={{ margin: "8px 0 0" }}>{note}</p>}
       </Card>
-      {result && <Card title={`${question.id}: ${question.text}`} sub={`The audience against everyone else who answered. ▲▼ = significantly different at 95 %. Groups under 30 show no figure.${result.skipped.length ? ` Not applied in this wave (not asked, or the code means another question here): ${result.skipped.join(", ")}.` : ""}`}>
+      {result && <Card title={`${question.id}: ${question.text}`} sub={`The audience against everyone else who answered. ▲▼ = different in a single 95 % comparison (not corrected for the many answers shown). Groups under ${HIDDEN_BASE} show no figure.${result.skipped.length ? ` Not applied in this wave (not asked, or the code means another question here): ${result.skipped.join(", ")}.` : ""}`}>
         <div className="table-wrap"><table className="data">
-          <thead><tr><th>Answer</th><th className="num">Audience</th><th className="num">Everyone else</th><th className="num">Difference</th></tr></thead>
-          <tbody>{result.rows.map(([label, , base, share, rest, restBase, sig]) => <tr key={label}>
+          <thead><tr><th>Answer</th><th className="num">Audience</th><th className="num">Everyone else</th><th className="num">Difference</th><th className="num" title="100 × the audience's share ÷ everyone's: 120 = 20 % more likely than all respondents">Index</th></tr></thead>
+          <tbody>{result.rows.map(([label, , base, share, rest, restBase, sig, index]) => <tr key={label}>
             <th scope="row">{label}</th>
-            <td className="num">{share == null ? <span className="muted" title={`Fewer than ${HIDDEN_BASE} respondents on one side`}>n&lt;{HIDDEN_BASE}</span> : <><b>{pct(share)}</b><small style={{ display: "block" }} className="muted">n={base}</small></>}</td>
+            <td className="num">{share == null ? <span className="muted" title={`Fewer than ${HIDDEN_BASE} respondents on one side`}>{HIDDEN_NOTE}</span> : <><b>{pct(share)}</b><small style={{ display: "block" }} className="muted">n={base}</small></>}</td>
             <td className="num">{rest == null ? "–" : <>{pct(rest)}<small style={{ display: "block" }} className="muted">n={restBase}</small></>}</td>
             <td className={`num ${sig ? "sig" : "muted"}`}>{share == null || rest == null ? "–" : `${share - rest > 0 ? "+" : ""}${(share - rest).toFixed(1)} pts${sig ? (sig > 0 ? " ▲" : " ▼") : ""}`}</td>
+            <td className={`num ${index != null && (index >= 120 || index <= 80) ? "sig" : "muted"}`}>{index ?? "–"}</td>
+          </tr>)}</tbody>
+        </table></div>
+      </Card>}
+      {profile && (profile.over.length > 0 || profile.under.length > 0) && <Card title="What sets this audience apart"
+        sub={`Across every question in this wave: the answers this audience (${profile.size} people) gives most and least often compared with all respondents. Index 150 = 1.5 times as likely. Only significant differences on answers at least 5 % of everyone gives.`}>
+        <div className="table-wrap"><table className="data">
+          <thead><tr><th>Question</th><th>Answer</th><th className="num">Audience</th><th className="num">Everyone</th><th className="num">Index</th></tr></thead>
+          <tbody>{[...profile.over, ...profile.under].map(f => <tr key={`${f.qcode}|${f.answer}`}>
+            <td><button className="btn-chip" onClick={() => navigate(`/w/${id}/audience/${encodeURIComponent(f.qcode)}?${params}`)}>{f.qcode}</button> <span className="muted">{f.question.slice(0, 80)}</span></td>
+            <th scope="row">{f.answer}</th>
+            <td className="num">{pct(f.pct)}</td>
+            <td className="num">{pct(f.everyone)}</td>
+            <td className="num sig">{f.index}{f.index > 100 ? " ▲" : " ▼"}</td>
           </tr>)}</tbody>
         </table></div>
       </Card>}

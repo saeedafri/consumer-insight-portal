@@ -25,16 +25,24 @@ def test_an_alert_fires_once_when_its_answer_moves_significantly_and_never_on_a_
     assert team.due_alerts([412, 500]) == []                    # each wave is judged once
 
 
-def test_an_audience_is_counted_from_the_cube_rows_and_hides_groups_under_30(csi_db):
+def test_an_audience_is_counted_from_the_cube_rows_and_shown_however_small(csi_db):
     from tests.test_forsta_etl import FakeForsta
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
     with csi_db.connect() as conn:   # an audience of the people who gave a question's first answer
         qcode, item, code = conn.execute(sa.text("SELECT qcode, item_label, option_code FROM srv_result WHERE survey_id = :s"
                                                  " AND dim = 'total' AND n > 0 ORDER BY qcode, sort_order LIMIT 1"), {"s": sid}).one()
     out = team.audience(sid, qcode, {"cuts": {}, "answers": [{"qcode": qcode, "qtext": "", "item_label": item, "option_code": code, "label": "x"}]})
-    assert out["rows"] and out["skipped"] == [] and all(r[1] is None and r[2] is None and r[3] is None for r in out["rows"])   # 4 people: no figures, not even the base
+    assert out["rows"] and out["skipped"] == [] and all(r[2] is not None for r in out["rows"])   # 4 people: figures shown
     gone = team.audience(sid, qcode, {"cuts": {}, "answers": [{"qcode": "NOPE", "qtext": "", "item_label": "", "option_code": 1, "label": "Not asked"}]})
     assert gone["skipped"] == ["Not asked"]
+    assert all(len(r) == 8 for r in out["rows"])   # the index rides last
+
+
+def test_an_index_says_how_much_more_likely_the_audience_is_than_everyone():
+    every, aud = 0b1111111111, 0b11111   # 10 people answered; the audience is the first 5
+    question = {"rows": [[1, 0, "Walmart", None, None]], "bits": {(0, 0): every, (1, 0): 0b10111}}
+    row = team._compare(question, aud)[0]   # 4 of the audience chose it, 4 of all 10: 80 % against 40 %
+    assert row[3] == 80.0 and row[8] == 40.0 and row[7] == 200
 
 
 class Asked:   # a signed-in request: api/main.user puts the email on request.state

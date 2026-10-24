@@ -1,0 +1,38 @@
+# How the portal's numbers are made, served as-is by GET /api/v1/methodology and shown on the methodology page.
+# `population` also labels every wave (app/data/payloads.describe): a survey_id entry beats a family, a family beats
+# a study type, and anything unlisted is `default`.
+
+population:
+  default: Survey respondents
+  study_types: {tracker: US adults 18+}
+  families: {}
+  ids: {}
+
+panel: >-
+  Respondents come from an online opt-in research panel (sample source 114 in Forsta/Decipher). Coresight's weekly US
+  Consumer Survey targets about 400 qualified US adults aged 18+ each week; each survey's quotas are set in Forsta and
+  shown, cell by cell, on the launch schedule while it fields.
+qualification: >-
+  Only qualified completes count: a respondent who screens out, abandons, or fails the survey's quality checks is not in
+  any base. Every wave's qualified count is reconciled with Forsta before it is published.
+fielding: >-
+  Weekly tracker waves launch on Monday and usually field for two to three days; the wave date is the launch Monday.
+  Annual and ad hoc studies field on their own dates, shown on each wave. A wave still collecting answers is marked in field.
+weighting: none
+weighting_text: >-
+  Figures are unweighted by default: each percentage is the share of qualified respondents who gave the answer,
+  as in Forsta and the weekly Excel files. The Weighted button shows Census-weighted figures instead: each wave
+  is raked to US adult shares by gender, age (18-29, 30-44, 45-60, over 60) and Census region (American Community
+  Survey), weights are trimmed to between 0.2 and 5 times the average, and a respondent with no answer on one of
+  these is left out of that adjustment only. Waves without a demographic profile cannot be weighted and stay
+  unweighted. Significance is always tested on the unweighted counts.
+data_quality:
+  - Respondents who fail the survey's screener or the quality checks programmed in Forsta are not qualified; the portal adds no cleaning of its own.
+  - Each loaded wave is counted against Forsta (qualified completes, respondents, answers) before it is marked verified.
+  - A question whose wording changed is a new version; trends and comparisons never join two versions.
+small_cells: >-
+  Every figure is shown, however few people answered. Groups under 50 are marked small base: read them with caution.
+significance: >-
+  A change is called significant when a two-sided two-proportion z-test against the previous wave (or the same week last
+  year) gives p < 0.05 after a Benjamini-Hochberg false-discovery correction over every testable Total row of the wave,
+  with at least 30 people on each side and an unchanged question base.

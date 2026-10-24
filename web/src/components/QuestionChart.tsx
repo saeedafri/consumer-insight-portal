@@ -3,9 +3,10 @@
 import { useMemo } from "react";
 import type { Column, Group, Question, Row } from "../api";
 import { isFiller } from "../api";
-import { C, blues, labelOn, scaleColours } from "../theme";
-import { count, HIDDEN_BASE, moe, pct, pts, significant, SMALL_BASE } from "../stats";
-import EChart, { axisText, tooltip } from "./EChart";
+import { C, blues, labelOn, scaleColours, useTheme } from "../theme";
+import { count, HIDDEN_BASE, HIDDEN_NOTE, moe, pct, pts, SMALL_BASE } from "../stats";
+import { moveOf } from "../moves";
+import EChart, { axisText, tooltip, valueText } from "./EChart";
 import type { Chart } from "./EChart";
 import Profiled from "./Profiled";
 
@@ -24,7 +25,7 @@ export function viewsFor(q: Question): View[] {
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]!));
 
 /** The hover card: answer, value, people behind it, its base and how it moved. */
-export function tip(row: Row, column: Column, group: Group, question: Question, wave: string): string {
+export function tip(row: Row, column: Column, group: Group, question: Question, wave: string, vs: string): string {
   const v = row[column];
   const base = group.bases[column] ?? group.base;
   if (v == null) return `<div style="font-weight:600">${esc(row.label)}</div><div style="color:${C.ink2}">${column}: only ${base} respondents, so no figure is shown (fewer than ${HIDDEN_BASE})</div>`;
@@ -33,14 +34,17 @@ export function tip(row: Row, column: Column, group: Group, question: Question, 
     `<div style="color:${C.ink2}">${column}${group.label ? ` · ${esc(group.label)}` : ""} · ≈${count(v ?? 0, base).toLocaleString("en-US")} of ${base.toLocaleString("en-US")} respondents</div>`];
   if (base < SMALL_BASE) lines.push(`<div style="color:${C.warn};margin-top:4px">Small base (under ${SMALL_BASE}): read with caution</div>`);
   if (column === "Total") {
-    const vsPrior = row.flags.includes("wording_changed_prior") ? "a different question last week (code reused)"
+    const m = moveOf(row);   // the wave's one significance rule (moves.ts)
+    const verdict = (sig: boolean | undefined, tested: boolean | undefined) => sig ? "<b>significant</b>" : tested ? "not significant" : "not tested";
+    const vsPrior = row.flags.includes("wording_changed_prior") ? `a different question in ${vs} (code reused)`
       : row.flags.includes("base_changed_prior") ? "base changed, not comparable"
-      : row.prior == null || !row.prior_base ? "not available"
-      : `${pts((v ?? 0) - row.prior)} (${pct(row.prior)}) ${significant(v ?? 0, base, row.prior, row.prior_base) ? "<b>significant</b>" : "not significant"}`;
-    const vsLy = row.flags.includes("wording_changed_ly") ? "a different question last year" : row.ly == null ? "not loaded" : `${pts((v ?? 0) - row.ly)} (${pct(row.ly)})`;
-    lines.push(`<div style="margin-top:6px;border-top:1px solid ${C.mist};padding-top:6px">vs last week: ${vsPrior}<br/>vs last year: ${vsLy}</div>`);
+      : row.prior == null ? "not available"
+      : `${pts((v ?? 0) - row.prior)} (${pct(row.prior)}) ${verdict(m?.sig, m?.testable)}`;
+    const vsLy = row.flags.includes("wording_changed_ly") ? "a different question last year" : row.ly == null ? "not loaded"
+      : `${pts((v ?? 0) - row.ly)} (${pct(row.ly)}) ${verdict(m?.sigLy, m?.testableLy)}`;
+    lines.push(`<div style="margin-top:6px;border-top:1px solid ${C.line};padding-top:6px">vs ${vs}: ${vsPrior}<br/>vs last year: ${vsLy}</div>`);
   }
-  lines.push(`<div style="color:${C.grey};margin-top:4px;font-size:11px">${esc(question.id)} · wave of ${wave}</div>`);
+  lines.push(`<div style="color:${C.ink3};margin-top:4px;font-size:12px">${esc(question.id)} · wave of ${wave}</div>`);
   return lines.join("");
 }
 
@@ -50,33 +54,35 @@ function ordered(rows: Row[], sort: boolean, column: Column): Row[] {
   return [...body, ...rows.filter(r => isFiller(r.label))];
 }
 
-export default function QuestionChart({ question, group = 0, view, columns, sort, wave, height, onReady }:
-  { question: Question; group?: number; view: View; columns: Column[]; sort: boolean; wave: string; height?: number;
+export default function QuestionChart({ question, group = 0, view, columns, sort, wave, vs = "the previous wave", height, onReady }:
+  { question: Question; group?: number; view: View; columns: Column[]; sort: boolean; wave: string; vs?: string; height?: number;
     onReady?: (chart: Chart) => void }) {
   const g = question.groups[Math.min(group, question.groups.length - 1)];
   const rows = ordered(g.rows, sort, columns[0]);
-  const option = useMemo(() => build(question, g, rows, view, columns, wave), [question, g, rows, view, columns, wave]);
+  const theme = useTheme();
+  const make = useMemo(() => () => build(question, g, rows, view, columns, wave, vs), [question, g, rows, view, columns, wave, vs]);
+  const option = useMemo(() => make(), [make, theme]);   // theme: rebuilt with the new palette on a switch
   if (rows.every(r => columns.every(c => r[c] == null)))
     return <p className="muted" style={{ padding: "24px 4px" }}>Only {(g.bases[columns[0]] ?? g.base).toLocaleString("en-US")} respondents answered{columns[0] === "Total" ? "" : ` in ${columns[0]}`}: no figure is shown under {HIDDEN_BASE}, as on every screen and export.</p>;
-  if (view === "table") return <QuestionTable question={question} rows={rows} group={g} columns={columns} />;
+  if (view === "table") return <QuestionTable question={question} rows={rows} group={g} columns={columns} vs={vs} />;
   const h = height ?? (view === "bars" ? Math.max(180, rows.length * (columns.length > 1 ? 18 * columns.length + 12 : 34) + 40)
     : view === "stacked" ? Math.max(160, (question.groups.length > 1 ? question.groups.length : 1) * 46 + 80) : 340);
   return (
     <Profiled id={`Chart:${question.id}`}>
-      <EChart option={option} height={h} label={`${question.id}: ${question.text}`} onReady={onReady} />
+      <EChart option={option} build={make} height={h} label={`${question.id}: ${question.text}`} onReady={onReady} />
     </Profiled>
   );
 }
 
-function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[], wave: string) {
+function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[], wave: string, vs: string) {
   const multiSeries = columns.length > 1;
   const top = Math.max(...rows.filter(r => !isFiller(r.label)).map(r => r[columns[0]] ?? 0));
   // several columns: Total in red (the guide wants red in every chart), the cuts in the blue ombre
   const cuts = blues(Math.max(columns.length - 1, 1));
-  const palette = multiSeries ? columns.map((c, i) => (c === "Total" ? C.red : cuts[columns[0] === "Total" ? i - 1 : i])) : [C.sky];
+  const palette = multiSeries ? columns.map((c, i) => (c === "Total" ? C.red : cuts[columns[0] === "Total" ? i - 1 : i])) : [C.bar];
   const hover = { ...tooltip(), formatter: (p: { dataIndex: number; seriesIndex: number; data?: { row?: Row; group?: Group } }) => {
     const d = p.data ?? {};
-    return tip(d.row ?? rows[p.dataIndex], columns[p.seriesIndex] ?? columns[0], d.group ?? g, q, wave);
+    return tip(d.row ?? rows[p.dataIndex], columns[p.seriesIndex] ?? columns[0], d.group ?? g, q, wave, vs);
   } };
   const labels = rows.map(r => r.label);
 
@@ -87,7 +93,7 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
       series: [{
         type: "pie", radius: ["52%", "78%"], avoidLabelOverlap: true, padAngle: 1, itemStyle: { borderRadius: 3 },
         label: { formatter: (p: { name: string; value: number }) => `${p.name.length > 28 ? p.name.slice(0, 27) + "…" : p.name}\n{b|${p.value.toFixed(1)}%}`,
-                 color: C.ink, fontSize: 11, rich: { b: { fontWeight: 700, fontSize: 13 } } },
+                 color: C.ink, fontSize: 12, rich: { b: { fontWeight: 700, fontSize: 13 } } },
         data: rows.map((r, i) => ({ name: r.label, value: r.Total ?? 0, row: r, group: g,
                                     itemStyle: { color: i === 0 ? C.red : shades[i - 1] } })),
       }],
@@ -99,16 +105,16 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
     const answers = groups[0].rows.map(r => r.label);
     const shades = scaleColours(answers) ?? blues(answers.length);
     return {
-      tooltip: { ...tooltip(), formatter: (p: { data: { row: Row; group: Group } }) => tip(p.data.row, "Total", p.data.group, q, wave) },
+      tooltip: { ...tooltip(), formatter: (p: { data: { row: Row; group: Group } }) => tip(p.data.row, "Total", p.data.group, q, wave, vs) },
       legend: { bottom: 0, textStyle: axisText(), itemWidth: 12, itemHeight: 12, icon: "roundRect" },
       grid: { left: 8, right: 16, top: 8, bottom: 56, containLabel: true },
-      xAxis: { type: "value", max: 100, axisLabel: { ...axisText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.mist } } },
+      xAxis: { type: "value", max: 100, axisLabel: { ...valueText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.line, type: [2, 3] } } },
       yAxis: { type: "category", inverse: true, data: groups.map(x => x.label || "Total"),
                axisLabel: { ...axisText(), width: 200, overflow: "break" }, axisTick: { show: false } },
       series: answers.map((a, i) => ({
         type: "bar", stack: "all", name: a, barWidth: 26,
         itemStyle: { color: shades[i] },
-        label: { show: true, formatter: (p: { value: number }) => (p.value >= 7 ? Math.round(p.value) : ""), color: labelOn(shades[i]), fontSize: 11, fontWeight: 600 },
+        label: { show: true, formatter: (p: { value: number }) => (p.value >= 7 ? Math.round(p.value) : ""), color: labelOn(shades[i]), fontSize: 12, fontWeight: 600 },
         data: groups.map(x => { const r = x.rows.find(r => r.label === a); return { value: r?.Total ?? 0, row: r ?? x.rows[0], group: x }; }),
       })),
     };
@@ -116,11 +122,11 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
 
   const horizontal = view === "bars";
   const category = { type: "category", data: labels, inverse: horizontal, axisTick: { show: false },
-                     axisLine: { lineStyle: { color: C.silver } },
-                     axisLabel: horizontal ? { ...axisText(), width: 230, overflow: "break", lineHeight: 14 }
+                     axisLine: { lineStyle: { color: C.lineStrong } },
+                     axisLabel: horizontal ? { ...axisText(), width: innerWidth < 600 ? 130 : 230, overflow: "break", lineHeight: 14 }   // phones: room for the bars
                                            : { ...axisText(), interval: 0, width: Math.max(60, 640 / Math.max(rows.length, 1)), overflow: "break" } };
   const value = { type: "value", max: (v: { max: number }) => Math.min(100, Math.ceil((v.max + 8) / 10) * 10),
-                  axisLabel: { ...axisText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.mist } } };
+                  axisLabel: { ...valueText(), formatter: "{value}%" }, axisLine: { show: false }, splitLine: { lineStyle: { color: C.line, type: [2, 3] } } };
   return {
     tooltip: hover, legend: multiSeries ? { top: 0, textStyle: axisText(), icon: "roundRect", itemWidth: 12, itemHeight: 12 } : { show: false },
     grid: { left: 8, right: horizontal ? 48 : 12, top: multiSeries ? 32 : 8, bottom: 8, containLabel: true },
@@ -128,10 +134,10 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
     series: columns.map((col, si) => ({
       type: "bar", name: col, barMaxWidth: multiSeries ? 14 : 26, barGap: "15%", color: palette[si],
       itemStyle: { borderRadius: horizontal ? [0, 3, 3, 0] : [3, 3, 0, 0], color: palette[si] },
-      label: { show: !multiSeries || rows.length <= 8, position: horizontal ? "right" : "top", color: C.ink, fontSize: 11,
+      label: { show: !multiSeries || rows.length <= 8, position: horizontal ? "right" : "top", color: C.ink, fontSize: 12,
                fontWeight: 600, formatter: (p: { value: number }) => `${p.value.toFixed(multiSeries ? 0 : 1)}%` },
       data: rows.map(r => ({
-        value: r[col] ?? null, row: r, group: g,   // null: under 30 people, no bar
+        value: r[col] ?? null, row: r, group: g,   // null: under HIDDEN_BASE people, no bar
         itemStyle: { color: !multiSeries && (r[col] ?? 0) === top && !isFiller(r.label) ? C.red : palette[si],
                      opacity: (g.bases[col] ?? g.base) < SMALL_BASE ? 0.55 : 1 },
       })),
@@ -139,15 +145,15 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
   };
 }
 
-export function QuestionTable({ question, rows, group, columns }: { question: Question; rows: Row[]; group: Group; columns: Column[] }) {
+export function QuestionTable({ question, rows, group, columns, vs }: { question: Question; rows: Row[]; group: Group; columns: Column[]; vs: string }) {
   return <div className="table-wrap"><table className="data">
     <caption className="sr-only">{question.text}</caption>
     <thead><tr><th>Answer</th>{columns.map(c => <th key={c} className="num">{c}<small>n={(group.bases[c] ?? 0).toLocaleString("en-US")}</small></th>)}
-      {columns.includes("Total") && <><th className="num">Last week</th><th className="num">Change</th></>}</tr></thead>
+      {columns.includes("Total") && <><th className="num">{vs.replace(/^the /, "").replace(/^\w/, c => c.toUpperCase())}</th><th className="num">Change</th></>}</tr></thead>
     <tbody>{rows.map(r => {
-      const sig = r.prior != null && r.prior_base ? significant(r.Total ?? 0, group.base, r.prior, r.prior_base) : false;
+      const sig = !!moveOf(r)?.sig;
       return <tr key={r.label}><th scope="row">{r.label}</th>
-        {columns.map(c => <td key={c} className={`num ${(group.bases[c] ?? 0) < SMALL_BASE ? "small" : ""}`}>{r[c] == null && (group.bases[c] ?? 0) > 0 ? "n<30" : pct(r[c])}</td>)}
+        {columns.map(c => <td key={c} className={`num ${(group.bases[c] ?? 0) < SMALL_BASE ? "small" : ""}`}>{r[c] == null && (group.bases[c] ?? 0) > 0 ? HIDDEN_NOTE : pct(r[c])}</td>)}
         {columns.includes("Total") && <><td className="num muted">{pct(r.prior)}</td>
           <td className={`num ${sig ? "sig" : "muted"}`}>{r.flags.includes("wording_changed_prior") ? "question changed" : r.flags.includes("base_changed_prior") ? "base changed" : r.prior == null ? "–" : pts((r.Total ?? 0) - r.prior)}</td></>}
       </tr>;

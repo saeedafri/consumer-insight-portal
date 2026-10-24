@@ -14,10 +14,11 @@ import yaml
 
 from sqlalchemy import bindparam, text
 
+from app.core import access
 from app.core.database import get_engine
 from app.data.harmonise import normalise_text
-from etl import survey_calendar
-from etl.serving import CUTS, SMALL_BASE
+from etl import open_ends, survey_calendar, weighting
+from etl.serving import CUTS, SMALL_BASE, TEST_BASE   # TEST_BASE: one significance rule (etl/serving.py)
 
 COLUMNS = ("qcode", "dim", "dim_value", "item_label", "option_code", "option_label", "n", "base_n",
            "pct", "prior_pct", "prior_base_n", "ly_pct", "ly_base_n", "flags")
@@ -25,16 +26,33 @@ CROSSTAB_COLUMNS = ("v1", "v2", "item_label", "option_code", "option_label", "n"
 BANNER = (("Total", "total", "Total"), ("Male", "gender", "Male"), ("Female", "gender", "Female"),
           ("Gen Z", "generation", "GenZ"), ("Millennial", "generation", "Millennial"), ("Gen X", "generation", "GenX"),
           ("Boomer", "generation", "Boomer"))   # dashboard column, srv_result dim, dim_value
-HIDDEN_BASE = 5    # respondents: below this no screen, file or export shows a figure, only the base ("n<5")
-TEST_BASE = 30     # respondents: below this on either side no difference is called significant
+HIDDEN_BASE = 1    # respondents: every figure is shown, however few answered (the user's rule, 23 Oct 2026); only a group of 0 has none
 COUNTRIES = Path(__file__).resolve().parents[2] / "config" / "countries.yml"
+METHODOLOGY = Path(__file__).resolve().parents[2] / "config" / "methodology.yml"
 # Where a wave came from, for every screen's source line and export: platform, fielding window, source reference
-SOURCE = "s.country, s.platform, s.source_ref, s.field_start, s.field_end"
+SOURCE = "s.country, s.platform, s.source_ref, s.field_start, s.field_end, s.load_status"
 
 
 @lru_cache(maxsize=1)
 def countries() -> dict:
     return yaml.safe_load(COUNTRIES.read_text(encoding="utf-8"))
+
+
+@lru_cache(maxsize=1)
+def populations() -> dict:
+    return yaml.safe_load(METHODOLOGY.read_text(encoding="utf-8"))["population"]
+
+
+def describe(wave: dict) -> dict:
+    """The wave with its provenance, for every screen's source line and export: population (config/methodology.yml),
+    weighting, in_field (still collecting answers), verified (its load was checked against Forsta; srv_wave holds
+    only verified waves, so a file without load_status is verified), client (who commissioned it, or None) and
+    visibility (config/access.yml). Needs survey_id, survey_family and study_type."""
+    found = populations()
+    population = (found.get("ids") or {}).get(wave["survey_id"]) or (found.get("families") or {}).get(wave.get("survey_family")) \
+        or (found.get("study_types") or {}).get(wave.get("study_type")) or found["default"]
+    return {**wave, "population": population, "weighting": "unweighted", "in_field": bool(wave.get("in_field")),
+            "verified": wave.get("load_status", "verified") == "verified", **access.owner(wave)}
 
 
 def encode(data) -> bytes:
@@ -61,18 +79,22 @@ def results(survey_id: int, qcodes: tuple, dims: tuple) -> dict:
     return {"survey_id": survey_id, "columns": COLUMNS, "rows": [masked(r) for r in rows]}
 
 
+WAVE = ("survey_id", "title", "wave_label", "wave_date", "survey_family", "study_type", "qualified_n", "prior_survey_id",
+        "ly_survey_id", "ly_status")
+
+
 def waves(dashboards: dict) -> list[dict]:
-    with get_engine("app").connect() as conn:
-        rows = conn.execute(text(
-            "SELECT w.survey_id, s.title, s.wave_label, w.wave_date, w.survey_family, w.study_type, w.qualified_n,"
-            f" w.prior_survey_id, w.ly_survey_id, w.ly_status, w.rows_built, {SOURCE} FROM srv_wave w"
-            " JOIN cip_survey s ON s.survey_id = w.survey_id ORDER BY w.wave_date DESC, w.survey_id DESC")).mappings().all()
+    with get_engine("app").connect() as conn:   # w.*: in_field once the ETL has added it (sql/005_serving.sql)
+        rows = [{k: r[k] for k in (*WAVE, "rows_built", "country", "platform", "source_ref", "field_start", "field_end", "load_status")}
+                | {"in_field": r.get("in_field")} for r in conn.execute(text(
+            f"SELECT w.*, s.title, s.wave_label, {SOURCE} FROM srv_wave w"
+            " JOIN cip_survey s ON s.survey_id = w.survey_id ORDER BY w.wave_date DESC, w.survey_id DESC")).mappings()]
         modules = defaultdict(list)
         for survey_id, name in conn.execute(text(
                 "SELECT survey_id, module_name FROM cip_wave_module WHERE survey_id IS NOT NULL ORDER BY is_lead DESC, module_name")):
             modules[survey_id].append(name)
-    return [{**r, "modules": modules.get(r["survey_id"], []), "events": survey_calendar.events(r["title"]),
-             "dashboards": sorted(dashboards.get(r["survey_id"], []))} for r in rows]
+    return [describe({**r, "modules": modules.get(r["survey_id"], []), "events": survey_calendar.events(r["title"]),
+                      "dashboards": sorted(dashboards.get(r["survey_id"], []))}) for r in rows]
 
 
 def book(survey_id: int) -> dict:
@@ -83,25 +105,29 @@ def book(survey_id: int) -> dict:
     columns = {(dim, value): name for name, dim, value in BANNER}
     with get_engine("app").connect() as conn:
         wave = conn.execute(text(
-            "SELECT w.survey_id, s.title, s.wave_label, w.wave_date, w.survey_family, w.study_type, w.qualified_n,"
-            f" w.prior_survey_id, w.ly_survey_id, w.ly_status, {SOURCE} FROM srv_wave w JOIN cip_survey s ON s.survey_id = w.survey_id"
+            f"SELECT w.*, s.title, s.wave_label, {SOURCE} FROM srv_wave w JOIN cip_survey s ON s.survey_id = w.survey_id"
             " WHERE w.survey_id = :s"), {"s": survey_id}).mappings().first()
         if wave is None:
             raise LookupError("No such wave")
+        wave = describe({k: wave[k] for k in (*WAVE, "country", "platform", "source_ref", "field_start", "field_end", "load_status")}
+                        | {"in_field": wave.get("in_field")})
         questions = conn.execute(text(
             "SELECT q.qcode, q.qtext, q.qtext_short, q.qtype, q.base_desc, t.topic_name FROM cip_question q"
             " LEFT JOIN cip_topic t ON t.topic_id = q.topic_id WHERE q.survey_id = :s AND q.is_technical = 0"
             " AND q.is_virtual = 0 ORDER BY q.sort_order, q.question_id"), {"s": survey_id}).mappings().all()
         rows = conn.execute(text(
-            "SELECT qcode, dim, dim_value, item_label, option_code, option_label, n, base_n, pct, prior_pct,"
+            "SELECT qcode, dim, dim_value, item_id, option_id, item_label, option_code, option_label, n, base_n, pct, prior_pct,"
             " prior_base_n, ly_pct, ly_base_n, flags FROM srv_result WHERE survey_id = :s AND dim IN ('total', 'gender', 'generation')"
             " ORDER BY qcode, sort_order"), {"s": survey_id}).mappings().all()
         modules = [r[0] for r in conn.execute(text("SELECT module_name FROM cip_wave_module WHERE survey_id = :s"), {"s": survey_id})]
         people = conn.execute(text(   # qualified respondents per banner column
-            "SELECT p.gender, p.generation FROM cip_profile p JOIN cip_respondent r ON r.respondent_id = p.respondent_id"
+            "SELECT p.gender, p.generation, p.respondent_id FROM cip_profile p JOIN cip_respondent r ON r.respondent_id = p.respondent_id"
             " AND r.is_qualified = 1 WHERE p.survey_id = :s"), {"s": survey_id}).all()
+        mine = weighted(conn, survey_id, columns)
+        then = {key: weighted(conn, wave[key], {("total", "Total"): "Total"}, by_label=True)
+                for key in ("prior_survey_id", "ly_survey_id") if mine and wave.get(key)}
     n = {"Total": wave["qualified_n"]} | {name: 0 for name, _, _ in BANNER[1:]}
-    for gender, generation in people:
+    for gender, generation, _ in people:
         for dim, value in (("gender", gender), ("generation", generation)):
             if (dim, value) in columns:
                 n[columns[(dim, value)]] += 1
@@ -112,9 +138,17 @@ def book(survey_id: int) -> dict:
             continue
         cells.setdefault(r["qcode"], []).append((name, r))
     out = []
+    themes = open_ends.coded(survey_id)
+    groups_of = {rid: [columns[k] for k in (("gender", g), ("generation", gen)) if k in columns] for g, gen, rid in people}
     for q in questions:
+        if q["qcode"] in themes:   # open-ended: the share of those who wrote something, by theme (etl/open_ends.py)
+            section = q["topic_name"] if q["topic_name"] not in (None, "Unclassified") else module_section(q["qcode"], modules)
+            out.append({"id": q["qcode"], "text": q["qtext"], "short": q["qtext_short"], "type": "single", "section": section,
+                        "base_desc": "Open-ended answers, coded into themes", "coded": themes[q["qcode"]]["method"],
+                        "groups": [open_group(themes[q["qcode"]], groups_of)]})
+            continue
         if q["qcode"] not in cells:
-            continue   # numeric and open text have no percentages
+            continue   # numeric answers have no percentages
         multi = q["qtype"] in ("multi", "grid_multi")
         groups: dict = {}
         for name, r in cells[q["qcode"]]:
@@ -124,6 +158,13 @@ def book(survey_id: int) -> dict:
             row = group["rows"].setdefault(row_label, {"label": row_label, "code": r["option_code"]})
             shown = lambda pct, base: None if pct is None or (base or 0) < HIDDEN_BASE else round(float(pct), 1)   # noqa: E731
             row[name] = shown(r["pct"], r["base_n"])
+            if mine:   # Census-weighted: the same answer, each person counted by their weight (etl/weighting.py)
+                row.setdefault("w", {})[name] = mine.get((r["qcode"], r["item_id"], r["option_id"]), {}).get(name, 0.0)
+            if mine and name == "Total":
+                label = (r["qcode"], normalise_text(r["item_label"]), r["option_code"])
+                for key, field in (("prior_survey_id", "prior"), ("ly_survey_id", "ly")):
+                    found = then.get(key, {}).get(label, {}).get("Total")
+                    row["w"][field] = round(found, 1) if found is not None and r[f"{field}_pct"] is not None else None
             if name == "Total":
                 group["base"] = r["base_n"]
                 row["prior"] = shown(r["prior_pct"], r["prior_base_n"])
@@ -131,11 +172,69 @@ def book(survey_id: int) -> dict:
                 row["ly"] = shown(r["ly_pct"], r["ly_base_n"])
                 row["ly_base"] = r["ly_base_n"]
                 row["flags"] = r["flags"] or ""
+        for g in groups.values():   # the cube keeps no cell for an answer nobody gave: a group that was asked shows 0 %
+            for row in g["rows"].values():
+                for name, base in g["bases"].items():
+                    if base and name not in row:
+                        row[name] = 0.0
+                    if base and "w" in row:
+                        row["w"].setdefault(name, 0.0)
+                row.setdefault("flags", "")
         section = q["topic_name"] if q["topic_name"] not in (None, "Unclassified") else module_section(q["qcode"], modules)
         out.append({"id": q["qcode"], "text": q["qtext"], "short": q["qtext_short"], "type": q["qtype"],
                      "section": section, "base_desc": q["base_desc"],
                      "groups": [{**g, "rows": list(g["rows"].values())} for g in groups.values()]})
-    return {"wave": dict(wave), "columns": [name for name, _, _ in BANNER], "n": n, "questions": out}
+    if mine:
+        wave = {**wave, "weighting_available": "Census (gender, age, region)"}
+    return {"wave": wave, "columns": [name for name, _, _ in BANNER], "n": n, "questions": out}
+
+
+def open_group(coded: dict, groups_of: dict) -> dict:
+    """One chart group from an open-ended question's coding: each theme's share of those who wrote an answer."""
+    bases, counts = defaultdict(int), defaultdict(int)
+    for rid, theme in coded["codes"].items():
+        for name in ["Total", *groups_of.get(int(rid), [])]:
+            bases[name] += 1
+            counts[(theme, name)] += 1
+    rows = [{"label": label, "code": i + 1, "prior": None, "prior_base": None, "ly": None, "ly_base": None, "flags": "",
+             **{name: round(100 * counts[(i, name)] / b, 1) for name, b in bases.items()}}
+            for i, label in enumerate(coded["themes"])]
+    rows.sort(key=lambda r: -r["Total"] if r["label"] not in (open_ends.NOTHING, open_ends.OTHER) else 1)
+    return {"label": "", "base": bases["Total"], "bases": dict(bases), "rows": rows}
+
+
+def weighted(conn, survey_id: int, columns: dict, by_label: bool = False) -> dict:
+    """The wave's Census-weighted percentages from its respondent answers (srv_answer): {(qcode, item_id, option_id):
+    {column: pct}}, or keyed (qcode, item label, option code) to match another wave's rows. Empty when the wave has
+    no profile to weight on (every weight 1)."""
+    weights = weighting.wave_weights(conn, survey_id)
+    if all(abs(w - 1) < 1e-9 for w in weights.values()):
+        return {}
+    dims = sorted({dim for dim, _ in columns if dim != "total"})
+    rows = conn.execute(text(f"SELECT qcode, item_id, option_id, respondent_id{''.join(', ' + d for d in dims)}"
+                             " FROM srv_answer WHERE survey_id = :s"), {"s": survey_id}).all()
+    n, base = defaultdict(float), defaultdict(float)
+    for qcode, item, option, rid, *values in rows:
+        w = weights.get(rid, 0.0)
+        names = ["Total"] + [columns[(d, v)] for d, v in zip(dims, values) if (d, v) in columns]
+        for name in names:
+            if item == 0 and option == 0:   # multi base row: answered the question
+                base[(qcode, None, name)] += w
+            elif option:                    # single choice: base = answered this row
+                base[(qcode, item, name)] += w
+                n[(qcode, item, option, name)] += w
+            else:                           # a multi item chosen
+                n[(qcode, item, 0, name)] += w
+    out: dict = defaultdict(dict)
+    for (qcode, item, option, name), count in n.items():
+        b = base.get((qcode, None if option == 0 else item, name))
+        if b:
+            out[(qcode, item, option)][name] = round(100 * count / b, 1)
+    if not by_label:
+        return dict(out)
+    labels = conn.execute(text("SELECT qcode, item_id, option_id, item_label, option_code FROM srv_result"
+                               " WHERE survey_id = :s AND dim = 'total'"), {"s": survey_id}).all()
+    return {(q, normalise_text(label), code): out[(q, i, o)] for q, i, o, label, code in labels if (q, i, o) in out}
 
 
 def versions(rows) -> dict[int, int]:
@@ -183,7 +282,7 @@ def _trend(qcode: str, dim: str, value: str, waves: list[dict], rows: list, vers
         s = series.setdefault((r["item_label"], r["option_code"]), {
             "item_label": r["item_label"], "code": r["option_code"], "label": r["option_label"] or r["item_label"],
             "sort": r["sort_order"], "pct": [None] * len(waves), "base": [None] * len(waves)})
-        s["pct"][at[r["survey_id"]]] = round(float(r["pct"]), 1)
+        s["pct"][at[r["survey_id"]]] = None if (r["base_n"] or 0) < HIDDEN_BASE else round(float(r["pct"]), 1)
         s["base"][at[r["survey_id"]]] = r["base_n"]
     return {"qcode": qcode, "dim": dim, "value": value, "waves": waves, "versions": [texts[v] for v in sorted(texts)],
             "series": sorted(series.values(), key=lambda s: s["sort"])}
@@ -281,7 +380,7 @@ def people(conn, survey_id: int) -> dict:
         if r[0] not in seen:   # a respondent's cuts are the same on every row
             seen.add(r[0])
             for dim, value in zip(CUTS, r[4:]):
-                if value is not None:
+                if value not in (None, ""):   # no value for the cut: not a group, as in srv_result
                     cuts[dim][value] |= bit
     questions: dict = {}
     for a in conn.execute(text(

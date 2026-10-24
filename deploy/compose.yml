@@ -1,27 +1,87 @@
-# The whole portal on one Debian server: nginx (static files + published payloads) in front of the API.
-# The ETL runs on the host (cron/systemd) and writes $CIP_PUBLISH_DIR, which nginx reads.
-#   CIP_PUBLISH_DIR=/srv/cip/published docker compose -f deploy/compose.yml up -d
-# Production and staging budget: 1 core, the whole portal about 1 GB (API 768 MB cap, nginx 256 MB). Measured 22 Oct 2026 on one
-# shared core: nginx serves about 13,500 requests/s; 10,000 people clicking in the same instant all answered in under 1 s
-# (.planning/wiki/STRESS_BENCHMARK.md).
+# The whole portal on one Linux VM (Azure, in the database's region): nginx (TLS, static files, published payloads) in
+# front of the API (gunicorn + uvicorn workers), the ETL scheduler (deploy/etl-loop.sh) and the weekly backup
+# (deploy/backup.sh), all from one image of this repo.
+#   docker compose -f deploy/compose.yml up -d --build
+# Host folders (create them once; nginx runs as uid 101, the others as uid 10001):
+#   /etc/cip/api.env           secrets and settings (CIP_SESSION_SECRET, STG_DB_*, APP_DB_*, FORSTA_API_KEY, CIP_OIDC_*,
+#                              ANTHROPIC_API_KEY, EMAIL_*, TEAMS_WEBHOOK_URL); never CIP_DEMO_LOGIN on a client-facing VM
+#   /etc/cip/tls               IT's certificate: cert.pem (full chain) and key.pem
+#   /srv/cip/published         the ETL's published payloads (written by etl, read by api and nginx)
+#   /srv/cip/logs              the ETL's logs and heartbeat
+#   /srv/cip/state             shared between api and nginx: revoked sessions, the team cache stamp
+#   /srv/cip/nginx-cache       nginx's answer cache, emptied by every publish
+#   /mnt/cip-backup            the off-server backup target (an Azure Files or Blob mount from IT)
+# Budget on 1 core: API 768 MB, nginx 256 MB, ETL 2 GB while it loads, backup 512 MB.
+x-logs: &logs
+  logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }   # rotated: no disk fills up (OPS-07)
+
+x-app: &app
+  image: cip-portal
+  env_file: ${CIP_ENV_FILE:-/etc/cip/api.env}
+  restart: unless-stopped
+  <<: *logs
+
 services:
   api:
-    image: cip-portal
+    <<: *app
     build: { context: .., dockerfile: deploy/Dockerfile, target: api }
-    env_file: ${CIP_ENV_FILE:-/etc/cip/api.env}
-    environment: { WEB_CONCURRENCY: "2", CIP_PUBLISH_DIR: /srv/cip/published }   # crosstabs read the published cut tables
-    volumes: ["${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro"]
-    restart: unless-stopped
+    environment:
+      WEB_CONCURRENCY: "2"
+      CIP_PUBLISH_DIR: /srv/cip/published
+      CIP_REVOKED_FILE: /srv/cip/state/revoked.txt
+      CIP_TEAM_STAMP: /srv/cip/state/team.stamp
+    volumes:
+      - "${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro"
+      - "${CIP_STATE_DIR:-/srv/cip/state}:/srv/cip/state"
     mem_limit: 768m
     cpus: 1.0
+
+  etl:
+    <<: *app
+    command: ["sh", "deploy/etl-loop.sh"]
+    environment:
+      CIP_PUBLISH_DIR: /srv/cip/published
+      CIP_NGINX_CACHE: /srv/cip/nginx-cache
+      CIP_NGINX_URL: http://nginx:8080   # publish warms the cross-tab cache through nginx (etl/publish.warm_nginx)
+      CIP_ETL_RUNS: ${CIP_ETL_RUNS:-Mon@12:00 Fri@03:30}
+    volumes:
+      - "${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published"
+      - "${CIP_NGINX_CACHE:-/srv/cip/nginx-cache}:/srv/cip/nginx-cache"
+      - "${CIP_LOG_DIR:-/srv/cip/logs}:/srv/cip/logs"
+    healthcheck:   # the loop is alive and the watchdog has written a heartbeat within the last 2 days
+      test: ["CMD-SHELL", "test -n \"$(find /srv/cip/logs -name etl-heartbeat.json -mmin -2880)\""]
+      interval: 10m
+      start_period: 2h
+    depends_on: [api]
+    mem_limit: 2g
+
+  backup:
+    <<: *app
+    command: ["sh", "deploy/backup.sh"]
+    environment:
+      CIP_PUBLISH_DIR: /srv/cip/published
+      CIP_BACKUP_DIR: /backup
+      CIP_BACKUP_AT: ${CIP_BACKUP_AT:-Sun@04:30}
+      CIP_BACKUP_KEEP: ${CIP_BACKUP_KEEP:-4}
+    volumes:
+      - "${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro"
+      - "${CIP_BACKUP_TARGET:-/mnt/cip-backup}:/backup"
+    healthcheck: { test: ["CMD-SHELL", "test -w /backup"], interval: 1h }
+    mem_limit: 512m
+
   nginx:
     image: cip-web
     build: { context: .., dockerfile: deploy/Dockerfile, target: nginx }
     env_file: ${CIP_ENV_FILE:-/etc/cip/api.env}   # CIP_SESSION_SECRET: nginx checks the signed cookie itself (cip_auth.js)
-    ports: ["8080:8080"]
-    # the answers cache lives on the host, so the ETL's publish can empty it (CIP_NGINX_CACHE, etl/publish.py);
-    # the folder must be writable by nginx's user (uid 101)
-    volumes: ["${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro", "${CIP_NGINX_CACHE:-/srv/cip/nginx-cache}:/var/cache/nginx/data"]
-    depends_on: [api]
+    environment: { CIP_REVOKED_FILE: /srv/cip/state/revoked.txt }
+    ports: ["80:8080", "443:8443"]
+    # the answers cache lives on the host, so the ETL's publish can empty it (CIP_NGINX_CACHE, etl/publish.py)
+    volumes:
+      - "${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro"
+      - "${CIP_NGINX_CACHE:-/srv/cip/nginx-cache}:/var/cache/nginx/data"
+      - "${CIP_STATE_DIR:-/srv/cip/state}:/srv/cip/state:ro"
+      - "${CIP_TLS_DIR:-/etc/cip/tls}:/etc/nginx/tls:ro"
+    depends_on: { api: { condition: service_healthy } }
     restart: unless-stopped
     mem_limit: 256m   # 20,000 open connections measured at about 90 MB
+    <<: *logs

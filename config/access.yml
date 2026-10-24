@@ -1,0 +1,54 @@
+# Who may use the portal and what they see (app/core/access.py). Read once per API process; restart to apply.
+#
+#   tiers     a package: the features it includes and the study types it opens ("*" = all)
+#   roles     admin (everything, the audit log, others' team items), analyst (Coresight staff), client (external)
+#   staff     Coresight's own sign-in domains and the admins among them: staff are analysts of no client
+#   clients   an organisation: its sign-in email domains, its tier, and (for a client-commissioned study) the families it owns
+#   surveys   who owns a study and who sees it: visibility "all" (every signed-in user), "client" (its owner and staff),
+#             "staff" (Coresight only). A survey_id entry beats a family entry; anything unlisted is `default_visibility`.
+#   unknown   an email that is neither staff nor a client's: its profile, or `refuse` to turn the sign-in away
+#
+# With this file as it is, everyone sees everything (the demo): every study is "all" and unknown emails get `enterprise`.
+# Before external clients: set unknown to refuse, list each client's domains, and give client studies visibility "client".
+
+features: [dashboards, explorer, crosstab, trends, search, ask, export, boards, audiences, alerts, saved_views, schedule]   # schedule: the internal launch plan (staff)
+
+tiers:
+  demo:         {features: [dashboards, explorer, trends, search], study_types: [tracker]}
+  core:         {features: [dashboards, explorer, crosstab, trends, search, export, saved_views], study_types: [tracker, annual]}
+  professional: {features: [dashboards, explorer, crosstab, trends, search, ask, export, boards, audiences, alerts, saved_views],
+                 study_types: [tracker, annual, adhoc]}
+  enterprise:   {features: "*", study_types: "*"}
+
+roles: [admin, analyst, client]
+
+staff:
+  domains: [coresight.com, cip]   # cip: the pipeline's own service sessions (publish@cip warms nginx's cache)
+  admins: [dataautomation@coresight.com]
+  tier: enterprise
+
+clients: {}
+#  t-mobile: {name: T-Mobile, domains: [t-mobile.com], tier: professional, families: [T_MOBILE]}
+
+surveys:
+  default_visibility: all
+  families:   # client-commissioned studies: owner client id (a key of `clients`, or null while it has no sign-in) and visibility
+    T_MOBILE:        {client: null, visibility: all}
+    BOARD:           {client: null, visibility: all}
+    ROKBOT:          {client: null, visibility: all}
+    SIMBE_ROBOTICS:  {client: null, visibility: all}
+    ARC:             {client: null, visibility: all}
+    APTOS_CLOUD_POS: {client: null, visibility: all}
+    ZEBRA_ELO:       {client: null, visibility: all}
+  ids: {}     # survey_id: {client, visibility}
+
+unknown: {role: analyst, tier: enterprise}   # `refuse` before launch
+
+# Per signed-in person, per worker: requests allowed per minute (a token bucket that refills evenly)
+limits:
+  ask: 10
+  export: 30
+  audience: 60
+  api: 120             # API key and MCP connector requests a minute, per person
+min_audience: 1       # every audience shows its figures, however small (the user's rule, 23 Oct 2026; was 30, a differencing guard)
+max_body_kb: 1024     # request bodies larger than this get 413

@@ -359,6 +359,44 @@ def build(survey_id: int, key: str, wave: Optional[Wave] = None) -> bytes:
     return buffer.getvalue()
 
 
+def raw_data(client, path: str) -> bytes:
+    """The team's "Raw Data" workbook, as Forsta's labelled export: an A1 sheet with one row per qualified
+    respondent and one column per datamap variable, in datamap order, answers as their text (a multi-select
+    row unticked is "NO TO: <row>"; a label that is a number stays a number), and a Datamap sheet with Forsta's
+    text datamap, tab-separated into columns. Read from Forsta (GET), not the database, so it is their export
+    exactly: 144,000 of 144,000 cells and 905 of 905 datamap lines equal for wave 10/19/26."""
+    from openpyxl import Workbook
+    variables = client.survey_datamap(path)["variables"]
+    records = client.survey_data(path, cond="qualified")
+    # UTF-8 though Forsta's text/plain declares no charset (requests would read it as Latin-1: "Kohlâ€™s")
+    text_map = client._get(f"surveys/{path.strip('/')}/datamap", format="text").content.decode("utf-8")
+
+    def shown(v: dict, raw):
+        if raw is None or raw == "":
+            return None
+        if v["type"] == "multiple":
+            name = f'{v["rowTitle"]} - {v["colTitle"]}' if v.get("colTitle") else v["rowTitle"]
+            return name if int(raw) else f"NO TO: {name}"
+        if v["type"] == "single":
+            raw = next((o["title"] for o in v.get("values") or [] if str(o["value"]) == str(raw)), raw)
+        if v["type"] in ("number", "float") and isinstance(raw, str):
+            return float(raw) if "." in raw else int(raw)   # Forsta's JSON sends numbers as text: Excel needs numbers
+        return int(raw) if isinstance(raw, str) and raw.isdigit() else raw
+
+    book = Workbook(write_only=True)
+    data = book.create_sheet("A1")
+    data.append([v["label"] for v in variables])
+    for r in records:
+        data.append([shown(v, r.get(v["label"])) for v in variables])
+    datamap = book.create_sheet("Datamap")
+    for line in text_map.splitlines():
+        parts = line.split("\t")
+        datamap.append(([parts[0]] + [int(x) if x.isdigit() else x for x in parts[1:]] + [None, None])[:3])   # their 3 columns
+    out = io.BytesIO()
+    book.save(out)
+    return out.getvalue()
+
+
 def _letter(i: int) -> str:
     """Forsta's column letters: A..Z, then A1..Z1, A2.. (Total is A)."""
     n = i
@@ -485,11 +523,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Compare our cross-tabs with the team's Forsta export")
     ap.add_argument("--compare", required=True)
     ap.add_argument("--survey", type=int, default=0)
+    ap.add_argument("--banner", help="the banner set to compare with, when the file's name is not one in the config")
     args = ap.parse_args()
     name = Path(args.compare).name
-    key = next((k for k, v in banners().items() if isinstance(v, dict) and "file" in v and v["file"].split("10_12_26")[0].strip() == name.split("10_12_26")[0].strip()), None)
+    undated = lambda n: re.sub(r"\s*\d{1,2}_\d{1,2}_\d{2}\.xlsx$", "", n).strip()   # "Cross Tabs 10_19_26.xlsx" → "Cross Tabs"
+    key = args.banner or next((k for k, v in banners().items()
+                               if isinstance(v, dict) and "file" in v and undated(v["file"]) == undated(name)), None)
     if key is None:
-        raise SystemExit(f"{name}: no banner set in config/crosstab_banners.yml")
+        raise SystemExit(f"{name}: no banner set in config/crosstab_banners.yml (name one with --banner)")
     survey_id = args.survey or int(get_engine("etl").connect().execute(text(
         "SELECT survey_id FROM cip_survey WHERE platform = 'forsta' AND load_status = 'verified' ORDER BY wave_date DESC LIMIT 1")).scalar())
     for line in compare(args.compare, key, survey_id):

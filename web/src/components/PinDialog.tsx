@@ -2,8 +2,7 @@
 // screen's export buttons raise "cip:pin" with the table they would download (csv.ts).
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { useQueryClient } from "@tanstack/react-query";
-import { send, useBoards } from "../api";
+import { queries, send, useBoards } from "../api";
 import type { TableSpec } from "../csv";
 
 export default function PinDialog() {
@@ -13,20 +12,18 @@ export default function PinDialog() {
   const [newName, setNewName] = useState("");
   const [title, setTitle] = useState("");
   const [note, setNote] = useState<{ text: string; board?: number } | null>(null);
-  const boards = useBoards();
-  const refetchBoards = boards.refetch;
-  const queries = useQueryClient();
+  const boards = useBoards(spec != null);   // read only while the dialog is open, not on every screen
 
   useEffect(() => {
     const open = (e: Event) => {
       const table = (e as CustomEvent<TableSpec>).detail;
       setSpec(table); setTitle(table.notes[0] ?? table.name); setNote(null);
-      void refetchBoards();   // a board made since the last open (here or by a colleague) is offered too
+      void queries.invalidateQueries({ queryKey: ["boards"] });   // a board a colleague made since is offered too
       dialog.current?.showModal();
     };
     window.addEventListener("cip:pin", open);
     return () => window.removeEventListener("cip:pin", open);
-  }, [refetchBoards]);
+  }, []);
   useEffect(() => { if (!board && boards.data?.length) setBoard(String(boards.data[0].board_id)); }, [boards.data, board]);
 
   const pin = async () => {

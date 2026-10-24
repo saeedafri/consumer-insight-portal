@@ -107,13 +107,16 @@ def test_a_real_load_stores_answers_whose_two_cuts_add_up_to_its_serving_rows(cs
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
     with csi_db.connect() as conn:
         stored = conn.execute(sa.text("SELECT COUNT(*) FROM srv_answer WHERE survey_id = :s"), {"s": sid}).scalar()
-        # summed over gender, every generation count (and every multi base) equals srv_result's generation row
+        # summed over every cut, each count (and every multi base) equals srv_result's Total row (this wave asked no
+        # generation question: a cut with no value is not a segment, so srv_result has no generation rows)
         mine = {tuple(r[:4]): r[4] for r in conn.execute(sa.text(
-            "SELECT qcode, generation, item_id, option_id, COUNT(*) FROM srv_answer WHERE survey_id = :s"
-            " GROUP BY qcode, generation, item_id, option_id"), {"s": sid})}
+            "SELECT qcode, 'Total', item_id, option_id, COUNT(*) FROM srv_answer WHERE survey_id = :s"
+            " GROUP BY qcode, item_id, option_id"), {"s": sid})}
         theirs = conn.execute(sa.text(
             "SELECT qcode, dim_value, item_id, option_id, n, base_n, qtype FROM srv_result"
-            " WHERE survey_id = :s AND dim = 'generation'"), {"s": sid}).all()
+            " WHERE survey_id = :s AND dim = 'total'"), {"s": sid}).all()
+        blank = conn.execute(sa.text("SELECT COUNT(*) FROM srv_result WHERE survey_id = :s AND dim_value = ''"), {"s": sid}).scalar()
+    assert blank == 0
     assert stored > 0 and theirs
     for qcode, value, item, option, n, base, qtype in theirs:
         assert mine.get((qcode, value, item, option), 0) == n
@@ -121,7 +124,7 @@ def test_a_real_load_stores_answers_whose_two_cuts_add_up_to_its_serving_rows(cs
             assert mine[(qcode, value, 0, 0)] == base
 
 
-def test_crosstab_hides_tiny_cells_flags_small_ones_and_pools_weeks_by_answer(csi_db):
+def test_crosstab_shows_tiny_cells_flags_small_ones_and_pools_weeks_by_answer(csi_db):
     from api import main
     with csi_db.begin() as conn:
         seed(conn, 266, date(2026, 10, 5), qualified=401, xm1_yes=92, xm1_base=149)
@@ -144,7 +147,7 @@ def test_crosstab_hides_tiny_cells_flags_small_ones_and_pools_weeks_by_answer(cs
     one = read(1)
     yes = {(v1, v2): dict(zip(one["columns"], r)) for r in one["rows"] for v1, v2 in [r[:2]] if r[3] == 1}
     tiny = yes[("GenZ", "Female")]
-    assert (tiny["n"], tiny["pct"], tiny["base_n"], tiny["flags"]) == (None, None, 4, "suppressed")   # under 5: no figure
+    assert (tiny["n"], tiny["pct"], tiny["base_n"], tiny["flags"]) == (2, 50.0, 4, "small_base")   # 4 people: shown, flagged
     assert (yes[("Boomer", "Male")]["pct"], yes[("Boomer", "Male")]["flags"]) == (50.0, "small_base")
     assert (yes[("Boomer", "Female")]["pct"], yes[("Boomer", "Female")]["flags"]) == (25.0, "")
     assert all(r[0] for r in one["rows"]) and one["weeks"] == 1 and one["warnings"] == []
@@ -175,6 +178,16 @@ def test_the_book_gives_any_wave_in_the_dashboards_shape_and_the_picker_lists_it
     assert yes["flags"] == "base_changed_prior" and question["groups"][0]["base"] == 404
     picker = served(payloads.waves({}))
     assert [w["survey_id"] for w in picker] == [412, 266] and picker[0]["prior_survey_id"] == 266
+
+
+def test_an_answer_nobody_in_a_group_chose_shows_zero_not_blank(csi_db):
+    with csi_db.begin() as conn:   # the cube keeps no cell for an answer nobody gave: Gen Z's "No" here
+        seed(conn, 412, date(2026, 10, 12), qualified=404, xm1_yes=125, xm1_base=404)
+        conn.execute(sa.text("DELETE FROM cip_agg_cell WHERE survey_id = 412 AND dim = 'generation' AND cell_key LIKE '%:2:%'"))
+    serving.build_wave(412)
+    (group,) = served(payloads.book(412))["questions"][0]["groups"]
+    no = next(r for r in group["rows"] if r["label"] == "No")
+    assert (no["Total"], no["Gen Z"], "Male" in no) == (69.1, 0.0, False)   # Gen Z was asked: 0 %; no Male cut at all
 
 
 def test_trend_follows_a_question_across_its_family_and_search_finds_it(csi_db):

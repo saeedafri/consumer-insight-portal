@@ -67,6 +67,12 @@ def is_technical(topic_code: str) -> bool:
     return topic_code == TECHNICAL_TOPIC
 
 
+# ── which waves are one study ──────────────────────────────────────────────
+def family_for(source_ref: Any) -> Optional[str]:
+    """The family config/survey_map.yml `family` gives this wave (Forsta path, Qualtrics or SurveyMonkey id), if any."""
+    return next((name for name, refs in (load_config().get("family") or {}).items()
+                 if str(source_ref) in {str(r) for r in refs or []}), None)
+
 # ── demographic cuts ───────────────────────────────────────────────────────
 PROFILE_DIMENSIONS = (
     "gender", "age", "relationship", "ethnicity", "income_band",

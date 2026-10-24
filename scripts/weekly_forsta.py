@@ -38,8 +38,9 @@ from sqlalchemy import inspect, text  # noqa: E402
 from app.core.config import config  # noqa: E402
 from app.core.database import get_engine, healthcheck  # noqa: E402
 from api import dashboards, team  # noqa: E402
-from etl import forsta_etl, integrity, launch_schedule, notify, publish  # noqa: E402
+from etl import forsta_etl, integrity, launch_schedule, notify, open_ends, publish  # noqa: E402
 from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
+from etl.loaders import Locked, etl_lock  # noqa: E402
 
 log = logging.getLogger("cip.weekly")
 ERRORS = Path(__file__).resolve().parents[1] / "logs" / "forsta-etl-errors.jsonl"
@@ -105,8 +106,6 @@ def run(client=None) -> int:
     log.info("Register: %s", forsta_etl.discover(client))
     result = forsta_etl.run_due(client)               # the register and the load log keep the detail
     log.info("Loaded %d: %s", len(result["loaded"]), result["loaded"])
-    for path in result["loaded"]:
-        tell(notify.survey_loaded, forsta_etl.survey_id_of(path))
     for path in result["failed"]:
         tell(notify.failure, f"survey {path} did not load", forsta_etl.last_error_of(path))
     if not result["loaded"] and not result["failed"]:
@@ -114,6 +113,14 @@ def run(client=None) -> int:
         if datetime.now().weekday() != FULL_CHECK_DAY:   # nothing changed: the derived rows and published
             return 0                                     # numbers are as the last full check left them
     broken = integrity.run()                        # heals derived rows; reports the rest
+    for path in result["loaded"]:                   # verify counted the answers; this compares their values (one GET)
+        try:
+            checked, problems = forsta_etl.reconcile_survey(forsta_etl.survey_id_of(path), client)
+        except Exception as exc:
+            checked, problems = 0, [f"{type(exc).__name__}: {str(exc)[:200]}"]
+        if problems or checked == 0:
+            broken.append(f"survey {path}: {len(problems)} of {checked} answers differ from Forsta {problems[:3]}"
+                          if checked else f"survey {path}: no answer could be compared with Forsta")
     if result["loaded"]:                            # the topic dashboards (config/dashboards.yml) of the new waves
         try:
             dashboards.build_for([forsta_etl.survey_id_of(path) for path in result["loaded"]])
@@ -126,13 +133,21 @@ def run(client=None) -> int:
                     tell(notify.send, f"CIP alert: {message[2:80]}", message, [email])
         except Exception as exc:
             tell(notify.failure, "checking the metric alerts", str(exc))
-    if result["loaded"] or not (publish.ROOT / "current").exists():   # the standard screens as prebuilt files
+        for path in result["loaded"]:               # open-ended answers coded into themes, charted with the rest
+            try:
+                open_ends.code_wave(forsta_etl.survey_id_of(path))
+            except Exception as exc:
+                tell(notify.failure, f"coding the open-ended answers of {path}", str(exc))
+    # the standard screens as prebuilt files; after a failed reload too, which took that wave's serving rows away
+    if result["loaded"] or result["failed"] or not (publish.ROOT / "current").exists():
         try:
             publish.publish()
         except Exception as exc:                    # the previous version stays live; say so
             tell(notify.failure, "publishing the portal files", str(exc))
-    if broken:
-        tell(notify.failure, "integrity check", "\n".join(broken))
+    for path in result["loaded"]:                   # the team's email last: its dashboards and screens are live by now
+        tell(notify.survey_loaded, forsta_etl.survey_id_of(path))
+    if broken:   # the count in the subject: a different problem is told at once, not after the 6-hour repeat window
+        tell(notify.failure, f"integrity check: {len(broken)} problem{'s' if len(broken) > 1 else ''}", "\n".join(broken))
     if result["failed"]:
         log.error("Failed %d: %s", len(result["failed"]), result["failed"])
         return 1
@@ -142,12 +157,15 @@ def run(client=None) -> int:
         log.warning("Publication %s v%s no longer reproduces: moved %d, missing %d, new %d",
                     row.pub_code, row.version, row.moved, row.missing, row.new)
     if len(moved):
-        tell(notify.failure, "published numbers moved", moved.to_string(index=False))
+        tell(notify.failure, f"published numbers moved in {len(moved)} publication{'s' if len(moved) > 1 else ''}",
+             moved.to_string(index=False))
     return 3 if len(moved) else 5 if broken else 0
 
 
-def watch(week: dict) -> int:
-    """A planned Monday: say what launches, then run every WATCH_EVERY_SECONDS until the wave is in."""
+def watch(week: dict, lock=None) -> int:
+    """A planned Monday: say what launches, then run every WATCH_EVERY_SECONDS until the wave is in. A cycle that
+    crashes (Forsta down past its retries, the database dropping mid-run) is logged and told, and the watch goes on:
+    otherwise the week's wave would wait for Friday. Each cycle pings the run lock's connection to keep it."""
     topics = f" with {', '.join(week['topics'])}" if week["topics"] else ""
     name = " + ".join(week["names"])
     tell(notify.teams, f"🗓️ Forsta launches {name}{topics} today ~18:00 IST (cycle {week['cycle']}). CIP checks every "
@@ -156,8 +174,15 @@ def watch(week: dict) -> int:
     deadline, code = time.time() + WATCH_HOURS * 3600, 0
     while True:
         beat("watching: running", RUN_HOURS)
-        code = run()
-        now = next((w for w in launch_schedule.weeks()["weeks"] if w["date"] == str(week["date"])), {})
+        try:
+            if lock is not None:
+                lock.execute(text("SELECT 1"))
+            code = run()
+            now = next((w for w in launch_schedule.weeks()["weeks"] if w["date"] == str(week["date"])), {})
+        except Exception:
+            log.exception("This watch cycle crashed; the watch carries on")
+            tell(notify.failure, "a watch cycle crashed", traceback.format_exc()[-1500:])
+            code, now = 1, {}
         if now.get("status") == "loaded" and now.get("closed"):
             log.info("This week's wave is loaded and closed: watch over")
             return code
@@ -231,12 +256,13 @@ def watchdog() -> int:
 
 def main() -> int:
     planned = launch_schedule.planned_today()
-    with get_engine("etl").connect() as lock:   # one run at a time: a hand-run --due and launchd would load a wave twice
-        if not lock.execute(text("SELECT GET_LOCK('cip_etl', 0)")).scalar():
-            log.info("Another CIP run holds the lock; this one stops")
-            return 0
-        beat("running", RUN_HOURS)
-        code = watch(planned) if planned else run()   # the lock goes with the connection
+    try:
+        with etl_lock() as lock:   # one writer at a time: a hand-run --due and launchd would load a wave twice
+            beat("running", RUN_HOURS)
+            code = watch(planned, lock) if planned else run()
+    except Locked:
+        log.info("Another CIP run holds the lock; this one stops")
+        return 0
     beat("finished", 0, last_exit=code)
     return code
 

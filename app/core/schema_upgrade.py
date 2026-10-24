@@ -19,7 +19,7 @@ from app.core.database import apply_sql
 SQL_DIR = Path(__file__).resolve().parents[2] / "sql"
 SQL_FILES = [SQL_DIR / "001_schema.sql", SQL_DIR / "002_views.sql",
              SQL_DIR / "003_seed_topics.sql", SQL_DIR / "005_serving.sql",
-             SQL_DIR / "006_dashboards.sql", SQL_DIR / "007_team.sql"]
+             SQL_DIR / "006_dashboards.sql", SQL_DIR / "007_team.sql", SQL_DIR / "008_access.sql"]
 
 # NOT NULL: MySQL lets repeated NULLs through a unique key, and source_ref is
 # part of the wave identity (uq_survey_source).
@@ -57,6 +57,7 @@ COLUMNS: list[tuple[str, str, str]] = [
     ("cip_forsta_survey", "quota_json", "TEXT NULL"),
     ("cip_forsta_survey", "attempts", "SMALLINT NOT NULL DEFAULT 0"),
     ("cip_forsta_survey", "quota_at", "DATETIME NULL"),
+    ("srv_wave", "in_field", "TINYINT(1) NOT NULL DEFAULT 0"),   # still collecting answers (etl/serving.py)
 ]
 
 # v1 waves all came from Forsta: their path is their source reference.
@@ -70,7 +71,7 @@ NOT_NULL: list[tuple[str, str, str]] = [("cip_survey", "source_ref", SOURCE_REF)
 # a metadata-only change in MySQL 8; SQLite stores the set as text and needs nothing.
 WIDEN: list[tuple[str, str, str, str]] = [
     ("srv_result", "flags", "SET('small_base','base_changed_prior','base_changed_ly','wording_changed_prior',"
-     "'wording_changed_ly') NOT NULL DEFAULT ''", "wording_changed_ly"),
+     "'wording_changed_ly','sig_prior','sig_ly') NOT NULL DEFAULT ''", "sig_ly"),   # sig_*: BH-FDR 5 % (etl/serving.py)
     ("cip_dash_metric", "flags", "SET('small_base','base_changed_prior','base_changed_ly','prior_missing','ly_missing',"
      "'suppressed') NOT NULL DEFAULT ''", "suppressed"),
 ]
@@ -117,8 +118,8 @@ def plan(engine: Engine) -> list[str]:
     statements += tighten_statements(nullable, is_sqlite)
 
     for table, column, definition, newest in WIDEN:
-        if not is_sqlite and table in tables and newest not in str(
-                next(c["type"] for c in insp.get_columns(table) if c["name"] == column).values):
+        kind = next((c["type"] for c in insp.get_columns(table) if c["name"] == column), None) if table in tables else None
+        if not is_sqlite and kind is not None and newest not in str(getattr(kind, "values", None) or kind.enums):   # SET / ENUM
             statements.append(f"ALTER TABLE {table} MODIFY COLUMN {column} {definition}")
 
     for table, name, kind, cols in INDEXES:
@@ -191,4 +192,8 @@ def install(engine: Engine, dry_run: bool = False, force: bool = False) -> list[
             conn.execute(text(statement))
     for path in SQL_FILES:
         apply_sql(path, engine)
-    return statements
+    late = [s for s in plan(engine) if s not in BACKFILL]   # a table the files just created gets the columns above too
+    with engine.begin() as conn:
+        for statement in late:
+            conn.execute(text(statement))
+    return statements + late

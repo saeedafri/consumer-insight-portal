@@ -1,0 +1,13 @@
+# Census weighting targets (etl/weighting.py): the share of US adults (18+) in each group, in percent.
+# Each wave is raked to these three margins at once; a respondent with no value (or one not listed, e.g. a
+# non-binary gender) is left out of that margin only. Weights are trimmed to [trim_low, trim_high] × the mean.
+# Source: US Census Bureau, American Community Survey 2023 1-year (table S0101 for sex and age, regions summed
+# from states), rounded to one decimal. Check against the latest ACS release before quoting weighted figures
+# to clients; the keys must match cip_profile's values exactly.
+source: US Census Bureau, ACS 2023 1-year estimates, adults 18+
+margins:
+  gender: {Male: 49.0, Female: 51.0}
+  age_band: {"18-29": 20.5, "30-44": 25.5, "45-60": 25.0, "Over 60": 29.0}
+  census_region: {Northeast: 17.3, Midwest: 20.6, South: 38.4, West: 23.7}
+trim_low: 0.2
+trim_high: 5.0

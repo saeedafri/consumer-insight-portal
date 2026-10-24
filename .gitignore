@@ -25,3 +25,4 @@ logs/notify-state.json
 .impeccable/hook.cache.json
 data/published/
 logs/etl-heartbeat.json
+data/coded/

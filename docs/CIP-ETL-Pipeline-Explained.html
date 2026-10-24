@@ -5,19 +5,19 @@
 <title>How the Forsta ETL Works</title>
 <style>
 :root{
-  --ink:#1f2433; --muted:#5d6475; --line:#e3e6ee; --paper:#ffffff;
-  --src:#6d28d9; --src-bg:#f3edff;
-  --ext:#2563eb; --ext-bg:#e9f0ff;
-  --tra:#d97706; --tra-bg:#fff4e0;
-  --lod:#059669; --lod-bg:#e3f7ef;
-  --ver:#0e7490; --ver-bg:#e0f5f9;
-  --der:#db2777; --der-bg:#fde8f2;
-  --bad:#dc2626; --bad-bg:#fdeaea;
+  --ink:#2d2a29; --muted:#5f5c5b; --line:#e3e1e0; --paper:#ffffff;
+  --src:#2d2a29; --src-bg:#f2f2f2;
+  --ext:#005f8f; --ext-bg:#e6f0f5;
+  --tra:#2f6f8f; --tra-bg:#eef3f6;
+  --lod:#d62e2f; --lod-bg:#fbeaea;
+  --ver:#1e4e66; --ver-bg:#e8eef1;
+  --der:#4f4f4f; --der-bg:#f2f2f2;
+  --bad:#7a1819; --bad-bg:#f6e3e3;
   --def-bg:#fff8db; --def-line:#e0a800; --def-ink:#5a4600;
 }
 @page{ size:A4; margin:16mm 15mm 18mm 15mm;
   @bottom-right{ content:"Page " counter(page) " of " counter(pages); font:9px system-ui, sans-serif; color:#8a90a0; }
-  @bottom-left{ content:"CIP · How the Forsta ETL works · 13 Oct 2026"; font:9px system-ui, sans-serif; color:#8a90a0; }
+  @bottom-left{ content:"CIP · How the Forsta ETL works · Updated 23 Oct 2026"; font:9px system-ui, sans-serif; color:#8a90a0; }
 }
 @page :first{ @bottom-right{content:none} @bottom-left{content:none} }
 *{ box-sizing:border-box }
@@ -74,7 +74,7 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 .pill{ display:inline-block; padding:1px 8px; border-radius:10px; font-size:8.5pt; font-weight:700; color:#fff; background:var(--c) }
 
 /* cover */
-.cover{ height:262mm; display:flex; flex-direction:column; justify-content:space-between; background:linear-gradient(135deg,#312e81 0%,#6d28d9 35%,#db2777 70%,#f59e0b 100%); color:#fff; border-radius:14px; padding:26mm 18mm }
+.cover{ height:262mm; display:flex; flex-direction:column; justify-content:space-between; background:linear-gradient(135deg,#2d2a29 0%,#2d2a29 45%,#d62e2f 100%); color:#fff; border-radius:14px; padding:26mm 18mm }
 .cover h1{ font-size:34pt; letter-spacing:-.5px }
 .cover .sub{ font-size:14pt; opacity:.95; margin-top:10px; max-width:150mm }
 .cover .stages{ display:flex; gap:6px; flex-wrap:wrap }
@@ -91,12 +91,12 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
   <div>
     <div style="font-size:11pt;opacity:.9;letter-spacing:2px">CONSUMER INSIGHT PORTAL</div>
     <h1 style="margin-top:12px">How the Forsta ETL works</h1>
-    <div class="sub">From a survey in Forsta to verified, report-ready numbers in our database. Each stage is explained step by step, with every technical word defined where it first appears.</div>
+    <div class="sub">From a survey in Forsta to verified, report-ready numbers on the portal and in the team's inbox. Each stage is explained step by step, with every technical word defined where it first appears.</div>
   </div>
   <div class="stages">
-    <span>① Source: Forsta</span><span>② Schedule</span><span>③ API</span><span>④ Data received</span><span>⑤ Extract</span><span>⑥ Transform</span><span>⑦ Load</span><span>⑧ Verify</span><span>⑨ Derive</span><span>⑩ Failures</span>
+    <span>① Source: Forsta</span><span>② Schedule</span><span>③ API</span><span>④ Data received</span><span>⑤ Extract</span><span>⑥ Transform</span><span>⑦ Load</span><span>⑧ Verify</span><span>⑨ Derive &amp; publish</span><span>⑩ Failures</span><span>⑪ Timing &amp; memory</span>
   </div>
-  <div style="font-size:10pt;opacity:.9">Version 1.0 · 13 October 2026 · Facts taken from the code (<code style="background:rgba(255,255,255,.2);color:#fff">etl/</code>, <code style="background:rgba(255,255,255,.2);color:#fff">scripts/</code>) and the live database</div>
+  <div style="font-size:10pt;opacity:.9">Version 1.0 · 13 October 2026 · <b>Updated 23 Oct 2026</b> (version 1.1: Monday watch schedule, stricter load, value-by-value checks, serving rows, dashboards, publishing, team email, measured timing and memory) · Facts taken from the code (<code style="background:rgba(255,255,255,.2);color:#fff">etl/</code>, <code style="background:rgba(255,255,255,.2);color:#fff">scripts/</code>) and the live database</div>
 </div>
 
 <!-- ============ 0 HOW TO READ + BIG PICTURE ============ -->
@@ -118,36 +118,37 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
   <div>7. Transform: turning JSON into rows</div>
   <div>8. Load: writing to the database</div>
   <div>9. Verify: proving nothing was lost</div>
-  <div>10. Derive: making it report-ready</div>
+  <div>10. Derive: making it report-ready, publishing, telling the team</div>
   <div>11. What we ingest and what we never store</div>
   <div>12. When something goes wrong</div>
   <div>13. Worked example: one wave, start to finish</div>
+  <div>14. Timing and memory (measured 23 Oct 2026)</div>
 </div>
 
-<h2 class="src" style="background:#312e81;margin-top:18px">1. The whole pipeline on one page</h2>
-<p><span class="k">ETL</span> <span class="d">Extract, Transform, Load: take data out of one system, reshape it, and put it into another</span> is the program that copies our consumer survey answers from Forsta into our database. It runs on its own, several times a day.</p>
+<h2 class="src" style="background:#2d2a29;margin-top:18px">1. The whole pipeline on one page</h2>
+<p><span class="k">ETL</span> <span class="d">Extract, Transform, Load: take data out of one system, reshape it, and put it into another</span> is the program that copies our consumer survey answers from Forsta into our database, and on to the portal and the team's inbox. It runs on its own: on each planned launch Monday it watches Forsta every 30 minutes until that week's wave is in, and every Friday it does one catch-all run.</p>
 
 <div class="flow">
   <div class="node src"><b>Forsta</b>The survey tool where respondents answer the weekly survey</div><div class="arrow">→</div>
   <div class="node ext"><b>Extract</b>Ask Forsta which surveys exist; download each finished one</div><div class="arrow">→</div>
   <div class="node tra"><b>Transform</b>Turn Forsta's JSON into questions, respondents and answers; drop personal data</div><div class="arrow">→</div>
   <div class="node lod"><b>Load</b>Write everything into the <code>cip_</code> tables in one safe step</div><div class="arrow">→</div>
-  <div class="node ver"><b>Verify</b>Count that the database matches Forsta exactly</div><div class="arrow">→</div>
-  <div class="node der"><b>Derive</b>Build demographics, totals, search, line-by-line table, calendar</div>
+  <div class="node ver"><b>Verify</b>Count, then compare every value, against Forsta</div><div class="arrow">→</div>
+  <div class="node der"><b>Derive &amp; publish</b>Demographics, totals, serving rows, dashboards, published files; email and Teams to the team</div>
 </div>
 
-<table class="keep" style="--c:#312e81">
+<table class="keep" style="--c:#2d2a29">
 <thead><tr><th style="width:18%">Stage</th><th>What actually happens</th><th style="width:26%">Code</th></tr></thead>
 <tbody>
 <tr><td><span class="pill src">Source</span></td><td>Respondents from a panel answer a survey in Forsta. When the target of about 400 qualified people is reached, the survey is <b>closed</b>.</td><td>—</td></tr>
-<tr><td><span class="pill ext">Extract</span></td><td>Gets the list of every survey. Each survey is marked <i>waiting</i>, <i>due</i>, <i>loaded</i> or <i>hibernated</i>. For each <i>due</i> survey it downloads the questionnaire and every response.</td><td><code>etl/forsta_etl.py</code> <code>etl/forsta_client.py</code></td></tr>
+<tr><td><span class="pill ext">Extract</span></td><td>Gets the list of every survey. Each survey is marked <i>testing</i>, <i>due</i>, <i>loaded</i>, <i>failed</i>, <i>hibernated</i> or <i>too small</i>. For each <i>due</i> survey it downloads the questionnaire and every response.</td><td><code>etl/forsta_etl.py</code> <code>etl/forsta_client.py</code></td></tr>
 <tr><td><span class="pill tra">Transform</span></td><td>Works out each question's type (single choice, tick-all, grid, number, text). Converts every answer from text to the right type. Removes or scrambles personal fields.</td><td><code>etl/forsta_api.py</code> <code>etl/records.py</code></td></tr>
-<tr><td><span class="pill lod">Load</span></td><td>Writes the survey, its questions, its respondents and their answers. Respondents and answers are written together, so they either all succeed or all fail.</td><td><code>etl/loaders.py</code></td></tr>
-<tr><td><span class="pill ver">Verify</span></td><td>Checks that the numbers of respondents, questions and answers match what Forsta sent. Only then does the wave appear in reports.</td><td><code>verify()</code> in <code>etl/forsta_etl.py</code></td></tr>
-<tr><td><span class="pill der">Derive</span></td><td>Builds age and income bands, regions, cross-wave question links, pre-counted totals, search, the data team's line-by-line table and the survey calendar.</td><td><code>etl/run_pipeline.py</code> <code>app/data/</code></td></tr>
+<tr><td><span class="pill lod">Load</span></td><td>Writes the survey, its questions, its respondents and their answers. Respondents and answers are written together, so they either all succeed or all fail. Any warning from the database fails the load instead of silently changing a value.</td><td><code>etl/loaders.py</code> <code>app/core/database.py</code></td></tr>
+<tr><td><span class="pill ver">Verify</span></td><td>Checks that the numbers of respondents, questions and answers match what Forsta sent. Only then does the wave appear in reports. The weekly run then compares every stored answer with Forsta, value by value, and runs the integrity checks.</td><td><code>verify()</code>, <code>reconcile_survey()</code> in <code>etl/forsta_etl.py</code>; <code>etl/integrity.py</code></td></tr>
+<tr><td><span class="pill der">Derive</span></td><td>Builds age and income bands, regions, cross-wave question links, pre-counted totals, search, the data team's line-by-line table, the serving rows every screen reads (with significance flags), the topic dashboards and the published files. Then it emails and posts to the team.</td><td><code>etl/run_pipeline.py</code> <code>app/data/</code> <code>etl/serving.py</code> <code>api/dashboards.py</code> <code>etl/publish.py</code> <code>etl/notify.py</code></td></tr>
 </tbody></table>
 
-<div class="box ver"><div class="t">In one sentence</div>Several times a day the job asks Forsta "what's new and finished?". It downloads each new survey in full, reshapes it and stores it. It then counts that nothing was lost before anyone can see it.</div>
+<div class="box ver"><div class="t">In one sentence</div>Every planned Monday evening the job starts asking Forsta "is this week's wave finished?" every 30 minutes. When it is, it downloads it in full, reshapes and stores it, proves nothing was lost, builds every finished number, publishes the portal's files and emails the team. A whole wave takes about 4–5.5 minutes end to end (section 14).</div>
 </section>
 
 <!-- ============ 2 SOURCE ============ -->
@@ -175,7 +176,7 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <tr><td><b>Weekly tracker</b></td><td>"Shopping and Spending – inc …". Launched every <b>Monday</b>. It has 15 core questions (q1–q5 activities and purchases, CS1–CS2 outlook, D1–D8 demographics) plus that week's modules.</td></tr>
 <tr><td><b>Module</b></td><td><span class="k">Module</span> <span class="d">an extra block of questions added to a wave, such as a retail sector or a topic like tariffs or GLP-1</span>. The lead sector rotates every 12 weeks: Drugstore → eCommerce → Luxury → Dept stores → Beauty → Home furnishings → Home improvement → Social commerce → Off-price → Apparel → Mass/warehouse → Footwear.</td></tr>
 <tr><td><b>Holiday tracker</b></td><td>Questions coded <code>XM</code>, added to every weekly wave from late September to December. Waves are numbered within each season.</td></tr>
-<tr><td><b>Annual / ad hoc</b></td><td>Annual studies (holiday shopping, back to school, online grocery…) and one-off client studies. Same pipeline, same tables.</td></tr>
+<tr><td><b>Annual / ad hoc</b></td><td>Annual studies (holiday shopping, back to school, online grocery…) and one-off client studies. Same pipeline, same tables. They field for days (Holiday 2025: 8 days), so they load <b>only once Forsta closes them</b>. Annual studies whose titles change from year to year are tied into one <span class="k">family</span> <span class="d">the group of waves compared over time; see 6.4</span> by a list in <code>config/survey_map.yml</code> (Holiday, Online Grocery, Apparel, Back to School, Shopping and Social Media), so they compare year on year.</td></tr>
 </tbody></table>
 
 <h3 class="src">2.3 Our access</h3>
@@ -197,25 +198,26 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <p>The job is started by <span class="k">launchd</span> <span class="d">the macOS built-in scheduler, which runs a program at set times like cron on a server; if the Mac was asleep, it runs the missed slot when it wakes</span> through the agent <code>com.coresight.cip-forsta-etl</code>, which runs <code>scripts/weekly_forsta.py</code>.</p>
 
 <h3 class="ext">3.1 The schedule (India time, IST)</h3>
+<p>Since 23 Oct the job no longer runs at fixed times every day. It follows the data team's <span class="k">launch schedule</span> <span class="d">the "Tracking by Week" tab of the team's workbook, imported into config/launch_schedule.yml: which Monday each lead sector and topic goes out</span>.</p>
 <table class="ext">
-<thead><tr><th>Day</th><th>09:00</th><th>14:00</th><th>23:30</th><th>Why</th></tr></thead>
+<thead><tr><th style="width:22%">When</th><th>What happens</th></tr></thead>
 <tbody>
-<tr><td>Monday</td><td>✅</td><td></td><td></td><td>Daily safety run</td></tr>
-<tr><td><b>Tuesday</b></td><td>✅</td><td>✅</td><td>✅</td><td>Most waves close Monday night to Tuesday</td></tr>
-<tr><td><b>Wednesday</b></td><td>✅</td><td>✅</td><td>✅</td><td>Late waves close by Wednesday 23:00</td></tr>
-<tr><td>Thu – Sun</td><td>✅</td><td></td><td></td><td>Picks up ad hoc studies and reopened surveys</td></tr>
+<tr><td><b>Planned Monday, 17:30</b></td><td>A heads-up goes to Teams ("Forsta launches … today ~18:00 IST"). Then the <span class="k">watch</span> <span class="d">one long-running job that repeats the normal run every 30 minutes</span> starts: a run every <b>30 minutes</b> until that week's wave is loaded <b>and</b> Forsta has closed it, for at most <b>54 hours</b> (Mon 17:30 → Wed 23:30).</td></tr>
+<tr><td><b>Friday, 09:00</b></td><td>One catch-all run. It picks up annual and ad hoc studies, reopened surveys, and any wave the watch missed. Friday's run also always does the full integrity and drift checks.</td></tr>
+<tr><td>Hourly</td><td>A separate <span class="k">watchdog</span> <span class="d">a small check that reads the job's "heartbeat" file and raises an alert if a run went silent, a planned Monday never started, or nothing has run for 8 days</span>.</td></tr>
 </tbody></table>
-<p>That is <b>13 runs a week</b>. Most find nothing to do and finish in seconds. On a server the same schedule is cron <code>0 9 * * *</code>, <code>0 14 * * 2,3</code>, <code>30 23 * * 2,3</code>.</p>
+<p>The schedule never runs out. The workbook's Mondays come first; after its last Monday, <b>every Monday counts as a launch</b> except dates listed under <code>skip:</code> in <code>config/launch_schedule.yml</code> (a holiday week, say), which an import of a new workbook keeps. launchd starts the job every Monday at 17:30; the job itself decides whether today is a planned launch. On a server the same two slots are <code>Mon 12:00</code> and <code>Fri 03:30</code> UTC (<code>deploy/etl-loop.sh</code>).</p>
+<div class="box ext"><div class="t">One run at a time</div>Every program that writes pipeline data (the scheduled run, a hand load, serving and cube rebuilds, publish, integrity repairs) takes the same <span class="k">run lock</span> <span class="d">a named lock held in the database (GET_LOCK 'cip_etl'); a second writer finds it taken and stops politely instead of colliding</span>. Two writers at once caused deadlocks on 20 Oct; this prevents it. The lock is held by a database connection, so a killed run frees it automatically, and the 54-hour watch keeps it alive with a tiny query every cycle.</div>
 
-<h3 class="ext">3.2 A typical week, measured over 66 weekly waves</h3>
+<h3 class="ext">3.2 A typical week</h3>
 <div class="flow">
-  <div class="node src"><b>Mon 17:30–18:30 IST</b>Survey launches (12–13 UTC) in 56 of 66 waves</div><div class="arrow">→</div>
-  <div class="node src"><b>In field</b>Median 13 hours to reach ≈400 qualified; 90% within 49 h</div><div class="arrow">→</div>
-  <div class="node src"><b>Closed</b>Between Mon 20:00 and Wed 23:00 IST</div><div class="arrow">→</div>
-  <div class="node ext"><b>Next run</b>Tue/Wed 09:00, 14:00 or 23:30 finds it <i>due</i></div><div class="arrow">→</div>
-  <div class="node ver"><b>In reports</b>1.5–3 minutes later, verified</div>
+  <div class="node src"><b>Mon ~17:30–18:30 IST</b>Survey launches in Forsta; our watch starts at 17:30</div><div class="arrow">→</div>
+  <div class="node src"><b>In field</b>Closes itself at its quota of ≈400 qualified; median ≈13 h after launch</div><div class="arrow">→</div>
+  <div class="node ext"><b>Next 30-min poll</b>Finds it closed (or fielded, below) → <i>due</i></div><div class="arrow">→</div>
+  <div class="node ver"><b>In the portal</b>About 4–5.5 minutes later: verified, published, emailed</div>
 </div>
-<div class="box ext"><div class="t">So how fresh is the data?</div>A wave is usually in the database within <b>a few hours of closing</b>, and at most about 10–15 hours later (the gap between two runs). A wave is <b>never</b> loaded while it is still <i>live</i>, because it would be incomplete.</div>
+<div class="box ext"><div class="t">So how fresh is the data?</div>Because the watch polls every 30 minutes, a weekly wave is usually loaded <b>within half an hour of finishing</b>. With the median of about 13 hours in field, the data typically lands on <b>Tuesday morning IST</b>.
+<br><b>Trackers only:</b> Forsta sometimes leaves a full wave open (19 Oct: Midwest 80 of 85). So a weekly tracker counts as <span class="k">fielded</span> <span class="d">fieldwork is over even though Forsta still says "live"</span> once any of these holds: <b>9 hours</b> since launch (about 03:00 IST), <b>400 qualified</b>, or every quota cell full. It is then loaded, marked "in field", and reloaded in place when Forsta closes it. <b>Annual and ad hoc studies never use this rule</b>: they load only once Forsta closes them, so they are never published half-fielded.</div>
 
 <h3 class="ext">3.3 What one run does, in order</h3>
 <div class="vflow">
@@ -229,9 +231,17 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
   <div class="down">↓</div>
   <div class="node tra"><span class="num">5</span><b>Extract → Transform → Load → Verify → Derive</b> each due wave, oldest first (sections 6–10).</div>
   <div class="down">↓</div>
-  <div class="node der"><span class="num">6</span><b>Drift check.</b> Recompute every frozen published number. If one moved, exit 3. <span class="k">Drift</span> <span class="d">a number already published to clients changing because the underlying data changed</span></div>
+  <div class="node der"><span class="num">6</span><b>Tell the team</b> about each new wave: email with the Excel files, plus a Teams message (section 10.2). If nothing was due, the run stops here (except on Friday).</div>
+  <div class="down">↓</div>
+  <div class="node ver"><span class="num">7</span><b>Integrity checks</b>, then <b>value-by-value reconciliation</b> of each newly loaded wave against Forsta (section 9).</div>
+  <div class="down">↓</div>
+  <div class="node der"><span class="num">8</span><b>Topic dashboards</b> of the new waves, then the team's <b>metric alerts</b>.</div>
+  <div class="down">↓</div>
+  <div class="node der"><span class="num">9</span><b>Publish</b> the portal's files (also after a failed reload, so no screen keeps stale numbers).</div>
+  <div class="down">↓</div>
+  <div class="node der"><span class="num">10</span><b>Drift check.</b> Recompute every frozen published number. If one moved, exit 3. <span class="k">Drift</span> <span class="d">a number already published to clients changing because the underlying data changed</span></div>
 </div>
-<p>Everything is appended to <code>logs/forsta-etl.log</code>.</p>
+<p>Everything is appended to <code>logs/forsta-etl.log</code>; every warning and error also goes to <code>logs/forsta-etl-errors.jsonl</code>, with secrets masked. A run that finds nothing new costs a handful of Forsta calls and two small queries.</p>
 </section>
 
 <!-- ============ 4 API ============ -->
@@ -253,17 +263,18 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <tr><td>Client code</td><td><code>etl/forsta_client.py</code>, class <code>ForstaClient</code></td></tr>
 </tbody></table>
 
-<h3 class="ext">4.2 The four endpoints, the only ones we use</h3>
+<h3 class="ext">4.2 The five endpoints, the only ones we use</h3>
 <p>An <span class="k">endpoint</span> <span class="d">one specific API address that returns one kind of data</span>:</p>
 <table class="ext">
 <thead><tr><th style="width:32%">Endpoint (all GET)</th><th>Returns</th><th style="width:21%">How often</th></tr></thead>
 <tbody>
 <tr><td><code>rh/users/self</code></td><td>Who the key belongs to. Used only to prove the key works.</td><td>1 per run</td></tr>
-<tr><td><code>rh/companies/all/surveys</code></td><td>Every survey the key can see, with path, title, state, hibernated, tags, dates and counts (about 90 surveys).</td><td>1 per run</td></tr>
+<tr><td><code>rh/companies/all/surveys</code></td><td>Every survey the key can see, with path, title, state, hibernated, tags, dates and counts (about 90 surveys).</td><td>1 per run, plus 1 when something is due</td></tr>
+<tr><td><code>surveys/{path}/quota</code></td><td>How full each <span class="k">quota cell</span> <span class="d">a target group, e.g. "Midwest: 85 people"</span> is. Read only for surveys that are <i>live</i>, to decide whether a tracker wave has finished fielding; also shown on the portal's Launch schedule page.</td><td>1 per live survey per run</td></tr>
 <tr><td><code>surveys/{path}/datamap?format=json</code></td><td>The questionnaire definition (≈0.5 MB).</td><td>1 per wave loaded</td></tr>
-<tr><td><code>surveys/{path}/data?format=json</code></td><td>Every respondent's answers (≈2 MB per 500 respondents). We send <b>no</b> <code>cond</code> filter, so all statuses come back: terminated, over quota, qualified and partial.</td><td>1 per wave loaded; 1 per wave in a reconciliation</td></tr>
+<tr><td><code>surveys/{path}/data?format=json</code></td><td>Every respondent's answers (≈2 MB per 500 respondents). We send <b>no</b> <code>cond</code> filter, so all statuses come back: terminated, over quota, qualified and partial.</td><td>2 per wave loaded (the load, then the value check); 1 per wave in a reconciliation</td></tr>
 </tbody></table>
-<div class="box ext"><div class="t">Calls per run</div>A run with nothing due makes <b>2 calls</b>. A run that loads one weekly wave makes <b>4 calls</b>: key, list, datamap and data. The survey list is fetched once and reused for every wave in the run.</div>
+<div class="box ext"><div class="t">Calls per run</div>A run with nothing due makes <b>2 calls</b>, plus one quota call per live survey. A run that loads one weekly wave makes about <b>6 calls</b>: key, list, list again for the load, datamap, data, and data once more for the value-by-value check. The watch stops polling as soon as the week's wave is loaded and closed.</div>
 
 <h3 class="ext">4.3 What Forsta's answers mean</h3>
 <p>Every reply carries an <span class="k">HTTP status code</span> <span class="d">a three-digit number with every web reply: 2xx success, 4xx a problem with our request, 5xx a problem on the server</span>:</p>
@@ -331,7 +342,7 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <tr><td>Questions per wave</td><td>≈60 (1,416 measured across the loaded waves)</td></tr>
 <tr><td>Answer rows stored per wave</td><td>≈145,000 on average (4,476,153 across 31 Forsta waves)</td></tr>
 <tr><td>Download size</td><td>datamap ≈0.5 MB + data ≈2 MB</td></tr>
-<tr><td>Load time</td><td>1.5 – 3 minutes, mostly ≈250 ms database round trips from India to Azure</td></tr>
+<tr><td>Load time</td><td>Usually 1.5 – 3 minutes for the load step (219 s measured on 23 Oct, see section 14), mostly ≈250 ms database round trips from India to Azure</td></tr>
 </tbody></table>
 </section>
 
@@ -345,9 +356,14 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 
 <div class="vflow">
   <div class="node ext"><b>For each survey in Forsta's list…</b></div>
-  <div class="down">↓ <small>Already loaded and neither the close date nor the total changed?</small></div>
+  <div class="down">↓ <small>Already loaded, and either still live or neither the close date nor the total changed?</small></div>
   <div class="branch">
-    <div class="node lod"><b>Yes → loaded.</b> Nothing to do.</div>
+    <div class="node lod"><b>Yes → loaded.</b> Nothing to do (a tracker loaded while live is reloaded once Forsta closes it).</div>
+    <div class="node ext"><b>No ↓</b> continue</div>
+  </div>
+  <div class="down">↓ <small>Live, a weekly tracker, and fielded (9 h since launch, 400 qualified, or quota full; section 3.2)?</small></div>
+  <div class="branch">
+    <div class="node tra"><b>Yes → due</b> (or <i>failed</i> if it failed last time)</div>
     <div class="node ext"><b>No ↓</b> continue</div>
   </div>
   <div class="down">↓ <small>Is Forsta's state "closed"?</small></div>
@@ -360,17 +376,23 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
     <div class="node bad"><b>Yes → hibernated.</b> Left alone. A person must reactivate it in Forsta.</div>
     <div class="node ext"><b>No ↓</b></div>
   </div>
+  <div class="down">↓ <small>Annual or ad hoc with fewer than 30 qualified?</small></div>
+  <div class="branch">
+    <div class="node bad"><b>Yes → too small.</b> An aborted or test launch: never loaded.</div>
+    <div class="node ext"><b>No ↓</b></div>
+  </div>
   <div class="down">↓</div>
   <div class="branch">
-    <div class="node bad"><b>Failed last time → failed</b> (retried this run)</div>
+    <div class="node bad"><b>Failed last time → failed</b> (retried, up to 3 attempts)</div>
     <div class="node tra"><b>Otherwise → due</b> (load this run)</div>
   </div>
 </div>
 <p><b>Reopened surveys:</b> if a loaded survey's close date or total changes (it was reopened and more people answered), it becomes <i>due</i> again and is reloaded in place.</p>
+<p>Every change of state is also written to a history table, <code>cip_forsta_event</code>, and each live survey's quota progress to the register, for the portal's Launch schedule page.</p>
 <p>Discovery also records <code>study_type</code>: <b>tracker</b> if the survey is tagged "Weekly consumer tracker" or titled "Shopping and spending…", <b>annual</b> if tagged "annual tracker", otherwise <b>adhoc</b>. In the same step it rebuilds the survey calendar (section 10).</p>
 
 <h3 class="ext">6.2 Step 2: choose what to load</h3>
-<p>All <i>due</i> and <i>failed</i> surveys are taken <b>oldest close date first</b> and loaded <b>one at a time</b>. If one fails, its error is saved in <code>last_error</code> and the run moves on to the next. One bad survey never blocks the others.</p>
+<p>All <i>due</i> surveys, and <i>failed</i> ones with fewer than <b>3 attempts</b>, are taken <b>oldest close date first</b> and loaded <b>one at a time</b>. If one fails, its error is saved in <code>last_error</code> and the run moves on to the next. One bad survey never blocks the others. A survey that has failed 3 times in a row waits for a person to run it by hand (section 12), instead of a full download every 30 minutes.</p>
 
 <h3 class="ext">6.3 Step 3: download the wave</h3>
 <div class="flow">
@@ -387,7 +409,7 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <tbody>
 <tr><td>Wave date / label</td><td>The <b>Monday</b> of the earliest completion date among <b>qualified</b> records (all records if none qualified). The wave launched Mon 5 Oct 2026 becomes <code>2026-10-05</code>.</td></tr>
 <tr><td>Reload</td><td>A survey this pipeline has loaded before (load log <code>forsta:{path}</code>) keeps its wave label and internal <code>survey_id</code>, even if its first date moves.</td></tr>
-<tr><td>Family</td><td><code>CSI-US</code> for the weekly tracker. For other studies, the title without the year in capitals (<code>HOLIDAY_SHOPPING</code>). <span class="k">Family</span> <span class="d">the group of waves that are compared with each other over time</span></td></tr>
+<tr><td>Family</td><td><code>CSI-US</code> for the weekly tracker. For other studies, the family listed for that survey in <code>config/survey_map.yml</code> (so "Holiday Shopping and Spending 2025" and "Holiday Shopping 2026" are both <code>HOLIDAY_SHOPPING</code>); if it is not listed, the title without the year in capitals. <span class="k">Family</span> <span class="d">the group of waves that are compared with each other over time</span></td></tr>
 </tbody></table>
 </section>
 
@@ -454,7 +476,7 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <tbody>
 <tr><td>Code (single, grid row, checkbox item)</td><td><code>value_code</code> as a whole number (<code>"3"</code> and <code>"3.0"</code> both become 3), plus <code>value_label</code>, e.g. "Female".</td></tr>
 <tr><td>Code that is not a whole number</td><td>The raw text goes in <code>value_label</code>; no code is invented.</td></tr>
-<tr><td>Number</td><td><code>value_number</code>, only if it is a real finite number below 10<sup>14</sup> (the column holds 4 decimals).</td></tr>
+<tr><td>Number</td><td><code>value_number</code>, only if it is a real finite number below 10<sup>14</sup>, <b>rounded to the 4 decimals the column holds</b> (a timing such as <code>12.642187</code> is stored as 12.6422). Interview seconds are rounded the same way.</td></tr>
 <tr><td>Text</td><td><code>value_text</code>, exactly as typed.</td></tr>
 <tr><td>Empty</td><td><b>No row.</b> "Not answered" means no row exists.</td></tr>
 <tr><td>Checkbox "0"</td><td><b>Stored.</b> It means "shown but not ticked", and it gives every tick-all question its base of people who answered.</td></tr>
@@ -489,13 +511,15 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
   <div class="node lod" style="border-width:3px"><span class="num">4</span><b>Transaction A, all or nothing:</b><br>
     a) upsert every respondent into <code>cip_respondent</code>, keyed by survey + record;<br>
     b) delete respondents Forsta no longer sends, with their answers, profile and cohort rows;<br>
-    c) delete the wave's old answers, then insert the new ones in batches of 5,000 rows.</div>
+    c) delete the wave's old answers, then upload the new ones in <b>one</b> <span class="k">LOAD DATA</span> <span class="d">MySQL's bulk loader: the rows travel as one compact tab-separated file instead of thousands of INSERT statements</span> statement. If the database reports <b>any warning at all</b>, even a mild "note", the whole transaction is undone and the wave fails: a value is never silently changed.</div>
   <div class="down">↓</div>
   <div class="node ver"><span class="num">5</span><b>Verify</b> (section 9). If anything is off, the wave is marked <i>failed</i>.</div>
   <div class="down">↓</div>
-  <div class="node der"><span class="num">6–11</span><b>Derive</b>: profiles, question bases, concepts, cohorts and cube, search, line-by-line (section 10).</div>
+  <div class="node lod"><span class="num">6</span><b>Tidy the answer list</b>: an answer row the questionnaire no longer lists <b>and nobody chose</b> is removed (8.2).</div>
   <div class="down">↓</div>
-  <div class="node lod"><span class="num">12–14</span><b>Finish</b>: log row closed with row counts. <code>cip_survey.load_status = verified</code>, register set to <i>loaded</i>, calendar rebuilt.</div>
+  <div class="node der"><span class="num">7–13</span><b>Derive</b>: profiles, question bases, concepts, cohorts and cube, search, line-by-line, serving rows (section 10).</div>
+  <div class="down">↓</div>
+  <div class="node lod"><span class="num">14–16</span><b>Finish</b>: log row closed with row counts. <code>cip_survey.load_status = verified</code>, register set to <i>loaded</i>, calendar rebuilt, and next week's and next year's waves refreshed so they compare with this one.</div>
 </div>
 
 <h3 class="lod">8.1 Why it is safe to run again and again</h3>
@@ -503,9 +527,20 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
   <div class="box lod"><div class="t">Idempotent</div><span class="k">Idempotent</span> <span class="d">running the same load twice gives exactly the same result as running it once</span>. Every write is an upsert or a replace keyed on Forsta's own ids (path, uuid, record, variable label), so nothing is ever duplicated.</div>
   <div class="box lod"><div class="t">No half-loaded waves</div>If transaction A fails, the previous answers are untouched. A wave that was already verified stays visible with its old, correct data.</div>
 </div>
-<div class="box lod"><div class="t">Why batches?</div>Each database call from India to Azure takes about 250 ms. Writing 145,000 answers one by one would take 10 hours. Batches of 5,000 keep a wave to a fixed, small number of calls, which is why a wave loads in 1.5–3 minutes.</div>
+<div class="box lod"><div class="t">Why one bulk upload?</div>Each database call from India to Azure takes about 250 ms. Writing 145,000 answers one by one would take 10 hours. One LOAD DATA upload sends them all at once; the whole write step on 23 Oct (693 respondents and 128,665 answers) took 20.6 s. The upload file is temporary and deleted straight away. If the server refuses bulk uploads, the loader falls back to batches of 5,000 rows.</div>
 
-<h3 class="lod">8.2 Where it lands: the main tables</h3>
+<h3 class="lod">8.2 What changed in the load since 14 Oct</h3>
+<table class="lod">
+<thead><tr><th style="width:26%">Change</th><th>Why it matters</th></tr></thead>
+<tbody>
+<tr><td><b>Decimals rounded to 4 places</b></td><td>MySQL stores 4 decimals. A longer value (a Forsta timing like <code>qtime</code> on 20 Oct) used to make the database round it with a warning, and the strict warning gate would then fail the whole wave on every attempt. Rounding first means a long decimal no longer fails a wave.</td></tr>
+<tr><td><b>Strict warning gate</b></td><td>Any LOAD DATA warning undoes the write. Better a loud failure than a quietly altered number.</td></tr>
+<tr><td><b>Unlisted, unchosen answers removed</b> (<code>drop_unlisted_items</code>)</td><td>Definitions are only ever added or updated, never deleted. So when a questionnaire's answer list is corrected, the old rows used to linger as empty duplicates ("YouTube 0 %" next to "YouTube 47 %"). After the answers are written, a row the questionnaire no longer lists <b>and that nobody chose</b> (no code other than 0, no number, no text) is deleted with its "not chosen" zeros. A row with real answers is always kept. Both loaders (Forsta and legacy) do this.</td></tr>
+<tr><td><b>Legacy relabel</b> (surveys 97 and 201)</td><td>In two old waves the answer ids had shifted: SurveyMonkey survey 97 (US Social Commerce 2023) filed Facebook's 818 picks under "LinkedIn", and Qualtrics survey 201 (tracker, 15 Aug 2022) had 88 shifted grocery-retailer answers covering 8,029 picks. The legacy loader now gives each answer the one text its respondents actually saw. A scan of all 287 legacy waves found nothing else. After the reload, survey 97's Q7 shows Facebook 818 (63.3 %) and YouTube 612 (47.3 %).</td></tr>
+<tr><td><b>Failed reload drops its serving rows</b></td><td>If a reload fails after its write, that wave's serving rows are removed, so no screen or published file keeps numbers for answers that have changed (section 12).</td></tr>
+</tbody></table>
+
+<h3 class="lod">8.3 Where it lands: the main tables</h3>
 <table class="lod">
 <thead><tr><th style="width:26%">Table</th><th>One row per</th><th style="width:18%">Per weekly wave</th></tr></thead>
 <tbody>
@@ -515,6 +550,7 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <tr><td><code>cip_respondent</code></td><td>Person who started</td><td>403 – 887</td></tr>
 <tr><td><code>cip_answer</code></td><td>Person × variable answered</td><td>≈145,000</td></tr>
 <tr><td><code>cip_load_log</code></td><td>Load run</td><td>1 per load</td></tr>
+<tr><td><code>srv_wave</code> / <code>srv_result</code></td><td>Served wave / finished cell (answer × cut, with %, prior, last year and flags)</td><td>1 / ≈12,000 (12,425 for wave 415)</td></tr>
 </tbody></table>
 </section>
 
@@ -531,7 +567,31 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 </div>
 <div class="box bad"><div class="t">Any difference</div>The error "<code>{path} does not match its payload</code>" is saved in <code>cip_load_log.error_text</code> and <code>cip_forsta_survey.last_error</code>. The wave is marked <b>failed</b>, stays hidden and is retried at the next run.</div>
 
-<h3 class="ver">9.1 Visibility</h3>
+<h3 class="ver">9.1 Two gates since 23 Oct: the count, then every value</h3>
+<p>The count gate above proves nothing was <i>lost</i>. It cannot see a value that was stored <i>wrong</i>. So once a wave is in, the weekly run downloads its data from Forsta a second time and compares <b>every stored answer with Forsta, value by value</b>: codes exactly, numbers to 4 decimals, texts exactly. It costs one more download of the wave from Forsta.</p>
+<table class="ver">
+<thead><tr><th style="width:30%">Result</th><th>What the run does</th></tr></thead>
+<tbody>
+<tr><td>All answers equal</td><td>Nothing; the wave stays published.</td></tr>
+<tr><td>Some answers differ</td><td>Counted as an integrity problem: alert "integrity check: N problems" with the first differences.</td></tr>
+<tr><td><b>Nothing could be checked</b> (<code>checked == 0</code>, e.g. Forsta unavailable or hibernated)</td><td>Also a problem, never a silent pass. The same rule applies to <code>python -m etl.forsta_etl --reconcile</code>.</td></tr>
+</tbody></table>
+
+<h3 class="ver">9.2 Integrity checks</h3>
+<p><code>etl/integrity.py</code> runs about 20 checks after every load and on every Friday. <b>Derived</b> problems are repaired on the spot (at most 20 waves per run, so a mass gap heals over a few runs); <b>orphan</b> rows are deleted; <b>base</b> problems are reported. Examples:</p>
+<table class="ver">
+<thead><tr><th style="width:44%">Check</th><th>Kind</th></tr></thead>
+<tbody>
+<tr><td>Verified wave without cube cells, search rows, or (tracker) line-by-line rows</td><td>derived, repaired</td></tr>
+<tr><td><b>Served wave whose serving rows differ from its cube cells</b> (cube cells must equal serving rows; checked for waves built in the last 7 days)</td><td>derived, rebuilt</td></tr>
+<tr><td>Search, tracker-line or calendar row pointing at something deleted</td><td>orphan, deleted</td></tr>
+<tr><td>Wave stuck <i>loading</i>; register says loaded but wave not verified; duplicate Forsta respondent; same panelist qualified twice</td><td>base, reported</td></tr>
+<tr><td>Closed Forsta survey not loaded after 3 days; hibernated before it was loaded</td><td>reported</td></tr>
+<tr><td>A planned tracker week (launch schedule) still not in the portal 4 days after its Monday</td><td>reported</td></tr>
+</tbody></table>
+<p>A problem it cannot repair ends the run with exit code 5 (section 12).</p>
+
+<h3 class="ver">9.3 Visibility</h3>
 <table class="ver">
 <thead><tr><th style="width:22%"><code>load_status</code></th><th>Meaning</th><th style="width:22%">In reports?</th></tr></thead>
 <tbody>
@@ -540,15 +600,15 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <tr><td><code>failed</code></td><td>Did not match, or a later step failed</td><td>No</td></tr>
 </tbody></table>
 
-<h3 class="ver">9.2 Reconciliation: an independent second check</h3>
-<p><span class="k">Reconciliation</span> <span class="d">re-downloading every loaded wave from Forsta and comparing every single stored answer with it</span> is run with <code>python scripts/reconcile.py</code>. It compares codes exactly, numbers to 4 decimals and texts exactly. Hibernated surveys are skipped with a warning.</p>
+<h3 class="ver">9.4 Full reconciliation: every wave, by hand</h3>
+<p><span class="k">Reconciliation</span> <span class="d">re-downloading every loaded wave from Forsta and comparing every single stored answer with it</span> is run by hand for <b>every</b> loaded wave with <code>python scripts/reconcile.py</code> (or <code>python -m etl.forsta_etl --reconcile</code>). It compares codes exactly, numbers to 4 decimals and texts exactly. A hibernated survey cannot be checked and now counts as a failure, not a pass. The weekly run does the same for each new wave automatically (9.1).</p>
 <div class="box ver"><div class="t">Last result (8 Oct 2026)</div><b>31 Forsta waves · 4,476,153 answers · 0 differences.</b> The 142 Qualtrics and 145 SurveyMonkey waves are checked against their <code>dwh_sm*</code> source the same way.</div>
 </section>
 
 <!-- ============ 10 DERIVE ============ -->
 <section>
-<h2 class="der">10. Derive: making it report-ready</h2>
-<p><b>What happens:</b> after verification, everything a report needs is calculated <b>once, at load time</b>, so the portal and exports only read finished numbers.</p>
+<h2 class="der">10. Derive: making it report-ready, publishing, telling the team</h2>
+<p><b>What happens:</b> after verification, everything a report needs is calculated <b>once, at load time</b>, so the portal and exports only read finished numbers. Then the portal's files are published and the team is told.</p>
 
 <table class="der">
 <thead><tr><th style="width:24%">Output (table)</th><th>What it is and how it is built</th></tr></thead>
@@ -559,11 +619,41 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 • <b>Income midpoint</b> ($000): &lt;$25k = 13 · $25–49.9k = 37.5 · $50–99.9k = 75 · $100–149.9k = 125 · $150–199.9k = 175 · $200k+ = 225<br>
 • <b>Census region</b>: state → Northeast / Midwest / South / West</td></tr>
 <tr><td><b>Question base</b><br><code>cip_question.base_n</code></td><td><span class="k">Base</span> <span class="d">the number of people a percentage is calculated over: qualified respondents who were shown the question</span></td></tr>
-<tr><td><b>Concepts</b><br><code>cip_concept*</code></td><td><span class="k">Concept</span> <span class="d">"the same question" across waves and platforms, matched by wording because Forsta codes such as D2 or BT14 change meaning between waves</span>. Same wording and options → confirmed automatically. Changed options, or wording at least 85% similar → proposed for a person to confirm. Otherwise → a new concept.</td></tr>
+<tr><td><b>Concepts</b><br><code>cip_concept*</code></td><td><span class="k">Concept</span> <span class="d">"the same question" across waves and platforms, matched by wording because Forsta codes such as D2 or BT14 change meaning between waves</span>. Same wording and options → confirmed automatically. Changed options, or wording at least 85% similar → proposed for a person to confirm. Otherwise → a new concept. A one-off command (<code>python -m app.data.harmonise --confirm-same-wording</code>) also confirms waiting proposals whose wording and type <b>exactly</b> match their concept, when no other question in the wave uses it (1,322 units in the 23 Oct dry run); similar-wording proposals still wait for a person. Since 23 Oct confirmed concepts reach the serving rows, so a reworded but confirmed question keeps its prior-week and last-year comparison.</td></tr>
 <tr><td><b>Cube</b><br><code>cip_agg_cell</code></td><td><span class="k">Cube</span> <span class="d">a table of pre-counted totals: for every answer, how many people chose it, broken down by each standard cut</span>. Cuts: total, gender, age band, generation, income band, region, urbanicity, each for everyone and for each <span class="k">cohort</span> <span class="d">a defined group of respondents, e.g. "Beauty shoppers"</span>. Qualified respondents only.</td></tr>
 <tr><td><b>Search</b><br><code>cip_search</code></td><td>A full-text index of wave titles, question wording and concepts, so "GLP-1" finds every wave that asked about it.</td></tr>
 <tr><td><b>Line-by-line</b><br><code>cip_tracker_line</code></td><td>The data team's "Weekly Line-By-Line Survey Data" sheet, rebuilt automatically: one row per qualified respondent in the team's column order. Checked against the team's file across 16 waves: identical apart from 3 errors in the team's file.</td></tr>
 <tr><td><b>Survey calendar</b><br><code>cip_wave_module</code></td><td>Which sector, topics and seasonal trackers each wave carried, plus the holiday-season wave number. This enables "wave N vs last year's wave N" and predicts the next 12 lead sectors.</td></tr>
+<tr><td><b>Serving rows</b><br><code>srv_wave</code>, <code>srv_result</code>, <code>srv_answer</code></td><td>The finished rows every screen reads, one per cube cell: labels, percentage, <b>prior week</b> and <b>same week last year</b>, and warning flags (small base under 50, wording changed, base shifted by more than 10 points). Rules since 23 Oct:<br>
+• <b>Cells are keyed by item and option id</b>, not by label, so two answers that share a label ("Other", or survey 97's two "YouTube" rows) are both served.<br>
+• <b>Prior and last year</b> are matched through the harmonised concept first, then by question code + normalised label + option code, and only when that match is unique in both waves.<br>
+• <b>Significance flags</b> <code>sig_prior</code> / <code>sig_ly</code>: a <span class="k">two-proportion z-test</span> <span class="d">a standard test of whether two percentages differ by more than chance, here this week vs prior week (or last year)</span> on each Total row, then <span class="k">Benjamini–Hochberg at 5 % FDR</span> <span class="d">a correction for testing hundreds of answers at once: it keeps the expected share of false "significant" calls at 5 %</span> over the wave's testable Total rows only. Testable means both percentages exist, <b>both bases are at least 30</b>, the base did not shift, and the answer is not a filler ("None of these", "Other –", "Prefer not…").<br>
+• <b>No blank segments</b>: respondents whose wave never asked a demographic are not shown as a segment equal to Total.<br>
+• <b>Excluded waves</b> (test runs and aborted launches listed under <code>exclude:</code> in <code>config/survey_map.yml</code>) and non-tracker waves under <b>30 qualified</b> get no serving rows: their raw data stays, but no screen lists them.<br>
+• <b>Annual studies</b> compare with their family's latest wave 300–430 days earlier (the family map), since they are not fielded in the same week each year.<br>
+• A tracker wave loaded while Forsta still had it open is marked <b>in field</b> until the reload after close.</td></tr>
+<tr><td><b>Dependants</b></td><td>Next week's wave and next year's same wave are rebuilt, so they now compare with this one.</td></tr>
+<tr><td><b>Topic dashboards</b><br><code>cip_dash_*</code></td><td>The <b>19</b> configured dashboards (<code>config/dashboards.yml</code>: holiday tracker, tariffs and inflation, GenAI, GLP-1, financial health, sector modules…) are rebuilt for the new waves that carry their module. A takeaway calls a change significant only when the serving row carries the <code>sig_*</code> flag.</td></tr>
+</tbody></table>
+
+<h3 class="der">10.1 Publish: the portal's files</h3>
+<p>The data changes once a week, so the answers every visitor asks for are written to disk once, here, and served straight from disk by nginx: no database on the request path. <code>python -m etl.publish</code>:</p>
+<div class="flow">
+  <div class="node der"><b>Build</b>Into a new folder <code>.build-&lt;version&gt;</code>: the wave picker, each wave's book, per-question cuts, respondent bitsets for Audiences, dashboards, trend files. Each is a <span class="k">gzip</span> <span class="d">a standard compressed format every browser reads directly</span> JSON file.</div><div class="arrow">→</div>
+  <div class="node der"><b>Incremental</b>Only waves rebuilt since the last publish are written; everything unchanged is hard-linked from the live version (23 Oct: 1 of 367 waves, 17.4 MB written).</div><div class="arrow">→</div>
+  <div class="node ver"><b>Gates</b>Every book and people file readable; the picker lists every wave; no book lost more than 10 % of its questions.</div><div class="arrow">→</div>
+  <div class="node lod"><b>Atomic swap</b><code>current</code> points to the new folder in one step; the last 3 versions are kept for rollback.</div>
+</div>
+<p>A failed gate or a crash removes the half-built folder and leaves the previous version live. The newest waves are then pre-warmed in nginx's cache when that is configured.</p>
+
+<h3 class="der">10.2 Telling the team: email and Teams</h3>
+<p>As soon as a new wave is verified, before the checks and publishing that follow (section 3.3), <code>etl/notify.py</code> sends:</p>
+<table class="der">
+<thead><tr><th style="width:22%">Channel</th><th>What</th></tr></thead>
+<tbody>
+<tr><td><b>Email</b></td><td>Subject "New survey ready: &lt;title&gt; (&lt;wave&gt;, &lt;N&gt; people)". A short summary: how many people completed it and in how many hours, that every answer was checked against Forsta, the biggest real changes against last week, and a "View in the portal" button. Attached: the team's Excel files (Cross Tabs, the Holiday Status and Inflation/Sentiment cross tabs when the wave carries them, and the Weekly Line-By-Line for the tracker): <b>4 files</b> for wave 415.<br><b>To:</b> the 4 analysts (the <code>default</code> list in <code>config/notify.yml</code>); <b>Cc:</b> dataautomation@coresight.com, so the team has a record.</td></tr>
+<tr><td><b>Teams</b></td><td>"✅ CIP pipeline succeeded: &lt;title&gt; (wave …) loaded and verified, N qualified. 4 files emailed."</td></tr>
+<tr><td><b>Failure alerts</b></td><td>Email (same list until a <code>failure:</code> list is filled) and Teams. The subject carries the count ("integrity check: 3 problems"), so a new problem is not held back by the 6-hour repeat window.</td></tr>
 </tbody></table>
 </section>
 
@@ -589,20 +679,23 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <tr><td><code>userAgent</code>, <code>dcua</code></td><td>Browser fingerprint</td></tr>
 <tr><td><code>url</code>, <code>session</code></td><td>Survey link and panel session</td></tr>
 <tr><td><code>ipAddress</code></td><td>Personal</td></tr>
-<tr><td>Raw JSON files</td><td>Kept in memory only; nothing written to disk</td></tr>
-<tr><td>Surveys still <i>testing</i> / <i>live</i></td><td>Incomplete; loaded once closed</td></tr>
+<tr><td>Raw JSON files</td><td>Kept in memory only; never written to disk (the answer upload uses a temporary file that is deleted at once)</td></tr>
+<tr><td>Surveys still <i>testing</i>; annual / ad hoc studies still <i>live</i></td><td>Incomplete; loaded once closed</td></tr>
+<tr><td>Tracker waves still <i>live</i> before 9 h / 400 qualified / quota full</td><td>Still fielding; loaded once fielded, reloaded at close</td></tr>
+<tr><td><i>Too small</i> annual / ad hoc surveys (under 30 qualified)</td><td>Aborted or test launches</td></tr>
 <tr><td><i>Hibernated</i> surveys</td><td>Unreadable (428) until a person reactivates them</td></tr>
 </tbody></table>
 </div>
 </div>
 
-<h3 class="lod">11.1 Where things stand (13 Oct 2026)</h3>
+<h3 class="lod">11.1 Where things stand (23 Oct 2026)</h3>
 <table class="lod">
 <thead><tr><th>Source</th><th>Waves verified</th><th>Notes</th></tr></thead>
 <tbody>
-<tr><td>Forsta (live)</td><td>31</td><td>4,476,153 answers, 0 differences. Wave <code>261000</code> (12 Oct, Home improvement + Holiday Tracker) is still live in Forsta and will load automatically once it closes.</td></tr>
+<tr><td>Forsta (live)</td><td>84</td><td>Every closed Forsta survey is loaded, including the 2025 waves that had been hibernated (reactivated and loaded on 21 Oct). For all 84, Forsta's counts equal the stored respondents and the served counts. 8 surveys are still testing in Forsta.</td></tr>
 <tr><td>Qualtrics (history)</td><td>142</td><td>2022–2025</td></tr>
 <tr><td>SurveyMonkey (history)</td><td>145</td><td>2018–2022</td></tr>
+<tr><td><b>Total</b></td><td><b>371</b></td><td>All verified; none loading or failed. 367 are published; excluded test waves and too-small studies are not.</td></tr>
 </tbody></table>
 </section>
 
@@ -614,57 +707,135 @@ tbody tr:nth-child(even) td{ background:#fafbfd }
 <thead><tr><th style="width:9%">Code</th><th style="width:36%">Meaning</th><th>What to do</th></tr></thead>
 <tbody>
 <tr><td><span class="pill lod">0</span></td><td>Everything due loaded and verified, or nothing was due</td><td>Nothing</td></tr>
-<tr><td><span class="pill tra">1</span></td><td>A wave failed to load or verify</td><td>Read <code>cip_forsta_survey.last_error</code>. The next run retries it automatically.</td></tr>
+<tr><td><span class="pill tra">1</span></td><td>A wave failed to load or verify</td><td>Read <code>cip_forsta_survey.last_error</code> (also in the alert). The next runs retry it automatically, up to 3 attempts.</td></tr>
 <tr><td><span class="pill bad">2</span></td><td>Forsta rejected the key, the key is missing, or the database schema is older than the code</td><td>Renew the key in <code>.env</code>, or run <code>python scripts/init_db.py</code></td></tr>
 <tr><td><span class="pill der">3</span></td><td>Loaded fine, but an already-published number changed</td><td>Review on the Publications page</td></tr>
-<tr><td><span class="pill src">4</span></td><td>Database unreachable after 4 tries over 15 minutes</td><td>Check the VPN or the Azure firewall (the office IP changed on 13 Oct). The next slot retries.</td></tr>
+<tr><td><span class="pill src">4</span></td><td>Database unreachable after 4 tries over 15 minutes</td><td>Check the VPN or the Azure firewall (the office IP changed on 13 Oct). The next slot retries; during a Monday watch, the next 30-minute cycle.</td></tr>
+<tr><td><span class="pill ver">5</span></td><td>Loaded fine, but an integrity check (or the value-by-value comparison) found something it could not repair</td><td>Read the "integrity check: N problems" alert; it lists each problem.</td></tr>
 </tbody></table>
 
-<h3 class="bad">12.1 Common situations</h3>
+<h3 class="bad">12.1 Safety nets added since 14 Oct</h3>
+<table class="bad">
+<thead><tr><th style="width:30%">If…</th><th>…then</th></tr></thead>
+<tbody>
+<tr><td><b>One watch cycle crashes</b> (Forsta down past its retries, the database dropping mid-run)</td><td>The crash is logged and alerted ("a watch cycle crashed"), and <b>the watch carries on</b> 30 minutes later. Before, one crash ended the Monday watch and the wave waited for Friday.</td></tr>
+<tr><td>The run stops without finishing (killed, Mac asleep or restarted)</td><td>The hourly watchdog sees the missed heartbeat and alerts; it also alerts if a planned Monday never started, or nothing has run for 8 days.</td></tr>
+<tr><td>Something goes wrong</td><td>An alert by email and Teams, with the <b>problem count in the subject</b> ("integrity check: 3 problems", "published numbers moved in 2 publications"), so a new problem is told at once rather than after the 6-hour repeat window.</td></tr>
+<tr><td><b>A reload fails after its write</b></td><td>That wave's serving rows are dropped and the portal is republished, so no screen or published file shows numbers for answers that have changed. A reload that fails <i>before</i> its write leaves the old, verified wave untouched.</td></tr>
+<tr><td><b>A publish fails</b> (a gate or a crash)</td><td>Its build folder is removed and the previous version stays live. It can never become a rollback target.</td></tr>
+<tr><td>A published version turns out wrong</td><td><code>python -m etl.publish --rollback</code> points <code>current</code> back to the previous version (the last 3 are kept).</td></tr>
+<tr><td>A second writer starts while a run is going</td><td>It finds the run lock taken and stops (section 3.1).</td></tr>
+</tbody></table>
+
+<h3 class="bad">12.2 Common situations</h3>
 <table class="bad">
 <thead><tr><th style="width:30%">You see</th><th style="width:30%">Cause</th><th>Fix</th></tr></thead>
 <tbody>
 <tr><td>"Loaded 0" for days</td><td>No survey has closed in Forsta</td><td>Expected</td></tr>
 <tr><td>"Can't connect to MySQL … timed out"</td><td>VPN down, or the office IP is not allowed in Azure</td><td>Reconnect; the next slot retries</td></tr>
 <tr><td>A wave "does not match its payload"</td><td>Forsta changed data mid-load, or a step broke</td><td><code>python -m etl.forsta_etl --survey &lt;path&gt;</code></td></tr>
+<tr><td>"LOAD DATA into … warned …: nothing is kept"</td><td>The database would have changed a value</td><td>Read the warning; the old wave is untouched. Fix the cause, then reload the wave.</td></tr>
+<tr><td>A wave stays <i>failed</i> after 3 attempts</td><td>The same error every time</td><td>Fix the cause, then <code>python -m etl.forsta_etl --survey &lt;path&gt;</code></td></tr>
+<tr><td>"Another CIP run holds the lock"</td><td>A run is already going</td><td>Wait until <code>logs/etl-heartbeat.json</code> says <code>finished</code></td></tr>
 <tr><td>Survey <i>hibernated</i> and its history is needed</td><td>Forsta hibernated it before it was loaded</td><td>A Forsta owner reactivates it; the next run loads it</td></tr>
 <tr><td>Survey reopened and closed again</td><td>New respondents</td><td>Automatic: becomes due and is reloaded in place</td></tr>
 </tbody></table>
 
-<h3 class="bad">12.2 Commands to run by hand</h3>
+<h3 class="bad">12.3 Commands to run by hand</h3>
+<p>Each command that writes takes the run lock itself; never start one while a scheduled run is going.</p>
 <div class="json">python scripts/weekly_forsta.py                         <span class="c"># the scheduled run, now</span>
 python -m etl.forsta_etl --discover                     <span class="c"># refresh the register only (no answers downloaded)</span>
 python -m etl.forsta_etl --due                          <span class="c"># discover + load everything due</span>
 python -m etl.forsta_etl --survey selfserve/58f/260908  <span class="c"># load or reload one wave</span>
 python -m etl.forsta_etl --reconcile                    <span class="c"># compare every loaded wave with Forsta</span>
+python -m etl.serving --wave 415                        <span class="c"># rebuild one wave's serving rows</span>
+python -m etl.integrity --check                         <span class="c"># integrity checks, report only</span>
+python -m etl.publish                                   <span class="c"># build, check and swap the portal's files</span>
+python -m etl.publish --rollback                        <span class="c"># back to the previous published version</span>
+python scripts/weekly_forsta.py --watchdog              <span class="c"># the hourly heartbeat check, now</span>
 python scripts/test_connection.py                       <span class="c"># database + Forsta check (never prints the key)</span></div>
 </section>
 
 <!-- ============ 13 WORKED EXAMPLE ============ -->
 <section>
 <h2 class="der" style="break-before:page;background:linear-gradient(90deg,var(--src),var(--ext),var(--tra),var(--lod),var(--der))">13. Worked example: one wave, start to finish</h2>
-<p>The wave <code>selfserve/58f/260908</code>, "Shopping and Spending – inc Home Furnishings + Holiday Tracker + GenAI":</p>
+<p>The wave <code>selfserve/58f/261001</code> (internal id 415), "Shopping and Spending – inc Social Commerce + Holiday Tracker + GLP1s". The timings are from a measured run on 23 Oct 2026, each stage run as its own process (section 14).</p>
 <div class="vflow">
-  <div class="node src"><b>Tue 22 Sep 2026.</b> Created in Forsta. Discovery sees it as <i>testing</i>, so it waits.</div>
+  <div class="node src"><b>Mon 19 Oct 2026, 17:30 IST.</b> A planned Monday in the launch schedule. Under today's schedule the job posts its Teams heads-up and starts watching: a run every 30 minutes.</div>
   <div class="down">↓</div>
-  <div class="node src"><b>Mon 5 Oct, 12:22 UTC (17:52 IST).</b> Launched and <i>live</i>. Runs still mark it <i>testing</i>; nothing is downloaded.</div>
+  <div class="node src"><b>12:27 UTC (17:57 IST).</b> Launched and <i>live</i>. Each poll reads its quota; not yet fielded, so it stays <i>testing</i>.</div>
   <div class="down">↓</div>
-  <div class="node src"><b>Tue 6 Oct, 14:19 UTC (19:49 IST).</b> Closed with 401 qualified out of 823 started.</div>
+  <div class="node src"><b>Mon 19 Oct, 18:35 UTC (Tue 20 Oct, 00:05 IST).</b> Closed at quota after about 6 hours: <b>400 qualified out of 693 started</b>.</div>
   <div class="down">↓</div>
-  <div class="node ext"><b>Next run after close</b> (in normal operation, Tue 6 Oct 23:30 IST; this wave was actually loaded on 8 Oct while the pipeline was being built). Health ✓, key ✓, schema ✓. Discovery: closed, not hibernated, never loaded → <b>due</b>.</div>
+  <div class="node ext"><b>Next 30-minute poll.</b> Health ✓, key ✓, schema ✓. Discovery: closed, not hibernated, a tracker → <b>due</b>. Under the tracker rule it would also have become due while still live, the moment it showed 400 qualified.</div>
   <div class="down">↓</div>
-  <div class="node ext"><b>Extract.</b> GET datamap (≈0.5 MB) + GET data (823 records, all statuses). Rows with no uuid are discarded.</div>
+  <div class="node ext"><b>Extract (3.6 s).</b> GET datamap + GET data (693 records, all statuses). Rows with no uuid are discarded.</div>
   <div class="down">↓</div>
-  <div class="node tra"><b>Transform.</b> 54 reportable questions typed: core q1–q6, CS1–CS3, D1–D8 plus extra D codes, HF1–HF7 home furnishings, XM1–XM3 holiday tracker, G1–G8 GenAI. Six "Other (specify)" boxes (e.g. <code>HF2r28oe</code>) become their own text questions. Personal fields are dropped and RID is hashed. Every value is converted from text to its type.</div>
+  <div class="node tra"><b>Transform.</b> <b>58 reportable questions</b> typed: core q1–q6, CS1–CS3, D1–D8 plus extra D codes, SC1–SC10 social commerce, XM1–XM3 holiday tracker, GP1–GP10 GLP-1. Five "Other (specify)" boxes (e.g. <code>SC2r10oe</code>) become their own text questions. Personal fields dropped, RID hashed, every value converted from text to its type, decimals rounded to 4 places.</div>
   <div class="down">↓</div>
-  <div class="node lod"><b>Load.</b> Survey row (<i>loading</i>) → log row → definitions → transaction A (823 respondents, 187,468 answers in 5,000-row batches). Took 2 min 20 s. Wave label = Monday <b>2026-10-05</b>.</div>
+  <div class="node lod"><b>Load (definitions 10.8 s, write 20.6 s).</b> Survey row (<i>loading</i>) → log row → definitions → transaction A: 693 respondents, <b>128,665 answers</b> in one LOAD DATA upload, no warnings. Wave label = Monday <b>2026-10-19</b>.</div>
   <div class="down">↓</div>
-  <div class="node ver"><b>Verify.</b> 823 = 823 respondents; every variable has a field; every field's answer count matches → ✓.</div>
+  <div class="node ver"><b>Verify (2.7 s).</b> 693 = 693 respondents; every variable has a field; every field's answer count matches → ✓. Unlisted, unchosen answer rows tidied.</div>
   <div class="down">↓</div>
-  <div class="node der"><b>Derive.</b> Profiles and bands → bases → concepts → cube → search → 401 line-by-line rows → calendar: lead sector Home furnishings (6th in the rotation), GenAI topic, Holiday tracker <b>2026 wave 2</b>.</div>
+  <div class="node der"><b>Derive.</b> Profiles and bases 10.0 s → harmonise 6.5 s → cube 113.9 s → search 4.4 s → <b>400</b> line-by-line rows 12.5 s → serving 18.2 s: <b>12,425 serving rows = 12,425 cube cells</b>; 12,183 of them carry a harmonised concept; <b>6</b> answers flagged significant against the prior week and <b>7</b> against last year. Then the dependants. Whole load step: <b>219 s</b>.</div>
   <div class="down">↓</div>
-  <div class="node lod"><b>Done.</b> <code>verified</code>, register <i>loaded</i>, exit 0. The Holiday Databank numbers (53.9 / 37.2 / 8.2 …) now come straight from this wave.</div>
+  <div class="node der"><b>Dashboards (27 s) and publish (66 s).</b> The topic dashboards whose modules the wave carries; then an incremental publish: <b>1 of 367 waves rebuilt, 17.4 MB written</b>, gates passed, <code>current</code> swapped.</div>
+  <div class="down">↓</div>
+  <div class="node lod"><b>Team told (20 s).</b> Email "New survey ready … (2026-10-19, 400 people)" with <b>4 Excel files</b> to the 4 analysts, Cc dataautomation@coresight.com, plus the Teams message. Exit 0. Total ≈ <b>332 s (5.5 min)</b>; about 4–4.5 min with the usual cube time.</div>
 </div>
+</section>
+
+<!-- ============ 14 TIMING AND MEMORY ============ -->
+<section>
+<h2 class="ver" style="break-before:page">14. Timing and memory (measured 23 Oct 2026)</h2>
+<p><b>How it was measured:</b> wave 415 (the 19 Oct tracker: 693 respondents, 400 qualified) was run tonight with <b>each stage as its own process</b>, and its memory sampled <b>every second</b>. <span class="k">Peak memory</span> <span class="d">the most RAM the process held at any one moment; "average" is the mean over its run</span> is what a server must have free.</p>
+
+<h3 class="ver">14.1 One weekly wave, stage by stage</h3>
+<div class="flow" style="height:34px">
+  <div class="node lod" style="flex:219;padding:4px 6px"><b>Load 219 s</b></div>
+  <div class="node der" style="flex:27;padding:4px 2px;font-size:7.5pt"><b style="font-size:7.5pt">27</b></div>
+  <div class="node ver" style="flex:66;padding:4px 6px"><b>Publish 66 s</b></div>
+  <div class="node ext" style="flex:20;padding:4px 2px;font-size:7.5pt"><b style="font-size:7.5pt">20</b></div>
+</div>
+<p style="font-size:8.8pt;color:var(--muted);margin-top:0">Bar to scale: load · dashboards (27 s) · publish · email (20 s). Total ≈ 332 s.</p>
+<table class="ver">
+<thead><tr><th style="width:24%">Stage</th><th style="width:12%">Time</th><th style="width:15%">Peak memory</th><th style="width:15%">Average</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><b>Load</b> (extract → serving)</td><td>219 s</td><td>206 MB</td><td>137 MB</td><td>Breakdown in 14.2</td></tr>
+<tr><td><b>Dashboards</b></td><td>27 s</td><td>55 MB</td><td>—</td><td>The topic dashboards the wave carries</td></tr>
+<tr><td><b>Publish</b></td><td>66 s</td><td>173 MB</td><td>98 MB</td><td>1 of 367 waves rebuilt, 17.4 MB written</td></tr>
+<tr><td><b>Email</b> with 4 Excel files</td><td>20 s</td><td>228 MB</td><td>181 MB</td><td>Plus the Teams message</td></tr>
+<tr><td><b>Total</b></td><td><b>≈ 332 s (5.5 min)</b></td><td colspan="3">About 4–4.5 min with the usual cube time (14.3)</td></tr>
+</tbody></table>
+
+<h3 class="ver">14.2 Inside the load step (seconds)</h3>
+<table class="lod">
+<thead><tr><th>fetch</th><th>definitions</th><th>write</th><th>verify</th><th>profiles</th><th>harmonise</th><th style="background:var(--bad)">cube</th><th>search</th><th>tracker line</th><th>serving</th></tr></thead>
+<tbody><tr><td>3.6</td><td>10.8</td><td>20.6</td><td>2.7</td><td>10.0</td><td>6.5</td><td><b>113.9</b></td><td>4.4</td><td>12.5</td><td>18.2</td></tr></tbody></table>
+
+<h3 class="ver">14.3 A caveat about the cube</h3>
+<div class="box bad"><div class="t">Tonight's cube time is not the usual one</div>The cube step took <b>27–42 s on 20–22 Oct</b>. Tonight it measured <b>about 110 s, three times</b>, with <b>unchanged code</b>, right after a full rebuild of all waves. Its parts add up to about <b>19 s</b> when timed in isolation, so the extra time is inside the shared Azure database, most likely its own cleanup after the mass rebuild. This cannot be confirmed: our database account lacks the PROCESS privilege needed to see what the server is doing. With the usual cube time the end-to-end run is <b>about 4–4.5 minutes</b>; on 22 Oct whole runs measured <b>243–264 s</b> end to end, peaking at <b>304–314 MB</b> in one process.</div>
+
+<h3 class="ver">14.4 RAM and CPU: what IT needs to provide</h3>
+<table class="ver">
+<thead><tr><th style="width:30%">Question</th><th>Answer</th></tr></thead>
+<tbody>
+<tr><td>Do the stages' memory figures add up?</td><td><b>No.</b> Memory is held while a step runs and freed after it. The weekly job runs in <b>one process</b>, one step after another, so plan for the <b>peak, about 230–320 MB</b>, not a sum. Between polls nothing runs.</td></tr>
+<tr><td>The portal API</td><td>112–138 MB steady on its own; its answer cache is capped at 256 MB, so at most about 400 MB.</td></tr>
+<tr><td>One VM for everything</td><td>ETL + API + nginx stays <b>under about 1 GB at peak</b>. <b>2 GB is comfortable.</b></td></tr>
+<tr><td>CPU</td><td><b>1 vCPU is enough.</b> The ETL used less than 1 s of CPU per stage; about 98 % of its time is <b>waiting</b> on database round trips of about 0.25 s from India to Azure.</td></tr>
+<tr><td>Biggest speed lever</td><td>Running the job on an Azure VM in the database's own region, so each round trip takes milliseconds instead of a quarter of a second. <i>This is an estimate, not yet measured.</i></td></tr>
+</tbody></table>
+
+<h3 class="ver">14.5 Rare full rebuilds (not weekly)</h3>
+<p>Only needed when a rule changes for every wave (as on 22–23 Oct). The weekly run never does these.</p>
+<table class="ver">
+<thead><tr><th style="width:38%">Rebuild</th><th style="width:16%">Time</th><th>Memory and size</th></tr></thead>
+<tbody>
+<tr><td>Serving rows for all 371 waves (4 parallel jobs)</td><td>23 min</td><td>peak 603 MB</td></tr>
+<tr><td>All 19 dashboards</td><td>15 min</td><td>—</td></tr>
+<tr><td>Full publish (367 waves)</td><td>16 min</td><td>506.5 MB written; peak 314 MB</td></tr>
+</tbody></table>
 </section>
 
 </body>

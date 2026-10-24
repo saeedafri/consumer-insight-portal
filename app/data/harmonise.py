@@ -376,6 +376,39 @@ def reject(survey_id: int, question_id: int, item_id: Optional[int], reviewer: s
         _claim(conn, survey_id, unit, "rejected", reviewer)
 
 
+def confirm_same_wording(apply: bool = False, reviewer: str = "auto:same_wording") -> dict[int, int]:
+    """The review queue's safe part, settled without a person: a proposed unit with exactly its concept's
+    normalised wording and type ("changed": it only adds answers to the concept, method exact_text) is confirmed
+    to that concept, unless its wave already uses the concept for another question (confirm's own rule). Units
+    proposed on similar wording stay for a person. One transaction per wave. -> {survey_id: units confirmed},
+    or, with apply=False, the units it would confirm (nothing written)."""
+    with get_engine("etl").connect() as conn:
+        queue = conn.execute(text(
+            "SELECT survey_id, question_id, item_id, concept_id FROM cip_concept_map"
+            " WHERE status = 'proposed' AND method = 'exact_text' AND concept_option_id IS NULL"
+            " ORDER BY survey_id, map_id")).all()
+        taken = set(conn.execute(text(
+            "SELECT survey_id, concept_id FROM cip_concept_map WHERE status = 'confirmed' AND concept_option_id IS NULL")).all())
+    plan: dict[int, list] = defaultdict(list)
+    for sid, qid, iid, cid in queue:
+        if (sid, cid) not in taken:
+            taken.add((sid, cid))
+            plan[sid].append((qid, iid, cid))
+    if not apply:
+        return {sid: len(units) for sid, units in plan.items()}
+    with get_engine("etl").connect() as conn:
+        concepts = _concepts(conn)
+    for sid, units in plan.items():
+        with get_engine("etl").begin() as conn:
+            own = {(u.question_id, u.item_id): u for u in _units(conn, sid)}
+            for qid, iid, cid in units:
+                unit, concept = own[(qid, iid)], concepts[cid]
+                _claim(conn, sid, unit, "confirmed", reviewer)
+                _add_options(conn, [(concept, unit)])
+                _map_choices(conn, sid, [(concept, unit)], reviewer)
+    return {sid: len(units) for sid, units in plan.items()}
+
+
 def harmonise_all() -> dict[str, dict[str, int]]:
     """Every wave, oldest first — the earliest wording seeds each concept."""
     with get_engine("etl").connect() as conn:
@@ -392,7 +425,17 @@ def main() -> int:
     group = ap.add_mutually_exclusive_group(required=True)
     group.add_argument("--wave", help="one wave label, e.g. 2026-09-28")
     group.add_argument("--all", action="store_true", help="every wave, oldest first")
+    group.add_argument("--confirm-same-wording", action="store_true",
+                       help="count the proposals with their concept's exact wording (confirm_same_wording)")
+    ap.add_argument("--apply", action="store_true", help="with --confirm-same-wording: confirm them")
     args = ap.parse_args()
+    if args.confirm_same_wording:
+        from etl.loaders import etl_lock
+        with etl_lock():
+            done = confirm_same_wording(apply=args.apply)
+        print(f"{sum(done.values())} units in {len(done)} waves {'confirmed' if args.apply else 'would be confirmed'};"
+              " then rebuild their serving rows: python -m etl.serving --all --jobs 4")
+        return 0
     if args.all:
         results = harmonise_all()
     else:

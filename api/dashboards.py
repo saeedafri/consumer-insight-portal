@@ -31,6 +31,7 @@ from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
 from app.data.payloads import HIDDEN_BASE, TEST_BASE
+from etl.loaders import etl_lock
 
 log = logging.getLogger("cip.api.dashboards")
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "dashboards.yml"
@@ -91,7 +92,7 @@ def significant(p1: float, n1: int, p2: float, n2: int) -> bool:
 
 
 def cells(conn, survey_ids: list[int], qcodes: list[str], dims: list[str], aliases: Optional[dict] = None) -> dict:
-    """{(survey_id, qcode, dim, dim_value): {"base": n, "built_at": ts, "answers": {code-or-label: n}}},
+    """{(survey_id, qcode, dim, dim_value): {"base": n, "built_at": ts, "answers": {code-or-label: n}, "flags": {code-or-label: flags}}},
     read from the ETL's serving rows: one primary-key range per wave, no joins. `aliases` maps an older code
     of the same question to the configured one (Social commerce: SM1 in Feb 2026, SC1 otherwise)."""
     aliases = aliases or {}
@@ -100,7 +101,7 @@ def cells(conn, survey_ids: list[int], qcodes: list[str], dims: list[str], alias
     if not survey_ids:
         return out
     rows = conn.execute(text(
-        "SELECT r.survey_id, r.qcode, r.dim, r.dim_value, r.n, r.base_n, w.built_at,"
+        "SELECT r.survey_id, r.qcode, r.dim, r.dim_value, r.n, r.base_n, r.flags, w.built_at,"
         "       COALESCE(CAST(r.option_code AS CHAR), r.item_label) AS answer"
         "  FROM srv_result r JOIN srv_wave w ON w.survey_id = r.survey_id"
         " WHERE r.survey_id IN :s AND r.qcode IN :q AND r.dim IN :d")
@@ -108,8 +109,9 @@ def cells(conn, survey_ids: list[int], qcodes: list[str], dims: list[str], alias
         {"s": survey_ids, "q": qcodes, "d": dims})
     for r in rows.mappings():
         cell = out.setdefault((r["survey_id"], aliases.get(r["qcode"], r["qcode"]), r["dim"], r["dim_value"]),
-                              {"base": r["base_n"], "built_at": r["built_at"], "answers": {}})
+                              {"base": r["base_n"], "built_at": r["built_at"], "answers": {}, "flags": {}})
         cell["answers"][r["answer"]] = cell["answers"].get(r["answer"], 0) + r["n"]
+        cell["flags"][r["answer"]] = r["flags"] or ""
     return out
 
 
@@ -125,6 +127,21 @@ def share(cube: dict, wave: Optional[dict], qcode: str, answers: list, dim="tota
     if not cell or not cell["base"]:
         return None
     return sum(cell["answers"].get(str(a), 0) for a in answers), cell["base"]
+
+
+def tested(cube: dict, wave: Optional[dict], qcode: str, answers: list) -> Optional[set]:
+    """Which comparisons ("prior", "ly") the ETL found significant for this one answer's Total row: srv_result's sig_prior
+    and sig_ly flags (BH-FDR at 5 % over the wave's testable Total rows, etl/serving.py), the rule the Overview shows.
+    A number summing several answers, or a segment, has no such test, so it is never called significant. None when the
+    wave's serving rows carry no sig flag at all (built before the ETL wrote them): takeaways then fall back to one
+    z-test and say "single comparison"."""
+    if not wave or not any("sig_" in f for k, c in cube.items() if k[0] == wave["survey_id"] for f in c["flags"].values()):
+        return None
+    cell = cube.get((wave["survey_id"], qcode, "total", "Total"))
+    if not cell or len(answers) != 1:
+        return set()
+    flags = cell["flags"].get(str(answers[0]), "")
+    return {key for key in ("prior", "ly") if f"sig_{key}" in flags}
 
 
 def metric(code, label, now, prior, ly, waves, cfg, segment="Total", rank=0) -> dict:
@@ -167,6 +184,7 @@ def compute(conn, code: str, survey_id: int) -> tuple[dict, list[dict]]:
         if now:
             rows.append(metric(t["code"], t["label"], now, share(cube, same(t, prior), t["qcode"], t["codes"]),
                                share(cube, same(t, ly), t["qcode"], t["codes"]), trio, cfg))
+            rows[-1]["sig"] = tested(cube, wave, t["qcode"], t["codes"])
     for spec in cfg["lists"]:
         cell = cube.get((survey_id, spec["qcode"], "total", "Total"))
         ranked = sorted(((n, label) for label, n in (cell or {"answers": {}})["answers"].items()
@@ -174,6 +192,7 @@ def compute(conn, code: str, survey_id: int) -> tuple[dict, list[dict]]:
         for rank, (n, label) in enumerate(ranked[:spec["top"]], 1):
             rows.append(metric(spec["code"], label, (n, cell["base"]), share(cube, prior, spec["qcode"], [label]),
                                share(cube, ly, spec["qcode"], [label]), trio, cfg, rank=rank))
+            rows[-1]["sig"] = tested(cube, wave, spec["qcode"], [label])
     for seg in cfg.get("segments", []):
         tile = tiles[seg["of"]]
         for value in seg["order"]:
@@ -193,12 +212,19 @@ def _pts(a, b):
 
 
 def move(r: dict, key: str) -> Optional[float]:
-    """The change in points vs prior or last year, only when comparable and significant."""
+    """The change in points vs prior or last year, only when comparable and flagged significant by the ETL (tested)."""
     if r[f"{key}_pct"] is None or f"base_changed_{key}" in r["flags"]:
         return None
-    if not significant(r["pct"], r["base_n"], r[f"{key}_pct"], r[f"{key}_base_n"]):
+    if r.get("sig") is None:   # no ETL flags for this wave: one uncorrected test, worded as such (single())
+        if not significant(r["pct"], r["base_n"], r[f"{key}_pct"], r[f"{key}_base_n"]):
+            return None
+    elif key not in r["sig"]:
         return None
     return round(r["pct"] - r[f"{key}_pct"], 1)
+
+
+def single(r: dict) -> str:
+    return ", single comparison" if r.get("sig") is None else ""
 
 
 def takeaways(rows: list[dict], cfg: dict) -> list[str]:
@@ -210,10 +236,10 @@ def takeaways(rows: list[dict], cfg: dict) -> list[str]:
     def changes(r):
         out = []
         if (d := move(r, "prior")) is not None:
-            out.append(f"{'up' if d > 0 else 'down'} {abs(d)} pts vs {prior}")
+            out.append(f"{'up' if d > 0 else 'down'} {abs(d)} pts vs {prior}{single(r)}")
         if r["ly_pct"] is not None and "base_changed_ly" not in r["flags"]:
             d = move(r, "ly")
-            out.append(f"{round(r['ly_pct'])}% a year ago" + (f", {d:+} pts" if d is not None else ""))
+            out.append(f"{round(r['ly_pct'])}% a year ago" + (f", {d:+} pts{single(r)}" if d is not None else ""))
         return f" ({'; '.join(out)})" if out else ""
     bullets: dict[str, list[str]] = {}
     for t in cfg["tiles"]:
@@ -226,10 +252,10 @@ def takeaways(rows: list[dict], cfg: dict) -> list[str]:
         if not top:
             continue
         lead = ", ".join(f"{r['label']} ({round(r['pct'])}%)" for r in top[:3])
-        moved = [(d, r["label"], key) for r in top for key in ("prior", "ly") if (d := move(r, key)) is not None]
-        d, label, key = max(moved, key=lambda m: abs(m[0]), default=(None, None, None))
+        moved = [(d, r["label"], key, r) for r in top for key in ("prior", "ly") if (d := move(r, key)) is not None]
+        d, label, key, r = max(moved, key=lambda m: abs(m[0]), default=(None, None, None, None))
         out.append(f"{spec['head']}: {lead} {spec['say']} (n={top[0]['base_n']})."
-                   + (f" Biggest significant move vs {prior if key == 'prior' else 'last year'}: {label} ({d:+} pts)." if d else ""))
+                   + (f" Biggest significant move vs {prior if key == 'prior' else 'last year'}: {label} ({d:+} pts{single(r)})." if d else ""))
     for seg in cfg.get("segments", []):
         group = [r for r in rows if r["metric_code"] == seg["code"]]
         total = by.get((seg["of"], "Total", 0))
@@ -373,7 +399,8 @@ def main() -> int:
         print(json.dumps(payload(header, rows), indent=2, ensure_ascii=False))
         return 0
     if a.build:
-        ids = [build(a.build, a.survey)] if a.survey else build_all(a.build)
+        with etl_lock():   # a writer like any other: never alongside a load
+            ids = [build(a.build, a.survey)] if a.survey else build_all(a.build)
         print(f"published builds: {ids}")
         return 0
     p.print_help()

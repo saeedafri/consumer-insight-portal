@@ -8,8 +8,10 @@ then one indexed read of tens of rows instead of a scan of the wave's answers
 
 A cell stores the answer's map_key ("question:item:option", the harmoniser's
 own key), never its concept: concept reads join cip_concept_map at read time,
-so confirming a mapping never needs a rebuild. Cohort cells do depend on
-mappings (a rule is written over concepts) — refresh_wave re-derives them.
+so confirming a mapping never needs a cube rebuild. Cohort cells do depend on
+mappings (a rule is written over concepts) — refresh_wave re-derives them. The
+serving rows do too (etl/serving.cube_rows joins the mapping when it builds):
+refresh_cohorts rebuilds the wave's serving rows after every decision.
 
 The counts and bases are exactly repository.analyse's — tests prove it for
 every question and cut.
@@ -151,7 +153,9 @@ def refresh_cohorts(survey_id: int) -> int:
     """After a mapping decision: cohort rules are written over concepts, so
     re-derive every current cohort on the wave and rebuild the cells of those
     whose membership changed (or that have members but no cells). Everyone's
-    cells never change — they join mappings at read time.
+    cells never change — they join mappings at read time. Then the wave's
+    serving rows, and those of the waves comparing with it, are rebuilt with the
+    decision (their harmonised answers and so their comparisons change).
 
     One transaction: if the rebuild fails, the new memberships roll back with
     it, so the next attempt still sees the change."""
@@ -170,7 +174,11 @@ def refresh_cohorts(survey_id: int) -> int:
             if after != before or (after and not has_cells(conn, c["cohort_id"])):
                 changed.append(c["cohort_id"])
         # most decisions touch no cohort's questions: then nothing is rebuilt
-        return build_cube(survey_id, changed, conn) if changed else 0
+        written = build_cube(survey_id, changed, conn) if changed else 0
+    from etl import serving   # etl.serving reads this module's SQL
+    serving.build_wave(survey_id)
+    serving.rebuild_dependants(survey_id)
+    return written
 
 
 def refresh_wave(survey_id: int) -> int:
@@ -193,6 +201,12 @@ def main() -> int:
     group.add_argument("--all", action="store_true", help="every wave, oldest first")
     group.add_argument("--wave", help="one wave label")
     args = ap.parse_args()
+    from etl.loaders import etl_lock
+    with etl_lock():
+        return _build(args)
+
+
+def _build(args) -> int:
     with get_engine("etl").connect() as conn:
         sql = "SELECT survey_id, wave_label FROM cip_survey"
         rows = conn.execute(text(sql + (" WHERE wave_label = :w" if args.wave else "") + " ORDER BY wave_date, survey_id"),

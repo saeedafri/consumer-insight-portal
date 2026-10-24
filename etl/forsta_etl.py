@@ -41,9 +41,10 @@ from sqlalchemy.exc import OperationalError
 from app.core.config import config
 from app.core.database import bulk_insert, get_engine
 from app.data import cube, harmonise
-from etl import forsta_api, launch_schedule, records as xp, serving, survey_calendar, tracker_line
+from etl import forsta_api, launch_schedule, records as xp, serving, survey_calendar, survey_map, tracker_line
 from etl.forsta_client import ForstaError
-from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey
+from etl.loaders import (Locked, drop_unlisted_items, etl_lock, finish_run, index_survey, load_definitions, start_run,
+                         upsert_survey)
 from etl.run_pipeline import _dt, _rebuild_profiles, _rebuild_question_bases, wave_from_records
 
 log = logging.getLogger("cip.forsta")
@@ -61,9 +62,13 @@ def study_type(meta: dict) -> str:
 
 def family(meta: dict) -> str:
     """Waves of one study share a family, so they trend together: the weekly
-    tracker is CSI-US; an annual study drops its year ("Holiday Shopping 2026")."""
+    tracker is CSI-US; an annual study is listed in config/survey_map.yml `family`,
+    else drops its year ("Holiday Shopping 2026")."""
     if study_type(meta) == "tracker":
         return TRACKER_FAMILY
+    listed = survey_map.family_for(str(meta.get("path", "")).strip("/"))
+    if listed:
+        return listed
     name = re.sub(r"\b(19|20)\d{2}\b", "", str(meta.get("title", "")))
     return re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_")[:60] or "ADHOC"
 
@@ -99,16 +104,19 @@ def quota_cells(client, path: str) -> Optional[list[dict]]:
 
 
 def fielded(meta: dict, cells: Optional[list[dict]], now: Optional[datetime] = None) -> bool:
-    """A live survey whose fieldwork is over though Forsta has not closed it yet: FIELD_HOURS since launch; or no
-    quota left (every unconditional cell full, or qualified at a whole sheet's target); or a weekly tracker wave at
-    the plan's 400 qualified. Forsta often stops a wave at 400 with a cell or two short (19 Oct 2026: Midwest 80/85),
-    so the 400 rule is what fires for trackers. Read-only: the survey stays open in Forsta."""
+    """A live weekly tracker wave whose fieldwork is over though Forsta has not closed it yet: FIELD_HOURS since
+    launch; or no quota left (every unconditional cell full, or qualified at a whole sheet's target); or the plan's
+    400 qualified. Forsta often stops a wave at 400 with a cell or two short (19 Oct 2026: Midwest 80/85), so the
+    400 rule is what fires. Annual and ad hoc studies field for days (Holiday 2025: 8), so they load only once Forsta
+    closes them: never published half-fielded. Read-only: the survey stays open in Forsta."""
+    if study_type(meta) != "tracker":
+        return False
     launched = _when(meta.get("dateLaunched"))
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     if launched and now - launched >= timedelta(hours=FIELD_HOURS):
         return True
     qualified = meta.get("qualified") or 0
-    if study_type(meta) == "tracker" and qualified >= launch_schedule.QUOTA:
+    if qualified >= launch_schedule.QUOTA:
         return True
     counted = [c for c in cells or [] if not c["conditional"]]
     if counted and all(c["complete"] >= c["limit"] for c in counted):
@@ -122,7 +130,8 @@ def fielded(meta: dict, cells: Optional[list[dict]], now: Optional[datetime] = N
 def discover(client) -> dict[str, int]:
     """Upsert every survey the key can see into cip_forsta_survey and decide
     what to do with it: due (closed, readable, not loaded), hibernated,
-    testing, loaded, failed. Returns how many surveys are in each state."""
+    testing, loaded, failed. Every closed, readable survey is loaded, however
+    few people answered it. Returns how many surveys are in each state."""
     eng = get_engine("etl")
     with eng.connect() as conn:
         stored = [dict(r) for r in conn.execute(text("SELECT * FROM cip_forsta_survey")).mappings()]
@@ -139,8 +148,8 @@ def discover(client) -> dict[str, int]:
         cells = quota_cells(client, path) if live else None
         if previous == "loaded" and (live or not reopened):   # loaded while fielding: reloaded once Forsta closes it
             state = "loaded"
-        elif live and fielded(m, cells):
-            state = "due"
+        elif live and fielded(m, cells):   # a live wave failing to load keeps its attempts (run_due's MAX_ATTEMPTS)
+            state = "failed" if previous == "failed" else "due"
         elif m.get("state") != "closed":
             state = "testing"
         elif m.get("hibernated"):
@@ -213,12 +222,13 @@ def _mark(path: str, state: str, survey_id: Optional[int] = None, error: Optiona
 
 # ── one wave ───────────────────────────────────────────────────────────────
 def _number(value: Any) -> Optional[float]:
-    """A number cip_answer.value_number (DECIMAL(18,4)) can hold, else None."""
+    """A number cip_answer.value_number (DECIMAL(18,4)) can hold, else None. Rounded to its 4 decimals here: MySQL
+    would round a longer one itself, but with a Note, and any LOAD DATA warning fails the wave (database.bulk_insert)."""
     try:
         number = float(str(value).strip())
     except ValueError:
         return None
-    return number if math.isfinite(number) and abs(number) < 1e14 else None
+    return round(number, 4) if math.isfinite(number) and abs(number) < 1e14 else None
 
 
 def _set_status(survey_id: int, status: str) -> None:
@@ -329,6 +339,7 @@ def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
         problems = verify(survey_id, datamap, records)
         if problems:
             raise RuntimeError(f"{path} does not match its payload: {problems[:5]}")
+        drop_unlisted_items(survey_id, questions)
         lap("verify")
         _rebuild_profiles(survey_id, None, fam)
         _rebuild_question_bases(survey_id)
@@ -348,7 +359,11 @@ def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
     except Exception as exc:
         finish_run(run, len(records), written or 0, error=str(exc)[:2000])
         # the answers write is one transaction: if it never committed, a verified wave is still intact
-        _set_status(survey_id, "verified" if written is None and previous == "verified" else "failed")
+        intact = written is None and previous == "verified"
+        _set_status(survey_id, "verified" if intact else "failed")
+        if not intact:   # its serving rows describe answers that are gone: no screen or published file keeps them
+            with eng.begin() as conn:
+                serving.drop_wave(conn, survey_id)
         raise
     finish_run(run, len(records), written)
     _set_status(survey_id, "verified")
@@ -517,6 +532,17 @@ def main() -> int:
     group.add_argument("--reconcile", action="store_true")
     group.add_argument("--reindex", action="store_true")
     args = ap.parse_args()
+    if args.reconcile:                 # reads only: no lock
+        return reconcile_all(_client())
+    try:
+        with etl_lock():               # the same lock as scripts/weekly_forsta.py: never two writers at once
+            return _run(args)
+    except Locked as exc:
+        log.error("%s", exc)
+        return 1
+
+
+def _run(args) -> int:
     if args.reindex:
         with get_engine("etl").connect() as conn:
             ids = [s for (s,) in conn.execute(text("SELECT survey_id FROM cip_survey WHERE load_status = 'verified'"))]
@@ -524,10 +550,6 @@ def main() -> int:
             index_survey(sid, concepts=i == len(ids))      # concept rows once, at the end
         log.info("Indexed %d waves", len(ids))
         return 0
-    lock = get_engine("etl").connect()   # the same lock as scripts/weekly_forsta.py: never two loads at once
-    if args.reconcile is False and not lock.execute(text("SELECT GET_LOCK('cip_etl', 0)")).scalar():
-        log.error("Another CIP run holds the lock (scripts/weekly_forsta.py?); try again when it finishes")
-        return 1
     client = _client()
     if args.discover:
         log.info("Register: %s", discover(client))
@@ -542,17 +564,20 @@ def main() -> int:
         result = run_due(client)
         log.info("Loaded %d, failed %d: %s", len(result["loaded"]), len(result["failed"]), result["failed"])
         return 1 if result["failed"] else 0
-    else:
-        with get_engine("etl").connect() as conn:
-            ids = [s for (s,) in conn.execute(text(
-                "SELECT survey_id FROM cip_survey WHERE platform = 'forsta' AND load_status = 'verified'"))]
-        bad = 0
-        for sid in ids:
-            checked, problems = reconcile_survey(sid, client)
-            bad += len(problems)
-            log.info("survey_id %s: %d answers checked, %d differ %s", sid, checked, len(problems), problems[:3])
-        return 1 if bad else 0
     return 0
+
+
+def reconcile_all(client) -> int:
+    """Every verified Forsta wave against Forsta; a wave nothing could be checked on (hibernated) is not a pass."""
+    with get_engine("etl").connect() as conn:
+        ids = [s for (s,) in conn.execute(text(
+            "SELECT survey_id FROM cip_survey WHERE platform = 'forsta' AND load_status = 'verified'"))]
+    bad = 0
+    for sid in ids:
+        checked, problems = reconcile_survey(sid, client)
+        bad += len(problems) + (checked == 0)
+        log.info("survey_id %s: %d answers checked, %d differ %s", sid, checked, len(problems), problems[:3])
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":

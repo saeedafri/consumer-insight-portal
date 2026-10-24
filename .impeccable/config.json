@@ -12,6 +12,12 @@
         ],
         "createdAt": "2026-10-20T18:04:50.234Z",
         "reason": "Coresight 2026 style guide (user-supplied PDF, PDF/PowerPoint Reports, Example 1) puts a red vertical bar before report headings; .page-head h1 reproduces that brand element"
+      },
+      {
+        "rule": "overused-font",
+        "value": "montserrat",
+        "createdAt": "2026-10-23T11:31:04.007Z",
+        "reason": "Coresight brand typography: PRODUCT.md Brand Commitments names Montserrat Variable as the brand face"
       }
     ]
   }

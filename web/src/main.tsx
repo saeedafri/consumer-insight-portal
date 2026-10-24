@@ -2,13 +2,14 @@
 import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Link, Navigate, RouterProvider } from "react-router";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import "@fontsource-variable/montserrat";
+import "@fontsource-variable/roboto";
 import "./styles.css";
 import Shell from "./components/Shell";
 import Profiled from "./components/Profiled";
-import { Loading } from "./components/bits";
-import { Busy } from "./api";
+import { SkeletonScreen } from "./components/bits";
+import { queries } from "./api";
 
 // Dynamically load React Scan only when enabled: keeps baseline bundle tiny & RAM minimal
 if (import.meta.env.DEV) {   // dev server only: production builds drop react-scan (≈ 400 KB) entirely
@@ -27,7 +28,7 @@ if (import.meta.env.DEV) {   // dev server only: production builds drop react-sc
 const page = (name: string, load: () => Promise<{ default: React.ComponentType }>) => {
   const Page = lazy(load);
   return (
-    <Suspense fallback={<Loading what="screen" />}>
+    <Suspense fallback={<SkeletonScreen kind="page" />}>
       <Profiled id={name}>
         <Page />
       </Profiled>
@@ -40,7 +41,7 @@ const router = createBrowserRouter([{
   errorElement: (
     <div style={{ padding: "40px 28px", maxWidth: 640, margin: "40px auto", background: "var(--surface)", borderRadius: "var(--radius)", border: "1px solid var(--mist)" }}>
       <p style={{ color: "var(--ink)", fontWeight: 700, margin: 0 }}>Portal Notice</p>
-      <h2 style={{ margin: "8px 0" }}>Unable to display this view</h2>
+      <h1 style={{ margin: "8px 0", fontSize: 24 }}>Unable to display this view</h1>
       <p style={{ color: "var(--ink-2)", lineHeight: 1.55 }}>An unexpected application event occurred. You can return to the Survey Library.</p>
       <p style={{ marginTop: 16 }}><a href="/" style={{ color: "#fff", background: "var(--red)", padding: "8px 14px", borderRadius: 8, textDecoration: "none", fontWeight: 600 }}>Return to Library</a></p>
     </div>
@@ -59,6 +60,7 @@ const router = createBrowserRouter([{
     { path: "/ask", element: page("Page:Ask", () => import("./pages/Ask")) },
     { path: "/boards/:id?", element: page("Page:Boards", () => import("./pages/Boards")) },
     { path: "/whats-new", element: page("Page:WhatsNew", () => import("./pages/WhatsNew")) },
+    { path: "/methodology", element: page("Page:Methodology", () => import("./pages/Methodology")) },
     { path: "/w/:id/changes", element: page("Page:Changes", () => import("./pages/Changes")) },
     { path: "/w/:id/survey/:q?", element: page("Page:Survey", () => import("./pages/Survey")) },
     {
@@ -66,7 +68,7 @@ const router = createBrowserRouter([{
       element: (
         <div className="card pad" style={{ maxWidth: 640, margin: "24px 0" }}>
           <p className="eyebrow">404</p>
-          <h2 style={{ margin: "6px 0 10px" }}>Page not found</h2>
+          <h1 style={{ margin: "6px 0 10px", fontSize: 24 }}>Page not found</h1>
           <p className="lede">The requested report or route does not exist.</p>
           <p style={{ marginTop: 14 }}>
             <Link className="btn primary" to="/">Return to Survey Library</Link>
@@ -77,14 +79,14 @@ const router = createBrowserRouter([{
   ],
 }]);
 
-const queries = new QueryClient({ defaultOptions: { queries: {
-  refetchOnWindowFocus: false,
-  retry: (count, error) => (error instanceof Busy ? count < 3 : count < 1),   // busy: up to 3 tries, 3 s apart
-  retryDelay: (_, error) => (error instanceof Busy ? 3000 : 800),
-} } });
+// the first screen's chunk starts downloading now, in parallel with React's first render, not after the router matches it
+if (location.pathname === "/") void import("./pages/Library");
+else if (/^\/w\/\d+\/?$/.test(location.pathname)) void import("./pages/Overview");
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode><QueryClientProvider client={queries}><RouterProvider router={router} /></QueryClientProvider></StrictMode>);
 
 // the chart library (≈190 KB gzipped) loads while the first screen is idle, so the first chart never waits for it
 const idle = window.requestIdleCallback ?? ((run: () => void) => setTimeout(run, 1500));
-idle(() => { void import("./components/EChart"); });
+// and the screens most often opened next (a wave's overview and its questions, ≈ 7 KB gzipped together)
+idle(() => { void import("./components/EChart"); void import("./pages/Overview"); void import("./pages/Explorer"); });

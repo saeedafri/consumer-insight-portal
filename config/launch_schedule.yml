@@ -596,3 +596,6 @@ weeks:
   - Social Commerce
   topics:
   - GLP-1
+
+# Mondays with no launch (a holiday week): the rule after the last planned Monday skips them too. Kept by --import.
+skip: []

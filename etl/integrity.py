@@ -47,6 +47,11 @@ def rebuild_lines(survey_id: int) -> None:
     tracker_line.build(survey_id)
 
 
+def rebuild_serving(survey_id: int) -> None:
+    from etl import serving
+    serving.build_wave(survey_id)
+
+
 @dataclass
 class Check:
     name: str
@@ -71,6 +76,14 @@ CHECKS = [
           "SELECT s.survey_id FROM cip_survey s WHERE s.load_status = 'verified' AND s.platform = 'forsta'"
           " AND s.study_type = 'tracker'"
           " AND NOT EXISTS (SELECT 1 FROM cip_tracker_line t WHERE t.survey_id = s.survey_id)", fix=rebuild_lines),
+    # every reportable cube cell of a served wave is one serving row (etl/serving.cube_rows: cohort cells, empty
+    # bases and a cut's blank value are not reported); fewer means cells were lost, as two items sharing a label were.
+    # Waves built in the last week only: all 371 take minutes (the one-off full check: 80-fixes-etl.md runbook)
+    Check("served wave whose serving rows differ from its cube cells", "derived",
+          "SELECT w.survey_id FROM srv_wave w WHERE w.built_at >= :week_ago AND w.rows_built <> (SELECT COUNT(*) FROM cip_agg_cell c"
+          " JOIN cip_question q ON q.question_id = c.question_id AND q.is_technical = 0 AND q.is_virtual = 0"
+          " WHERE c.survey_id = w.survey_id AND c.cohort_id IS NULL AND c.base_n > 0"
+          " AND (c.dim = 'total' OR c.dim_value <> ''))", fix=rebuild_serving),
     Check("tracker line without its respondent", "orphan",
           "SELECT COUNT(*) FROM cip_tracker_line t LEFT JOIN cip_respondent r ON r.respondent_id = t.respondent_id"
           " WHERE r.respondent_id IS NULL",
@@ -192,7 +205,13 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s")
     ap = argparse.ArgumentParser(description="Check (and heal) the CIP warehouse")
     ap.add_argument("--check", action="store_true", help="report only, change nothing")
-    left = run(heal=not ap.parse_args().check)
+    heal = not ap.parse_args().check
+    if heal:
+        from etl.loaders import etl_lock
+        with etl_lock():
+            left = run()
+    else:
+        left = run(heal=False)
     for line in left:
         print(line)
     print("whole" if not left else f"{len(left)} problem(s)")

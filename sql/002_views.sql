@@ -1,6 +1,8 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- CSI reporting views. The portal reads these, never the base tables.
 -- Every view that produces a percentage carries the base it was computed on.
+-- Every view shows verified waves only (load_status = 'verified'): a wave still
+-- loading, or failed, never appears half-written.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Denormalised answer stream with demographics attached.
@@ -18,7 +20,7 @@ SELECT
     p.weight
 FROM cip_answer     a
 JOIN cip_respondent r ON r.respondent_id = a.respondent_id
-JOIN cip_survey     s ON s.survey_id     = r.survey_id
+JOIN cip_survey     s ON s.survey_id     = r.survey_id AND s.load_status = 'verified'
 LEFT JOIN cip_profile p ON p.respondent_id = r.respondent_id
 JOIN cip_field      f ON f.field_id      = a.field_id
 LEFT JOIN cip_question q ON q.question_id = f.question_id
@@ -36,6 +38,7 @@ WITH reached AS (
       FROM cip_answer a
       JOIN cip_field  f ON f.field_id = a.field_id
       JOIN cip_respondent r ON r.respondent_id = a.respondent_id AND r.is_qualified = 1
+      JOIN cip_survey s ON s.survey_id = a.survey_id AND s.load_status = 'verified'
      WHERE f.question_id IS NOT NULL
      GROUP BY a.survey_id, f.question_id, a.respondent_id
 )
@@ -51,6 +54,7 @@ SELECT
                    WHERE x.survey_id = a.survey_id AND x.question_id = q.question_id), 0) AS pct
 FROM cip_answer     a
 JOIN cip_respondent r ON r.respondent_id = a.respondent_id AND r.is_qualified = 1
+JOIN cip_survey     s ON s.survey_id = a.survey_id AND s.load_status = 'verified'
 JOIN cip_field      f ON f.field_id = a.field_id
 JOIN cip_question   q ON q.question_id = f.question_id AND q.is_multi = 1
 JOIN cip_item       i ON i.item_id = f.item_id
@@ -70,6 +74,7 @@ SELECT
     SUM(COUNT(*)) OVER (PARTITION BY r.survey_id, q.question_id) AS base_n
 FROM cip_answer     a
 JOIN cip_respondent r ON r.respondent_id = a.respondent_id AND r.is_qualified = 1
+JOIN cip_survey     s ON s.survey_id = r.survey_id AND s.load_status = 'verified'
 JOIN cip_field      f ON f.field_id = a.field_id
 JOIN cip_question   q ON q.question_id = f.question_id
                       AND q.qtype = 'single' AND q.is_technical = 0
@@ -92,6 +97,7 @@ SELECT
         / NULLIF(SUM(COUNT(*)) OVER (PARTITION BY r.survey_id, q.qcode, i.item_id), 0) AS pct
 FROM cip_answer     a
 JOIN cip_respondent r ON r.respondent_id = a.respondent_id AND r.is_qualified = 1
+JOIN cip_survey     s ON s.survey_id = r.survey_id AND s.load_status = 'verified'
 JOIN cip_field      f ON f.field_id = a.field_id
 JOIN cip_question   q ON q.question_id = f.question_id AND q.qtype IN ('grid_single','grid_multi')
 JOIN cip_item       i ON i.item_id = f.item_id
@@ -115,7 +121,7 @@ SELECT
     run.pct_base, run.respondent_base
 FROM cip_crosstab      c
 JOIN cip_crosstab_run  run ON run.run_id = c.run_id AND run.is_current = 1
-JOIN cip_survey        s   ON s.survey_id = c.survey_id
+JOIN cip_survey        s   ON s.survey_id = c.survey_id AND s.load_status = 'verified'
 JOIN cip_question      q   ON q.question_id = c.question_id
 JOIN cip_segment       g   ON g.segment_id = c.segment_id
 JOIN cip_banner        b   ON b.banner_id = g.banner_id;
@@ -126,7 +132,7 @@ SELECT
     s.survey_family, s.wave_label, s.wave_date,
     i.qcode, i.item_label, i.pct, i.base_n
 FROM v_cip_item_incidence i
-JOIN cip_survey s ON s.survey_id = i.survey_id;
+JOIN cip_survey s ON s.survey_id = i.survey_id AND s.load_status = 'verified';
 
 -- Field health for the data team.
 CREATE OR REPLACE VIEW v_cip_survey_health AS
@@ -142,6 +148,7 @@ SELECT
     MAX(r.completed_at)                                AS last_complete
 FROM cip_survey s
 LEFT JOIN cip_respondent r ON r.survey_id = s.survey_id
+WHERE s.load_status = 'verified'
 GROUP BY s.survey_id, s.title, s.wave_label;
 
 -- Every question with its base, so a chart can never lose it.
@@ -151,6 +158,7 @@ SELECT
     q.is_multi, q.base_n, q.base_desc,
     ROUND(100.0 * q.base_n / NULLIF(h.qualified_n, 0), 1) AS pct_of_wave
 FROM cip_question q
+JOIN cip_survey s ON s.survey_id = q.survey_id AND s.load_status = 'verified'
 LEFT JOIN cip_topic t ON t.topic_id = q.topic_id
 LEFT JOIN v_cip_survey_health h ON h.survey_id = q.survey_id
 WHERE q.is_technical = 0;
@@ -165,7 +173,7 @@ SELECT m.survey_id, s.wave_label, s.title AS survey_title,
        m.concept_id, c.concept_code, c.concept_name,
        m.method, m.confidence, m.evidence, m.created_at
   FROM cip_concept_map m
-  JOIN cip_survey   s ON s.survey_id   = m.survey_id
+  JOIN cip_survey   s ON s.survey_id   = m.survey_id AND s.load_status = 'verified'
   JOIN cip_question q ON q.question_id = m.question_id
   LEFT JOIN cip_item i ON i.item_id    = m.item_id
   JOIN cip_concept  c ON c.concept_id  = m.concept_id

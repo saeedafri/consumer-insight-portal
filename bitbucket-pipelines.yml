@@ -8,8 +8,9 @@ definitions:
         image: python:3.13-slim
         caches: [pip]
         script:
-          - pip install -r requirements.txt pytest
-          - pytest -q tests
+          - pip install -r requirements.txt pytest pip-audit
+          - pytest -q
+          - pip-audit -r requirements.txt
     - step: &web
         name: Web check and build
         image: node:26-slim

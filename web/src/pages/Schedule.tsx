@@ -4,7 +4,7 @@ import CountUp from "../components/CountUp";
 import { useState } from "react";
 import { Link } from "react-router";
 import { LaunchWeek, useSchedule } from "../api";
-import { Card, Failure, Loading } from "../components/bits";
+import { Card, eastern, Failure, Loading } from "../components/bits";
 import { fmtDate } from "../stats";
 import { Button } from "@/components/ui/button";
 
@@ -14,7 +14,7 @@ const STATUS: Record<LaunchWeek["status"], [string, string]> = {
   not_found: ["No survey found", "sig"],
 };
 const DAY = 86_400_000;
-const ist = (iso: string) => new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+const et = (iso: string) => eastern(new Date(iso), { weekday: "short", hour: "numeric", minute: "2-digit" });   // "Mon 8:30 AM EDT"
 
 function Quota({ w }: { w: LaunchWeek }) {
   if (w.qualified == null || !["in_field", "closed", "loaded", "load_failed"].includes(w.status)) return <span className="muted">—</span>;
@@ -30,7 +30,7 @@ function Quota({ w }: { w: LaunchWeek }) {
         {w.quota_cells!.filter(c => c.sheet === s).map(c => <div key={c.cell} className="quota-cell">
           <span>{c.cell}</span><span className={c.complete >= c.limit ? "muted" : ""}>{c.complete}/{c.limit}{c.complete >= c.limit ? " full" : ` · ${c.limit - c.complete} left`}</span></div>)}
       </div>)}
-      {w.quota_at && <small className="muted">as of {ist(w.quota_at)} IST</small>}
+      {w.quota_at && <small className="muted">as of {et(w.quota_at)}</small>}
     </details>}
   </>;
 }
@@ -41,7 +41,7 @@ const LOAD: Record<string, string> = { due: "fieldwork over", loaded: "in the po
 /** What the pipeline saw, in order: launched, fieldwork over (quota or time), closed, loaded. */
 function History({ w }: { w: LaunchWeek }) {
   if (w.history.length < 2) return null;
-  return <small className="muted history">{w.history.map(h => `${LOAD[h.load_state] ?? STEP[h.state] ?? h.state} ${ist(h.at)}`).join(" → ")}</small>;
+  return <small className="muted history">{w.history.map(h => `${LOAD[h.load_state] ?? STEP[h.state] ?? h.state} ${et(h.at)}`).join(" → ")}</small>;
 }
 
 export default function Schedule() {
@@ -61,7 +61,7 @@ export default function Schedule() {
   return <>
     <div className="page-head"><div>
       <h1>Launch schedule</h1>
-      <p className="lede">The data team's 12-week sector plan, checked each week against Forsta. A wave launches Monday around 18:00 IST. The portal loads it as soon as no quota is left (every quota cell full, or {data!.quota} qualified, where Forsta usually stops) or 9 hours have passed (03:00 IST), whichever comes first, and refreshes it when Forsta closes the survey. Open “Quota left” on a live wave to see each cell.</p>
+      <p className="lede">The data team's 12-week sector plan, checked each week against Forsta. A wave launches Monday around 8:30 AM EDT (7:30 AM EST); every time on this page is US Eastern. The portal loads it as soon as no quota is left (every quota cell full, or {data!.quota} qualified, where Forsta usually stops) or 9 hours have passed, whichever comes first, and refreshes it when Forsta closes the survey. Open “Quota left” on a live wave to see each cell.</p>
     </div></div>
     <div className="grid g4" style={{ marginBottom: 18 }}>
       <div className="card kpi lead">
@@ -114,7 +114,7 @@ export default function Schedule() {
             <td>{w.sector}</td>
             <td>{w.topics.length ? w.topics.map(t => <span key={t} className="tag">{t}</span>) : <span className="muted">—</span>}</td>
             <td><span className={`chip ${STATUS[w.status][1]}`}>{STATUS[w.status][0]}</span>
-              {w.launched && <small className="muted" style={{ display: "block", marginTop: 4 }}>{ist(w.launched)}{w.closed ? ` → ${ist(w.closed)}` : ""} IST</small>}
+              {w.launched && <small className="muted" style={{ display: "block", marginTop: 4 }}>{et(w.launched)}{w.closed ? ` → ${et(w.closed)}` : ""}</small>}
               <History w={w} /></td>
             <td><Quota w={w} /></td>
             <td className="title-cell">{w.survey_id ? <Link to={`/w/${w.survey_id}`}>{w.title}</Link> : w.title ?? <span className="muted">—</span>}

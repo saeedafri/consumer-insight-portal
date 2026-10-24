@@ -47,7 +47,7 @@ CIP is a research-grade analytical desk—not a generic SaaS metrics dashboard. 
   - Ink (`#2D2A29` / `#1A1A2E`): Deep charcoal text for high contrast readability.
   - Desk & Paper (`#EEF0F3` / `#FAFAFA` / `#FFFFFF`): Clean, intentional surfaces.
   - Data Series Blue (`#005F8F` / `#A3C0CE`): Controlled opacity ombre for categorical options.
-- **Typography**: Clean humanist/grotesque sans (Montserrat Variable / IBM Plex Sans) with tabular numbers (`tabular-nums`) across all data displays. Sentence case exclusively—no screaming uppercase headers.
+- **Typography**: Montserrat for headings and Roboto for body text, as on coresight.com, with tabular numbers (`tabular-nums`) across all data displays. Sentence case exclusively—no screaming uppercase headers.
 - **Brand Motifs**: Clean red vertical bar prefix on major page headings (reproducing the authoritative Coresight Research PDF report style).
 
 ## Evidence on Hand

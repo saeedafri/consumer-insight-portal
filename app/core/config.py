@@ -100,14 +100,14 @@ class ForstaConfig:
 
 class Config:
     def __init__(self) -> None:
-        raw = _env("APP_ENV", "LOCAL").lower()
+        raw = _env("APP_ENV", "PRODUCTION").lower()   # unset or unknown is production: nothing fails open by accident
         self.environment = {
             "local": Environment.LOCAL,
             "staging": Environment.STAGING,
             "stg": Environment.STAGING,
             "production": Environment.PRODUCTION,
             "prod": Environment.PRODUCTION,
-        }.get(raw, Environment.LOCAL)
+        }.get(raw, Environment.PRODUCTION)
         self.debug = _env("DEBUG", "0") in {"1", "true", "True"}
 
     @property

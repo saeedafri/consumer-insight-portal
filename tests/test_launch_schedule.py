@@ -96,6 +96,8 @@ def test_fieldwork_ends_when_no_quota_is_left_or_the_time_limit_without_touching
     assert not fielded({**tracker, "qualified": 399}, None, soon)
     assert fielded({**tracker, "qualified": 400}, None, soon)               # Forsta stops trackers at 400, cells short
     assert fielded({**tracker, "qualified": 120}, None, launch + timedelta(hours=FIELD_HOURS))
-    assert not fielded({**adhoc, "qualified": 1990}, open_cells, soon)      # quota left in South and Male
-    assert fielded({**adhoc, "qualified": 2000}, full, soon)                # no quota left: the conditional flow is ignored
-    assert fielded({**adhoc, "qualified": 2000}, open_cells, soon)          # a whole sheet's target reached
+    assert not fielded({**tracker, "qualified": 390}, open_cells, soon)    # quota left in South and Male
+    assert fielded({**tracker, "qualified": 390}, full, soon)              # no quota left: the conditional flow is ignored
+    assert fielded({**tracker, "qualified": 390}, [{**c, "limit": 390} for c in open_cells], soon)   # a sheet's target reached
+    # an annual or ad hoc study fields for days: it loads only once Forsta closes it, whatever its quota or hours
+    assert not fielded({**adhoc, "qualified": 2000}, full, launch + timedelta(hours=FIELD_HOURS * 5))

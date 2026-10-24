@@ -4,22 +4,32 @@ import { useMemo, useRef } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { COLUMNS, CUT_OF, present, useBook, useQuestion, useWaves } from "../api";
 import { cellsOf, toTrend } from "../question";
-import type { Column, Trend } from "../api";
-import { Card, copyLink, Empty, Failure, Loading, SourceLine, sourceText, ExportButtons } from "../components/bits";
-import EChart, { axisText, downloadPng, tooltip } from "../components/EChart";
+import type { Column, Trend, Wave } from "../api";
+import { Card, copyLink, Empty, Failure, IconLink, Menu, Skeleton, SkeletonScreen, SourceLine, sourceText, ExportButtons } from "../components/bits";
+import EChart, { downloadPng, tooltip, valueText } from "../components/EChart";
 import type { Chart } from "../components/EChart";
 import QuestionNav from "../components/QuestionNav";
+import QuestionTabs from "../components/QuestionTabs";
 import { downloadTable } from "../csv";
 import type { Format } from "../csv";
-import { C, blues } from "../theme";
+import { C, useTheme } from "../theme";
 import { fmtDate, moe, pct, pts, significant } from "../stats";
 import { perf } from "../perf";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { ChevronLeft, ChevronRight, Image as ImageIcon, Link as LinkIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const RANGES = [["3m", 92], ["6m", 183], ["1y", 366], ["all", 1e5]] as const;
+/** ?range= from the link, or one year when it is missing or not one of ours (an old or hand-edited link never breaks). */
+const rangeOf = (raw: string | null) => RANGES.find(([k]) => k === raw) ?? RANGES[2];
+/** Defaults a reader of a long trend wants (YouGov, Datawrapper): the 4-week average over six months or more, with the
+ *  raw waves as dots, and the focus answer's margin of error. Both stay in the link once changed. */
+const avgOn = (p: URLSearchParams) => (p.get("avg") ? p.get("avg") === "1" : rangeOf(p.get("range"))[1] >= 183);
+const bandOn = (p: URLSearchParams) => p.get("band") !== "0";
+/** The focus answer in red, the next three in the blue ramp, any more in grey: never more than four colours. */
+const colourOf = (k: number) => (k === 0 ? C.redLine : [C.s1, C.s2, C.s3][k - 1] ?? C.other);
+const SINGLE = "single comparison with the wave before, 95 %, not corrected for the many points on the chart";
 const DAY = 86_400_000;
 const WEEKLY_GAP = 10;   // days: a longer silence is a missing wave or another season, never "the previous wave"
 
@@ -47,7 +57,7 @@ export default function Trends() {
   const file = useQuestion(familySize > 1 ? book?.wave : undefined, question?.id ?? "");   // one wave: nothing to trend
   const cells = useMemo(() => file.data && cellsOf(file.data), [file.data]);
   const trend = { error: file.error, data: useMemo(() => file.data && cells && toTrend(file.data, cells, dim, value), [file.data, cells, dim, value]) };
-  if (isLoading) return <Loading what="questions" />;
+  if (isLoading) return <SkeletonScreen kind="question" />;
   if (error || !book) return <Failure error={error} />;
   if (!question) return <Empty>This wave has no questions with percentages.</Empty>;
   const qIndex = book.questions.findIndex(x => x.id === question.id);
@@ -63,7 +73,7 @@ export default function Trends() {
     <QuestionNav questions={book.questions} current={question.id} onPick={q => navigate(`/w/${id}/trends/${encodeURIComponent(q.id)}?${new URLSearchParams({ col: column })}`)} />
     <div className="stack">
       <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+        <div className="qcrumbs" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
           <div className="breadcrumb">
             <Link to={`/w/${id}`}>Overview</Link>
             <span className="sep">›</span>
@@ -112,39 +122,48 @@ export default function Trends() {
           </div>
         </div>
         <div className="qhead"><code>{question.id}</code><span>{question.section}</span></div>
-        <p className="qtext">{question.text}</p>
+        <h1 className="qtext">{question.text}</h1>
         <div className="toolbar" style={{ margin: 0, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <label className="sr-only" htmlFor="col">Respondents</label>
           <select id="col" value={column} onChange={e => set("col", e.target.value)}>{present(book.n).map(c => <option key={c}>{c}</option>)}</select>
-          <Tabs value={params.get("range") ?? "1y"} onValueChange={k => set("range", k)}>
+          <Tabs value={rangeOf(params.get("range"))[0]} onValueChange={k => set("range", k)}>
             <TabsList>
               {RANGES.map(([k]) => (
                 <TabsTrigger key={k} value={k}>{k === "all" ? "All" : k}</TabsTrigger>
               ))}
             </TabsList>
           </Tabs>
-          <label className="check" title="Each point becomes the mean of that wave and the three before it: smooths week-to-week noise, at the cost of reacting a month late."><input type="checkbox" checked={params.get("avg") === "1"} onChange={e => set("avg", e.target.checked ? "1" : "")} /> 4-week average</label>
-          <label className="check" title="The shaded band is the 95 % margin of error of the red line: with about 400 people a week, ±5 points. Moves inside it can be noise."><input type="checkbox" checked={params.get("band") === "1"} onChange={e => set("band", e.target.checked ? "1" : "")} /> Margin of error</label>
+          <Tooltip>
+            <TooltipTrigger render={<label className="check"><input type="checkbox" checked={avgOn(params)} onChange={e => set("avg", e.target.checked ? "1" : "0")} /> 4-week average</label>} />
+            <TooltipContent>Each point becomes the mean of that wave and the three before it: smooths week-to-week noise, at the cost of reacting a month late.</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger render={<label className="check"><input type="checkbox" checked={bandOn(params)} onChange={e => set("band", e.target.checked ? "" : "0")} /> Margin of error</label>} />
+            <TooltipContent>The shaded band is the 95 % margin of error of the red line: with about 400 people a week, ±5 points. Moves inside it can be noise.</TooltipContent>
+          </Tooltip>
         </div>
+        <QuestionTabs id={id} q={question.id} />
       </Card>
       {familySize === 1 ? <Card><Empty>This survey was fielded once, so there is no trend. Weekly tracker questions and repeated studies have trends.</Empty></Card>
-        : trend.error ? <Failure error={trend.error} /> : !trend.data ? <Loading what="trend" />
-        : <TrendCard t={trend.data} column={column} waveId={id} />}
+        : trend.error ? <Failure error={trend.error} /> : !trend.data ? <Skeleton height={560} className="card" label="trend" />
+        : <TrendCard t={trend.data} column={column} waveId={id} from={{ ...book.wave, weighting: "unweighted" }} />}
     </div>
   </div>;
 }
 
-function TrendCard({ t, column, waveId }: { t: Trend; column: Column; waveId: number }) {
+function TrendCard({ t, column, waveId, from }: { t: Trend; column: Column; waveId: number; from: Wave }) {
   if (!t.waves.length) return <Card><Empty>No respondents in {column === "Total" ? "this survey" : `the ${column} group`} answered this question. Choose another column or question.</Empty></Card>;
-  return <TrendView t={t} column={column} waveId={waveId} />;
+  return <TrendView t={t} column={column} waveId={waveId} from={from} />;
 }
 
-function TrendView({ t, column, waveId }: { t: Trend; column: Column; waveId: number }) {
+function TrendView({ t, column, waveId, from }: { t: Trend; column: Column; waveId: number; from: Wave }) {
   const [params, setParams] = useSearchParams();
   const chart = useRef<Chart | null>(null);
-  const range = RANGES.find(([k]) => k === (params.get("range") ?? "1y"))![1];
-  const avg = params.get("avg") === "1", band = params.get("band") === "1";
-  const at = t.waves.findIndex(w => w.survey_id === waveId);
+  const range = rangeOf(params.get("range"))[1];
+  const avg = avgOn(params), band = bandOn(params);
+  const theme = useTheme();
+  const found = t.waves.findIndex(w => w.survey_id === waveId);
+  const at = found >= 0 ? found : t.waves.length - 1;   // this wave's group did not answer: end at the latest wave that did
   const start = new Date(t.waves[at].wave_date).getTime() - range * DAY;
   const version = t.waves[at].version;   // one question per line: other versions reused this code for something else
   const idx = t.waves.map((w, i) => i).filter(i => t.waves[i].version === version && new Date(t.waves[i].wave_date).getTime() >= start && i <= at);
@@ -161,8 +180,7 @@ function TrendView({ t, column, waveId }: { t: Trend; column: Column; waveId: nu
     p.set("show", labels.join("|"));
     setParams(p, { replace: true });
   };
-  const option = useMemo(() => {
-    const shades = blues(Math.max(shown.length - 1, 1));
+  const make = useMemo(() => () => {
     const gapDays = 10;   // weekly tracker: a longer silence is a missing wave, drawn as a gap
     const points = (values: (number | null)[]) => {
       const out: [number, number | null][] = [];
@@ -188,27 +206,32 @@ function TrendView({ t, column, waveId }: { t: Trend; column: Column; waveId: nu
     const series: object[] = [];
     shown.forEach((s, k) => {
       const values = avg ? smooth(s.pct) : s.pct;
-      const color = k === 0 ? C.red : shades[k - 1];
+      const color = colourOf(k);
+      // each wave as drawn; with `rings`, a white ring where the raw figure moved significantly from the week before
+      const marks = (vals: (number | null)[], size: number, rings: boolean) => points(vals).map(([time, v]) => {
+        const i = t.waves.findIndex(w => new Date(w.wave_date + "T00:00:00").getTime() === time);
+        const pi = i >= 0 ? previous(t, s, i) : null;
+        const jump = rings && v != null && pi != null && s.base[i] && s.base[pi] && significant(v, s.base[i]!, s.pct[pi]!, s.base[pi]!);
+        return { value: [time, v], i, symbolSize: jump ? 9 : size, itemStyle: jump ? { color: C.surface, borderColor: color, borderWidth: 2.5 } : undefined };
+      });
       series.push({
-        type: "line", name: s.label, data: points(values).map(([time, v], j, all) => {
-          const i = t.waves.findIndex(w => new Date(w.wave_date + "T00:00:00").getTime() === time);
-          const pi = i >= 0 ? previous(t, s, i) : null;
-          const jump = !avg && v != null && pi != null && s.base[i] && s.base[pi] && significant(v, s.base[i]!, s.pct[pi]!, s.base[pi]!);
-          return { value: [time, v], i, symbolSize: jump ? 9 : dense ? 0 : 6, itemStyle: jump ? { color: C.surface, borderColor: color, borderWidth: 2.5 } : undefined };
-        }),
-        connectNulls: false, showSymbol: true, symbol: "circle", lineStyle: { width: k === 0 ? 2.25 : 1.5, color }, itemStyle: { color },
-        endLabel: { show: true, color, fontWeight: 700, fontSize: 11, formatter: (p: { value: [number, number | null] }) => (p.value[1] == null ? "" : `${p.value[1].toFixed(0)}%`) },
+        type: "line", name: s.label, data: marks(values, avg || dense ? 0 : 6, !avg),
+        connectNulls: false, showSymbol: true, symbol: "circle", lineStyle: { width: k === 0 ? 2.5 : 1.5, color }, itemStyle: { color },
+        endLabel: { show: true, color, fontWeight: 700, fontSize: 12, formatter: (p: { value: [number, number | null] }) => (p.value[1] == null ? "" : `${p.value[1].toFixed(0)}%`) },
         emphasis: { focus: "series" }, z: 10 - k,
       });
+      if (avg) series.push({ type: "line", data: marks(s.pct, 3, true), lineStyle: { opacity: 0 }, symbol: "circle", itemStyle: { color, opacity: 0.6 },
+                             silent: true, tooltip: { show: false }, z: 9 - k });   // the raw waves behind the average
       if (band && k === 0) {
-        const lower = points(s.pct.map((p, i) => (p == null || !s.base[i] ? null : p - moe(p, s.base[i]!))));
-        const width = points(s.pct.map((p, i) => (p == null || !s.base[i] ? null : 2 * moe(p, s.base[i]!))));
+        // around the line as drawn (the 4-week average when it is on), at that wave's own base: conservative for an average
+        const lower = points(values.map((p, i) => (p == null || !s.base[i] ? null : p - moe(p, s.base[i]!))));
+        const width = points(values.map((p, i) => (p == null || !s.base[i] ? null : 2 * moe(p, s.base[i]!))));
         series.push({ type: "line", stack: "band", data: lower, lineStyle: { opacity: 0 }, symbol: "none", silent: true, tooltip: { show: false } },
-                    { type: "line", stack: "band", data: width, lineStyle: { opacity: 0 }, symbol: "none", areaStyle: { color: "rgba(214,46,47,.16)" }, silent: true, tooltip: { show: false } });
+                    { type: "line", stack: "band", data: width, lineStyle: { opacity: 0 }, symbol: "none", areaStyle: { color: `${C.redLine}24` }, silent: true, tooltip: { show: false } });
       }
     });
     return {
-      tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "line", lineStyle: { color: C.silver } },
+      tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "line", lineStyle: { color: C.lineStrong } },
         formatter: (ps: { seriesName: string; color: string; data: { value: [number, number | null]; i: number } }[]) => {
           const real = ps.filter(p => p.data?.value?.[1] != null && p.data.i >= 0);
           if (!real.length) return "No wave this week (not fielded or not loaded)";
@@ -217,24 +240,26 @@ function TrendView({ t, column, waveId }: { t: Trend; column: Column; waveId: nu
             const s = t.series.find(x => x.label === p.seriesName)!;
             const v = p.data.value[1]!, base = s.base[i] ?? 0;
             const pi = previous(t, s, i);
-            const change = pi == null ? "" : ` · ${pts(v - s.pct[pi]!)}${s.base[pi] && significant(v, base, s.pct[pi]!, s.base[pi]!) ? " <b>sig.</b>" : ""}`;
+            const change = pi == null ? "" : ` · ${pts(v - s.pct[pi]!)}${s.base[pi] && significant(v, base, s.pct[pi]!, s.base[pi]!) ? " <b>sig. (single test)</b>" : ""}`;
             return `<div style="margin-top:5px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${p.color};margin-right:6px"></span>${s.label}<br/>` +
                    `<b style="font-size:15px">${pct(v)}</b> ±${moe(v, base).toFixed(1)} · n=${base}${avg ? " · 4-wk avg" : change}</div>`;
           }).join("");
         } },
       legend: { show: false },
       grid: { left: 8, right: 44, top: 16, bottom: 8, containLabel: true },
-      xAxis: { type: "time", axisLabel: { ...axisText(), hideOverlap: true }, axisLine: { lineStyle: { color: C.silver } }, axisTick: { show: true } },
-      yAxis: { type: "value", axisLabel: { ...axisText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.mist } },
+      xAxis: { type: "time", axisLabel: { ...valueText(), hideOverlap: true }, axisLine: { lineStyle: { color: C.lineStrong } }, axisTick: { show: true } },
+      yAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.line, type: [2, 3] } },
                min: (v: { min: number }) => Math.max(0, Math.floor((v.min - 5) / 10) * 10) },
       series,
     };
   }, [t, idx, shown, avg, band]);
+  const option = useMemo(() => make(), [make, theme]);   // theme: rebuilt with the new palette on a switch
   const focus = shown[0];
   const bases = idx.map(i => focus?.base[i]).filter((b): b is number => b != null);
   const baseRange = bases.length ? `${Math.min(...bases)}–${Math.max(...bases)}` : "–";
   const exportAs = (format: Format) => downloadTable(format, `${t.qcode}-trend-${column}`, ["Wave", ...shown.map(s => `${s.label} %`), ...shown.map(s => `${s.label} base`)],
-    idx.map(i => [t.waves[i].wave_date, ...shown.map(s => s.pct[i]), ...shown.map(s => s.base[i])]), [`${t.qcode} trend, ${column}`, "Source: Coresight Research US Consumer Survey"]);
+    idx.map(i => [t.waves[i].wave_date, ...shown.map(s => s.pct[i]), ...shown.map(s => s.base[i])]),
+    [`${t.qcode} trend, ${column}`, `Marks: ${SINGLE}`, sourceText(from, fmtDate(t.waves[at].wave_date), `n ${baseRange} per wave · ${column}`)]);
   if (idx.length < 2) {
     const same = t.waves.filter(w => w.version === version).length;
     return <Card><Empty>{same < 2
@@ -242,28 +267,19 @@ function TrendView({ t, column, waveId }: { t: Trend; column: Column; waveId: nu
       : <>This question was asked in only one wave in this range. Choose “All” to see its {same} waves.</>}</Empty></Card>;
   }
   return <>
-    <Card title={`${focus ? focus.label : "Pick an answer"}: ${idx.length} waves`} sub={`${column} · ${fmtDate(t.waves[idx[0]].wave_date)} – ${fmtDate(t.waves[at].wave_date)} · white rings mark a significant change from the previous wave`}
+    <Card title={`${focus ? focus.label : "Pick an answer"}: ${idx.length} waves`} sub={`${column} · ${fmtDate(t.waves[idx[0]].wave_date)} – ${fmtDate(t.waves[at].wave_date)} · white rings: ${SINGLE}`}
           aside={<div className="toolbar" style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-            <ExportButtons onExport={exportAs} />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => chart.current && focus && downloadPng(chart.current, `${t.qcode} · ${focus.label}: ${idx.length} waves`,
-                sourceText(fmtDate(t.waves[at].wave_date), `n ${baseRange} per wave · ${column}`), `${t.qcode}-trend`)}
-            >
-              <ImageIcon size={14} />
-              Download PNG
-            </Button>
-            <Button variant="outline" size="sm" onClick={e => copyLink(e.currentTarget)}>
-              <LinkIcon size={14} />
-              <span>Copy link</span>
-            </Button>
+            <ExportButtons onExport={exportAs} png={() => chart.current && focus && downloadPng(chart.current, `${t.qcode} · ${focus.label}: ${idx.length} waves`,
+              sourceText(from, fmtDate(t.waves[at].wave_date), `n ${baseRange} per wave · ${column}`), `${t.qcode}-trend`)} />
+            <Menu label="" icon={<span aria-hidden>⋯</span>} keep>
+              <button onClick={e => copyLink(e.currentTarget)}><IconLink /> <span>Copy link</span></button>
+            </Menu>
           </div>}>
       {t.versions.length > 1 && <p className="muted" style={{ margin: "0 0 10px", fontSize: 13 }}>
         Version {version} of {t.versions.length} of {t.qcode}: this code was also used for {t.versions.length - 1 === 1 ? "another question" : `${t.versions.length - 1} other questions`} in {elsewhere} wave{elsewhere === 1 ? "" : "s"}, left out here.
         {t.versions.filter((_, i) => i + 1 !== version).slice(0, 3).map((text, i) => <span key={i} style={{ display: "block" }}>· “{text.length > 110 ? text.slice(0, 109) + "…" : text}”</span>)}
       </p>}
-      {shown.length ? <EChart option={option} height={380} label={`Trend of ${t.qcode}, ${column}`} onReady={c => { chart.current = c; }} />
+      {shown.length ? <EChart option={option} build={make} height={380} label={`Trend of ${t.qcode}, ${column}`} onReady={c => { chart.current = c; }} />
         : <Empty>Pick at least one answer below.</Empty>}
       {ranked.length > 3 && (
         <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "14px 0 8px", fontSize: 12 }}>
@@ -279,15 +295,16 @@ function TrendView({ t, column, waveId }: { t: Trend; column: Column; waveId: nu
           const k = chosen.indexOf(s.label);
           return <label key={s.label} className="check">
             <input type="checkbox" checked={k >= 0} onChange={() => toggle(s.label)} />
-            <i style={{ background: k === 0 ? C.red : k > 0 ? blues(Math.max(shown.length - 1, 1))[k - 1] : C.mist }} />{s.label} <b>{pct(s.pct[at])}</b>
+            <i style={{ background: k >= 0 ? colourOf(k) : C.line }} />{s.label} <b>{pct(s.pct[at])}</b>
           </label>;
         })}
       </div>
-      <SourceLine wave={fmtDate(t.waves[at].wave_date)} base={`n ${baseRange} per wave`} extra={`${column}${avg ? " · 4-week average" : ""}${band ? " · band = 95 % margin of error" : ""}`} />
+      <SourceLine wave={fmtDate(t.waves[at].wave_date)} base={`n ${baseRange} per wave`} from={from}
+                  extra={`${column}${avg ? " · 4-week average" : ""}${band ? " · band = 95 % margin of error" : ""} · rings are single comparisons, not corrected`} />
     </Card>
     {focus && <Card title={`Recent waves: ${focus.label}`}>
       <div className="table-wrap"><table className="data">
-        <thead><tr><th>Wave</th><th className="num">Share</th><th className="num">± margin</th><th className="num">Base</th><th className="num">vs previous wave</th></tr></thead>
+        <thead><tr><th>Wave</th><th className="num">Share</th><th className="num">± margin</th><th className="num">Base</th><th className="num">vs previous wave<small>single test, 95 %</small></th></tr></thead>
         <tbody>{idx.slice(-10).reverse().map(i => {
           const v = focus.pct[i], b = focus.base[i] ?? 0;
           const pi = previous(t, focus, i);

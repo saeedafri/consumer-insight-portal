@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.coresight.cip-api</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>while /usr/sbin/lsof -ti tcp:8000 -sTCP:LISTEN >/dev/null; do sleep 15; done; set -a; . "$HOME/.config/cip/api.env"; set +a; exec /Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/.venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8000</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<key>StandardOutPath</key>
+	<string>/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/logs/api-launchd.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/mohdsaeedafri/All-Code-Base/consumer-insight-portal/logs/api-launchd.log</string>
+</dict>
+</plist>

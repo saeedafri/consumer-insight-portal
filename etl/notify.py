@@ -1,8 +1,9 @@
 """Tell people what a pipeline run did: one email per loaded survey, one per failure.
 
-A loaded survey's email is an HTML report (fieldwork, load and verification,
-the survey calendar, core measures against the previous wave) with the files
-the data team works from, in their formats:
+A loaded survey's email is short enough to read without scrolling: who answered,
+the three biggest significant changes (the portal's own rule), and the files
+the data team works from, in their formats (a file this week's survey cannot
+fill is named as not attached, with why):
 
   Cross Tabs / Holiday Status Cross Tabs / Inflation_Sentiment Cross Tabs
       their Forsta cross-tab workbooks (Summary, Percentages, Counts), rebuilt
@@ -21,10 +22,12 @@ gets the headline as a Teams message. Nothing here can fail a run.
 """
 from __future__ import annotations
 
+import argparse
 import html
 import json
 import logging
 import os
+import re
 import smtplib
 import time
 from email.message import EmailMessage
@@ -42,8 +45,13 @@ from etl import crosstab_export, tracker_line
 
 log = logging.getLogger("cip.notify")
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "notify.yml"
-CROSSTAB_NAMES = {"standard": "Cross Tabs", "holiday_status": "Holiday Status Cross Tabs",
-                  "inflation_sentiment": "Inflation_Sentiment Cross Tabs"}
+# The workbooks the team sends each week, named as they name them (Teams, 19 Oct 2026): their two cross-tab banners
+# (config/crosstab_banners.yml; "Holiday Inflation" is the inflation_sentiment set: D13 inflation and gas concern, CS1
+# outlook, XM3 holiday status), then Forsta's labelled Raw Data and the team's Weekly Line-By-Line.
+CROSSTAB_NAMES = {"standard": "Cross Tabs", "inflation_sentiment": "Holiday Inflation Cross Tabs"}
+# what a banner's columns are built from: a week whose survey did not ask them gets no file
+CROSSTAB_NEEDS = {"standard": "the demographic questions",
+                  "inflation_sentiment": "the Middle East concern, outlook and holiday status questions (D13, CS1, XM3)"}
 RED = "#d62e2f"
 
 
@@ -52,21 +60,32 @@ def recipients(kind: str) -> list[str]:
     return lists.get(kind) or lists["default"]
 
 
-def send(subject: str, body: str, to: list[str], attachments: list[tuple[str, bytes]] = (), page: str = "") -> bool:
-    """One email through Office 365 SMTP: plain text, an HTML page when given, and attachments."""
-    password = os.getenv("EMAIL_PASSWORD", "").strip()
-    if not password:
-        log.warning("EMAIL_PASSWORD is not set; not sending %r", subject)
-        return False
-    sender = os.getenv("EMAIL_FROM", "dataautomation@coresight.com")
+def compose(subject: str, body: str, to: list[str], attachments: list[tuple[str, bytes]] = (), page: str = "",
+            copy: bool = True) -> EmailMessage:
+    """One email: plain text, an HTML page when given, attachments, and the config's `cc` list on every message."""
+    cc = [a for a in yaml.safe_load(CONFIG.read_text(encoding="utf-8")).get("cc") or [] if a not in to] if copy else []
     message = EmailMessage()
-    message["Subject"], message["From"], message["To"] = subject, sender, ", ".join(to)
+    message["Subject"], message["From"], message["To"] = subject, os.getenv("EMAIL_FROM", "dataautomation@coresight.com"), ", ".join(to)
+    if cc:
+        message["Cc"] = ", ".join(cc)
     message.set_content(body)
     if page:
         message.add_alternative(page, subtype="html")
     maintype, subtype = EXCEL_MIME.split("/")
     for name, data in attachments:
         message.add_attachment(data, maintype=maintype, subtype=subtype, filename=name)
+    return message
+
+
+def send(subject: str, body: str, to: list[str], attachments: list[tuple[str, bytes]] = (), page: str = "",
+         copy: bool = True) -> bool:
+    """One email through Office 365 SMTP (compose: To, Cc, plain text, HTML, attachments)."""
+    password = os.getenv("EMAIL_PASSWORD", "").strip()
+    if not password:
+        log.warning("EMAIL_PASSWORD is not set; not sending %r", subject)
+        return False
+    message = compose(subject, body, to, attachments, page, copy)
+    sender = message["From"]
     try:
         with smtplib.SMTP(os.getenv("EMAIL_SMTP", "smtp.office365.com"), int(os.getenv("EMAIL_PORT", "587")), timeout=60) as server:
             server.starttls()
@@ -75,7 +94,7 @@ def send(subject: str, body: str, to: list[str], attachments: list[tuple[str, by
     except Exception as exc:
         log.warning("Email %r not sent: %s", subject, exc)
         return False
-    log.info("Emailed %r to %s", subject, ", ".join(to))
+    log.info("Emailed %r to %s", subject, ", ".join(to + ([message["Cc"]] if message["Cc"] else [])))
     return True
 
 
@@ -101,185 +120,118 @@ def query(sql: str, **params) -> pd.DataFrame:
 
 def facts(survey_id: int) -> dict:
     info = query("""
-        SELECT s.title, s.wave_label, s.study_type, s.survey_family, s.sample_source, f.forsta_path, f.launched_at,
-               f.closed_at, f.qualified_n, f.total_n
+        SELECT s.title, s.wave_label, s.study_type, f.forsta_path, f.launched_at, f.closed_at, f.qualified_n
           FROM cip_survey s LEFT JOIN cip_forsta_survey f ON f.survey_id = s.survey_id WHERE s.survey_id = :s""",
         s=survey_id).iloc[0].to_dict()
-    load = query("""SELECT rows_read, rows_loaded, rows_bad, TIMESTAMPDIFF(SECOND, started_at, finished_at) AS seconds
-                      FROM cip_load_log WHERE survey_id = :s AND source_type = 'api' ORDER BY load_id DESC LIMIT 1""",
-                 s=survey_id).iloc[0].to_dict()
-    status = query("SELECT status_label, COUNT(*) AS n FROM cip_respondent WHERE survey_id = :s GROUP BY status_label",
-                   s=survey_id).set_index("status_label")["n"].to_dict()
-    people = query("""SELECT interview_secs, device FROM cip_respondent WHERE survey_id = :s AND is_qualified = 1""", s=survey_id)
-    answers = int(query("SELECT COUNT(*) AS n FROM cip_answer WHERE survey_id = :s", s=survey_id)["n"][0])
-    questions = int(query("SELECT COUNT(*) AS n FROM cip_question WHERE survey_id = :s AND is_technical = 0 AND is_virtual = 0",
-                          s=survey_id)["n"][0])
-    modules = query("""SELECT module_name, kind, is_lead, series_wave_no, season FROM cip_wave_module
-                        WHERE forsta_path = :p ORDER BY is_lead DESC, kind""", p=info["forsta_path"])
-    return {"info": info, "load": load, "status": status, "people": people, "answers": answers, "questions": questions,
-            "modules": modules, "measures": measures(survey_id, info["survey_family"])}
+    started = int(query("SELECT COUNT(*) AS n FROM cip_respondent WHERE survey_id = :s", s=survey_id)["n"][0])
+    return {"info": info, "started": started, "moves": moves(survey_id)}
 
 
-MEASURES = ("q1", "CS1", "CS2")
-
-
-def measures(survey_id: int, family: str) -> pd.DataFrame:
-    """Core tracker measures (activities, household and economic outlook) for this wave and the one before it."""
-    previous = query("""SELECT survey_id FROM cip_survey WHERE survey_family = :f AND load_status = 'verified'
-                           AND wave_date < (SELECT wave_date FROM cip_survey WHERE survey_id = :s)
-                         ORDER BY wave_date DESC LIMIT 1""", f=family, s=survey_id)
-    ids = [survey_id] + ([int(previous["survey_id"][0])] if len(previous) else [])
-    frame = query("""
-        SELECT c.survey_id, q.qcode, q.qtext_short AS question, COALESCE(i.item_label, o.value_label) AS answer,
-               c.n, c.base_n, COALESCE(i.sort_order, o.sort_order, 0) AS ord
-          FROM cip_agg_cell c JOIN cip_question q ON q.question_id = c.question_id AND q.qcode IN :codes
-          LEFT JOIN cip_item i ON i.item_id = c.item_id LEFT JOIN cip_option o ON o.option_id = c.option_id
-         WHERE c.survey_id IN :ids AND c.dim = 'total' AND c.cohort_id IS NULL""".replace(
-        ":codes", "('q1','CS1','CS2')").replace(":ids", "(" + ",".join(str(i) for i in ids) + ")"))
-    if frame.empty:
-        return frame
-    frame["pct"] = frame["n"] / frame["base_n"].where(frame["base_n"] > 0)
-    now = frame[frame["survey_id"] == survey_id].set_index(["qcode", "question", "answer"])
-    out = now[["pct", "ord"]].copy()
-    out["last"] = frame[frame["survey_id"] != survey_id].set_index(["qcode", "question", "answer"])["pct"]
-    return out.reset_index()
+def moves(survey_id: int, top: int = 3) -> list[dict]:
+    """The wave's biggest significant changes against the previous wave, by the portal's own rule (srv_result's
+    sig_prior flag: z-test with Benjamini–Hochberg, etl/serving.py). Who answered (D1…) is context, not news."""
+    rows = query("""SELECT r.qcode, COALESCE(q.qtext_short, q.qtext) AS question, r.item_label, r.option_label, r.pct, r.prior_pct
+                      FROM srv_result r JOIN cip_question q ON q.question_id = r.question_id
+                     WHERE r.survey_id = :s AND r.dim = 'total' AND r.flags LIKE '%sig_prior%'""", s=survey_id)
+    rows = rows[~rows["qcode"].str.match(r"^D[1-9]$")]
+    rows = rows.assign(change=(rows["pct"].astype(float) - rows["prior_pct"].astype(float))).dropna(subset=["change"])
+    rows = rows.reindex(rows["change"].abs().sort_values(ascending=False).index)
+    return rows.drop_duplicates("qcode").head(top).to_dict("records")   # one per question: Yes +12 and No −12 are one finding
 
 
 # ── the page ───────────────────────────────────────────────────────────────
-def pct(value) -> str:
-    return "–" if pd.isna(value) else f"{value:.0%}"
+def page_shell(headline: str, inner: str) -> str:
+    """One short branded email: a red title bar, then plain paragraphs (nothing to scroll through)."""
+    return (f'<div style="font-family:Segoe UI,Arial,sans-serif;color:#2d2a29;max-width:600px;font-size:14px;line-height:1.5">'
+            f'<div style="background:{RED};color:#fff;padding:12px 16px"><div style="font-size:12px;opacity:.9">Coresight Research · '
+            f'Consumer Insight Portal</div><div style="font-size:17px;font-weight:600;margin-top:2px">{html.escape(headline)}</div></div>'
+            f'<div style="padding:4px 2px">{inner}</div></div>')
 
 
-def table(headers: list[str], rows: list[list[str]], widths: list[str] | None = None) -> str:
-    head = "".join(f'<th style="text-align:{"left" if i == 0 else "right"};padding:6px 10px;background:#f0f0f0;'
-                   f'border-bottom:2px solid {RED};font-size:12px">{html.escape(h)}</th>' for i, h in enumerate(headers))
-    body = "".join("<tr>" + "".join(
-        f'<td style="text-align:{"left" if i == 0 else "right"};padding:5px 10px;border-bottom:1px solid #e0e0e0;'
-        f'font-size:13px">{c}</td>' for i, c in enumerate(row)) + "</tr>" for row in rows)
-    return f'<table style="border-collapse:collapse;width:100%;margin:6px 0 18px"><tr>{head}</tr>{body}</table>'
+def topics(title: str) -> str:
+    """"Shopping and Spending - inc Social Commerce + Holiday Tracker + GLP1s" → "Social Commerce, Holiday Tracker, GLP1s"."""
+    found = re.search(r"\binc\.?\s+(.+)$", title)
+    return ", ".join(t.strip() for t in found[1].split("+")) if found else title
 
 
-def section(title: str, inner: str) -> str:
-    return (f'<h3 style="margin:22px 0 4px;font-size:15px;color:{RED};border-bottom:1px solid #e0e0e0;'
-            f'padding-bottom:4px">{html.escape(title)}</h3>{inner}')
+def answer_of(m: dict) -> str:
+    return " — ".join(str(v) for v in (m["item_label"], m["option_label"]) if v and str(v) != "nan")
 
 
-def delta(now, last) -> str:
-    if pd.isna(last):
-        return "–"
-    points = round((now - last) * 100)
-    colour = "#2d7a3a" if points > 0 else "#b3261e" if points < 0 else "#6b6a68"
-    return f'<span style="color:{colour}">{points:+d} pts</span>'
-
-
-def report(survey_id: int, files: list[tuple[str, int, str]], seconds_build: float = 0.0, wave=None, sets: tuple = ()) -> tuple[str, str]:
-    """(plain text, HTML) of the loaded-survey email."""
+def report(survey_id: int, files: list[str], missing: list[str] = ()) -> tuple[str, str]:
+    """(plain text, HTML) of the loaded-survey email: who answered, the biggest real changes, the attached files."""
     d = facts(survey_id)
-    i, load, status = d["info"], d["load"], d["status"]
-    qualified = status.get("Qualified", i["qualified_n"])
-    started = sum(status.values()) or i["total_n"]
-    minutes = d["people"]["interview_secs"].median() / 60 if d["people"]["interview_secs"].notna().any() else float("nan")
-    mobile = (d["people"]["device"].fillna("").str.lower().str.contains("mobile|phone|tablet")).mean() if len(d["people"]) else float("nan")
+    i = d["info"]
+    weekly = i["study_type"] == "tracker"
+    since = "last week" if weekly else "the previous wave"
     launched, closed = pd.to_datetime(i["launched_at"]), pd.to_datetime(i["closed_at"])
-    hours = (closed - launched).total_seconds() / 3600 if pd.notna(launched) and pd.notna(closed) else float("nan")
-
-    fieldwork = [["Survey", html.escape(i["title"])], ["Forsta path", i["forsta_path"]],
-            ["Wave (Monday)", i["wave_label"]], ["Type", i["study_type"]],
-            ["Launched", str(launched)[:16] if pd.notna(launched) else "–"], ["Closed", str(closed)[:16] if pd.notna(closed) else "–"],
-            ["Time in field", "–" if pd.isna(hours) else f"{hours:.1f} hours"]]
-    page = f"""<div style="font-family:Segoe UI,Arial,sans-serif;color:#2d2a29;max-width:760px">
-<div style="background:{RED};color:#fff;padding:14px 18px"><div style="font-size:12px;opacity:.9">Coresight Research · Consumer Insight Portal</div>
-<div style="font-size:18px;font-weight:600;margin-top:2px">New survey loaded and verified</div></div>
-<p style="font-size:14px;margin:14px 2px">{html.escape(i["title"])}<br><b>Wave {i["wave_label"]}</b> · {qualified} qualified respondents · every record and answer proven equal to Forsta before it appeared in reports.</p>"""
-    page += section("Fieldwork", table(["", ""], fieldwork))
-    page += section("Respondents", table(["Status", "Respondents"], [
-        [html.escape(str(k)), f"{v:,}"] for k, v in sorted(status.items(), key=lambda kv: -kv[1])] +
-        [["<b>Started</b>", f"<b>{started:,}</b>"], ["Incidence (qualified ÷ started)", pct(qualified / started if started else float('nan'))],
-         ["Median interview, qualified", "–" if pd.isna(minutes) else f"{minutes:.1f} min"],
-         ["Completed on a mobile device", pct(mobile)]]))
-    page += section("Load and verification", table(["Check", "Result"], [
-        ["Respondents loaded", f"{load['rows_loaded']:,} of {load['rows_read']:,} read"],
-        ["Answers stored", f"{d['answers']:,}"], ["Questions (excluding paradata)", f"{d['questions']:,}"],
-        ["Rows rejected", f"{load['rows_bad']:,}"], ["Respondent count equals Forsta", "✓ passed"],
-        ["Every Forsta variable has a field", "✓ passed"], ["Every field's answer count equals Forsta", "✓ passed"],
-        ["Load time", f"{load['seconds']} s"]]))
-    if len(d["modules"]):
-        page += section("Where this wave sits in the survey calendar", table(["Module", "Kind", "Wave in series"], [
-            [("<b>" if m.is_lead else "") + html.escape(m.module_name) + (" (lead)" if m.is_lead else "") + ("</b>" if m.is_lead else ""),
-             m.kind, "–" if pd.isna(m.series_wave_no) else f"{int(m.series_wave_no)}" + (f" of season {int(m.season)}" if pd.notna(m.season) else "")]
-            for m in d["modules"].itertuples()]))
-    if len(d["measures"]):
-        rows = []
-        for code, group in d["measures"].groupby("qcode", sort=False):
-            group = group.sort_values("pct", ascending=False).head(6) if code == "q1" else group.sort_values("ord")
-            for r in group.itertuples():
-                rows.append([f"<span style='color:#6b6a68'>{r.qcode}</span> {html.escape(str(r.answer))}", pct(r.pct), pct(r.last), delta(r.pct, r.last)])
-        page += section("Core tracker measures vs the previous wave", table(["Measure", "This wave", "Previous", "Change"], rows)
-                        + '<div style="font-size:11px;color:#6b6a68;margin-top:-12px">q1 shows the six most common activities; CS1 household and CS2 economic outlook show every answer. Percentages use each question\'s own base.</div>')
-    if wave is not None:
-        page += crosstab_sections(wave, sets)
-    page += section("Attached files", table(["File", "What it is", "Size"], [
-        [html.escape(name), what, f"{size / 1024:,.0f} KB"] for name, size, what in files]))
-    page += (f'<p style="font-size:11px;color:#6b6a68;margin-top:20px">Built by the ETL from cip_stg in {seconds_build:.0f} s. '
-             f'Cross-tab workbooks use the team\'s Forsta segment definitions, qualified respondents only, percentages on total answering, '
-             f'flags * under 100 and ** under 30 respondents. Paradata tables (browser, OS, dropout) are not rebuilt.</p></div>')
-    plain = (f"{i['title']}\nWave {i['wave_label']} · {i['forsta_path']}\nQualified {qualified} of {started} started · {load['rows_loaded']} "
-             f"respondents loaded, {d['answers']:,} answers, verified against Forsta.\n\nAttached:\n" +
-             "\n".join(f"  {name} — {what}" for name, _, what in files) + "\n\nOpen this email in HTML for the full report.\n")
+    hours = f" in {(closed - launched).total_seconds() / 3600:.0f} hours" if pd.notna(launched) and pd.notna(closed) else ""
+    who = (f"<b>{int(i['qualified_n']):,} people</b> completed the survey{hours} ({d['started']:,} started). "
+           f"Every answer was checked against Forsta before it reached the portal.")
+    if d["moves"]:
+        items = "".join(
+            f'<li style="margin:6px 0"><b>{m["pct"]:.0f}%</b> {html.escape(answer_of(m))} '
+            f'<span style="color:{"#2d7a3a" if m["change"] > 0 else "#b3261e"}">({m["change"]:+.0f} pts vs {since})</span>'
+            f'<br><span style="color:#6b6a68;font-size:12px">{html.escape(str(m["question"])[:110])}</span></li>' for m in d["moves"])
+        news = f'<p style="margin:14px 0 4px"><b>Biggest changes since {since}</b></p><ul style="margin:0;padding-left:18px">{items}</ul>'
+    else:
+        news = f'<p style="margin:14px 0 4px">No answer changed significantly against {since}.</p>'
+    attached = (f'<p style="color:#6b6a68;font-size:12px;margin-top:14px">Attached: {html.escape(", ".join(files))}.'
+                + "".join(f"<br>Not attached this week: {html.escape(m)}." for m in missing) + "</p>")
+    week = f"{pd.to_datetime(i['wave_label']):%-d %b %Y}" if weekly else i["wave_label"]
+    page = page_shell(f"New survey ready: week of {week}" if weekly else f"New survey ready: {week}",
+                      f'<p style="margin:12px 0 0">{html.escape(i["title"])}</p><p style="margin:6px 0 0">{who}</p>'
+                      + news + attached)
+    plain = (f"New survey ready: {i['title']} ({i['wave_label']})\n{int(i['qualified_n']):,} people completed it{hours}; "
+             f"every answer checked against Forsta.\n\nWhat changed vs {since}:\n" +
+             ("\n".join(f"  {m['pct']:.0f}% {answer_of(m)} ({m['change']:+.0f} pts) — {m['question']}" for m in d["moves"])
+              or "  nothing significant") +
+             f"\n\nAttached: {', '.join(files)}\n" + "".join(f"Not attached this week: {m}\n" for m in missing))
     return plain, page
-
-
-PREVIEW_COLUMNS = ["Total", "Male", "Female", "GenZ", "Millennial", "GenX", "Boomer"]
-PREVIEW_TABLES = [("q1", 8), ("CS1", 0), ("CS2", 0)]
-
-
-def crosstab_sections(wave, sets) -> str:
-    """The cross-tabs in the email itself: a preview table per core question, then every attached banner's segments."""
-    out = ""
-    if "standard" in sets:
-        inner = ""
-        for qcode, top in PREVIEW_TABLES:
-            title, labels, rows, bases = crosstab_export.preview(wave, "standard", qcode, PREVIEW_COLUMNS, top)
-            if not rows:
-                continue
-            inner += f'<div style="font-size:13px;font-weight:600;margin-top:10px">{html.escape(title[:150])}</div>'
-            inner += table([""] + labels, [[html.escape(str(name))] + [pct(v) if v is not None else "–" for v in values] for name, values in rows]
-                           + [["<span style='color:#6b6a68'>Base (n)</span>"] + [f"<span style='color:#6b6a68'>{b}{crosstab_export.flag(b)}</span>" for b in bases]])
-        out += section("Cross-tab preview — standard banner", inner + '<div style="font-size:11px;color:#6b6a68;margin-top:-12px">'
-                       'Column percentages, qualified respondents. The attached Cross Tabs workbook has every question and every segment. * under 100, ** under 30.</div>')
-    for key in sets:
-        rows = crosstab_export.segment_rows(wave, key)
-        out += section(f"Banner — {CROSSTAB_NAMES[key]}: segments and definitions", table(
-            ["Segment", "Definition", "n"], [[html.escape(a), f"<span style='color:#6b6a68'>{html.escape(b)}</span>", f"{n}{crosstab_export.flag(n)}"] for a, b, n in rows]))
-    return out
 
 
 def survey_loaded(survey_id: int) -> bool:
     """Email the report and the team's workbooks for one freshly loaded survey."""
-    started = time.perf_counter()
+    subject, plain, to, attachments, page, headline = loaded_email(survey_id)
+    teams(headline)
+    return send(subject, plain, to, attachments, page)
+
+
+def loaded_email(survey_id: int) -> tuple:
+    """(subject, plain, to, attachments, HTML, Teams headline) of one loaded survey's email."""
     info = query("""SELECT s.title, s.wave_label, s.study_type, s.survey_family, f.forsta_path, f.qualified_n
                       FROM cip_survey s LEFT JOIN cip_forsta_survey f ON f.survey_id = s.survey_id WHERE s.survey_id = :s""",
                  s=survey_id).iloc[0]
     stem = f"{info['wave_label']}"
+    dated = f"{pd.to_datetime(stem):%m_%d_%y}"   # the team's file date: 10_19_26
     wave = crosstab_export.load_wave(survey_id)
     attachments: list[tuple[str, bytes]] = []
-    for key in crosstab_export.available(wave):
-        attachments.append((f"{CROSSTAB_NAMES[key]} {stem}.xlsx", crosstab_export.build(survey_id, key, wave)))
+    sets = [key for key in crosstab_export.available(wave) if key in CROSSTAB_NAMES]
+    for key in sets:
+        attachments.append((f"{CROSSTAB_NAMES[key]} {dated}.xlsx", crosstab_export.build(survey_id, key, wave)))
+    missing = [f"{name} (this week's survey did not ask {CROSSTAB_NEEDS[key]})" for key, name in CROSSTAB_NAMES.items()
+               if key not in sets]
+    if info["forsta_path"]:
+        from etl import forsta_etl   # notify is imported by the pipeline, not the other way round
+        try:
+            attachments.append((f"Raw Data {dated}.xlsx", crosstab_export.raw_data(forsta_etl._client(), info["forsta_path"])))
+        except Exception as exc:   # Forsta down: the rest of the email still goes
+            log.warning("Raw Data for %s not built: %s", info["forsta_path"], exc)
+            missing.append("Raw Data (Forsta could not be reached when this email was built)")
     if info["survey_family"] == tracker_line.load_config()["family"]:
         line = tracker_line.read([survey_id], role="etl")
-        attachments.append((f"Weekly Line-By-Line {stem}.xlsx", build_workbook(
+        attachments.append((f"Weekly Line-By-Line {dated}.xlsx", build_workbook(
             {"Raw Data": line}, f"{info['title']} — wave {stem}", percent_columns=("__none__",),
             notes=[("Survey", info["forsta_path"]), ("Format", "the data team's line-by-line columns (config/tracker_line.yml)")])))
-    what = {"Cross Tabs": "their standard banner: gender, age and generation, ethnicity, income, residence, politics, outlook",
-            "Holiday Status Cross Tabs": "banner: holiday-shopping status and recent holiday purchases",
-            "Inflation_Sentiment Cross Tabs": "banner: Middle East concern, outlook and holiday status",
-            "Weekly Line-By-Line": "one row per qualified respondent, the team's headers"}
-    files = [(n, len(b), next(v for k, v in what.items() if n.startswith(k))) for n, b in attachments]
-    plain, page = report(survey_id, files, time.perf_counter() - started, wave, tuple(crosstab_export.available(wave)))
-    subject = f"CIP loaded: {info['title']} (wave {stem}, {info['qualified_n']} qualified)"
-    teams(f"✅ CIP pipeline succeeded: {info['title'][:90]} (wave {stem}) loaded and verified, "
-          f"{info['qualified_n']} qualified. {len(attachments)} files emailed.")
-    return send(subject, plain, recipients(info["study_type"]), attachments, page)
+    plain, page = report(survey_id, [name for name, _ in attachments], missing)
+    if info["study_type"] == "tracker":
+        subject = (f"Weekly Consumer Tracker — week of {pd.to_datetime(stem):%-d %b %Y}: {topics(info['title'])}"
+                   f" ({int(info['qualified_n']):,} respondents)")
+    else:
+        subject = f"{info['title']} — results ready ({int(info['qualified_n']):,} respondents)"
+    headline = (f"✅ CIP pipeline succeeded: {info['title'][:90]} (wave {stem}) loaded and verified, "
+                f"{info['qualified_n']} qualified. {len(attachments)} files emailed.")
+    return subject, plain, recipients(info["study_type"]), attachments, page, headline
 
 
 REPEAT_HOURS = 6                   # polling runs every 30 minutes: the same failure is told once per window
@@ -331,3 +283,70 @@ def idle_run() -> bool:
     if os.getenv("NOTIFY_ON_EMPTY") != "1":
         return False
     return send("CIP pipeline ran: nothing new", "Every closed survey is already loaded.\n", recipients("default"))
+
+
+def summary() -> tuple[str, str, str]:
+    """(subject, plain, HTML) of the portal-wide summary, short enough to read without scrolling (cip_stg counts)."""
+    waves = query("""SELECT s.study_type, w.qualified_n FROM cip_survey s JOIN srv_wave w ON w.survey_id = s.survey_id
+                      WHERE s.load_status = 'verified'""")
+    first, last = query("SELECT MIN(wave_date) AS a, MAX(wave_date) AS b FROM cip_survey WHERE load_status = 'verified'").iloc[0]
+    answers = int(query("SELECT COUNT(*) AS n FROM cip_answer")["n"][0])       # exact, about 80 s on cip_stg
+    questions = int(query("SELECT COUNT(*) AS n FROM cip_question WHERE is_technical = 0 AND is_virtual = 0")["n"][0])
+    latest = query("""SELECT s.survey_id, s.title, s.wave_label, w.qualified_n FROM cip_survey s JOIN srv_wave w ON w.survey_id = s.survey_id
+                       ORDER BY s.wave_date DESC, s.survey_id DESC LIMIT 1""").iloc[0]
+    count, people = len(waves), int(waves["qualified_n"].sum())
+    kinds = {"tracker": "weekly trackers", "annual": "annual studies", "adhoc": "one-off studies"}
+    by_kind = [(kinds[k], len(g), g["qualified_n"].mean()) for k, g in waves.groupby("study_type")]
+    lines = [f"<b>{count:,} surveys</b> from {first:%b %Y} to {last:%b %Y}",
+             f"<b>{people:,} people</b> answered them, <b>{people / count:,.0f}</b> per survey on average",
+             f"{questions:,} questions and {answers / 1e6:,.1f} million individual answers",
+             " · ".join(f"{n:,} {name} (about {avg:,.0f} people each)" for name, n, avg in sorted(by_kind, key=lambda k: -k[1])),
+             f"Latest: {html.escape(latest['title'])}, week of {pd.to_datetime(latest['wave_label']):%-d %b %Y}, {int(latest['qualified_n']):,} people"]
+    page = page_shell("What the portal holds today", '<ul style="margin:12px 0 0;padding-left:18px">' +
+                      "".join(f'<li style="margin:6px 0">{line}</li>' for line in lines) + "</ul>" +
+                      '<p style="color:#6b6a68;font-size:12px">All surveys are in the US; every one was checked against its source before it reached the portal.</p>')
+    subject = f"Consumer Insight Portal — data summary as of {time.strftime('%-d %b %Y')}: {count:,} surveys, {people:,} respondents"
+    plain = "What the Consumer Insight Portal holds today\n\n" + "\n".join("  " + re.sub("<[^>]+>", "", line) for line in lines) + "\n"
+    return subject, plain, page
+
+
+def main() -> int:
+    """Preview (default: .eml files to open and check) or --send the summary and/or one survey's loaded email."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s")   # show each send
+    p = argparse.ArgumentParser(description=main.__doc__)
+    p.add_argument("--summary", action="store_true", help="the portal-wide summary, to the `default` list")
+    p.add_argument("--survey", type=int, help="one survey's loaded email (survey_id), to its study type's list")
+    p.add_argument("--send", action="store_true", help="send; without it, write .eml previews to --out")
+    p.add_argument("--to", help="comma-separated addresses instead of the configured lists (a test send to yourself)")
+    p.add_argument("--no-files", action="store_true", help="leave the workbooks off (a look at the email outside Coresight)")
+    p.add_argument("--out", default="data/exports/email-preview")   # git-ignored: attachments hold respondent rows
+    a = p.parse_args()
+    emails = []
+    if a.summary:
+        subject, plain, page = summary()
+        emails.append(("summary", subject, plain, recipients("default"), [], page))
+    if a.survey:
+        subject, plain, to, attachments, page, _ = loaded_email(a.survey)
+        emails.append((f"survey-{a.survey}", subject, plain, to, attachments, page))
+    if not emails:
+        p.print_help()
+        return 1
+    for name, subject, plain, to, attachments, page in emails:
+        to = [t.strip() for t in a.to.split(",") if t.strip()] if a.to else to
+        attachments = [] if a.no_files else attachments
+        if a.send:
+            if not send(subject, plain, to, attachments, page, copy=not a.to):   # a test send to --to goes to them alone
+                return 1
+            continue
+        out = Path(a.out) / f"{name}.eml"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        message = compose(subject, plain, to, attachments, page, copy=not a.to)
+        out.write_bytes(bytes(message))
+        out.with_suffix(".html").write_text(page, encoding="utf-8")
+        print(f"{out}\n  Subject: {subject}\n  To: {message['To']}\n  Cc: {message['Cc'] or '–'}\n"
+              f"  Attachments: {', '.join(n for n, _ in attachments) or '–'}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

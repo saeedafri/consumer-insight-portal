@@ -45,3 +45,9 @@ def test_search_pages_through_every_match_without_repeats():
     pages = [index.search("holiday", 1, offset) for offset in (0, 1, 2)]
     assert [p["total"] for p in pages] == [2, 2, 2]
     assert [d["qcode"] for p in pages for d in p["results"]] in (["XM3", "XM2"], ["XM2", "XM3"])   # each once, then none
+
+
+def test_plain_english_questions_search_for_what_they_are_about():
+    assert codes("what do people think about holiday shopping")[0] == "XM3"
+    assert codes("are consumers cutting spending because of gas prices")[0] == "D14"   # most of the words match
+    assert "results" in index.search("what do you think")   # only question words: searched as typed

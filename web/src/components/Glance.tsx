@@ -4,7 +4,7 @@ import CountUp from "./CountUp";
 import type { Metric } from "../api";
 import { useDashboard } from "../api";
 import { fmtDate, HIDDEN_BASE } from "../stats";
-import { Card, Failure, Loading } from "./bits";
+import { Failure, Skeleton } from "./bits";
 import Profiled from "./Profiled";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
@@ -42,7 +42,7 @@ const columns = (n: number) => ({ "--cols": n, "--cols-mid": n > 3 ? Math.ceil(n
 
 export default function Glance({ code, id }: { code: string; id: number }) {
   const { data: d, isLoading, error } = useDashboard(code, id);
-  if (isLoading) return <Loading what="tracker" />;
+  if (isLoading) return <Skeleton height={236} className="glance-block" label="tracker" />;
   if (error || !d) return <Failure error={error} />;
   const prior = (d.prior_label ?? "prior week").replace(/^the /, "");
   const label = (k: string) => d.tile_labels?.[k] ?? k.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
@@ -61,9 +61,11 @@ export default function Glance({ code, id }: { code: string; id: number }) {
         {highlights.map(h => { const top = d.lists[h.list]?.[0]; return top && <Tile key={h.list} title={h.title} m={top} value={top.label} prior={prior}
           note={`${top.pct == null ? `n<${HIDDEN_BASE}` : `${top.pct.toFixed(1)}%`} ${h.of}${top.ly_pct != null ? ` · last year ${top.ly_pct.toFixed(1)}%` : ""}`} />; })}
       </div>
-      <Card title="Key takeaways" sub="Written from the numbers above, so they can never disagree with them">
+      {d.takeaways.length > 0 && <div className="glance-takeaways">
+        <h3>Key takeaways</h3>
+        <p className="sub">Written from the numbers above, so they can never disagree with them</p>
         <ul className="takeaways">{d.takeaways.map(t => { const [head, ...rest] = t.split(": "); return <li key={t}><b>{head}:</b> {rest.join(": ")}</li>; })}</ul>
-      </Card>
+      </div>}
     </section>
   </Profiled>;
 }
