@@ -22,7 +22,9 @@ web/dist/
 web/tsconfig.tsbuildinfo
 logs/notify-state.json
 .superpowers/
-.impeccable/hook.cache.json
+**/.superpowers/
+.impeccable/
+**/.impeccable/
 data/published/
 logs/etl-heartbeat.json
 data/coded/
