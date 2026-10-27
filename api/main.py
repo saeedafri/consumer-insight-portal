@@ -426,16 +426,28 @@ async def crosstab(survey_id: int, request: Request, q: str, by: str, weeks: int
     cuts = tuple(by.split(","))
     if len(cuts) != 2 or len(set(cuts)) != 2 or not set(cuts) <= set(CUTS):
         raise HTTPException(422, f"by takes two different cuts from: {', '.join(CUTS)}")
-    def build() -> Payload:   # from the published cut tables when the wave has them, else from the database
-        listed = _published("waves")
-        waves = json.loads(listed.body) if listed else []
-        me = next((w for w in waves if w["survey_id"] == survey_id), None)
-        pool = payloads.chain({w["survey_id"]: w for w in waves if me and w["survey_family"] == me["survey_family"]}, survey_id, weeks)
-        parts = {w["survey_id"]: json.loads(found.body) for w in pool if (found := _published("waves", str(w["survey_id"]), "cuts", q))}
-        if parts.get(survey_id, {}).get("counts"):   # a published file without counts is never trusted: read live
-            return _json(payloads.crosstab_from(survey_id, q, cuts, pool, parts))
-        return _json(payloads.crosstab(survey_id, q, cuts, weeks))
-    return _send(request, await _cached((SERVING, "crosstab", survey_id, q, cuts, weeks), build))
+    return _send(request, await _cached((SERVING, "crosstab", survey_id, q, cuts, weeks),
+                                        _crosstab_payload, survey_id, q, cuts, weeks))
+
+
+def _crosstab_payload(survey_id: int, qcode: str, cuts: tuple, weeks: int) -> Payload:
+    """Use versioned published cut files; query live only when they are absent or incomplete."""
+    listed = _published("waves")
+    waves = json.loads(listed.body) if listed else []
+    me = next((w for w in waves if w["survey_id"] == survey_id), None)
+    pool = payloads.chain(
+        {w["survey_id"]: w for w in waves if me and w["survey_family"] == me["survey_family"]},
+        survey_id,
+        weeks,
+    )
+    parts = {
+        w["survey_id"]: json.loads(found.body)
+        for w in pool
+        if (found := _published("waves", str(w["survey_id"]), "cuts", qcode))
+    }
+    if parts.get(survey_id, {}).get("counts"):
+        return _json(payloads.crosstab_from(survey_id, qcode, cuts, pool, parts))
+    return _json(payloads.crosstab(survey_id, qcode, cuts, weeks))
 
 
 @app.get("/api/v1/questions/{family}/{study_type}/{qcode}")

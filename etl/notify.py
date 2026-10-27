@@ -57,6 +57,8 @@ RED = "#d62e2f"
 
 def recipients(kind: str) -> list[str]:
     lists = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    if kind == "failure":
+        return lists.get("failure") or []
     return lists.get(kind) or lists["default"]
 
 
@@ -262,21 +264,20 @@ def mark_told(subject: str) -> None:
 
 
 def failure(what: str, detail: str) -> bool:
-    """Email the failure list that a run (or one survey) did not complete (once per REPEAT_HOURS)."""
+    """Email only the private failure list; never copy a team channel or the global CC list."""
     subject = f"CIP pipeline FAILED: {what}"
     if already_told(subject):
         log.info("Already told about %r in the last %d h", subject, REPEAT_HOURS)
         return False
-    first = next((line for line in detail.splitlines() if line.strip()), "")[:300]
-    posted = teams(f"❌ CIP pipeline failed: {what}. {first} (full detail in the email and logs/forsta-etl.log)")
     page = (f'<div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px"><div style="background:#b3261e;color:#fff;padding:12px 16px;'
             f'font-size:16px;font-weight:600">Pipeline failure</div><p style="font-size:14px"><b>{html.escape(what)}</b></p>'
             f'<pre style="background:#f6f6f6;padding:10px;font-size:12px;white-space:pre-wrap">{html.escape(detail)}</pre>'
             f'<p style="font-size:12px;color:#6b6a68">The next scheduled run tries again. Log: logs/forsta-etl.log</p></div>')
-    sent = send(subject, f"{what}\n\n{detail}\n\nThe next scheduled run tries again. Logs: logs/forsta-etl.log\n", recipients("failure"), page=page)
-    if sent or posted:   # the team channel alone counts as told
+    sent = send(subject, f"{what}\n\n{detail}\n\nThe next scheduled run tries again. Logs: logs/forsta-etl.log\n",
+                recipients("failure"), page=page, copy=False)
+    if sent:
         mark_told(subject)
-    return sent or posted
+    return sent
 
 
 def idle_run() -> bool:

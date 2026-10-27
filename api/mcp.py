@@ -172,7 +172,16 @@ async def crosstab(who: dict, survey_id: int, qcode: str, by: list) -> dict:
     await main.visible(who, int(survey_id))
     if len(by) != 2 or len(set(by)) != 2 or not set(by) <= set(CUTS):
         raise ValueError(f"by takes two different cuts from: {', '.join(CUTS)}")
-    found = await run_in_threadpool(payloads.crosstab, int(survey_id), str(qcode), tuple(by), 1)
+    cuts = tuple(by)
+    item = await main._cached(
+        (main.SERVING, "crosstab", int(survey_id), str(qcode), cuts, 1),
+        main._crosstab_payload,
+        int(survey_id),
+        str(qcode),
+        cuts,
+        1,
+    )
+    found = json.loads(item.body)
     return {"qcode": found["qcode"], "by": found["by"], "columns": found["columns"], "rows": found["rows"]}
 
 

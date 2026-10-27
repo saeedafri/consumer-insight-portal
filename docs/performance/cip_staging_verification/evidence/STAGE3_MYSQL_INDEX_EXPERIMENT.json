@@ -1,0 +1,404 @@
+{
+  "after": {
+    "hashes": [
+      "522de4ed60ec5ee10c7870954ba9f6ba190ad95a8704958a923b9140762f824b"
+    ],
+    "max_s": 0.000894,
+    "median_s": 0.000676,
+    "min_s": 0.000629,
+    "p95_s": 0.000725,
+    "plan": {
+      "query_block": {
+        "cost_info": {
+          "query_cost": "69.30"
+        },
+        "nested_loop": [
+          {
+            "table": {
+              "access_type": "ref",
+              "cost_info": {
+                "data_read_per_join": "145K",
+                "eval_cost": "9.00",
+                "prefix_cost": "31.50",
+                "read_cost": "22.50"
+              },
+              "filtered": "100.00",
+              "index_condition": "(`cip_test`.`c`.`cohort_id` is null)",
+              "key": "ix_stage3_agg_wave_dim_cohort",
+              "key_length": "131",
+              "possible_keys": [
+                "uq_agg_cell",
+                "ix_agg_question",
+                "ix_agg_map",
+                "fk_agg_question",
+                "ix_stage3_agg_wave_dim_cohort"
+              ],
+              "ref": [
+                "const",
+                "const",
+                "const"
+              ],
+              "rows_examined_per_scan": 90,
+              "rows_produced_per_join": 90,
+              "table_name": "c",
+              "used_columns": [
+                "survey_id",
+                "question_id",
+                "item_id",
+                "option_id",
+                "cohort_id",
+                "dim",
+                "n",
+                "base_n"
+              ],
+              "used_key_parts": [
+                "survey_id",
+                "dim",
+                "cohort_id"
+              ]
+            }
+          },
+          {
+            "table": {
+              "access_type": "eq_ref",
+              "attached_condition": "(`cip_test`.`q`.`is_virtual` = 0)",
+              "cost_info": {
+                "data_read_per_join": "37K",
+                "eval_cost": "0.90",
+                "prefix_cost": "63.00",
+                "read_cost": "22.50"
+              },
+              "filtered": "10.00",
+              "key": "PRIMARY",
+              "key_length": "4",
+              "possible_keys": [
+                "PRIMARY"
+              ],
+              "ref": [
+                "cip_test.c.question_id"
+              ],
+              "rows_examined_per_scan": 1,
+              "rows_produced_per_join": 9,
+              "table_name": "q",
+              "used_columns": [
+                "question_id",
+                "is_virtual"
+              ],
+              "used_key_parts": [
+                "question_id"
+              ]
+            }
+          },
+          {
+            "table": {
+              "access_type": "eq_ref",
+              "cost_info": {
+                "data_read_per_join": "81K",
+                "eval_cost": "0.90",
+                "prefix_cost": "66.15",
+                "read_cost": "2.25"
+              },
+              "filtered": "100.00",
+              "key": "PRIMARY",
+              "key_length": "4",
+              "possible_keys": [
+                "PRIMARY"
+              ],
+              "ref": [
+                "cip_test.c.item_id"
+              ],
+              "rows_examined_per_scan": 1,
+              "rows_produced_per_join": 9,
+              "table_name": "i",
+              "used_columns": [
+                "item_id",
+                "item_label",
+                "left_label",
+                "right_label",
+                "sort_order"
+              ],
+              "used_key_parts": [
+                "item_id"
+              ]
+            }
+          },
+          {
+            "table": {
+              "access_type": "eq_ref",
+              "cost_info": {
+                "data_read_per_join": "19K",
+                "eval_cost": "0.90",
+                "prefix_cost": "69.30",
+                "read_cost": "2.25"
+              },
+              "filtered": "100.00",
+              "key": "PRIMARY",
+              "key_length": "4",
+              "possible_keys": [
+                "PRIMARY"
+              ],
+              "ref": [
+                "cip_test.c.option_id"
+              ],
+              "rows_examined_per_scan": 1,
+              "rows_produced_per_join": 9,
+              "table_name": "o",
+              "used_columns": [
+                "option_id",
+                "value_label",
+                "sort_order"
+              ],
+              "used_key_parts": [
+                "option_id"
+              ]
+            }
+          }
+        ],
+        "select_id": 1
+      }
+    },
+    "row_counts": [
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90
+    ],
+    "samples_s": [
+      0.000725,
+      0.000894,
+      0.000712,
+      0.000671,
+      0.000687,
+      0.000674,
+      0.000681,
+      0.000676,
+      0.00069,
+      0.000676,
+      0.00069,
+      0.000659,
+      0.000654,
+      0.000629,
+      0.000699,
+      0.000703,
+      0.000634,
+      0.000661,
+      0.000655,
+      0.000662
+    ]
+  },
+  "before": {
+    "hashes": [
+      "522de4ed60ec5ee10c7870954ba9f6ba190ad95a8704958a923b9140762f824b"
+    ],
+    "max_s": 0.002222,
+    "median_s": 0.001835,
+    "min_s": 0.001787,
+    "p95_s": 0.001968,
+    "plan": {
+      "query_block": {
+        "cost_info": {
+          "query_cost": "1594.09"
+        },
+        "nested_loop": [
+          {
+            "table": {
+              "access_type": "ALL",
+              "attached_condition": "(`cip_test`.`q`.`is_virtual` = 0)",
+              "cost_info": {
+                "data_read_per_join": "33K",
+                "eval_cost": "0.80",
+                "prefix_cost": "8.25",
+                "read_cost": "7.45"
+              },
+              "filtered": "10.00",
+              "possible_keys": [
+                "PRIMARY"
+              ],
+              "rows_examined_per_scan": 80,
+              "rows_produced_per_join": 8,
+              "table_name": "q",
+              "used_columns": [
+                "question_id",
+                "is_virtual"
+              ]
+            }
+          },
+          {
+            "table": {
+              "access_type": "ref",
+              "attached_condition": "(`cip_test`.`c`.`cohort_id` is null)",
+              "cost_info": {
+                "data_read_per_join": "610K",
+                "eval_cost": "37.76",
+                "prefix_cost": "1329.78",
+                "read_cost": "943.95"
+              },
+              "filtered": "10.00",
+              "key": "ix_agg_question",
+              "key_length": "130",
+              "possible_keys": [
+                "uq_agg_cell",
+                "ix_agg_question",
+                "ix_agg_map",
+                "fk_agg_question"
+              ],
+              "ref": [
+                "const",
+                "cip_test.q.question_id",
+                "const"
+              ],
+              "rows_examined_per_scan": 471,
+              "rows_produced_per_join": 377,
+              "table_name": "c",
+              "used_columns": [
+                "survey_id",
+                "question_id",
+                "item_id",
+                "option_id",
+                "cohort_id",
+                "dim",
+                "n",
+                "base_n"
+              ],
+              "used_key_parts": [
+                "survey_id",
+                "question_id",
+                "dim"
+              ]
+            }
+          },
+          {
+            "table": {
+              "access_type": "eq_ref",
+              "cost_info": {
+                "data_read_per_join": "3M",
+                "eval_cost": "37.76",
+                "prefix_cost": "1461.93",
+                "read_cost": "94.40"
+              },
+              "filtered": "100.00",
+              "key": "PRIMARY",
+              "key_length": "4",
+              "possible_keys": [
+                "PRIMARY"
+              ],
+              "ref": [
+                "cip_test.c.item_id"
+              ],
+              "rows_examined_per_scan": 1,
+              "rows_produced_per_join": 377,
+              "table_name": "i",
+              "used_columns": [
+                "item_id",
+                "item_label",
+                "left_label",
+                "right_label",
+                "sort_order"
+              ],
+              "used_key_parts": [
+                "item_id"
+              ]
+            }
+          },
+          {
+            "table": {
+              "access_type": "eq_ref",
+              "cost_info": {
+                "data_read_per_join": "820K",
+                "eval_cost": "37.76",
+                "prefix_cost": "1594.09",
+                "read_cost": "94.40"
+              },
+              "filtered": "100.00",
+              "key": "PRIMARY",
+              "key_length": "4",
+              "possible_keys": [
+                "PRIMARY"
+              ],
+              "ref": [
+                "cip_test.c.option_id"
+              ],
+              "rows_examined_per_scan": 1,
+              "rows_produced_per_join": 377,
+              "table_name": "o",
+              "used_columns": [
+                "option_id",
+                "value_label",
+                "sort_order"
+              ],
+              "used_key_parts": [
+                "option_id"
+              ]
+            }
+          }
+        ],
+        "select_id": 1
+      }
+    },
+    "row_counts": [
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90,
+      90
+    ],
+    "samples_s": [
+      0.002222,
+      0.001945,
+      0.001849,
+      0.001864,
+      0.001848,
+      0.001838,
+      0.001818,
+      0.001832,
+      0.001816,
+      0.001968,
+      0.001904,
+      0.001833,
+      0.001803,
+      0.001802,
+      0.001812,
+      0.001787,
+      0.001856,
+      0.0018,
+      0.001805,
+      0.001863
+    ]
+  },
+  "index": "(survey_id,dim,cohort_id,question_id)",
+  "index_removed": true,
+  "local_only": true,
+  "parity": true,
+  "samples": 20
+}

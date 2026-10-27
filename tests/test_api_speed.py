@@ -90,3 +90,28 @@ def test_any_table_exports_as_excel_and_powerpoint(client):
     for kind, part in (("xlsx", "xl/worksheets/sheet1.xml"), ("pptx", "ppt/slides/slide1.xml")):
         response = client.post(f"/api/v1/export/{kind}", table)
         assert response.status_code == 200 and part in zipfile.ZipFile(io.BytesIO(response.body)).namelist()
+
+
+def test_mcp_crosstab_reuses_published_cut_files_without_database(client):
+    response = client.post("/mcp", {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "crosstab", "arguments": {
+            "survey_id": 415,
+            "qcode": "XM1A",
+            "by": ["gender", "generation"],
+        }},
+    })
+    assert response.status_code == 200
+    message = json.loads(response.body)
+    result = json.loads(message["result"]["content"][0]["text"])
+    assert result["qcode"] == "XM1A"
+    assert result["by"] == ["gender", "generation"]
+
+
+def test_crosstab_falls_back_when_published_counts_are_missing(client, monkeypatch):
+    expected = {"qcode": "XM1A", "by": ["gender", "generation"], "columns": [], "rows": []}
+    monkeypatch.setattr(api.payloads, "crosstab", lambda *args: expected)
+    item = api._crosstab_payload(415, "missing", ("gender", "generation"), 1)
+    assert json.loads(item.body) == expected

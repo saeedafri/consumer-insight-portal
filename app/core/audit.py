@@ -50,7 +50,7 @@ def write_pending(rows: list | None = None) -> int:
     if not rows:
         return 0
     try:
-        with get_engine("app").begin() as conn:
+        with get_engine("api_write").begin() as conn:
             conn.execute(text(f"INSERT INTO cip_access_log ({', '.join(COLUMNS)}) VALUES ({', '.join(':' + c for c in COLUMNS)})"), rows)
     except Exception as exc:   # noqa: BLE001 — the audit never takes the portal down
         log.warning("Audit write failed, %d rows dropped: %s", len(rows), type(exc).__name__)

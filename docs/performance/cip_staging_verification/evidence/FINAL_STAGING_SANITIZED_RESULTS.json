@@ -1,0 +1,302 @@
+{
+  "approved": [
+    "SQL-046",
+    "SQL-047"
+  ],
+  "completed": true,
+  "connection_closed": true,
+  "connection_opened": true,
+  "monitoring_checks": [
+    {
+      "affected_rows": 0,
+      "elapsed_ms": 241.034,
+      "row_count": 1,
+      "rows": [
+        {
+          "cip_etl_owner_connection_id": null
+        }
+      ],
+      "sql_id": "MONITOR-LOCK-BEFORE-SQL-046",
+      "status": "ok"
+    },
+    {
+      "affected_rows": 0,
+      "elapsed_ms": 241.069,
+      "row_count": 1,
+      "rows": [
+        {
+          "cip_etl_owner_connection_id": null
+        }
+      ],
+      "sql_id": "MONITOR-LOCK-BEFORE-SQL-047",
+      "status": "ok"
+    }
+  ],
+  "open_transaction_after_checks": false,
+  "statements": [
+    {
+      "affected_rows": 0,
+      "elapsed_ms": 242.836,
+      "row_count": 1,
+      "rows": [
+        {
+          "authenticated_account": "sha256:2837eb29d5ae",
+          "current_database": "cip_stg",
+          "inspection_connection_id": "sha256:ba146040fd96",
+          "max_execution_time_ms": 0,
+          "metadata_lock_wait_seconds": 31536000,
+          "row_lock_wait_seconds": 50,
+          "server_hostname": "sha256:3c3485f00d05",
+          "server_port": 3306,
+          "server_version": "8.0.46-azure",
+          "session_autocommit": 1,
+          "transaction_read_only": 0
+        }
+      ],
+      "sql_id": "SAFETY-IDENTITY",
+      "status": "ok"
+    },
+    {
+      "affected_rows": 0,
+      "elapsed_ms": 259.616,
+      "row_count": 0,
+      "rows": [],
+      "sql_id": "SAFETY-READ-ONLY",
+      "status": "ok"
+    },
+    {
+      "affected_rows": 0,
+      "elapsed_ms": 259.134,
+      "row_count": 0,
+      "rows": [],
+      "sql_id": "SAFETY-SELECT-TIMEOUT",
+      "status": "ok"
+    },
+    {
+      "affected_rows": 0,
+      "elapsed_ms": 241.108,
+      "row_count": 0,
+      "rows": [],
+      "sql_id": "SAFETY-MDL-TIMEOUT",
+      "status": "ok"
+    },
+    {
+      "affected_rows": 0,
+      "elapsed_ms": 241.529,
+      "row_count": 0,
+      "rows": [],
+      "sql_id": "SAFETY-ROW-TIMEOUT",
+      "status": "ok"
+    },
+    {
+      "affected_rows": 0,
+      "elapsed_ms": 243.29,
+      "row_count": 1,
+      "rows": [
+        {
+          "max_execution_time_ms": 5000,
+          "metadata_lock_wait_seconds": 3,
+          "row_lock_wait_seconds": 3,
+          "session_autocommit": 1,
+          "transaction_read_only": 1
+        }
+      ],
+      "sql_id": "SAFETY-VERIFY",
+      "status": "ok"
+    },
+    {
+      "affected_rows": 0,
+      "elapsed_ms": 346.07,
+      "row_count": 1,
+      "rows": [
+        {
+          "plan": {
+            "query_block": {
+              "cost_info": {
+                "query_cost": "571.23"
+              },
+              "nested_loop": [
+                {
+                  "table": {
+                    "access_type": "ref",
+                    "cost_info": {
+                      "data_read_per_join": "47K",
+                      "eval_cost": "1.90",
+                      "prefix_cost": "20.70",
+                      "read_cost": "18.80"
+                    },
+                    "filtered": "100.00",
+                    "key": "uq_concept_option",
+                    "key_length": "4",
+                    "possible_keys": [
+                      "PRIMARY",
+                      "uq_concept_option"
+                    ],
+                    "ref": [
+                      "const"
+                    ],
+                    "rows_examined_per_scan": 19,
+                    "rows_produced_per_join": 19,
+                    "table_name": "co",
+                    "used_columns": [
+                      "concept_option_id",
+                      "concept_id",
+                      "option_label",
+                      "sort_order"
+                    ],
+                    "used_key_parts": [
+                      "concept_id"
+                    ]
+                  }
+                },
+                {
+                  "table": {
+                    "access_type": "ref",
+                    "attached_condition": "(`cip_stg`.`m`.`status` = 'confirmed')",
+                    "cost_info": {
+                      "data_read_per_join": "255K",
+                      "eval_cost": "5.05",
+                      "prefix_cost": "131.60",
+                      "read_cost": "100.81"
+                    },
+                    "filtered": "50.00",
+                    "key": "ix_map_concept_option",
+                    "key_length": "5",
+                    "possible_keys": [
+                      "uq_concept_map",
+                      "ix_map_question",
+                      "ix_map_concept_option",
+                      "ix_map_status"
+                    ],
+                    "ref": [
+                      "cip_stg.co.concept_option_id"
+                    ],
+                    "rows_examined_per_scan": 5,
+                    "rows_produced_per_join": 50,
+                    "table_name": "m",
+                    "used_columns": [
+                      "survey_id",
+                      "map_key",
+                      "concept_option_id",
+                      "status"
+                    ],
+                    "used_key_parts": [
+                      "concept_option_id"
+                    ]
+                  }
+                },
+                {
+                  "table": {
+                    "access_type": "eq_ref",
+                    "attached_condition": "(`cip_stg`.`s`.`load_status` = 'verified')",
+                    "cost_info": {
+                      "data_read_per_join": "374K",
+                      "eval_cost": "5.05",
+                      "prefix_cost": "149.27",
+                      "read_cost": "12.62"
+                    },
+                    "filtered": "100.00",
+                    "key": "PRIMARY",
+                    "key_length": "4",
+                    "possible_keys": [
+                      "PRIMARY",
+                      "ix_survey_pick"
+                    ],
+                    "ref": [
+                      "cip_stg.m.survey_id"
+                    ],
+                    "rows_examined_per_scan": 1,
+                    "rows_produced_per_join": 50,
+                    "table_name": "s",
+                    "used_columns": [
+                      "survey_id",
+                      "wave_label",
+                      "wave_date",
+                      "platform",
+                      "load_status"
+                    ],
+                    "used_key_parts": [
+                      "survey_id"
+                    ]
+                  }
+                },
+                {
+                  "table": {
+                    "access_type": "ref_or_null",
+                    "cost_info": {
+                      "data_read_per_join": "631K",
+                      "eval_cost": "39.03",
+                      "prefix_cost": "571.23",
+                      "read_cost": "382.93"
+                    },
+                    "filtered": "100.00",
+                    "index_condition": "((`cip_stg`.`c`.`dim` = 'total') and (`cip_stg`.`c`.`survey_id` = `cip_stg`.`m`.`survey_id`) and (`cip_stg`.`c`.`map_key` = `cip_stg`.`m`.`map_key`) and ((`cip_stg`.`c`.`cohort_id` is null) or (`cip_stg`.`c`.`cohort_id` = 0)))",
+                    "key": "ix_agg_map",
+                    "key_length": "294",
+                    "possible_keys": [
+                      "uq_agg_cell",
+                      "ix_agg_question",
+                      "ix_agg_map"
+                    ],
+                    "ref": [
+                      "cip_stg.m.survey_id",
+                      "cip_stg.m.map_key",
+                      "const",
+                      "const"
+                    ],
+                    "rows_examined_per_scan": 7,
+                    "rows_produced_per_join": 390,
+                    "table_name": "c",
+                    "used_columns": [
+                      "survey_id",
+                      "cohort_id",
+                      "dim",
+                      "n",
+                      "base_n",
+                      "map_key"
+                    ],
+                    "used_key_parts": [
+                      "survey_id",
+                      "map_key",
+                      "cohort_id",
+                      "dim"
+                    ]
+                  }
+                }
+              ],
+              "select_id": 1
+            }
+          }
+        }
+      ],
+      "sql_id": "SQL-046",
+      "status": "ok"
+    },
+    {
+      "affected_rows": 0,
+      "elapsed_ms": 495.472,
+      "row_count": 0,
+      "rows": [],
+      "sql_id": "SQL-047",
+      "status": "ok"
+    },
+    {
+      "affected_rows": 0,
+      "elapsed_ms": 241.267,
+      "row_count": 1,
+      "rows": [
+        {
+          "max_execution_time_ms": 5000,
+          "metadata_lock_wait_seconds": 3,
+          "row_lock_wait_seconds": 3,
+          "session_autocommit": 1,
+          "transaction_read_only": 1
+        }
+      ],
+      "sql_id": "SAFETY-FINAL",
+      "status": "ok"
+    }
+  ],
+  "stopped_reason": null,
+  "target": "cip_stg"
+}

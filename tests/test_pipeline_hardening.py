@@ -38,7 +38,8 @@ def test_load_data_fields_escape_what_mysql_would_read_as_structure():
     assert database.tsv(2.5) == "2.5"
 
 
-def test_integrity_heals_derived_rows_and_reports_base_problems(csi_db):
+def test_integrity_heals_derived_rows_and_reports_base_problems(csi_db, monkeypatch):
+    monkeypatch.setattr(integrity, "planned_weeks_missing", lambda today=None: [])
     forsta_etl.discover(FakeForsta())
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
     assert integrity.run() == ["closed Forsta survey still not loaded after 3 days: 1 rows"]   # Holiday, closed 16 Sep

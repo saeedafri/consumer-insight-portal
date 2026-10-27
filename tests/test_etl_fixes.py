@@ -94,6 +94,22 @@ def test_integrity_finds_a_wave_whose_serving_rows_lost_cube_cells(csi_db):
         assert integrity.found(conn, check) == []
 
 
+def test_serving_integrity_check_does_not_use_the_timeout_prone_correlated_count():
+    check = next(c for c in integrity.CHECKS if c.name.startswith("served wave whose serving rows"))
+
+    class Connection:
+        def execute(self, statement, params):
+            sql = str(statement)
+            if "LIMIT :waves" not in sql:
+                raise sa.exc.OperationalError(
+                    sql, params, Exception("(2013, Lost connection to MySQL server during query (The read operation timed out))")
+                )
+            assert params["waves"] == 20
+            return [(415,)]
+
+    assert integrity.found(Connection(), check) == [415]
+
+
 # ── ETL-03: confirmed harmonisation reaches serving and its comparisons ───
 def test_a_confirmed_concept_fills_serving_and_links_a_reworded_question(csi_db):
     with csi_db.begin() as conn:

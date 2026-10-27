@@ -21,12 +21,23 @@ from .config import config
 
 logger = logging.getLogger(__name__)
 
-# seconds a single statement may wait for MySQL before failing instead of hanging. The read role also serves the
-# publish and dashboard builds (a family-wide query takes minutes under load); screens are capped by gunicorn's 30 s.
-READ_TIMEOUT = {"app": 600, "etl": 1800}
-# per-session buffers of the writer (a handful of ETL connections, so the server can afford them)
-ETL_SESSION = ("SET SESSION sort_buffer_size = 16777216, join_buffer_size = 16777216,"
-               " tmp_table_size = 536870912, max_heap_table_size = 536870912")
+# Finite client and server budgets.  The application role also serves the
+# publisher, whose historical grouped read reached 135 seconds, so its SELECT
+# deadline cannot be the web proxy's 30-second request deadline.  DML is not
+# covered by MySQL's max_execution_time; its lock and socket budgets still are.
+CONNECT_TIMEOUT = 10
+STATEMENT_TIMEOUT = {"app": 180, "api_write": 180, "etl": 600}
+SOCKET_TIMEOUT = {role: seconds + 5 for role, seconds in STATEMENT_TIMEOUT.items()}
+LOCK_WAIT_TIMEOUT = {"app": 5, "api_write": 5, "etl": 10}
+ROW_LOCK_WAIT_TIMEOUT = {"app": 10, "api_write": 10, "etl": 30}
+POOL_CAPACITY = {"app": (4, 0), "api_write": (2, 2), "etl": (4, 0)}
+
+# Per-session writer buffers.  These are upper limits, not preallocated memory,
+# and apply only to the small number of ETL connections.
+ETL_SESSION = (
+    "sort_buffer_size=16777216, join_buffer_size=16777216, "
+    "tmp_table_size=536870912, max_heap_table_size=536870912"
+)
 
 _engines: dict[str, Engine] = {}
 
@@ -68,8 +79,19 @@ def _portable(sql: str, role: str) -> str:
         if dialect(role) == "sqlite" else sql
 
 
+def _mysql_session(role: str) -> str:
+    settings = [
+        f"max_execution_time={STATEMENT_TIMEOUT[role] * 1000}",
+        f"lock_wait_timeout={LOCK_WAIT_TIMEOUT[role]}",
+        f"innodb_lock_wait_timeout={ROW_LOCK_WAIT_TIMEOUT[role]}",
+    ]
+    if role == "etl":
+        settings.insert(0, ETL_SESSION)
+    return "SET SESSION " + ", ".join(settings)
+
+
 def get_engine(role: str = "app") -> Engine:
-    """One pooled engine per role. 'app' is read-only, 'etl' can write."""
+    """One bounded engine per role: fast reads, transactional API writes, or ETL."""
     if role not in _engines:
         db = config.database(role)
         if db.url.startswith("sqlite"):
@@ -89,26 +111,33 @@ def get_engine(role: str = "app") -> Engine:
         # ONE round trip instead of three (SELECT 1 + query + rollback) — about
         # 500 ms saved per read from the India office. pool_recycle retires
         # connections before Azure drops them. Writers keep transactions.
-        reads_only = role == "app"
-        # The writer bulk-loads answers with LOAD DATA LOCAL INFILE (etl/forsta_etl.py).
-        connect_args = db.connect_args if reads_only else {**db.connect_args, "local_infile": True}
-        if db.url.startswith("mysql"):   # a hung query fails instead of blocking the run (and the launchd slots after it)
-            connect_args = {**connect_args, "connect_timeout": 20, "read_timeout": READ_TIMEOUT.get(role, 1800), "write_timeout": READ_TIMEOUT.get(role, 1800)}
-            if reads_only:   # the socket timeout only abandons a slow SELECT: this makes the server stop it (SELECTs only, in ms)
-                connect_args["init_command"] = f"SET SESSION max_execution_time={READ_TIMEOUT[role] * 1000}"
-            else:   # the cube's GROUP BYs sort and join in memory instead of spilling to disk: ~16 % faster on Azure (22 Oct 2026)
-                connect_args["init_command"] = ETL_SESSION
+        fast_reads = role == "app"
+        if role not in STATEMENT_TIMEOUT:
+            raise ValueError(f"unknown database role: {role}")
+        connect_args = dict(db.connect_args)
+        if role == "etl":   # only ETL bulk-loads answers with LOAD DATA LOCAL INFILE
+            connect_args["local_infile"] = True
+        if db.url.startswith("mysql"):
+            connect_args.update({
+                "connect_timeout": CONNECT_TIMEOUT,
+                "read_timeout": SOCKET_TIMEOUT[role],
+                "write_timeout": SOCKET_TIMEOUT[role],
+                "init_command": _mysql_session(role),
+            })
+        pool_cap, overflow_cap = POOL_CAPACITY[role]
+        pool_size = min(db.pool_size, pool_cap)
+        max_overflow = min(db.max_overflow, overflow_cap)
         _engines[role] = create_engine(
             db.url,
             poolclass=QueuePool,
-            pool_size=db.pool_size,
-            max_overflow=db.max_overflow,
-            pool_timeout=db.pool_timeout,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=min(db.pool_timeout, 10),
             pool_recycle=db.pool_recycle,
-            pool_pre_ping=not reads_only,
+            pool_pre_ping=not fast_reads,
             connect_args=connect_args,
             future=True,
-            **({"isolation_level": "AUTOCOMMIT", "skip_autocommit_rollback": True} if reads_only else {}),
+            **({"isolation_level": "AUTOCOMMIT", "skip_autocommit_rollback": True} if fast_reads else {}),
         )
         logger.info("Created engine role=%s host=%s db=%s", role, db.host, db.database)
     return _engines[role]

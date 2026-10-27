@@ -283,6 +283,79 @@ def test_qualtrics_export_loads_harmonises_and_finds_state_by_wording(csi_db, tm
     assert states == {"NH", "MI", "PA"}
 
 
+def test_qualtrics_reload_is_a_transactional_snapshot(csi_db, tmp_path):
+    path = qualtrics_file(tmp_path)
+    sid = qualtrics_export.ingest_export(path, "2025-05-12")
+    with csi_db.connect() as conn:
+        removed = conn.execute(sa.text(
+            "SELECT respondent_id FROM cip_respondent WHERE survey_id = :s AND record_no = 3"
+        ), {"s": sid}).scalar_one()
+
+    book = openpyxl.load_workbook(path)
+    sheet = book.active
+    sheet.cell(row=4, column=10).value = None       # respondent 2 no longer answered B11_1
+    sheet.delete_rows(5, 1)                         # respondent 3 disappeared from the export
+    book.save(path)
+    assert qualtrics_export.ingest_export(path, "2025-05-12") == sid
+
+    with csi_db.connect() as conn:
+        assert conn.execute(sa.text(
+            "SELECT COUNT(*) FROM cip_respondent WHERE survey_id = :s"
+        ), {"s": sid}).scalar() == 2
+        assert conn.execute(sa.text(
+            "SELECT COUNT(*) FROM cip_answer WHERE respondent_id = :r"
+        ), {"r": removed}).scalar() == 0
+        assert conn.execute(sa.text(
+            "SELECT COUNT(*) FROM cip_answer a JOIN cip_field f ON f.field_id = a.field_id"
+            " JOIN cip_respondent r ON r.respondent_id = a.respondent_id"
+            " WHERE a.survey_id = :s AND r.record_no = 2 AND f.field_name = 'B11_1'"
+        ), {"s": sid}).scalar() == 0
+        assert conn.execute(sa.text("PRAGMA foreign_key_check")).all() == []
+
+
+def test_qualtrics_snapshot_rolls_back_on_answer_failure(csi_db, tmp_path, monkeypatch):
+    from etl import run_pipeline
+
+    path = qualtrics_file(tmp_path)
+    sid = qualtrics_export.ingest_export(path, "2025-05-12")
+    with csi_db.connect() as conn:
+        before = {
+            table: conn.execute(sa.text(f"SELECT COUNT(*) FROM {table} WHERE survey_id = :s"), {"s": sid}).scalar()
+            for table in ("cip_respondent", "cip_answer")
+        }
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("injected bulk answer failure")
+
+    monkeypatch.setattr(run_pipeline, "bulk_insert", fail)
+    with pytest.raises(RuntimeError, match="injected bulk answer failure"):
+        qualtrics_export.ingest_export(path, "2025-05-12")
+    with csi_db.connect() as conn:
+        after = {
+            table: conn.execute(sa.text(f"SELECT COUNT(*) FROM {table} WHERE survey_id = :s"), {"s": sid}).scalar()
+            for table in before
+        }
+        assert after == before
+        assert conn.execute(sa.text("PRAGMA foreign_key_check")).all() == []
+
+
+def test_qualtrics_empty_reload_removes_the_prior_snapshot(csi_db, tmp_path):
+    path = qualtrics_file(tmp_path)
+    sid = qualtrics_export.ingest_export(path, "2025-05-12")
+    book = openpyxl.load_workbook(path)
+    book.active.delete_rows(3, book.active.max_row - 2)
+    book.save(path)
+    assert qualtrics_export.ingest_export(path, "2025-05-12") == sid
+    with csi_db.connect() as conn:
+        assert conn.execute(sa.text(
+            "SELECT COUNT(*) FROM cip_respondent WHERE survey_id = :s"
+        ), {"s": sid}).scalar() == 0
+        assert conn.execute(sa.text(
+            "SELECT COUNT(*) FROM cip_answer WHERE survey_id = :s"
+        ), {"s": sid}).scalar() == 0
+        assert conn.execute(sa.text("PRAGMA foreign_key_check")).all() == []
+
+
 def test_hand_entered_summary_waves_are_not_listed_as_respondent_data(legacy):
     with legacy.begin() as conn:
         conn.execute(sa.text("INSERT INTO dwh_smsurveydetail VALUES ('SV_MS1', 'Summary', '2025-08-29', 8, 1)"))

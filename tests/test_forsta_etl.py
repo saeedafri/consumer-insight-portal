@@ -204,6 +204,84 @@ def test_a_wave_loads_codes_directly_and_keeps_no_personal_data(csi_db):
     assert answer("q9")[0] is None and answer("q9")[3] == "note 1"
 
 
+def test_forsta_does_not_write_then_clear_metadata_labels(csi_db):
+    statements = []
+
+    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(statement.lower().split()))
+
+    sa.event.listen(csi_db, "before_cursor_execute", record)
+    try:
+        forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
+    finally:
+        sa.event.remove(csi_db, "before_cursor_execute", record)
+    assert not any(sql.startswith("update cip_answer") for sql in statements)
+
+
+def test_coded_labels_preserve_metadata_case_spacing_and_unknown_code_contract(csi_db):
+    import copy
+
+    datamap = copy.deepcopy(REAL_SHAPES)
+    d5 = next(q for q in datamap["questions"] if q["qlabel"] == "D5")
+    next(v for v in d5["variables"][0]["values"] if v["value"] == 2)["title"] = "Élite  "
+    records = [record(n, D5="999" if n == 1 else "2") for n in range(1, 5)] + [record(5, status="1")]
+
+    class Labels(FakeForsta):
+        def survey_datamap(self, path):
+            return datamap
+
+    sid = forsta_etl.load_survey(Labels(data={"selfserve/58f/260907": records}), "selfserve/58f/260907")
+    direct = loaded(csi_db, "SELECT a.value_code, a.value_label FROM cip_answer a JOIN cip_field f"
+                            " ON f.field_id = a.field_id WHERE a.survey_id = :s AND f.field_name = 'D5'"
+                            " ORDER BY a.respondent_id", s=sid)
+    assert direct[0] == (999, None) and all(label is None for _, label in direct)
+    displayed = loaded(csi_db, "SELECT answer_code, answer_label FROM v_cip_answer_long"
+                               " WHERE survey_id = :s AND qcode = 'D5' ORDER BY respondent_id", s=sid)
+    assert displayed == [(999, None), (2, "Élite"), (2, "Élite"), (2, "Élite")]
+
+
+def test_multi_labels_remain_item_labels_when_datamap_has_yes_no_options(csi_db):
+    import copy
+
+    datamap = copy.deepcopy(REAL_SHAPES)
+    q1 = next(q for q in datamap["questions"] if q["qlabel"] == "q1")
+    for variable in q1["variables"][:2]:
+        variable["values"] = [{"value": 0, "title": "No"}, {"value": 1, "title": "Yes"}]
+
+    class MultiLabels(FakeForsta):
+        def survey_datamap(self, path):
+            return datamap
+
+    sid = forsta_etl.load_survey(MultiLabels(), "selfserve/58f/260907")
+    displayed = loaded(
+        csi_db,
+        "SELECT row_label, answer_label FROM v_cip_answer_long"
+        " WHERE survey_id = :s AND qcode = 'q1' AND respondent_id ="
+        " (SELECT respondent_id FROM cip_respondent WHERE survey_id = :s AND forsta_uuid = 'u1')"
+        " ORDER BY row_label",
+        s=sid,
+    )
+    assert displayed == [
+        ("Met up with friends", "Met up with friends"),
+        ("Other (please specify)", "Other (please specify)"),
+    ]
+
+
+def test_reconcile_detects_changed_non_numeric_coded_label(csi_db):
+    initial = [record(n, D5="First label") for n in range(1, 5)] + [record(5, status="1", D5="First label")]
+    sid = forsta_etl.load_survey(
+        FakeForsta(data={"selfserve/58f/260907": initial}),
+        "selfserve/58f/260907",
+    )
+    changed = [dict(row, D5="Second label") for row in initial]
+    checked, problems = forsta_etl.reconcile_survey(
+        sid,
+        FakeForsta(data={"selfserve/58f/260907": changed}),
+    )
+    assert checked > 0
+    assert any("D5" in problem and "Second label" in problem for problem in problems)
+
+
 def test_question_flags_and_bipolar_statements_are_stored(csi_db):
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
     flags = dict((q, (t, v)) for q, t, v in loaded(csi_db, "SELECT qcode, is_technical, is_virtual FROM cip_question"
@@ -359,9 +437,104 @@ def test_virtual_questions_are_not_harmonised(csi_db):
 # ── review fixes ───────────────────────────────────────────────────────────
 def test_a_reload_with_fewer_records_drops_the_missing_respondents(csi_db):
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
-    fewer = FakeForsta(data={"selfserve/58f/260907": [record(n) for n in range(1, 4)]})
-    assert forsta_etl.load_survey(fewer, "selfserve/58f/260907") == sid
+    with csi_db.begin() as conn:
+        assert conn.execute(sa.text("PRAGMA foreign_keys")).scalar() == 1
+        gone = conn.execute(sa.text("SELECT respondent_id FROM cip_respondent WHERE survey_id = :s AND forsta_uuid = 'u4'"),
+                            {"s": sid}).scalar_one()
+        scheme = conn.execute(sa.text("INSERT INTO cip_weight_scheme (survey_id, scheme_code, description)"
+                                      " VALUES (:s, 'review', 'Review')"), {"s": sid}).lastrowid
+        conn.execute(sa.text("INSERT INTO cip_weight (respondent_id, scheme_id, weight) VALUES (:r, :w, 1)"),
+                     {"r": gone, "w": scheme})
+        cohort = conn.execute(sa.text("INSERT INTO cip_cohort_def (cohort_code, cohort_name, rule_json)"
+                                      " VALUES ('review', 'Review', '{\"all\": []}')")).lastrowid
+        conn.execute(sa.text("INSERT INTO cip_respondent_cohort (cohort_id, respondent_id, survey_id)"
+                             " VALUES (:c, :r, :s)"), {"c": cohort, "r": gone, "s": sid})
+        run = conn.execute(sa.text("SELECT MAX(load_id) FROM cip_load_log WHERE survey_id = :s"), {"s": sid}).scalar_one()
+    fewer = [record(n) for n in range(1, 4)]
+    statements = []
+
+    def record_sql(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(statement.lower().split()))
+
+    sa.event.listen(csi_db, "before_cursor_execute", record_sql)
+    try:
+        assert forsta_etl._write(sid, fewer, run) == 3
+    finally:
+        sa.event.remove(csi_db, "before_cursor_execute", record_sql)
+    assert sum(sql.startswith("delete from cip_answer where survey_id") for sql in statements) == 1
     assert loaded(csi_db, "SELECT COUNT(*) FROM cip_respondent WHERE survey_id = :s", s=sid)[0][0] == 3
+    with csi_db.connect() as conn:
+        assert conn.execute(sa.text("PRAGMA foreign_keys")).scalar() == 1
+        assert conn.execute(sa.text("PRAGMA foreign_key_check")).all() == []
+        for table in ("cip_answer", "cip_profile", "cip_weight", "cip_respondent_cohort"):
+            assert conn.execute(sa.text(f"SELECT COUNT(*) FROM {table} WHERE respondent_id = :r"),
+                                {"r": gone}).scalar() == 0
+    assert forsta_etl._write(sid, fewer, run) == 3
+    assert loaded(csi_db, "SELECT COUNT(*) FROM cip_respondent WHERE survey_id = :s", s=sid)[0][0] == 3
+
+
+def test_a_shrinking_reload_rolls_back_all_child_deletes_on_error(csi_db, monkeypatch):
+    sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
+    with csi_db.begin() as conn:
+        assert conn.execute(sa.text("PRAGMA foreign_keys")).scalar() == 1
+        gone = conn.execute(sa.text("SELECT respondent_id FROM cip_respondent WHERE survey_id = :s AND forsta_uuid = 'u4'"),
+                            {"s": sid}).scalar_one()
+        scheme = conn.execute(sa.text("INSERT INTO cip_weight_scheme (survey_id, scheme_code, description)"
+                                      " VALUES (:s, 'rollback', 'Rollback')"), {"s": sid}).lastrowid
+        conn.execute(sa.text("INSERT INTO cip_weight (respondent_id, scheme_id, weight) VALUES (:r, :w, 1)"),
+                     {"r": gone, "w": scheme})
+        cohort = conn.execute(sa.text("INSERT INTO cip_cohort_def (cohort_code, cohort_name, rule_json)"
+                                      " VALUES ('rollback', 'Rollback', '{\"all\": []}')")).lastrowid
+        conn.execute(sa.text("INSERT INTO cip_respondent_cohort (cohort_id, respondent_id, survey_id)"
+                             " VALUES (:c, :r, :s)"), {"c": cohort, "r": gone, "s": sid})
+        run = conn.execute(sa.text("SELECT MAX(load_id) FROM cip_load_log WHERE survey_id = :s"), {"s": sid}).scalar_one()
+        before = {table: conn.execute(sa.text(f"SELECT COUNT(*) FROM {table}" )).scalar()
+                  for table in ("cip_respondent", "cip_answer", "cip_profile", "cip_weight", "cip_respondent_cohort")}
+
+    def fail(_conn, _rows):
+        raise RuntimeError("injected answer failure")
+
+    monkeypatch.setattr(forsta_etl, "insert_answers", fail)
+    with pytest.raises(RuntimeError, match="injected answer failure"):
+        forsta_etl._write(sid, [record(n) for n in range(1, 4)], run)
+    with csi_db.connect() as conn:
+        assert {table: conn.execute(sa.text(f"SELECT COUNT(*) FROM {table}")).scalar()
+                for table in before} == before
+        assert conn.execute(sa.text("PRAGMA foreign_key_check")).all() == []
+
+
+def test_full_shrinking_reload_rebuilds_respondent_derived_tables(csi_db):
+    path = "selfserve/58f/260907"
+    sid = forsta_etl.load_survey(FakeForsta(), path)
+    with csi_db.connect() as conn:
+        gone = conn.execute(sa.text(
+            "SELECT respondent_id FROM cip_respondent WHERE survey_id = :s AND forsta_uuid = 'u4'"
+        ), {"s": sid}).scalar_one()
+        assert conn.execute(sa.text(
+            "SELECT COUNT(*) FROM cip_tracker_line WHERE respondent_id = :r"
+        ), {"r": gone}).scalar() == 1
+        assert conn.execute(sa.text(
+            "SELECT COUNT(*) FROM srv_answer WHERE respondent_id = :r"
+        ), {"r": gone}).scalar() > 0
+
+    fewer = FakeForsta(data={path: [record(n) for n in range(1, 4)]})
+    assert forsta_etl.load_survey(fewer, path) == sid
+    with csi_db.connect() as conn:
+        for table in ("cip_tracker_line", "srv_answer"):
+            assert conn.execute(sa.text(f"SELECT COUNT(*) FROM {table} WHERE respondent_id = :r"),
+                                {"r": gone}).scalar() == 0
+        assert conn.execute(sa.text("PRAGMA foreign_key_check")).all() == []
+
+
+def test_full_reload_accepts_an_empty_existing_wave_without_stale_rows(csi_db):
+    path = "selfserve/58f/260907"
+    sid = forsta_etl.load_survey(FakeForsta(), path)
+    assert forsta_etl.load_survey(FakeForsta(data={path: []}), path) == sid
+    with csi_db.connect() as conn:
+        for table in ("cip_respondent", "cip_answer", "cip_profile", "cip_tracker_line", "srv_answer"):
+            assert conn.execute(sa.text(f"SELECT COUNT(*) FROM {table} WHERE survey_id = :s"),
+                                {"s": sid}).scalar() == 0
+        assert conn.execute(sa.text("PRAGMA foreign_key_check")).all() == []
 
 
 def test_a_wave_keeps_its_survey_when_its_first_date_moves(csi_db):

@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import random
 import re
 import sys
 import time
@@ -233,16 +234,18 @@ def mark_significant(rows: list[dict]) -> None:
 
 
 def build_wave(survey_id: int, attempts: int = 3) -> int:
-    """Rebuild one wave's serving rows in one transaction; returns the row count. Retries a deadlock
-    (MySQL 1213), which parallel builds of neighbouring waves can hit."""
+    """Rebuild one wave transactionally; retry only MySQL lock failures with bounded backoff."""
     for attempt in range(1, attempts + 1):
         try:
             return _build_wave(survey_id)
         except OperationalError as exc:
-            if attempt == attempts or getattr(exc.orig, "args", [None])[0] != 1213:
+            code = getattr(exc.orig, "args", [None])[0]
+            if attempt == attempts or code not in {1205, 1213}:
                 raise
-            log.warning("Deadlock building survey %s; retry %d", survey_id, attempt)
-            time.sleep(attempt)
+            delay = min(2 ** (attempt - 1), 4) + random.uniform(0, 0.25)
+            log.warning("MySQL lock error %s building survey %s; retry %d in %.2f s",
+                        code, survey_id, attempt, delay)
+            time.sleep(delay)
 
 
 def _build_wave(survey_id: int) -> int:
@@ -318,9 +321,20 @@ def rebuild_dependants(survey_id: int) -> list[int]:
     return rebuilt
 
 
+def serving_worker_count(jobs: int) -> int:
+    try:
+        count = int(jobs)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("CIP serving jobs must be an integer from 1 to 4") from exc
+    if not 1 <= count <= 4:
+        raise ValueError("CIP serving jobs must be from 1 to 4")
+    return count
+
+
 def build_all(jobs: int = 1, missing_only: bool = False) -> int:
     """Backfill every verified wave. Waves don't depend on each other's serving rows (comparisons read the
     cube), so they can be built in parallel."""
+    jobs = serving_worker_count(jobs)
     with get_engine("app").connect() as conn:
         ids = [r[0] for r in conn.execute(text(
             "SELECT s.survey_id FROM cip_survey s WHERE s.load_status = 'verified'"

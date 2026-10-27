@@ -3,8 +3,10 @@ import gzip
 import json
 import time
 from datetime import date
+from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 
 from app.data import payloads
 from etl import publish, serving
@@ -37,6 +39,83 @@ def test_publish_writes_the_api_bytes_swaps_atomically_and_rolls_back(csi_db, tm
     rewritten = third_dir / live_trend.relative_to(second)                           # the wave asked it: rewritten
     assert rewritten.stat().st_ino != live_trend.stat().st_ino and live_trend.read_bytes() == before   # live copy untouched
     assert publish.rollback(tmp_path).name == first.name and live.resolve() == first.resolve()
+
+
+def test_publish_preserves_mysql_grouping_and_canonical_payloads(csi_db, tmp_path, caplog):
+    from etl import forsta_etl
+    from tests.test_forsta_etl import FakeForsta
+
+    caplog.set_level("INFO", logger="cip.publish")
+    sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
+    with csi_db.connect() as conn:
+        grouped = payloads.question_cuts(conn, [sid])
+        direct_people = payloads.people(conn, sid)
+
+    statements = []
+
+    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(statement.lower().split()))
+
+    sa.event.listen(csi_db, "before_cursor_execute", record)
+    try:
+        built = publish.build(tmp_path, jobs=1)
+    finally:
+        sa.event.remove(csi_db, "before_cursor_execute", record)
+    answer_sql = [sql for sql in statements if " from srv_answer " in f" {sql} "]
+    assert sum(" group by " in f" {sql} " for sql in answer_sql) == 1
+    assert len(answer_sql) == 2
+    assert not any("select distinct w.survey_family" in sql for sql in statements)
+    messages = [record.getMessage() for record in caplog.records if record.name == "cip.publish"]
+    assert any("expected_srv_answer_reads=2" in message for message in messages)
+    assert any("workers_configured=1 workers_effective=1" in message for message in messages)
+    assert any("cut_read_build_seconds=" in message and "wall_seconds=" in message for message in messages)
+    assert not any("query_count=" in message for message in messages)
+    for (_, qcode), part in grouped.items():
+        payload = gzip.decompress((built / f"api/v1/waves/{sid}/cuts/{qcode}.json.gz").read_bytes())
+        assert payload == payloads.encode(part)
+    people_payload = gzip.decompress((built / f"api/v1/waves/{sid}/people.json.gz").read_bytes())
+    assert people_payload == payloads.encode(direct_people)
+
+
+def test_mysql_collation_forbids_naive_python_grouping():
+    schema = (Path(__file__).parents[1] / "sql/005_serving.sql").read_text()
+    assert "COLLATE=utf8mb4_0900_ai_ci" in schema
+    assert len({"Male", "male", "e", "é"}) == 4
+
+
+def test_people_closes_the_stream_when_row_iteration_fails():
+    class BrokenStream:
+        closed = False
+
+        def __iter__(self):
+            yield (1, "Q1", 0, 1, "Male", "18-29", "Gen Z", "$25k", "West", "Urban")
+            raise RuntimeError("injected stream failure")
+
+        def close(self):
+            self.closed = True
+
+    stream = BrokenStream()
+
+    class Connection:
+        def execute(self, _statement, _params):
+            return stream
+
+    with pytest.raises(RuntimeError, match="injected stream failure"):
+        payloads.people(Connection(), 1)
+    assert stream.closed
+
+
+def test_publish_worker_count_is_configurable_and_bounded(monkeypatch):
+    monkeypatch.setenv("CIP_PUBLISH_JOBS", "2")
+    assert publish.worker_count() == 2
+    assert publish.worker_count(1) == 1 and publish.worker_count(4) == 4
+    monkeypatch.delenv("CIP_PUBLISH_JOBS")
+    assert publish.worker_count() == 4
+    monkeypatch.setenv("CIP_PUBLISH_JOBS", "many")
+    assert publish.worker_count(3) == 3
+    for invalid in (0, 5, "many", ""):
+        with pytest.raises(ValueError, match="1 to 4"):
+            publish.worker_count(invalid)
 
 
 def test_a_failed_gate_keeps_the_live_version(csi_db, tmp_path, monkeypatch):

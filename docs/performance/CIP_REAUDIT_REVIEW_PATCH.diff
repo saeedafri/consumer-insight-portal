@@ -1,0 +1,476 @@
+diff --git a/etl/forsta_etl.py b/etl/forsta_etl.py
+index bfd4ad8..eaa5ca9 100644
+--- a/etl/forsta_etl.py
++++ b/etl/forsta_etl.py
+@@ -269,8 +269,9 @@ def _answer(field: dict, value: Any) -> Optional[dict]:
+     code = forsta_api.whole(value)
+     if code is None:
+         return {"code": None, "label": str(value)[:500], "num": None, "txt": None}
+-    label = field["item"] if field["multi"] else field["labels"].get(code)
+-    return {"code": code, "label": (label or None) and label[:500], "num": None, "txt": None}
++    # Coded display labels belong to cip_item/cip_option. Readers join them
++    # back; unknown codes had no source label before this optimization either.
++    return {"code": code, "label": None, "num": None, "txt": None}
+ 
+ 
+ def _cut(value: Any, limit: int) -> Optional[str]:
+@@ -342,7 +343,7 @@ def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
+         drop_unlisted_items(survey_id, questions)
+         lap("verify")
+         _rebuild_profiles(survey_id, None, fam)
+-        _rebuild_question_bases(survey_id)
++        _rebuild_question_bases(survey_id, drop_labels=False)
+         lap("profiles")
+         mapped = harmonise.harmonise_survey(survey_id)
+         lap("harmonise")
+@@ -396,7 +397,6 @@ def _write(survey_id: int, records: list[dict], run: int) -> int:
+         sent = {p["uuid"] for p in people}
+         gone = [rid for uuid, rid in ids.items() if uuid not in sent]   # removed in Forsta since the last load
+         if gone:
+-            conn.execute(text("DELETE FROM cip_answer WHERE survey_id = :s"), {"s": survey_id})
+             for table in ("cip_respondent_cohort", "cip_profile", "cip_respondent"):
+                 conn.execute(text(f"DELETE FROM {table} WHERE respondent_id IN :ids")
+                              .bindparams(bindparam("ids", expanding=True)), {"ids": gone})
+diff --git a/etl/publish.py b/etl/publish.py
+index 0b51538..4772506 100644
+--- a/etl/publish.py
++++ b/etl/publish.py
+@@ -52,6 +52,7 @@ log = logging.getLogger("cip.publish")
+ ROOT = Path(os.environ.get("CIP_PUBLISH_DIR") or Path(__file__).resolve().parents[1] / "data/published")
+ WARM_WAVES = 3   # the newest waves people open first after a publish
+ KEEP = 3
++MAX_JOBS = 4     # app-role database reads per publish; shared MySQL must not get an unbounded pool
+ BACKUP = os.environ.get("CIP_PUBLISH_BACKUP_URL", "").strip()   # https://<account>.blob.core.windows.net/<container>?<sas>
+ 
+ 
+@@ -66,11 +67,23 @@ def write(path: Path, data) -> int:
+     return len(body)
+ 
+ 
+-def build(root: Path = ROOT, jobs: int = 4) -> Path:
++def worker_count(jobs: int | None = None) -> int:
++    raw = jobs if jobs is not None else os.environ.get("CIP_PUBLISH_JOBS", "4")
++    try:
++        count = int(raw)
++    except (TypeError, ValueError) as exc:
++        raise ValueError("CIP publish jobs must be an integer from 1 to 4") from exc
++    if not 1 <= count <= MAX_JOBS:
++        raise ValueError("CIP publish jobs must be from 1 to 4")
++    return count
++
++
++def build(root: Path = ROOT, jobs: int | None = None) -> Path:
+     """Write every standard payload into a new version folder and check it. A wave the ETL has not rebuilt since
+     the live version (same srv_wave.built_at; loading a wave rebuilds the waves that compare against it too) is
+     hard-linked from the live version, and so are the trends of a family with no rebuilt wave: no database work
+     and no extra disk. Returns the folder; raises if a gate fails."""
++    jobs = worker_count(jobs)
+     version = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+     out = root / f".build-{version}"
+     out.mkdir(parents=True)
+@@ -117,11 +130,15 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
+     size = write(out / "api/v1/waves", payloads.waves(by_wave))
+ 
+     def wave(sid: int) -> int:   # the book, and per question what any two-cut crosstab needs
++        wave_start = time.perf_counter()
+         with get_engine("app").connect() as conn:
+             cuts = payloads.question_cuts(conn, [sid])
+             people = payloads.people(conn, sid)
+-        return write(out / f"api/v1/waves/{sid}/book", payloads.book(sid)) + write(out / f"api/v1/waves/{sid}/people", people) + sum(
++        written = write(out / f"api/v1/waves/{sid}/book", payloads.book(sid)) + write(out / f"api/v1/waves/{sid}/people", people) + sum(
+             write(out / f"api/v1/waves/{sid}/cuts/{qcode}", part) for (_, qcode), part in cuts.items())
++        log.info("publish wave=%s fingerprint=srv_answer_group_and_extract query_count=2 workers=%d seconds=%.3f",
++                 sid, jobs, time.perf_counter() - wave_start)
++        return written
+     with ThreadPoolExecutor(max_workers=jobs) as pool:
+         size += sum(pool.map(wave, fresh))
+     for code, survey_id, body in boards:
+@@ -169,7 +186,7 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
+     manifest = {"version": version, "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                 "serving_version": serving, "waves": len(ids), "books": len(ids), "dashboards": len(boards),
+                 "rebuilt_waves": len(fresh), "rebuilt_families": len(redo), "questions_written": len(done),
+-                "bytes_written": size, "seconds": round(time.perf_counter() - start, 1), "rules": rules,
++                "bytes_written": size, "seconds": round(time.perf_counter() - start, 1), "jobs": jobs, "rules": rules,
+                 "built": {sid: at for sid, (at, _, _) in waves.items()}}
+     check(out, manifest, ids)
+     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
+@@ -265,7 +282,7 @@ def restore(root: Path = ROOT) -> Path:
+     return root / name
+ 
+ 
+-def publish(root: Path = ROOT, jobs: int = 4) -> Path:
++def publish(root: Path = ROOT, jobs: int | None = None) -> Path:
+     out = build(root, jobs)
+     swap(root, out)
+     log.info("Published %s", out.name)
+@@ -327,7 +344,8 @@ def main() -> int:
+     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s")
+     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+     p.add_argument("--root", type=Path, default=ROOT)
+-    p.add_argument("--jobs", type=int, default=4)
++    p.add_argument("--jobs", type=int, default=None,
++                   help="1-4 workers (default: CIP_PUBLISH_JOBS or 4)")
+     p.add_argument("--rollback", action="store_true")
+     p.add_argument("--restore", action="store_true")
+     a = p.parse_args()
+diff --git a/etl/run_pipeline.py b/etl/run_pipeline.py
+index 5a0cbaf..2c80b4d 100644
+--- a/etl/run_pipeline.py
++++ b/etl/run_pipeline.py
+@@ -254,7 +254,7 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
+     log.info("Rebuilt %d profiles for survey_id=%s", len(payload), survey_id)
+ 
+ 
+-def _rebuild_question_bases(survey_id: int) -> None:
++def _rebuild_question_bases(survey_id: int, drop_labels: bool = True) -> None:
+     """Set cip_question.base_n to the number of qualified respondents who
+     actually reached each question.
+ 
+@@ -285,7 +285,8 @@ def _rebuild_question_bases(survey_id: int) -> None:
+             ),
+             {"sid": survey_id},
+         )
+-        drop_derived_labels(conn, survey_id)
++        if drop_labels:
++            drop_derived_labels(conn, survey_id)
+     log.info("Rebuilt question bases for survey_id=%s", survey_id)
+ 
+ 
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 9930a1c..a55b111 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -2,22 +2,70 @@
+ from __future__ import annotations
+ 
+ import os
++import socket
+ import tempfile
+ 
++# The repository .env contains live database, Forsta, SMTP, Teams, OIDC and
++# backup credentials.  Shadow them before importing any application module:
++# load_dotenv() does not overwrite variables already present in the process.
++_TEST_ROOT = tempfile.mkdtemp(prefix="cip-tests-")
++
++
++def _blocked_network(*args, **kwargs):
++    address = kwargs.get("address", args[-1] if args else "unknown endpoint")
++    raise AssertionError(f"test attempted a real network connection to {address!r}")
++
++
++# Collection imports application modules before autouse fixtures begin.
++socket.socket.connect = _blocked_network
++socket.socket.connect_ex = _blocked_network
++socket.socket.sendto = _blocked_network
++if hasattr(socket.socket, "sendmsg"):
++    socket.socket.sendmsg = _blocked_network
++socket.create_connection = _blocked_network
++os.environ["APP_ENV"] = "LOCAL"
++os.environ["LOCAL_SQLITE_PATH"] = os.path.join(_TEST_ROOT, "default.db")
++os.environ["CIP_PUBLISH_DIR"] = os.path.join(_TEST_ROOT, "published")
++for _live_setting in (
++    "ANTHROPIC_API_KEY",
++    "APP_DB_PASSWORD",
++    "APP_DB_USER",
++    "CIP_OIDC_CLIENT_ID",
++    "CIP_OIDC_CLIENT_SECRET",
++    "CIP_OIDC_ISSUER",
++    "CIP_NGINX_URL",
++    "CIP_PUBLISH_BACKUP_URL",
++    "EMAIL_PASSWORD",
++    "FORSTA_API_KEY",
++    "IDP_BASE_URL",
++    "IDP_TOKEN_URL",
++    "IDP_USERINFO_URL",
++    "OIDC_CLIENT_ID",
++    "OIDC_CLIENT_SECRET",
++    "STG_DB_HOST",
++    "STG_DB_NAME",
++    "STG_DB_PASSWORD",
++    "STG_DB_USER",
++    "TEAMS_WEBHOOK_URL",
++):
++    os.environ[_live_setting] = ""
++
+ import pytest
+ import sqlalchemy as sa
+ 
+ from app.core import database, schema_upgrade
+ 
+-# before etl.publish is imported: a test's publish must never replace the portal's real files (data/published)
+-os.environ["CIP_PUBLISH_DIR"] = tempfile.mkdtemp(prefix="cip-published-")
+-
+ 
+ @pytest.fixture()
+ def csi_db(tmp_path, monkeypatch):
+     """A fresh schema-v2 SQLite database, used by every repository and
+     loader function in the test (both the 'etl' and the 'app' role)."""
+     engine = sa.create_engine(f"sqlite:///{tmp_path / 'csi.db'}", future=True)
++
++    @sa.event.listens_for(engine, "connect")
++    def _enable_foreign_keys(dbapi_connection, _connection_record):
++        dbapi_connection.execute("PRAGMA foreign_keys=ON")
++
+     schema_upgrade.install(engine)
+     database._install_sqlite_translation(engine)
+     monkeypatch.setitem(database._engines, "etl", engine)
+@@ -34,6 +82,17 @@ def own_notify_state(tmp_path, monkeypatch):
+     monkeypatch.setattr(notify, "STATE", tmp_path / "notify-state.json")
+ 
+ 
++@pytest.fixture(autouse=True)
++def no_network(monkeypatch):
++    """A missed mock must fail closed before reaching MySQL, HTTP, SMTP or an API."""
++    monkeypatch.setattr(socket.socket, "connect", _blocked_network)
++    monkeypatch.setattr(socket.socket, "connect_ex", _blocked_network)
++    monkeypatch.setattr(socket.socket, "sendto", _blocked_network)
++    if hasattr(socket.socket, "sendmsg"):
++        monkeypatch.setattr(socket.socket, "sendmsg", _blocked_network)
++    monkeypatch.setattr(socket, "create_connection", _blocked_network)
++
++
+ @pytest.fixture(autouse=True)
+ def no_real_messages(monkeypatch, request):
+     """Tests run with the real .env, which holds live SMTP and Teams settings: nothing a test does may reach a
+diff --git a/tests/test_forsta_etl.py b/tests/test_forsta_etl.py
+index 0d0908e..5057c48 100644
+--- a/tests/test_forsta_etl.py
++++ b/tests/test_forsta_etl.py
+@@ -204,6 +204,42 @@ def test_a_wave_loads_codes_directly_and_keeps_no_personal_data(csi_db):
+     assert answer("q9")[0] is None and answer("q9")[3] == "note 1"
+ 
+ 
++def test_forsta_does_not_write_then_clear_metadata_labels(csi_db):
++    statements = []
++
++    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
++        statements.append(" ".join(statement.lower().split()))
++
++    sa.event.listen(csi_db, "before_cursor_execute", record)
++    try:
++        forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
++    finally:
++        sa.event.remove(csi_db, "before_cursor_execute", record)
++    assert not any(sql.startswith("update cip_answer") for sql in statements)
++
++
++def test_coded_labels_preserve_metadata_case_spacing_and_unknown_code_contract(csi_db):
++    import copy
++
++    datamap = copy.deepcopy(REAL_SHAPES)
++    d5 = next(q for q in datamap["questions"] if q["qlabel"] == "D5")
++    next(v for v in d5["variables"][0]["values"] if v["value"] == 2)["title"] = "Élite  "
++    records = [record(n, D5="999" if n == 1 else "2") for n in range(1, 5)] + [record(5, status="1")]
++
++    class Labels(FakeForsta):
++        def survey_datamap(self, path):
++            return datamap
++
++    sid = forsta_etl.load_survey(Labels(data={"selfserve/58f/260907": records}), "selfserve/58f/260907")
++    direct = loaded(csi_db, "SELECT a.value_code, a.value_label FROM cip_answer a JOIN cip_field f"
++                            " ON f.field_id = a.field_id WHERE a.survey_id = :s AND f.field_name = 'D5'"
++                            " ORDER BY a.respondent_id", s=sid)
++    assert direct[0] == (999, None) and all(label is None for _, label in direct)
++    displayed = loaded(csi_db, "SELECT answer_code, answer_label FROM v_cip_answer_long"
++                               " WHERE survey_id = :s AND qcode = 'D5' ORDER BY respondent_id", s=sid)
++    assert displayed == [(999, None), (2, "Élite"), (2, "Élite"), (2, "Élite")]
++
++
+ def test_question_flags_and_bipolar_statements_are_stored(csi_db):
+     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
+     flags = dict((q, (t, v)) for q, t, v in loaded(csi_db, "SELECT qcode, is_technical, is_virtual FROM cip_question"
+@@ -359,11 +395,72 @@ def test_virtual_questions_are_not_harmonised(csi_db):
+ # ── review fixes ───────────────────────────────────────────────────────────
+ def test_a_reload_with_fewer_records_drops_the_missing_respondents(csi_db):
+     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
+-    fewer = FakeForsta(data={"selfserve/58f/260907": [record(n) for n in range(1, 4)]})
+-    assert forsta_etl.load_survey(fewer, "selfserve/58f/260907") == sid
++    with csi_db.begin() as conn:
++        assert conn.execute(sa.text("PRAGMA foreign_keys")).scalar() == 1
++        gone = conn.execute(sa.text("SELECT respondent_id FROM cip_respondent WHERE survey_id = :s AND forsta_uuid = 'u4'"),
++                            {"s": sid}).scalar_one()
++        scheme = conn.execute(sa.text("INSERT INTO cip_weight_scheme (survey_id, scheme_code, description)"
++                                      " VALUES (:s, 'review', 'Review')"), {"s": sid}).lastrowid
++        conn.execute(sa.text("INSERT INTO cip_weight (respondent_id, scheme_id, weight) VALUES (:r, :w, 1)"),
++                     {"r": gone, "w": scheme})
++        cohort = conn.execute(sa.text("INSERT INTO cip_cohort_def (cohort_code, cohort_name, rule_json)"
++                                      " VALUES ('review', 'Review', '{\"all\": []}')")).lastrowid
++        conn.execute(sa.text("INSERT INTO cip_respondent_cohort (cohort_id, respondent_id, survey_id)"
++                             " VALUES (:c, :r, :s)"), {"c": cohort, "r": gone, "s": sid})
++        run = conn.execute(sa.text("SELECT MAX(load_id) FROM cip_load_log WHERE survey_id = :s"), {"s": sid}).scalar_one()
++    fewer = [record(n) for n in range(1, 4)]
++    statements = []
++
++    def record_sql(_conn, _cursor, statement, _parameters, _context, _executemany):
++        statements.append(" ".join(statement.lower().split()))
++
++    sa.event.listen(csi_db, "before_cursor_execute", record_sql)
++    try:
++        assert forsta_etl._write(sid, fewer, run) == 3
++    finally:
++        sa.event.remove(csi_db, "before_cursor_execute", record_sql)
++    assert sum(sql.startswith("delete from cip_answer where survey_id") for sql in statements) == 1
++    assert loaded(csi_db, "SELECT COUNT(*) FROM cip_respondent WHERE survey_id = :s", s=sid)[0][0] == 3
++    with csi_db.connect() as conn:
++        assert conn.execute(sa.text("PRAGMA foreign_keys")).scalar() == 1
++        assert conn.execute(sa.text("PRAGMA foreign_key_check")).all() == []
++        for table in ("cip_answer", "cip_profile", "cip_weight", "cip_respondent_cohort"):
++            assert conn.execute(sa.text(f"SELECT COUNT(*) FROM {table} WHERE respondent_id = :r"),
++                                {"r": gone}).scalar() == 0
++    assert forsta_etl._write(sid, fewer, run) == 3
+     assert loaded(csi_db, "SELECT COUNT(*) FROM cip_respondent WHERE survey_id = :s", s=sid)[0][0] == 3
+ 
+ 
++def test_a_shrinking_reload_rolls_back_all_child_deletes_on_error(csi_db, monkeypatch):
++    sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
++    with csi_db.begin() as conn:
++        assert conn.execute(sa.text("PRAGMA foreign_keys")).scalar() == 1
++        gone = conn.execute(sa.text("SELECT respondent_id FROM cip_respondent WHERE survey_id = :s AND forsta_uuid = 'u4'"),
++                            {"s": sid}).scalar_one()
++        scheme = conn.execute(sa.text("INSERT INTO cip_weight_scheme (survey_id, scheme_code, description)"
++                                      " VALUES (:s, 'rollback', 'Rollback')"), {"s": sid}).lastrowid
++        conn.execute(sa.text("INSERT INTO cip_weight (respondent_id, scheme_id, weight) VALUES (:r, :w, 1)"),
++                     {"r": gone, "w": scheme})
++        cohort = conn.execute(sa.text("INSERT INTO cip_cohort_def (cohort_code, cohort_name, rule_json)"
++                                      " VALUES ('rollback', 'Rollback', '{\"all\": []}')")).lastrowid
++        conn.execute(sa.text("INSERT INTO cip_respondent_cohort (cohort_id, respondent_id, survey_id)"
++                             " VALUES (:c, :r, :s)"), {"c": cohort, "r": gone, "s": sid})
++        run = conn.execute(sa.text("SELECT MAX(load_id) FROM cip_load_log WHERE survey_id = :s"), {"s": sid}).scalar_one()
++        before = {table: conn.execute(sa.text(f"SELECT COUNT(*) FROM {table}" )).scalar()
++                  for table in ("cip_respondent", "cip_answer", "cip_profile", "cip_weight", "cip_respondent_cohort")}
++
++    def fail(_conn, _rows):
++        raise RuntimeError("injected answer failure")
++
++    monkeypatch.setattr(forsta_etl, "insert_answers", fail)
++    with pytest.raises(RuntimeError, match="injected answer failure"):
++        forsta_etl._write(sid, [record(n) for n in range(1, 4)], run)
++    with csi_db.connect() as conn:
++        assert {table: conn.execute(sa.text(f"SELECT COUNT(*) FROM {table}")).scalar()
++                for table in before} == before
++        assert conn.execute(sa.text("PRAGMA foreign_key_check")).all() == []
++
++
+ def test_a_wave_keeps_its_survey_when_its_first_date_moves(csi_db):
+     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
+     later = FakeForsta(data={"selfserve/58f/260907": [record(n, date="10/06/2026 10:00") for n in range(1, 4)]})
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 017c334..98faacb 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -3,8 +3,10 @@ import gzip
+ import json
+ import time
+ from datetime import date
++from pathlib import Path
+ 
+ import pytest
++import sqlalchemy as sa
+ 
+ from app.data import payloads
+ from etl import publish, serving
+@@ -39,6 +41,54 @@ def test_publish_writes_the_api_bytes_swaps_atomically_and_rolls_back(csi_db, tm
+     assert publish.rollback(tmp_path).name == first.name and live.resolve() == first.resolve()
+ 
+ 
++def test_publish_preserves_mysql_grouping_and_canonical_payloads(csi_db, tmp_path):
++    from etl import forsta_etl
++    from tests.test_forsta_etl import FakeForsta
++
++    sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
++    with csi_db.connect() as conn:
++        grouped = payloads.question_cuts(conn, [sid])
++        direct_people = payloads.people(conn, sid)
++
++    statements = []
++
++    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
++        statements.append(" ".join(statement.lower().split()))
++
++    sa.event.listen(csi_db, "before_cursor_execute", record)
++    try:
++        built = publish.build(tmp_path, jobs=1)
++    finally:
++        sa.event.remove(csi_db, "before_cursor_execute", record)
++    answer_sql = [sql for sql in statements if " from srv_answer " in f" {sql} "]
++    assert sum(" group by " in f" {sql} " for sql in answer_sql) == 1
++    assert len(answer_sql) == 2
++    for (_, qcode), part in grouped.items():
++        payload = gzip.decompress((built / f"api/v1/waves/{sid}/cuts/{qcode}.json.gz").read_bytes())
++        assert payload == payloads.encode(part)
++    people_payload = gzip.decompress((built / f"api/v1/waves/{sid}/people.json.gz").read_bytes())
++    assert people_payload == payloads.encode(direct_people)
++
++
++def test_mysql_collation_forbids_naive_python_grouping():
++    schema = (Path(__file__).parents[1] / "sql/005_serving.sql").read_text()
++    assert "COLLATE=utf8mb4_0900_ai_ci" in schema
++    assert len({"Male", "male", "e", "é"}) == 4
++
++
++def test_publish_worker_count_is_configurable_and_bounded(monkeypatch):
++    monkeypatch.setenv("CIP_PUBLISH_JOBS", "2")
++    assert publish.worker_count() == 2
++    assert publish.worker_count(1) == 1 and publish.worker_count(4) == 4
++    monkeypatch.delenv("CIP_PUBLISH_JOBS")
++    assert publish.worker_count() == 4
++    monkeypatch.setenv("CIP_PUBLISH_JOBS", "many")
++    assert publish.worker_count(3) == 3
++    for invalid in (0, 5, "many", ""):
++        with pytest.raises(ValueError, match="1 to 4"):
++            publish.worker_count(invalid)
++
++
+ def test_a_failed_gate_keeps_the_live_version(csi_db, tmp_path, monkeypatch):
+     with csi_db.begin() as conn:
+         seed(conn, 412, date(2026, 10, 12), qualified=404, xm1_yes=125, xm1_base=404)
+diff --git a/tests/test_test_isolation.py b/tests/test_test_isolation.py
+new file mode 100644
+index 0000000..455aee1
+--- /dev/null
++++ b/tests/test_test_isolation.py
+@@ -0,0 +1,44 @@
++"""Fail-closed checks for the local test process."""
++from __future__ import annotations
++
++import os
++import socket
++
++import pytest
++
++from app.core.config import config
++
++
++def test_tests_use_only_local_sqlite_and_blank_live_integrations():
++    assert config.database("app").sqlite_path
++    assert config.database("etl").sqlite_path
++    assert config.database("app").host == config.database("etl").host == ""
++    for name in (
++        "ANTHROPIC_API_KEY",
++        "APP_DB_PASSWORD",
++        "APP_DB_USER",
++        "CIP_NGINX_URL",
++        "CIP_OIDC_CLIENT_ID",
++        "CIP_OIDC_CLIENT_SECRET",
++        "CIP_OIDC_ISSUER",
++        "CIP_PUBLISH_BACKUP_URL",
++        "EMAIL_PASSWORD",
++        "FORSTA_API_KEY",
++        "STG_DB_HOST",
++        "STG_DB_NAME",
++        "STG_DB_PASSWORD",
++        "STG_DB_USER",
++        "TEAMS_WEBHOOK_URL",
++    ):
++        assert os.environ[name] == ""
++
++
++def test_tests_cannot_open_a_network_socket():
++    with socket.socket() as candidate, pytest.raises(AssertionError, match="real network connection"):
++        candidate.connect(("example.invalid", 443))
++    with socket.socket() as candidate, pytest.raises(AssertionError, match="real network connection"):
++        candidate.connect_ex(("example.invalid", 443))
++    with socket.socket(type=socket.SOCK_DGRAM) as candidate, pytest.raises(AssertionError, match="real network connection"):
++        candidate.sendto(b"blocked", ("example.invalid", 53))
++    with pytest.raises(AssertionError, match="real network connection"):
++        socket.create_connection(("example.invalid", 443))

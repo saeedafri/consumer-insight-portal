@@ -269,8 +269,11 @@ def _answer(field: dict, value: Any) -> Optional[dict]:
     code = forsta_api.whole(value)
     if code is None:
         return {"code": None, "label": str(value)[:500], "num": None, "txt": None}
-    label = field["item"] if field["multi"] else field["labels"].get(code)
-    return {"code": code, "label": (label or None) and label[:500], "num": None, "txt": None}
+    # Single/grid labels belong to cip_option and are joined back by readers.
+    # Multi rows must retain their item label: some datamaps also expose 0/1
+    # option labels, which otherwise win COALESCE and display "Yes"/"No".
+    label = field["item"] if field["multi"] and field["labels"] else None
+    return {"code": code, "label": label[:500] if label else None, "num": None, "txt": None}
 
 
 def _cut(value: Any, limit: int) -> Optional[str]:
@@ -342,7 +345,7 @@ def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
         drop_unlisted_items(survey_id, questions)
         lap("verify")
         _rebuild_profiles(survey_id, None, fam)
-        _rebuild_question_bases(survey_id)
+        _rebuild_question_bases(survey_id, drop_labels=False)
         lap("profiles")
         mapped = harmonise.harmonise_survey(survey_id)
         lap("harmonise")
@@ -379,7 +382,8 @@ def _write(survey_id: int, records: list[dict], run: int) -> int:
     eng = get_engine("etl")
     with eng.begin() as conn:
         people = [_respondent(survey_id, r, run) for r in records]
-        conn.execute(text("""
+        if people:
+            conn.execute(text("""
             INSERT INTO cip_respondent (survey_id, record_no, forsta_uuid, status_code, status_label, is_qualified,
                 completed_at, interview_secs, markers, device, os, browser, dropout_qcode, panel_source,
                 respondent_key, load_id)
@@ -396,7 +400,6 @@ def _write(survey_id: int, records: list[dict], run: int) -> int:
         sent = {p["uuid"] for p in people}
         gone = [rid for uuid, rid in ids.items() if uuid not in sent]   # removed in Forsta since the last load
         if gone:
-            conn.execute(text("DELETE FROM cip_answer WHERE survey_id = :s"), {"s": survey_id})
             for table in ("cip_respondent_cohort", "cip_profile", "cip_respondent"):
                 conn.execute(text(f"DELETE FROM {table} WHERE respondent_id IN :ids")
                              .bindparams(bindparam("ids", expanding=True)), {"ids": gone})
@@ -454,8 +457,8 @@ def reconcile_survey(survey_id: int, client=None) -> tuple[int, list[str]]:
     with get_engine("etl").connect() as conn:
         path = conn.execute(text("SELECT source_ref FROM cip_survey WHERE survey_id = :s"), {"s": survey_id}).scalar()
         fields = _fields(conn, survey_id)
-        stored = {(u, f): (c, n, t) for u, f, c, n, t in conn.execute(text("""
-            SELECT r.forsta_uuid, f.field_name, a.value_code, a.value_number, a.value_text FROM cip_answer a
+        stored = {(u, f): (c, l, n, t) for u, f, c, l, n, t in conn.execute(text("""
+            SELECT r.forsta_uuid, f.field_name, a.value_code, a.value_label, a.value_number, a.value_text FROM cip_answer a
               JOIN cip_field f ON f.field_id = a.field_id JOIN cip_respondent r ON r.respondent_id = a.respondent_id
              WHERE a.survey_id = :s"""), {"s": survey_id})}
     checked, problems = 0, []
@@ -474,9 +477,9 @@ def reconcile_survey(survey_id: int, client=None) -> tuple[int, list[str]]:
             got = stored.get((str(rec.get("uuid")), name))
             same = got is not None and (
                 (want["code"] is not None and got[0] == want["code"]) or
-                (want["num"] is not None and got[1] is not None and round(float(got[1]), 4) == round(want["num"], 4)) or
-                (want["txt"] is not None and got[2] == want["txt"]) or
-                (want["code"] is None and want["num"] is None and want["txt"] is None))
+                (want["label"] is not None and got[1] == want["label"]) or
+                (want["num"] is not None and got[2] is not None and round(float(got[2]), 4) == round(want["num"], 4)) or
+                (want["txt"] is not None and got[3] == want["txt"]))
             if not same and len(problems) < 200:
                 problems.append(f"{rec.get('uuid')} {name}: Forsta {value!r}, stored {got}")
     return checked, problems

@@ -45,22 +45,23 @@ def test_recipients_fall_back_to_default():
     assert notify.recipients("tracker") == notify.recipients("default")
 
 
-def test_failure_emails_and_posts_to_teams_once(monkeypatch, tmp_path):
+def test_failure_emails_only_the_private_list_once(monkeypatch, tmp_path):
     sent, posted = [], []
     monkeypatch.setattr(notify, "STATE", tmp_path / "state.json")
-    monkeypatch.setattr(notify, "send", lambda subject, body, to, attachments=(), page="": sent.append(subject) or True)
+    monkeypatch.setattr(notify, "send", lambda subject, body, to, attachments=(), page="", copy=True:
+                        sent.append((subject, to, copy)) or True)
     monkeypatch.setattr(notify, "teams", posted.append)
     assert notify.failure("survey X did not load", "boom")
     assert notify.failure("survey X did not load", "boom") is False          # same failure inside the window
-    assert sent == ["CIP pipeline FAILED: survey X did not load"]
-    assert posted == ["\u274c CIP pipeline failed: survey X did not load. boom (full detail in the email and logs/forsta-etl.log)"]
+    assert sent == [("CIP pipeline FAILED: survey X did not load", ["mohammadsaeedafri@coursera.com"], False)]
+    assert posted == []
 
 
-def test_a_failure_posted_only_to_teams_still_counts_as_told(monkeypatch, tmp_path):
+def test_a_failed_private_email_does_not_silence_the_alert(monkeypatch, tmp_path):
     monkeypatch.setattr(notify, "STATE", tmp_path / "state.json")
     monkeypatch.setattr(notify, "send", lambda *a, **k: False)            # no mail password on this machine
-    monkeypatch.setattr(notify, "teams", lambda headline: True)
-    assert notify.failure("run crashed", "trace") and notify.already_told("CIP pipeline FAILED: run crashed")
+    assert notify.failure("run crashed", "trace") is False
+    assert notify.already_told("CIP pipeline FAILED: run crashed") is False
 
 
 def test_raw_data_is_forstas_labelled_export_with_its_datamap():

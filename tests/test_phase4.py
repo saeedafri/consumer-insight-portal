@@ -166,6 +166,12 @@ def test_rebuilding_a_wave_replaces_its_cells(wave):
         assert conn.execute(sa.text("SELECT COUNT(*) FROM cip_agg_cell WHERE survey_id = :s"), {"s": sid}).scalar() == first
 
 
+def test_cube_rejects_zero_as_a_cohort_identifier(wave):
+    _, sid, _, _ = wave
+    with pytest.raises(ValueError, match="positive cohort identifier"):
+        cube.build_cube(sid, [0])
+
+
 def question_id(sid, qcode):
     frame = strip(repository.question_lookup)(sid)
     return int(frame[frame.qcode == qcode].question_id.iloc[0])
@@ -209,6 +215,45 @@ def test_concept_trend_reads_every_wave_through_the_mapping(wave):
     assert set(trend.wave_label) == {"2025-02-17"}
     assert trend.set_index("answer").n.to_dict() == {"Yes": 2, "No": 1}
     assert set(trend.base_n) == {3}
+
+
+def test_concept_reads_preserve_specific_cohort_results(wave):
+    engine, sid, b1, _ = wave
+    cid = cohorts.define_cohort("BEAUTY_YES", "Bought beauty", {"concept": b1, "option": "yes"})
+    cohorts.derive(cid)
+    cube.build_cube(sid)
+    concept = concept_id(engine, b1)
+
+    trend = strip(repository.concept_trend)(concept, cid)
+    pooled = strip(repository.concept_pooled)(concept, [sid], cid)
+
+    assert trend.set_index("answer").n.to_dict() == {"Yes": 2}
+    assert set(trend.base_n) == {2}
+    assert pooled.set_index("answer").n.to_dict() == {"Yes": 2}
+    assert set(pooled.base_n) == {2}
+
+
+def test_concept_everyone_preserves_legacy_zero_cells(wave):
+    engine, sid, b1, _ = wave
+    cube.build_cube(sid)
+    concept = concept_id(engine, b1)
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO cip_agg_cell "
+            "(survey_id,cell_key,map_key,question_id,item_id,option_id,cohort_id,dim,dim_value,n,base_n,"
+            "sum_age_mid,n_age_mid,sum_income_mid_k,n_income_mid) "
+            "SELECT c.survey_id,c.cell_key || '_legacy_zero',c.map_key,c.question_id,c.item_id,c.option_id,0,"
+            "c.dim,c.dim_value,c.n,c.base_n,c.sum_age_mid,c.n_age_mid,c.sum_income_mid_k,c.n_income_mid "
+            "FROM cip_agg_cell c JOIN cip_question q ON q.question_id=c.question_id "
+            "WHERE c.survey_id=:s AND q.qcode='Q1' AND c.cohort_id IS NULL"
+        ), {"s": sid})
+
+    trend = strip(repository.concept_trend)(concept)
+    pooled = strip(repository.concept_pooled)(concept, [sid])
+
+    assert trend.set_index("answer").n.to_dict() == {"Yes": 4, "No": 2}
+    assert pooled.set_index("answer").n.to_dict() == {"Yes": 4, "No": 2}
+    assert set(trend.base_n) == {3} and set(pooled.base_n) == {3}
 
 
 def test_concept_pooled_stacks_waves_and_averages_midpoints(wave):

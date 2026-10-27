@@ -1,0 +1,297 @@
+{
+  "application_queries": [
+    {
+      "elapsed_ms": 243.28,
+      "fingerprint": "e34535de466f5b8e",
+      "phase": "state_before",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 411.597,
+      "fingerprint": "06c81b6dfed136c6",
+      "phase": "baseline",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 248.399,
+      "fingerprint": "3703d3a11b0bbf0e",
+      "phase": "baseline",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 261.92,
+      "fingerprint": "3e04b89d5bb811a6",
+      "phase": "baseline",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 247.755,
+      "fingerprint": "ef8c1fe56ef0b81c",
+      "phase": "baseline",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 242.767,
+      "fingerprint": "588277729546cee3",
+      "phase": "baseline",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 243.843,
+      "fingerprint": "a683bb1e003cb9f7",
+      "phase": "baseline",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 246.811,
+      "fingerprint": "60001022b21e19b6",
+      "phase": "baseline",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 241.411,
+      "fingerprint": "5d0991a109c3579f",
+      "phase": "baseline",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 243.487,
+      "fingerprint": "d576e1cac1d15285",
+      "phase": "baseline",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 242.918,
+      "fingerprint": "2e190f766df6fe78",
+      "phase": "baseline",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 248.789,
+      "fingerprint": "06c81b6dfed136c6",
+      "phase": "patched",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 252.254,
+      "fingerprint": "3703d3a11b0bbf0e",
+      "phase": "patched",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 259.022,
+      "fingerprint": "3e04b89d5bb811a6",
+      "phase": "patched",
+      "status": "ok",
+      "streamed": true
+    },
+    {
+      "elapsed_ms": 248.439,
+      "fingerprint": "ef8c1fe56ef0b81c",
+      "phase": "patched",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 263.997,
+      "fingerprint": "588277729546cee3",
+      "phase": "patched",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 242.153,
+      "fingerprint": "a683bb1e003cb9f7",
+      "phase": "patched",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 276.708,
+      "fingerprint": "60001022b21e19b6",
+      "phase": "patched",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 241.024,
+      "fingerprint": "5d0991a109c3579f",
+      "phase": "patched",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 306.538,
+      "fingerprint": "d576e1cac1d15285",
+      "phase": "patched",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 241.941,
+      "fingerprint": "2e190f766df6fe78",
+      "phase": "patched",
+      "status": "ok",
+      "streamed": false
+    },
+    {
+      "elapsed_ms": 243.178,
+      "fingerprint": "e34535de466f5b8e",
+      "phase": "state_after",
+      "status": "ok",
+      "streamed": false
+    }
+  ],
+  "base_head": "6f978b0595b2c71c064991ae10b832514637a0da",
+  "baseline": {
+    "bitsets": {
+      "cut_bitsets": 0,
+      "question_bitsets": 82,
+      "represented_respondents": 35
+    },
+    "book": {
+      "base_values": 52,
+      "groups": 26,
+      "questions": 16,
+      "rows": 92,
+      "unweighted_values": 92,
+      "weighted_values": 0
+    },
+    "book_sha256": "467fbc7f8d4af5857e53368cfe63e8f2eb42aeb65013fdef33cf9f37f626a975",
+    "canonical_bundle_sha256": "700e5df9d11277baf91e8c893b840ed644190a4f10d39308515ef458f6a8ae13",
+    "cut_answer_rows": 81,
+    "cut_count_rows": 82,
+    "cut_hashes": {
+      "q1": "2b222ad0dcabd92b6c1c815e60c45d28222bd8be651596b760e424b0ff2a2787",
+      "q10": "093f2e0f23be6caad6f2be059f89c160dd38bc1c055c1a08df2f44bc98554a8c",
+      "q15": "2da6603381172af8850b7fe268b3ba8c4da9b07487262016d49cf4237bee45f5",
+      "q16": "278d2d74fdb10be943f76d59ddfd038328720a458dca9c3175e32ddddc427e2f",
+      "q2": "65c394d11d843486db80a77dbc4ceec2585ed600ed430f3510b899044f313b0c",
+      "q3": "8d9bcf4c0fea045cdb8ea7519bc059c5ae83eea75af826f60a84489f7e4ffc82",
+      "q4": "8c7f73423a10c1131b54c82ff9802cc01f5e85ee2d7b763e9bc10d7c9e7fabb5",
+      "q5": "a1cec30af4f5cb4e6ba7b42aa9a00a82aa622b3bca3dd87721c6e2c49f726145",
+      "q6": "b330574336777c231f93c5b0e1cc9255170168a261e92c383cac803098407827",
+      "q7": "817b65eb8633d260f3f1c0770c29edcd11b047e09794b56edd5165033127c43a",
+      "q8": "79c65a07a2e4fb4d98f14c7fad3e697e9ff1bafe7303a095d9858d0ae9262660",
+      "q9": "69e2a3d806824405dc7acd70d844ec0f0673cb972828ff12a23151f1086659c6"
+    },
+    "cut_questions": 12,
+    "json_bytes": 51978,
+    "people_sha256": "de0bef274c3667e01b2e1e70d3e5388dcb674865c435aff7c5f38c704bf3a35c",
+    "process_max_rss_mib": 59.031,
+    "traced_peak_mib": 0.456,
+    "wall_seconds": 7.764372
+  },
+  "baseline_source_sha256": "ea39e2e9372275e518f87bf86ebf59a8b49b2817ac71713ee9a98d406eb5f7a5",
+  "canonical_bundle_hash_equal": true,
+  "completed": true,
+  "connection_closed": true,
+  "connection_opened": true,
+  "exact_parity": {
+    "book": true,
+    "database_state": true,
+    "question_cuts": true,
+    "respondent_bitsets": true
+  },
+  "final_session_guards": {
+    "max_execution_time_ms": 5000,
+    "metadata_lock_wait_seconds": 3,
+    "row_lock_wait_seconds": 3,
+    "session_autocommit": 1,
+    "transaction_read_only": 1
+  },
+  "identity": {
+    "authenticated_account": "sha256:2837eb29d5ae",
+    "current_database": "cip_stg",
+    "inspection_connection_id": "sha256:f56f720e56f1",
+    "server_hostname": "sha256:3c3485f00d05",
+    "server_version": "8.0.46-azure",
+    "session_autocommit": 1
+  },
+  "max_threads_running": 1,
+  "monitoring_checks": 46,
+  "outbound_socket_block_active": true,
+  "parity": true,
+  "patched": {
+    "bitsets": {
+      "cut_bitsets": 0,
+      "question_bitsets": 82,
+      "represented_respondents": 35
+    },
+    "book": {
+      "base_values": 52,
+      "groups": 26,
+      "questions": 16,
+      "rows": 92,
+      "unweighted_values": 92,
+      "weighted_values": 0
+    },
+    "book_sha256": "467fbc7f8d4af5857e53368cfe63e8f2eb42aeb65013fdef33cf9f37f626a975",
+    "canonical_bundle_sha256": "700e5df9d11277baf91e8c893b840ed644190a4f10d39308515ef458f6a8ae13",
+    "cut_answer_rows": 81,
+    "cut_count_rows": 82,
+    "cut_hashes": {
+      "q1": "2b222ad0dcabd92b6c1c815e60c45d28222bd8be651596b760e424b0ff2a2787",
+      "q10": "093f2e0f23be6caad6f2be059f89c160dd38bc1c055c1a08df2f44bc98554a8c",
+      "q15": "2da6603381172af8850b7fe268b3ba8c4da9b07487262016d49cf4237bee45f5",
+      "q16": "278d2d74fdb10be943f76d59ddfd038328720a458dca9c3175e32ddddc427e2f",
+      "q2": "65c394d11d843486db80a77dbc4ceec2585ed600ed430f3510b899044f313b0c",
+      "q3": "8d9bcf4c0fea045cdb8ea7519bc059c5ae83eea75af826f60a84489f7e4ffc82",
+      "q4": "8c7f73423a10c1131b54c82ff9802cc01f5e85ee2d7b763e9bc10d7c9e7fabb5",
+      "q5": "a1cec30af4f5cb4e6ba7b42aa9a00a82aa622b3bca3dd87721c6e2c49f726145",
+      "q6": "b330574336777c231f93c5b0e1cc9255170168a261e92c383cac803098407827",
+      "q7": "817b65eb8633d260f3f1c0770c29edcd11b047e09794b56edd5165033127c43a",
+      "q8": "79c65a07a2e4fb4d98f14c7fad3e697e9ff1bafe7303a095d9858d0ae9262660",
+      "q9": "69e2a3d806824405dc7acd70d844ec0f0673cb972828ff12a23151f1086659c6"
+    },
+    "cut_questions": 12,
+    "json_bytes": 51978,
+    "people_sha256": "de0bef274c3667e01b2e1e70d3e5388dcb674865c435aff7c5f38c704bf3a35c",
+    "process_max_rss_mib": 59.25,
+    "traced_peak_mib": 0.418,
+    "wall_seconds": 7.570621
+  },
+  "patched_source_sha256": "df2c0479ed4dc3e0b0e9002fb7365a5c7604318e144dcf43756b68a3a90fe27d",
+  "per_question_hashes_equal": true,
+  "pool_checked_out_after_close": 0,
+  "publisher_contract_hashes_equal": true,
+  "session_guards": {
+    "max_execution_time_ms": 5000,
+    "metadata_lock_wait_seconds": 3,
+    "row_lock_wait_seconds": 3,
+    "session_autocommit": 1,
+    "transaction_read_only": 1
+  },
+  "state_after": {
+    "answer_rows": 852,
+    "respondents": 35,
+    "result_rows": 81,
+    "rows_built": 81
+  },
+  "state_before": {
+    "answer_rows": 852,
+    "respondents": 35,
+    "result_rows": 81,
+    "rows_built": 81
+  },
+  "state_hash_after": "f39061a056f6d54a36c3f4362bd2324ee2d9b34d3ec644c2f11693542d529543",
+  "state_hash_before": "f39061a056f6d54a36c3f4362bd2324ee2d9b34d3ec644c2f11693542d529543",
+  "stopped_reason": null,
+  "survey_id": 238,
+  "target": "cip_stg",
+  "temporary_output_removed": true,
+  "workers": 1
+}

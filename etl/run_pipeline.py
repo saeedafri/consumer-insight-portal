@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 from sqlalchemy import bindparam, text
 
-from app.core.database import execute_many, get_engine
+from app.core.database import bulk_insert, execute_many, get_engine
 from etl import records as xp
 from etl import survey_map
 
@@ -138,6 +138,93 @@ def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str,
     return 1
 
 
+def _replace_respondents(survey_id: int, records: list[dict[str, Any]], var_map: dict[str, int],
+                         run_id: int, code_map: Optional[dict[int, dict[str, int]]] = None) -> int:
+    """Replace one export snapshot in one transaction, with bounded round trips."""
+    people = []
+    for rec in records:
+        status_label = str(rec.get("status") or "").strip()
+        status_code = STATUS_MAP.get(status_label)
+        people.append({
+            "sid": survey_id,
+            "rec": _int(rec.get("record")) or 0,
+            "uuid": _str(rec.get("uuid"), 64),
+            "sc": status_code,
+            "sl": status_label[:30] or None,
+            "qual": 1 if status_code == 3 else 0,
+            "done": _dt(rec.get("date")),
+            "secs": _int(rec.get("qtime")),
+            "src": _str(rec.get("source"), 100),
+            "rid": _str(rec.get("RID"), 100),
+            "markers": _str(rec.get("markers"), 1000),
+            "dev": _str(rec.get("vmobiledevice"), 50),
+            "os": _str(rec.get("vos"), 100),
+            "br": _str(rec.get("vbrowser"), 100),
+            "drop": _str(rec.get("vdropout"), 50),
+            "run": run_id,
+        })
+    eng = get_engine("etl")
+    with eng.begin() as conn:
+        if people:
+            conn.execute(text("""
+                INSERT INTO cip_respondent
+                    (survey_id, record_no, forsta_uuid, status_code, status_label,
+                     is_qualified, completed_at, interview_secs, panel_source, sample_rid,
+                     markers, device, os, browser, dropout_qcode, load_id)
+                VALUES (:sid, :rec, :uuid, :sc, :sl, :qual, :done, :secs, :src, :rid,
+                        :markers, :dev, :os, :br, :drop, :run)
+                ON DUPLICATE KEY UPDATE
+                    forsta_uuid = VALUES(forsta_uuid), status_code = VALUES(status_code),
+                    status_label = VALUES(status_label), is_qualified = VALUES(is_qualified),
+                    completed_at = VALUES(completed_at), interview_secs = VALUES(interview_secs),
+                    panel_source = VALUES(panel_source), sample_rid = VALUES(sample_rid),
+                    markers = VALUES(markers), device = VALUES(device), os = VALUES(os),
+                    browser = VALUES(browser), dropout_qcode = VALUES(dropout_qcode),
+                    load_id = VALUES(load_id)
+            """), people)
+        ids = dict(conn.execute(text(
+            "SELECT record_no, respondent_id FROM cip_respondent WHERE survey_id = :sid"
+        ), {"sid": survey_id}).all())
+        sent = {person["rec"] for person in people}
+        gone = [respondent_id for record_no, respondent_id in ids.items() if record_no not in sent]
+        conn.execute(text("DELETE FROM cip_answer WHERE survey_id = :sid"), {"sid": survey_id})
+        if gone:
+            for table in ("cip_respondent_cohort", "cip_profile", "cip_respondent"):
+                conn.execute(text(f"DELETE FROM {table} WHERE respondent_id IN :ids")
+                             .bindparams(bindparam("ids", expanding=True)), {"ids": gone})
+
+        def answers():
+            for rec in records:
+                respondent_id = ids.get(_int(rec.get("record")) or 0)
+                if respondent_id is None:
+                    continue
+                for column, value in rec.items():
+                    field_id = var_map.get(column)
+                    if field_id is None or value is None:
+                        continue
+                    code, label = xp.normalise_label_cell(value)
+                    choices = (code_map or {}).get(field_id)
+                    if choices is not None and label is not None:
+                        code = choices.get(label.strip().lower())
+                    yield (
+                        respondent_id,
+                        survey_id,
+                        field_id,
+                        code,
+                        (label or "")[:500] or None,
+                        _float(value),
+                        None,
+                    )
+
+        bulk_insert(
+            conn,
+            "cip_answer",
+            ("respondent_id", "survey_id", "field_id", "value_code", "value_label", "value_number", "value_text"),
+            answers(),
+        )
+    return len(people)
+
+
 def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
                       family: Optional[str] = None) -> None:
     """Flatten the demographic questions into cip_profile.
@@ -254,7 +341,7 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
     log.info("Rebuilt %d profiles for survey_id=%s", len(payload), survey_id)
 
 
-def _rebuild_question_bases(survey_id: int) -> None:
+def _rebuild_question_bases(survey_id: int, drop_labels: bool = True) -> None:
     """Set cip_question.base_n to the number of qualified respondents who
     actually reached each question.
 
@@ -285,7 +372,8 @@ def _rebuild_question_bases(survey_id: int) -> None:
             ),
             {"sid": survey_id},
         )
-        drop_derived_labels(conn, survey_id)
+        if drop_labels:
+            drop_derived_labels(conn, survey_id)
     log.info("Rebuilt question bases for survey_id=%s", survey_id)
 
 

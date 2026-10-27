@@ -43,7 +43,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import bindparam, text
+from sqlalchemy import text
 
 from app.core.database import get_engine
 from app.data import payloads
@@ -52,6 +52,7 @@ log = logging.getLogger("cip.publish")
 ROOT = Path(os.environ.get("CIP_PUBLISH_DIR") or Path(__file__).resolve().parents[1] / "data/published")
 WARM_WAVES = 3   # the newest waves people open first after a publish
 KEEP = 3
+MAX_JOBS = 4     # app-role database reads per publish; shared MySQL must not get an unbounded pool
 BACKUP = os.environ.get("CIP_PUBLISH_BACKUP_URL", "").strip()   # https://<account>.blob.core.windows.net/<container>?<sas>
 
 
@@ -66,11 +67,23 @@ def write(path: Path, data) -> int:
     return len(body)
 
 
-def build(root: Path = ROOT, jobs: int = 4) -> Path:
+def worker_count(jobs: int | None = None) -> int:
+    raw = jobs if jobs is not None else os.environ.get("CIP_PUBLISH_JOBS", "4")
+    try:
+        count = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("CIP publish jobs must be an integer from 1 to 4") from exc
+    if not 1 <= count <= MAX_JOBS:
+        raise ValueError("CIP publish jobs must be from 1 to 4")
+    return count
+
+
+def build(root: Path = ROOT, jobs: int | None = None) -> Path:
     """Write every standard payload into a new version folder and check it. A wave the ETL has not rebuilt since
     the live version (same srv_wave.built_at; loading a wave rebuilds the waves that compare against it too) is
     hard-linked from the live version, and so are the trends of a family with no rebuilt wave: no database work
     and no extra disk. Returns the folder; raises if a gate fails."""
+    jobs = worker_count(jobs)
     version = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     out = root / f".build-{version}"
     out.mkdir(parents=True)
@@ -90,7 +103,8 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
     rules = {"hidden_base": payloads.HIDDEN_BASE, "test_base": payloads.TEST_BASE,
              "zero_cells": 1,   # 1: an asked group's unchosen answer is 0 %, not blank (24 Oct 2026); bump on any book rule
              "weighted": 1,     # books carry Census-weighted figures (etl/weighting.py, 24 Oct 2026)
-             "open_ends": 1}    # books chart coded open-ended questions (etl/open_ends.py, 24 Oct 2026)
+             "open_ends": 1,    # books chart coded open-ended questions (etl/open_ends.py, 24 Oct 2026)
+             "cut_inventory": 1}  # each wave's complete cuts directory is the question discovery catalogue
     rules_changed = last.get("rules", {"hidden_base": 30}) != rules   # a new small-cell rule: every file is rebuilt
     before = {} if rules_changed else last.get("built", {})
     start = time.perf_counter()
@@ -116,12 +130,33 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
         by_wave.setdefault(survey_id, []).append(code)
     size = write(out / "api/v1/waves", payloads.waves(by_wave))
 
+    effective_workers = min(jobs, len(fresh)) if fresh else 0
+
     def wave(sid: int) -> int:   # the book, and per question what any two-cut crosstab needs
+        wave_start = time.perf_counter()
+        cut_start = time.perf_counter()
         with get_engine("app").connect() as conn:
             cuts = payloads.question_cuts(conn, [sid])
+        cut_seconds = time.perf_counter() - cut_start
+        cut_groups = sum(len(part["counts"]) for part in cuts.values())
+        written = sum(write(out / f"api/v1/waves/{sid}/cuts/{qcode}", part)
+                      for (_, qcode), part in cuts.items())
+        del cuts
+        people_start = time.perf_counter()
+        with get_engine("app").connect() as conn:
             people = payloads.people(conn, sid)
-        return write(out / f"api/v1/waves/{sid}/book", payloads.book(sid)) + write(out / f"api/v1/waves/{sid}/people", people) + sum(
-            write(out / f"api/v1/waves/{sid}/cuts/{qcode}", part) for (_, qcode), part in cuts.items())
+        people_seconds = time.perf_counter() - people_start
+        written += write(out / f"api/v1/waves/{sid}/people", people)
+        del people
+        written += write(out / f"api/v1/waves/{sid}/book", payloads.book(sid))
+        log.info(
+            "publish version=%s wave=%s fingerprint=srv_answer_group_and_extract "
+            "expected_srv_answer_reads=2 workers_configured=%d workers_effective=%d "
+            "cut_groups=%d cut_read_build_seconds=%.3f people_read_build_seconds=%.3f wall_seconds=%.3f",
+            version, sid, jobs, effective_workers, cut_groups, cut_seconds, people_seconds,
+            time.perf_counter() - wave_start,
+        )
+        return written
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         size += sum(pool.map(wave, fresh))
     for code, survey_id, body in boards:
@@ -138,17 +173,21 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
     # asked it): the family's other files stay linked to the live version, so a 268-wave tracker rebuilds ~60 questions
     partial = [f for f in multi if f in changed and f not in full]
     redo = full + partial
-    questions = []
-    if redo:
-        with get_engine("app").connect() as conn:   # one query per question gives every wave and every cut
-            questions = conn.execute(text(
-                "SELECT DISTINCT w.survey_family, w.study_type, r.qcode FROM srv_result r JOIN srv_wave w ON w.survey_id = r.survey_id"
-                " WHERE r.dim = 'total' AND r.survey_id IN :ids").bindparams(bindparam("ids", expanding=True)),
-                {"ids": [sid for f in full for sid in members[f]] + [sid for sid in fresh if waves[str(sid)][1:] in partial] or [-1]}).all()
+    # Each cuts file is written from srv_result's total rows and is therefore
+    # the complete, version-matched question catalogue. Enumerating those
+    # already-written files avoids another DISTINCT join over serving tables.
+    questions = set()
+    for family, study in redo:
+        wave_ids = members[(family, study)] if (family, study) in full else [
+            sid for sid in fresh if waves[str(sid)][1:] == (family, study)
+        ]
+        for sid in wave_ids:
+            for path in (out / f"api/v1/waves/{sid}/cuts").glob("*.json.gz"):
+                questions.add((family, study, path.name.removesuffix(".json.gz")))
 
     # a reloaded wave may have dropped a question: every linked file that lists a fresh wave is rebuilt too (and
     # removed when no wave asks it any more), so no file keeps a reloaded wave's old answers
-    redone = {tuple(q) for q in questions}
+    redone = set(questions)
     for family, study in partial:
         for path in (out / "api/v1/questions" / family / study).glob("*.json.gz"):
             listed = {w[0] for w in json.loads(gzip.decompress(path.read_bytes()))["waves"]}
@@ -169,7 +208,7 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
     manifest = {"version": version, "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "serving_version": serving, "waves": len(ids), "books": len(ids), "dashboards": len(boards),
                 "rebuilt_waves": len(fresh), "rebuilt_families": len(redo), "questions_written": len(done),
-                "bytes_written": size, "seconds": round(time.perf_counter() - start, 1), "rules": rules,
+                "bytes_written": size, "seconds": round(time.perf_counter() - start, 1), "jobs": jobs, "rules": rules,
                 "built": {sid: at for sid, (at, _, _) in waves.items()}}
     check(out, manifest, ids)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -265,7 +304,7 @@ def restore(root: Path = ROOT) -> Path:
     return root / name
 
 
-def publish(root: Path = ROOT, jobs: int = 4) -> Path:
+def publish(root: Path = ROOT, jobs: int | None = None) -> Path:
     out = build(root, jobs)
     swap(root, out)
     log.info("Published %s", out.name)
@@ -327,7 +366,8 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s")
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--root", type=Path, default=ROOT)
-    p.add_argument("--jobs", type=int, default=4)
+    p.add_argument("--jobs", type=int, default=None,
+                   help="1-4 workers (default: CIP_PUBLISH_JOBS or 4)")
     p.add_argument("--rollback", action="store_true")
     p.add_argument("--restore", action="store_true")
     a = p.parse_args()

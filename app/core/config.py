@@ -35,6 +35,19 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _bounded_int_env(name: str, default: int, minimum: int, maximum: int) -> int:
+    raw = _env(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer from {minimum} to {maximum}") from exc
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} must be from {minimum} to {maximum}")
+    return value
+
+
 @dataclass(frozen=True)
 class DatabaseConfig:
     host: str
@@ -115,7 +128,7 @@ class Config:
         return self.environment is Environment.LOCAL
 
     def database(self, role: str = "app") -> DatabaseConfig:
-        """role='app' -> read-only account; role='etl' -> writer account."""
+        """`app` prefers the SELECT account; `api_write` and `etl` use the writer."""
         # LOCAL runs against the STG (cip_stg) database, like the Market Data
         # Portal's local launcher, unless a SQLite file or a local MySQL is named.
         if self.is_local and (_env("LOCAL_SQLITE_PATH") or _env("LOCAL_DB_HOST")):
@@ -133,8 +146,9 @@ class Config:
                 user=_env("LOCAL_DB_USER", "root"),
                 password=_env("LOCAL_DB_PASSWORD"),
                 ssl_enabled=False,
-                pool_size=_int_env("DB_POOL_SIZE", 5),
-                max_overflow=_int_env("DB_MAX_OVERFLOW", 10),
+                pool_size=_bounded_int_env("DB_POOL_SIZE", 5, 1, 10),
+                max_overflow=_bounded_int_env("DB_MAX_OVERFLOW", 10, 0, 20),
+                pool_timeout=_bounded_int_env("DB_POOL_TIMEOUT", 10, 1, 30),
             )
 
         if role == "app" and _env("APP_DB_USER"):
@@ -150,8 +164,9 @@ class Config:
             password=password,
             ssl_enabled=True,
             ssl_ca=_env("STG_DB_SSL_CA", "DigiCertGlobalRootG2.crt.pem"),
-            pool_size=_int_env("DB_POOL_SIZE", 10),
-            max_overflow=_int_env("DB_MAX_OVERFLOW", 20),
+            pool_size=_bounded_int_env("DB_POOL_SIZE", 10, 1, 10),
+            max_overflow=_bounded_int_env("DB_MAX_OVERFLOW", 20, 0, 20),
+            pool_timeout=_bounded_int_env("DB_POOL_TIMEOUT", 10, 1, 30),
         )
 
     @property

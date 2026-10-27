@@ -368,20 +368,34 @@ def people(conn, survey_id: int) -> dict:
     is ~250 KB raw. Respondent-level: published next to the book but never served (nginx and the API expose no route).
     {"cuts": {dim: {value: hex}}, "questions": {qcode: {"text": normalised wording, "rows": [[item_id, option_id,
     item_label, option_code, option_label], ...] in sort order, "bits": {"item_id,option_id": hex}}}}"""
-    rows = conn.execute(text(f"SELECT respondent_id, qcode, item_id, option_id, {', '.join(CUTS)} FROM srv_answer"
-                             " WHERE survey_id = :s"), {"s": survey_id}).all()
-    seat = {rid: i for i, rid in enumerate(sorted({r[0] for r in rows}))}
-    bits: dict = defaultdict(int)
-    cuts: dict = {dim: defaultdict(int) for dim in CUTS}
+    rows = conn.execute(text(
+        f"SELECT respondent_id, qcode, item_id, option_id, {', '.join(CUTS)} FROM srv_answer"
+        " WHERE survey_id = :s").execution_options(stream_results=True, max_row_buffer=1000), {"s": survey_id})
+    respondents = set()
+    members: dict = defaultdict(set)
+    cuts: dict = {dim: defaultdict(set) for dim in CUTS}
     seen = set()
-    for r in rows:
-        bit = 1 << seat[r[0]]
-        bits[(r[1], r[2], r[3])] |= bit
-        if r[0] not in seen:   # a respondent's cuts are the same on every row
-            seen.add(r[0])
-            for dim, value in zip(CUTS, r[4:]):
-                if value not in (None, ""):   # no value for the cut: not a group, as in srv_result
-                    cuts[dim][value] |= bit
+    try:
+        for r in rows:
+            respondents.add(r[0])
+            members[(r[1], r[2], r[3])].add(r[0])
+            if r[0] not in seen:   # a respondent's cuts are the same on every row
+                seen.add(r[0])
+                for dim, value in zip(CUTS, r[4:]):
+                    if value not in (None, ""):   # no value for the cut: not a group, as in srv_result
+                        cuts[dim][value].add(r[0])
+    finally:
+        rows.close()
+    seat = {rid: i for i, rid in enumerate(sorted(respondents))}
+
+    def mask(found: set[int]) -> int:
+        out = 0
+        for rid in found:
+            out |= 1 << seat[rid]
+        return out
+
+    bits = {key: mask(found) for key, found in members.items()}
+    cuts = {dim: {value: mask(found) for value, found in values.items()} for dim, values in cuts.items()}
     questions: dict = {}
     for a in conn.execute(text(
             "SELECT r.qcode, r.item_id, r.option_id, r.item_label, r.option_code, r.option_label, q.qtext FROM srv_result r"

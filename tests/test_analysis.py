@@ -1,24 +1,41 @@
-"""Cohort engine and export, against a loaded local database.
-
-Skipped unless data/csi_local.db exists — build it with
-`bash scripts/run_local.sh` or `python scripts/init_db.py` + the pipeline.
-"""
+"""Cohort engine and export, against deterministic synthetic survey data."""
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
+import sqlalchemy as sa
 
-DB = Path(__file__).resolve().parents[1] / "data" / "csi_local.db"
-pytestmark = pytest.mark.skipif(not DB.exists(), reason="no local database built")
-
-os.environ.setdefault("APP_ENV", "LOCAL")
-os.environ.setdefault("LOCAL_SQLITE_PATH", "data/csi_local.db")
+from app.core import database, schema_upgrade
+from tests.analysis_fixture import seed_analysis_data
 
 
 @pytest.fixture(scope="module")
-def repo():
+def analysis_db(tmp_path_factory):
+    path = tmp_path_factory.mktemp("analysis") / "synthetic.db"
+    engine = sa.create_engine(f"sqlite:///{path}", future=True)
+
+    @sa.event.listens_for(engine, "connect")
+    def _enable_foreign_keys(dbapi_connection, _connection_record):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    schema_upgrade.install(engine)
+    database._install_sqlite_translation(engine)
+    seed_analysis_data(engine)
+    previous = {role: database._engines.get(role) for role in ("app", "etl")}
+    database._engines["app"] = engine
+    database._engines["etl"] = engine
+    try:
+        yield engine
+    finally:
+        for role, prior in previous.items():
+            if prior is None:
+                database._engines.pop(role, None)
+            else:
+                database._engines[role] = prior
+        engine.dispose()
+
+
+@pytest.fixture(scope="module")
+def repo(analysis_db):
     import app.data.repository as _repo
     # strip Streamlit's cache decorator so the functions are callable off-runtime
     for name in dir(_repo):
@@ -126,8 +143,7 @@ def test_excel_export_is_a_readable_workbook_with_provenance(repo, qid):
 # ── 09/28 wave: routed multi-select items and non-breaking-space labels ─────
 def _wave2_qid(repo, code):
     lookup = repo.question_lookup(2).set_index("qcode")
-    if code not in lookup.index:
-        pytest.skip("09/28 wave not loaded as survey 2")
+    assert code in lookup.index
     return int(lookup.loc[code, "question_id"])
 
 

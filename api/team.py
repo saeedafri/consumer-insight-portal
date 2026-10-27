@@ -114,7 +114,7 @@ def remove(table: str, key_column: str, owner_column: str, key: int, request: Re
     it is yours; a second only to say why not."""
     who = person_of(request)
     admin = who["role"] == "admin"
-    with get_engine("app").begin() as conn:
+    with get_engine("api_write").begin() as conn:
         gone = conn.execute(text(f"DELETE FROM {table} WHERE {key_column} = :k" + ("" if admin else f" AND {owner_column} = :me")),
                             {"k": key, "me": who["email"]}).rowcount
         if not gone:
@@ -173,7 +173,7 @@ async def save_view(request: Request) -> dict:
     url, name = str(body.get("url") or ""), " ".join(str(body.get("name") or "").split())[:200]
     if not url.startswith("/w/") or len(url) > 1000 or not name:
         raise HTTPException(422, "A view needs a name and a portal screen (/w/…)")
-    with get_engine("app").begin() as conn:
+    with get_engine("api_write").begin() as conn:
         view_id = conn.execute(text("INSERT INTO cip_team_view (name, url, note, saved_by, owner_email) VALUES (:n, :u, :note, :by, :o)"),
                                {"n": name, "u": url, "note": (str(body.get("note") or "")[:1000] or None), "by": _person(body),
                                 "o": email_of(request)}).lastrowid
@@ -211,7 +211,7 @@ async def save_alert(request: Request) -> dict:
                   " AND q.qcode = :q WHERE w.survey_id = :s", s=survey_id, q=str(body.get("qcode") or ""))
     if not found:
         raise HTTPException(404, "That question is not in that wave")
-    with get_engine("app").begin() as conn:
+    with get_engine("api_write").begin() as conn:
         alert_id = conn.execute(text(
             "INSERT INTO cip_metric_alert (name, survey_family, study_type, qcode, qtext, item_label, option_code, answer_label,"
             " dim, dim_value, against, created_by, notify_email, owner_email, last_checked)"
@@ -291,7 +291,7 @@ async def save_audience(request: Request) -> dict:
     definition, name = _definition(body.get("definition") or {}), " ".join(str(body.get("name") or "").split())[:200]
     if not name:
         raise HTTPException(422, "Name the audience")
-    with get_engine("app").begin() as conn:
+    with get_engine("api_write").begin() as conn:
         audience_id = conn.execute(text("INSERT INTO cip_audience (name, definition, created_by, owner_email) VALUES (:n, :d, :by, :o)"),
                                    {"n": name, "d": json.dumps(definition), "by": _person(body), "o": email_of(request)}).lastrowid
     changed()
@@ -452,7 +452,7 @@ async def new_board(request: Request) -> dict:
     name = " ".join(str((await json_body(request)).get("name") or "").split())[:200]
     if not name:
         raise HTTPException(422, "A board needs a name")
-    with get_engine("app").begin() as conn:
+    with get_engine("api_write").begin() as conn:
         board_id = conn.execute(text("INSERT INTO cip_board (name, created_by) VALUES (:n, :by)"),
                                 {"n": name, "by": email_of(request)}).lastrowid
     changed()
@@ -512,7 +512,7 @@ async def pin(board_id: int, request: Request) -> dict:
         raise HTTPException(422, str(exc))
     if not url.startswith("/w/") or len(url) > 1000:
         raise HTTPException(422, "An item needs its portal screen (/w/…)")
-    with get_engine("app").begin() as conn:
+    with get_engine("api_write").begin() as conn:
         owner = conn.execute(text("SELECT created_by FROM cip_board WHERE board_id = :b"), {"b": board_id}).first()
         if owner is None or not mine(who, owner[0]):
             raise HTTPException(404, "No such board")
@@ -536,7 +536,7 @@ async def comment(item_id: int, request: Request) -> dict:
     body = str((await json_body(request)).get("body") or "").strip()[:2000]
     if not body:
         raise HTTPException(422, "Write something")
-    with get_engine("app").begin() as conn:
+    with get_engine("api_write").begin() as conn:
         owner = conn.execute(text("SELECT b.created_by FROM cip_board_item i JOIN cip_board b ON b.board_id = i.board_id"
                                   " WHERE i.item_id = :i"), {"i": item_id}).first()
         if owner is None or not mine(who, owner[0]):

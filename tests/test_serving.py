@@ -5,6 +5,7 @@ and last year's same week (13 Oct 2025) is hibernated in Forsta until someone re
 import json
 from datetime import date
 
+import pytest
 import sqlalchemy as sa
 
 from app.data import payloads
@@ -242,3 +243,11 @@ def test_rebuilding_a_wave_keeps_its_answers_for_two_cut_crosstabs(csi_db):
     before = count()
     serving.build_wave(sid)                       # its srv_wave row is replaced, which cascades to srv_answer
     assert before > 0 and count() == before
+
+
+def test_serving_rebuild_workers_are_bounded():
+    assert serving.serving_worker_count(1) == 1
+    assert serving.serving_worker_count(4) == 4
+    for invalid in (0, 5, "many", ""):
+        with pytest.raises(ValueError, match="1 to 4"):
+            serving.serving_worker_count(invalid)

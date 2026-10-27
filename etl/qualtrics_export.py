@@ -135,7 +135,7 @@ def order_like_concepts(questions: list) -> None:
 
 
 def ingest_export(path, wave: str, family: str = "CSI-US") -> int:
-    from etl.run_pipeline import _code_lookup, _load_one_respondent, _rebuild_profiles, _rebuild_question_bases
+    from etl.run_pipeline import _code_lookup, _rebuild_profiles, _rebuild_question_bases, _replace_respondents
 
     questions, records = parse_export(path)
     order_like_concepts(questions)
@@ -146,7 +146,7 @@ def ingest_export(path, wave: str, family: str = "CSI-US") -> int:
     run = start_run(survey_id, "excel", "data", str(path))
     fields = load_definitions(survey_id, questions, family)
     code_map = _code_lookup(survey_id)
-    loaded = sum(_load_one_respondent(survey_id, rec, fields, run, code_map) for rec in records)
+    loaded = _replace_respondents(survey_id, records, fields, run, code_map)
     finish_run(run, len(records), loaded)
     # Demographics by wording, never the Forsta D-code map: Qualtrics numbers
     # them differently (its D7 is state, Forsta's D7 is political view).
@@ -166,7 +166,9 @@ def main() -> int:
     ap.add_argument("--wave", required=True, help="first fielding day, e.g. 2025-05-12")
     ap.add_argument("--family", default="CSI-US")
     args = ap.parse_args()
-    ingest_export(args.file, args.wave, args.family)
+    from etl.loaders import etl_lock
+    with etl_lock():
+        ingest_export(args.file, args.wave, args.family)
     return 0
 
 

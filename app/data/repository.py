@@ -541,11 +541,13 @@ def analyse_cube(survey_id: int, question_id: int, cohort_id: Optional[int] = No
     return df[["segment", "answer", "n", "base_n", "pct"]]
 
 
-_CONCEPT_CELLS = """
+def _concept_cells(cohort_id: Optional[int]) -> str:
+    cohort = "(c.cohort_id IS NULL OR c.cohort_id = 0)" if cohort_id is None else "c.cohort_id = :coh"
+    return f"""
     FROM cip_concept_option co
     JOIN cip_concept_map m ON m.concept_option_id = co.concept_option_id AND m.status = 'confirmed'
     JOIN cip_agg_cell c ON c.survey_id = m.survey_id AND c.map_key = m.map_key
-         AND c.dim = :dim AND COALESCE(c.cohort_id, 0) = :coh
+         AND c.dim = :dim AND {cohort}
     JOIN cip_survey s ON s.survey_id = m.survey_id AND s.load_status = 'verified'
    WHERE co.concept_id = :cid
 """
@@ -559,9 +561,9 @@ def concept_trend(concept_id: int, cohort_id: Optional[int] = None) -> pd.DataFr
         f"""
         SELECT s.survey_id, s.wave_label, s.wave_date, s.platform, co.option_label AS answer,
                co.sort_order AS answer_order, c.n, c.base_n
-        {_CONCEPT_CELLS}
+        {_concept_cells(cohort_id)}
         """,
-        {"cid": concept_id, "coh": cohort_id or 0, "dim": "total"},
+        {"cid": concept_id, "coh": cohort_id, "dim": "total"},
     )
     if df.empty:
         return df
@@ -590,9 +592,9 @@ def concept_pooled(concept_id: int, survey_ids: Sequence[int], cohort_id: Option
         f"""
         SELECT c.survey_id, c.dim_value AS segment, co.option_label AS answer, co.sort_order AS answer_order,
                c.n, c.base_n, c.sum_age_mid, c.n_age_mid, c.sum_income_mid_k, c.n_income_mid
-        {_CONCEPT_CELLS} AND c.survey_id IN ({marks})
+        {_concept_cells(cohort_id)} AND c.survey_id IN ({marks})
         """,
-        {"cid": concept_id, "coh": cohort_id or 0, "dim": dim, **{f"w{i}": v for i, v in enumerate(ids)}},
+        {"cid": concept_id, "coh": cohort_id, "dim": dim, **{f"w{i}": v for i, v in enumerate(ids)}},
     )
     if df.empty:
         return df

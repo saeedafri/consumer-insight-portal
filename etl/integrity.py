@@ -78,9 +78,12 @@ CHECKS = [
           " AND NOT EXISTS (SELECT 1 FROM cip_tracker_line t WHERE t.survey_id = s.survey_id)", fix=rebuild_lines),
     # every reportable cube cell of a served wave is one serving row (etl/serving.cube_rows: cohort cells, empty
     # bases and a cut's blank value are not reported); fewer means cells were lost, as two items sharing a label were.
-    # Waves built in the last week only: all 371 take minutes (the one-off full check: 80-fixes-etl.md runbook)
+    # Check only the newest bounded batch. A full serving rebuild gives every wave a recent built_at; letting the
+    # dependent count inspect all of them made the scheduled run exceed MySQL's read timeout.
     Check("served wave whose serving rows differ from its cube cells", "derived",
-          "SELECT w.survey_id FROM srv_wave w WHERE w.built_at >= :week_ago AND w.rows_built <> (SELECT COUNT(*) FROM cip_agg_cell c"
+          "SELECT w.survey_id FROM (SELECT survey_id, rows_built FROM srv_wave WHERE built_at >= :week_ago"
+          " ORDER BY built_at DESC, survey_id DESC LIMIT :waves) w"
+          " WHERE w.rows_built <> (SELECT COUNT(*) FROM cip_agg_cell c"
           " JOIN cip_question q ON q.question_id = c.question_id AND q.is_technical = 0 AND q.is_virtual = 0"
           " WHERE c.survey_id = w.survey_id AND c.cohort_id IS NULL AND c.base_n > 0"
           " AND (c.dim = 'total' OR c.dim_value <> ''))", fix=rebuild_serving),
@@ -137,10 +140,11 @@ CHECKS = [
 ]
 
 
-def found(conn, check: Check) -> list[int]:
+def found(conn, check: Check, waves: int = 20) -> list[int]:
     """Survey ids (derived) or [count] — empty when the check passes."""
     now = datetime.now()
-    params = {k: v for k, v in {"three_days_ago": now - timedelta(days=3), "week_ago": now - timedelta(days=7)}.items()
+    params = {k: v for k, v in {"three_days_ago": now - timedelta(days=3), "week_ago": now - timedelta(days=7),
+                                "waves": waves}.items()
               if f":{k}" in check.sql}
     if check.kind == "derived":
         return [int(sid) for (sid,) in conn.execute(text(check.sql), params)]
@@ -155,7 +159,7 @@ def run(heal: bool = True, waves: int = 20) -> list[str]:
     left = []
     for check in CHECKS:
         with eng.connect() as conn:
-            hits = found(conn, check)
+            hits = found(conn, check, waves)
         if not hits:
             continue
         what = f"{check.name}: " + (f"survey_id {hits[:10]}" if check.kind == "derived" else
@@ -180,7 +184,7 @@ def run(heal: bool = True, waves: int = 20) -> list[str]:
             left.append(f"{what} (healing failed: {type(exc).__name__}: {str(exc)[:300]})")
             continue
         with eng.connect() as conn:
-            still = found(conn, check)
+            still = found(conn, check, waves)
         if still:
             left.append(f"{what} (still wrong after healing)")
         else:

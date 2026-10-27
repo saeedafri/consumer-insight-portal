@@ -1,0 +1,1254 @@
+{
+  "cohort_predicates": {
+    "compatibility_or": {
+      "cell_access": {
+        "access_type": "ref_or_null",
+        "filtered": "100.00",
+        "key": "ix_agg_map",
+        "rows_examined_per_scan": 6,
+        "rows_produced_per_join": 18,
+        "used_key_parts": [
+          "survey_id",
+          "map_key",
+          "cohort_id",
+          "dim"
+        ]
+      },
+      "hashes": [
+        "a70abd48a35cfdac8b193fa038e54254ac0629f7f5ad24facc1cc34d915a33ad"
+      ],
+      "max_s": 0.00035112499608658254,
+      "median_s": 0.0002775419852696359,
+      "min_s": 0.00023733399575576186,
+      "n_sum": 42,
+      "plan": {
+        "query_block": {
+          "cost_info": {
+            "query_cost": "9.20"
+          },
+          "nested_loop": [
+            {
+              "table": {
+                "access_type": "ref",
+                "attached_condition": "(`cip_test`.`m`.`concept_option_id` is not null)",
+                "cost_info": {
+                  "data_read_per_join": "15K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "0.80",
+                  "read_cost": "0.50"
+                },
+                "filtered": "100.00",
+                "index_condition": "(`cip_test`.`m`.`status` = 'confirmed')",
+                "key": "ix_map_status",
+                "key_length": "1",
+                "possible_keys": [
+                  "uq_concept_map",
+                  "ix_map_question",
+                  "ix_map_concept_option",
+                  "ix_map_status"
+                ],
+                "ref": [
+                  "const"
+                ],
+                "rows_examined_per_scan": 3,
+                "rows_produced_per_join": 3,
+                "table_name": "m",
+                "used_columns": [
+                  "survey_id",
+                  "map_key",
+                  "concept_option_id",
+                  "status"
+                ],
+                "used_key_parts": [
+                  "status"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "eq_ref",
+                "attached_condition": "(`cip_test`.`s`.`load_status` = 'verified')",
+                "cost_info": {
+                  "data_read_per_join": "22K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "1.85",
+                  "read_cost": "0.75"
+                },
+                "filtered": "100.00",
+                "key": "PRIMARY",
+                "key_length": "4",
+                "possible_keys": [
+                  "PRIMARY",
+                  "ix_survey_pick"
+                ],
+                "ref": [
+                  "cip_test.m.survey_id"
+                ],
+                "rows_examined_per_scan": 1,
+                "rows_produced_per_join": 3,
+                "table_name": "s",
+                "used_columns": [
+                  "survey_id",
+                  "load_status"
+                ],
+                "used_key_parts": [
+                  "survey_id"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "eq_ref",
+                "attached_condition": "(`cip_test`.`co`.`concept_id` = 1)",
+                "cost_info": {
+                  "data_read_per_join": "7K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "2.90",
+                  "read_cost": "0.75"
+                },
+                "filtered": "100.00",
+                "key": "PRIMARY",
+                "key_length": "4",
+                "possible_keys": [
+                  "PRIMARY",
+                  "uq_concept_option"
+                ],
+                "ref": [
+                  "cip_test.m.concept_option_id"
+                ],
+                "rows_examined_per_scan": 1,
+                "rows_produced_per_join": 3,
+                "table_name": "co",
+                "used_columns": [
+                  "concept_option_id",
+                  "concept_id"
+                ],
+                "used_key_parts": [
+                  "concept_option_id"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "ref_or_null",
+                "cost_info": {
+                  "data_read_per_join": "29K",
+                  "eval_cost": "1.80",
+                  "prefix_cost": "9.20",
+                  "read_cost": "4.50"
+                },
+                "filtered": "100.00",
+                "index_condition": "((`cip_test`.`c`.`dim` = 'total') and (`cip_test`.`c`.`survey_id` = `cip_test`.`m`.`survey_id`) and (`cip_test`.`c`.`map_key` = `cip_test`.`m`.`map_key`) and ((`cip_test`.`c`.`cohort_id` is null) or (`cip_test`.`c`.`cohort_id` = 0)))",
+                "key": "ix_agg_map",
+                "key_length": "294",
+                "possible_keys": [
+                  "uq_agg_cell",
+                  "ix_agg_question",
+                  "ix_agg_map"
+                ],
+                "ref": [
+                  "cip_test.m.survey_id",
+                  "cip_test.m.map_key",
+                  "const",
+                  "const"
+                ],
+                "rows_examined_per_scan": 6,
+                "rows_produced_per_join": 18,
+                "table_name": "c",
+                "used_columns": [
+                  "survey_id",
+                  "map_key",
+                  "cohort_id",
+                  "dim",
+                  "n",
+                  "base_n"
+                ],
+                "used_key_parts": [
+                  "survey_id",
+                  "map_key",
+                  "cohort_id",
+                  "dim"
+                ]
+              }
+            }
+          ],
+          "select_id": 1
+        }
+      },
+      "predicate": "(c.cohort_id IS NULL OR c.cohort_id=0)",
+      "row_count": 6,
+      "rows": [
+        [
+          null,
+          10,
+          100
+        ],
+        [
+          null,
+          10,
+          100
+        ],
+        [
+          null,
+          10,
+          100
+        ],
+        [
+          0,
+          4,
+          40
+        ],
+        [
+          0,
+          4,
+          40
+        ],
+        [
+          0,
+          4,
+          40
+        ]
+      ]
+    },
+    "current_is_null": {
+      "cell_access": {
+        "access_type": "ref",
+        "filtered": "100.00",
+        "key": "ix_agg_map",
+        "rows_examined_per_scan": 3,
+        "rows_produced_per_join": 9,
+        "used_key_parts": [
+          "survey_id",
+          "map_key",
+          "cohort_id",
+          "dim"
+        ]
+      },
+      "hashes": [
+        "262fed1c888337012c0ae40a7cce67686bb5a2713a59cb2acf5adce697b5e76a"
+      ],
+      "max_s": 0.0003477499994914979,
+      "median_s": 0.0003205625107511878,
+      "min_s": 0.0002731249842327088,
+      "n_sum": 30,
+      "plan": {
+        "query_block": {
+          "cost_info": {
+            "query_cost": "6.05"
+          },
+          "nested_loop": [
+            {
+              "table": {
+                "access_type": "ref",
+                "attached_condition": "(`cip_test`.`m`.`concept_option_id` is not null)",
+                "cost_info": {
+                  "data_read_per_join": "15K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "0.80",
+                  "read_cost": "0.50"
+                },
+                "filtered": "100.00",
+                "index_condition": "(`cip_test`.`m`.`status` = 'confirmed')",
+                "key": "ix_map_status",
+                "key_length": "1",
+                "possible_keys": [
+                  "uq_concept_map",
+                  "ix_map_question",
+                  "ix_map_concept_option",
+                  "ix_map_status"
+                ],
+                "ref": [
+                  "const"
+                ],
+                "rows_examined_per_scan": 3,
+                "rows_produced_per_join": 3,
+                "table_name": "m",
+                "used_columns": [
+                  "survey_id",
+                  "map_key",
+                  "concept_option_id",
+                  "status"
+                ],
+                "used_key_parts": [
+                  "status"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "eq_ref",
+                "attached_condition": "(`cip_test`.`s`.`load_status` = 'verified')",
+                "cost_info": {
+                  "data_read_per_join": "22K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "1.85",
+                  "read_cost": "0.75"
+                },
+                "filtered": "100.00",
+                "key": "PRIMARY",
+                "key_length": "4",
+                "possible_keys": [
+                  "PRIMARY",
+                  "ix_survey_pick"
+                ],
+                "ref": [
+                  "cip_test.m.survey_id"
+                ],
+                "rows_examined_per_scan": 1,
+                "rows_produced_per_join": 3,
+                "table_name": "s",
+                "used_columns": [
+                  "survey_id",
+                  "load_status"
+                ],
+                "used_key_parts": [
+                  "survey_id"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "eq_ref",
+                "attached_condition": "(`cip_test`.`co`.`concept_id` = 1)",
+                "cost_info": {
+                  "data_read_per_join": "7K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "2.90",
+                  "read_cost": "0.75"
+                },
+                "filtered": "100.00",
+                "key": "PRIMARY",
+                "key_length": "4",
+                "possible_keys": [
+                  "PRIMARY",
+                  "uq_concept_option"
+                ],
+                "ref": [
+                  "cip_test.m.concept_option_id"
+                ],
+                "rows_examined_per_scan": 1,
+                "rows_produced_per_join": 3,
+                "table_name": "co",
+                "used_columns": [
+                  "concept_option_id",
+                  "concept_id"
+                ],
+                "used_key_parts": [
+                  "concept_option_id"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "ref",
+                "cost_info": {
+                  "data_read_per_join": "14K",
+                  "eval_cost": "0.90",
+                  "prefix_cost": "6.05",
+                  "read_cost": "2.25"
+                },
+                "filtered": "100.00",
+                "index_condition": "((`cip_test`.`c`.`map_key` = `cip_test`.`m`.`map_key`) and (`cip_test`.`c`.`cohort_id` is null))",
+                "key": "ix_agg_map",
+                "key_length": "294",
+                "possible_keys": [
+                  "uq_agg_cell",
+                  "ix_agg_question",
+                  "ix_agg_map"
+                ],
+                "ref": [
+                  "cip_test.m.survey_id",
+                  "cip_test.m.map_key",
+                  "const",
+                  "const"
+                ],
+                "rows_examined_per_scan": 3,
+                "rows_produced_per_join": 9,
+                "table_name": "c",
+                "used_columns": [
+                  "survey_id",
+                  "map_key",
+                  "cohort_id",
+                  "dim",
+                  "n",
+                  "base_n"
+                ],
+                "used_key_parts": [
+                  "survey_id",
+                  "map_key",
+                  "cohort_id",
+                  "dim"
+                ]
+              }
+            }
+          ],
+          "select_id": 1
+        }
+      },
+      "predicate": "c.cohort_id IS NULL",
+      "row_count": 3,
+      "rows": [
+        [
+          null,
+          10,
+          100
+        ],
+        [
+          null,
+          10,
+          100
+        ],
+        [
+          null,
+          10,
+          100
+        ]
+      ]
+    },
+    "old_coalesce": {
+      "cell_access": {
+        "access_type": "ALL",
+        "filtered": "1.00",
+        "key": null,
+        "rows_examined_per_scan": 606,
+        "rows_produced_per_join": 18,
+        "used_key_parts": null
+      },
+      "hashes": [
+        "a70abd48a35cfdac8b193fa038e54254ac0629f7f5ad24facc1cc34d915a33ad"
+      ],
+      "max_s": 0.0005200830055400729,
+      "median_s": 0.00040593749145045877,
+      "min_s": 0.00036591599928215146,
+      "n_sum": 42,
+      "plan": {
+        "query_block": {
+          "cost_info": {
+            "query_cost": "76.59"
+          },
+          "nested_loop": [
+            {
+              "table": {
+                "access_type": "ref",
+                "attached_condition": "(`cip_test`.`m`.`concept_option_id` is not null)",
+                "cost_info": {
+                  "data_read_per_join": "15K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "0.80",
+                  "read_cost": "0.50"
+                },
+                "filtered": "100.00",
+                "index_condition": "(`cip_test`.`m`.`status` = 'confirmed')",
+                "key": "ix_map_status",
+                "key_length": "1",
+                "possible_keys": [
+                  "uq_concept_map",
+                  "ix_map_question",
+                  "ix_map_concept_option",
+                  "ix_map_status"
+                ],
+                "ref": [
+                  "const"
+                ],
+                "rows_examined_per_scan": 3,
+                "rows_produced_per_join": 3,
+                "table_name": "m",
+                "used_columns": [
+                  "survey_id",
+                  "map_key",
+                  "concept_option_id",
+                  "status"
+                ],
+                "used_key_parts": [
+                  "status"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "eq_ref",
+                "attached_condition": "(`cip_test`.`s`.`load_status` = 'verified')",
+                "cost_info": {
+                  "data_read_per_join": "22K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "1.85",
+                  "read_cost": "0.75"
+                },
+                "filtered": "100.00",
+                "key": "PRIMARY",
+                "key_length": "4",
+                "possible_keys": [
+                  "PRIMARY",
+                  "ix_survey_pick"
+                ],
+                "ref": [
+                  "cip_test.m.survey_id"
+                ],
+                "rows_examined_per_scan": 1,
+                "rows_produced_per_join": 3,
+                "table_name": "s",
+                "used_columns": [
+                  "survey_id",
+                  "load_status"
+                ],
+                "used_key_parts": [
+                  "survey_id"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "eq_ref",
+                "attached_condition": "(`cip_test`.`co`.`concept_id` = 1)",
+                "cost_info": {
+                  "data_read_per_join": "7K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "2.90",
+                  "read_cost": "0.75"
+                },
+                "filtered": "100.00",
+                "key": "PRIMARY",
+                "key_length": "4",
+                "possible_keys": [
+                  "PRIMARY",
+                  "uq_concept_option"
+                ],
+                "ref": [
+                  "cip_test.m.concept_option_id"
+                ],
+                "rows_examined_per_scan": 1,
+                "rows_produced_per_join": 3,
+                "table_name": "co",
+                "used_columns": [
+                  "concept_option_id",
+                  "concept_id"
+                ],
+                "used_key_parts": [
+                  "concept_option_id"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "ALL",
+                "attached_condition": "((`cip_test`.`c`.`dim` = 'total') and (`cip_test`.`c`.`survey_id` = `cip_test`.`m`.`survey_id`) and (`cip_test`.`c`.`map_key` = `cip_test`.`m`.`map_key`) and (coalesce(`cip_test`.`c`.`cohort_id`,0) = 0))",
+                "cost_info": {
+                  "data_read_per_join": "29K",
+                  "eval_cost": "1.82",
+                  "prefix_cost": "76.59",
+                  "read_cost": "55.51"
+                },
+                "filtered": "1.00",
+                "possible_keys": [
+                  "uq_agg_cell",
+                  "ix_agg_question",
+                  "ix_agg_map"
+                ],
+                "rows_examined_per_scan": 606,
+                "rows_produced_per_join": 18,
+                "table_name": "c",
+                "used_columns": [
+                  "survey_id",
+                  "map_key",
+                  "cohort_id",
+                  "dim",
+                  "n",
+                  "base_n"
+                ],
+                "using_join_buffer": "hash join"
+              }
+            }
+          ],
+          "select_id": 1
+        }
+      },
+      "predicate": "COALESCE(c.cohort_id,0)=0",
+      "row_count": 6,
+      "rows": [
+        [
+          null,
+          10,
+          100
+        ],
+        [
+          null,
+          10,
+          100
+        ],
+        [
+          null,
+          10,
+          100
+        ],
+        [
+          0,
+          4,
+          40
+        ],
+        [
+          0,
+          4,
+          40
+        ],
+        [
+          0,
+          4,
+          40
+        ]
+      ]
+    },
+    "positive_cohort": {
+      "cell_access": {
+        "access_type": "ref",
+        "filtered": "100.00",
+        "key": "ix_agg_map",
+        "rows_examined_per_scan": 3,
+        "rows_produced_per_join": 9,
+        "used_key_parts": [
+          "survey_id",
+          "map_key",
+          "cohort_id",
+          "dim"
+        ]
+      },
+      "hashes": [
+        "320c9491db1be8030887c17cf906770a0e609995a899d824d26c3a5ef5c21f60"
+      ],
+      "max_s": 0.00032324998755939305,
+      "median_s": 0.00028758351982105523,
+      "min_s": 0.00023770800908096135,
+      "n_sum": 6,
+      "plan": {
+        "query_block": {
+          "cost_info": {
+            "query_cost": "6.05"
+          },
+          "nested_loop": [
+            {
+              "table": {
+                "access_type": "ref",
+                "attached_condition": "(`cip_test`.`m`.`concept_option_id` is not null)",
+                "cost_info": {
+                  "data_read_per_join": "15K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "0.80",
+                  "read_cost": "0.50"
+                },
+                "filtered": "100.00",
+                "index_condition": "(`cip_test`.`m`.`status` = 'confirmed')",
+                "key": "ix_map_status",
+                "key_length": "1",
+                "possible_keys": [
+                  "uq_concept_map",
+                  "ix_map_question",
+                  "ix_map_concept_option",
+                  "ix_map_status"
+                ],
+                "ref": [
+                  "const"
+                ],
+                "rows_examined_per_scan": 3,
+                "rows_produced_per_join": 3,
+                "table_name": "m",
+                "used_columns": [
+                  "survey_id",
+                  "map_key",
+                  "concept_option_id",
+                  "status"
+                ],
+                "used_key_parts": [
+                  "status"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "eq_ref",
+                "attached_condition": "(`cip_test`.`s`.`load_status` = 'verified')",
+                "cost_info": {
+                  "data_read_per_join": "22K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "1.85",
+                  "read_cost": "0.75"
+                },
+                "filtered": "100.00",
+                "key": "PRIMARY",
+                "key_length": "4",
+                "possible_keys": [
+                  "PRIMARY",
+                  "ix_survey_pick"
+                ],
+                "ref": [
+                  "cip_test.m.survey_id"
+                ],
+                "rows_examined_per_scan": 1,
+                "rows_produced_per_join": 3,
+                "table_name": "s",
+                "used_columns": [
+                  "survey_id",
+                  "load_status"
+                ],
+                "used_key_parts": [
+                  "survey_id"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "eq_ref",
+                "attached_condition": "(`cip_test`.`co`.`concept_id` = 1)",
+                "cost_info": {
+                  "data_read_per_join": "7K",
+                  "eval_cost": "0.30",
+                  "prefix_cost": "2.90",
+                  "read_cost": "0.75"
+                },
+                "filtered": "100.00",
+                "key": "PRIMARY",
+                "key_length": "4",
+                "possible_keys": [
+                  "PRIMARY",
+                  "uq_concept_option"
+                ],
+                "ref": [
+                  "cip_test.m.concept_option_id"
+                ],
+                "rows_examined_per_scan": 1,
+                "rows_produced_per_join": 3,
+                "table_name": "co",
+                "used_columns": [
+                  "concept_option_id",
+                  "concept_id"
+                ],
+                "used_key_parts": [
+                  "concept_option_id"
+                ]
+              }
+            },
+            {
+              "table": {
+                "access_type": "ref",
+                "cost_info": {
+                  "data_read_per_join": "14K",
+                  "eval_cost": "0.90",
+                  "prefix_cost": "6.05",
+                  "read_cost": "2.25"
+                },
+                "filtered": "100.00",
+                "index_condition": "(`cip_test`.`c`.`map_key` = `cip_test`.`m`.`map_key`)",
+                "key": "ix_agg_map",
+                "key_length": "294",
+                "possible_keys": [
+                  "uq_agg_cell",
+                  "ix_agg_question",
+                  "ix_agg_map"
+                ],
+                "ref": [
+                  "cip_test.m.survey_id",
+                  "cip_test.m.map_key",
+                  "const",
+                  "const"
+                ],
+                "rows_examined_per_scan": 3,
+                "rows_produced_per_join": 9,
+                "table_name": "c",
+                "used_columns": [
+                  "survey_id",
+                  "map_key",
+                  "cohort_id",
+                  "dim",
+                  "n",
+                  "base_n"
+                ],
+                "used_key_parts": [
+                  "survey_id",
+                  "map_key",
+                  "cohort_id",
+                  "dim"
+                ]
+              }
+            }
+          ],
+          "select_id": 1
+        }
+      },
+      "predicate": "c.cohort_id=1",
+      "row_count": 3,
+      "rows": [
+        [
+          1,
+          2,
+          20
+        ],
+        [
+          1,
+          2,
+          20
+        ],
+        [
+          1,
+          2,
+          20
+        ]
+      ]
+    }
+  },
+  "connection_limit": {
+    "attempts": 8,
+    "connected": 4,
+    "max_overflow": 0,
+    "pool_checked_out_after": 0,
+    "pool_size": 4,
+    "timed_out": 4
+  },
+  "environment": {
+    "notification_transports": "not imported or invoked",
+    "synthetic": true,
+    "target": "127.0.0.1:33306/cip_test"
+  },
+  "errors": [],
+  "extraction": [
+    {
+      "baseline": {
+        "application_selects": [
+          2
+        ],
+        "bytes_sent_delta": {
+          "max": 4368512,
+          "median": 4368512,
+          "min": 4368512,
+          "values": [
+            4368512,
+            4368512,
+            4368512
+          ]
+        },
+        "hashes": [
+          "326fad62a70fcb816d4fcb57e3ba069e77c4245d43b075392f98224c1ba8055b"
+        ],
+        "output_bytes": [
+          94320
+        ],
+        "pool_checked_out_after": [
+          0
+        ],
+        "process_peak_rss_bytes": {
+          "max": 161660928,
+          "median": 161562624,
+          "min": 161169408,
+          "values": [
+            161660928,
+            161169408,
+            161562624
+          ]
+        },
+        "samples": 3,
+        "srv_answer_selects": [
+          1
+        ],
+        "srv_result_selects": [
+          1
+        ],
+        "traced_peak_bytes": {
+          "max": 35311023,
+          "median": 35311023,
+          "min": 35311023,
+          "values": [
+            35311023,
+            35311023,
+            35311023
+          ]
+        },
+        "wall_s": {
+          "max": 0.736408,
+          "median": 0.731379,
+          "min": 0.728281,
+          "values": [
+            0.736408,
+            0.731379,
+            0.728281
+          ]
+        }
+      },
+      "current": {
+        "application_selects": [
+          2
+        ],
+        "bytes_sent_delta": {
+          "max": 4368512,
+          "median": 4368512,
+          "min": 4368512,
+          "values": [
+            4368512,
+            4368512,
+            4368512
+          ]
+        },
+        "hashes": [
+          "326fad62a70fcb816d4fcb57e3ba069e77c4245d43b075392f98224c1ba8055b"
+        ],
+        "output_bytes": [
+          94320
+        ],
+        "pool_checked_out_after": [
+          0
+        ],
+        "process_peak_rss_bytes": {
+          "max": 74530816,
+          "median": 74530816,
+          "min": 74448896,
+          "values": [
+            74530816,
+            74530816,
+            74448896
+          ]
+        },
+        "samples": 3,
+        "srv_answer_selects": [
+          1
+        ],
+        "srv_result_selects": [
+          1
+        ],
+        "traced_peak_bytes": {
+          "max": 8026555,
+          "median": 8026555,
+          "min": 8026555,
+          "values": [
+            8026555,
+            8026555,
+            8026555
+          ]
+        },
+        "wall_s": {
+          "max": 0.671436,
+          "median": 0.669697,
+          "min": 0.668559,
+          "values": [
+            0.668559,
+            0.671436,
+            0.669697
+          ]
+        }
+      },
+      "current_memory_limits": {
+        "passed": true,
+        "rss_limit_bytes": 1073741824,
+        "traced_limit_bytes": 536870912
+      },
+      "exact_output_parity": true,
+      "respondents": 2000,
+      "srv_answer_rows": 60000,
+      "survey_id": 9101
+    },
+    {
+      "baseline": {
+        "application_selects": [
+          2
+        ],
+        "bytes_sent_delta": {
+          "max": 21803942,
+          "median": 21803942,
+          "min": 21803942,
+          "values": [
+            21803942,
+            21803942,
+            21803942
+          ]
+        },
+        "hashes": [
+          "c3c845a90087cb36ea4c19a3d21ff0b354662afb3378eea76c7fbae130cf4a60"
+        ],
+        "output_bytes": [
+          436320
+        ],
+        "pool_checked_out_after": [
+          0
+        ],
+        "process_peak_rss_bytes": {
+          "max": 540065792,
+          "median": 539803648,
+          "min": 535969792,
+          "values": [
+            535969792,
+            539803648,
+            540065792
+          ]
+        },
+        "samples": 3,
+        "srv_answer_selects": [
+          1
+        ],
+        "srv_result_selects": [
+          1
+        ],
+        "traced_peak_bytes": {
+          "max": 176199035,
+          "median": 176199035,
+          "min": 176199035,
+          "values": [
+            176199035,
+            176199035,
+            176199035
+          ]
+        },
+        "wall_s": {
+          "max": 3.654226,
+          "median": 3.642022,
+          "min": 3.635431,
+          "values": [
+            3.654226,
+            3.642022,
+            3.635431
+          ]
+        }
+      },
+      "current": {
+        "application_selects": [
+          2
+        ],
+        "bytes_sent_delta": {
+          "max": 21803942,
+          "median": 21803942,
+          "min": 21803942,
+          "values": [
+            21803942,
+            21803942,
+            21803942
+          ]
+        },
+        "hashes": [
+          "c3c845a90087cb36ea4c19a3d21ff0b354662afb3378eea76c7fbae130cf4a60"
+        ],
+        "output_bytes": [
+          436320
+        ],
+        "pool_checked_out_after": [
+          0
+        ],
+        "process_peak_rss_bytes": {
+          "max": 125714432,
+          "median": 125370368,
+          "min": 125124608,
+          "values": [
+            125124608,
+            125714432,
+            125370368
+          ]
+        },
+        "samples": 3,
+        "srv_answer_selects": [
+          1
+        ],
+        "srv_result_selects": [
+          1
+        ],
+        "traced_peak_bytes": {
+          "max": 33661916,
+          "median": 33661916,
+          "min": 33661916,
+          "values": [
+            33661916,
+            33661916,
+            33661916
+          ]
+        },
+        "wall_s": {
+          "max": 3.418696,
+          "median": 3.35026,
+          "min": 3.349222,
+          "values": [
+            3.418696,
+            3.35026,
+            3.349222
+          ]
+        }
+      },
+      "current_memory_limits": {
+        "passed": true,
+        "rss_limit_bytes": 1073741824,
+        "traced_limit_bytes": 536870912
+      },
+      "exact_output_parity": true,
+      "respondents": 10000,
+      "srv_answer_rows": 300000,
+      "survey_id": 9102
+    },
+    {
+      "baseline": {
+        "application_selects": [
+          2
+        ],
+        "bytes_sent_delta": {
+          "max": 65392592,
+          "median": 65392592,
+          "min": 65392592,
+          "values": [
+            65392592,
+            65392592,
+            65392592
+          ]
+        },
+        "hashes": [
+          "2ebd61e225fdc067dcba21b4a338166de474e9d53195faf968f66acb671c5a21"
+        ],
+        "output_bytes": [
+          1291320
+        ],
+        "pool_checked_out_after": [
+          0
+        ],
+        "process_peak_rss_bytes": {
+          "max": 1311965184,
+          "median": 1241792512,
+          "min": 1239957504,
+          "values": [
+            1241792512,
+            1311965184,
+            1239957504
+          ]
+        },
+        "samples": 3,
+        "srv_answer_selects": [
+          1
+        ],
+        "srv_result_selects": [
+          1
+        ],
+        "traced_peak_bytes": {
+          "max": 529464435,
+          "median": 529464435,
+          "min": 529464435,
+          "values": [
+            529464435,
+            529464435,
+            529464435
+          ]
+        },
+        "wall_s": {
+          "max": 11.39838,
+          "median": 11.366261,
+          "min": 11.312807,
+          "values": [
+            11.39838,
+            11.312807,
+            11.366261
+          ]
+        }
+      },
+      "current": {
+        "application_selects": [
+          2
+        ],
+        "bytes_sent_delta": {
+          "max": 65392592,
+          "median": 65392592,
+          "min": 65392592,
+          "values": [
+            65392592,
+            65392592,
+            65392592
+          ]
+        },
+        "hashes": [
+          "2ebd61e225fdc067dcba21b4a338166de474e9d53195faf968f66acb671c5a21"
+        ],
+        "output_bytes": [
+          1291320
+        ],
+        "pool_checked_out_after": [
+          0
+        ],
+        "process_peak_rss_bytes": {
+          "max": 263831552,
+          "median": 263438336,
+          "min": 263323648,
+          "values": [
+            263438336,
+            263831552,
+            263323648
+          ]
+        },
+        "samples": 3,
+        "srv_answer_selects": [
+          1
+        ],
+        "srv_result_selects": [
+          1
+        ],
+        "traced_peak_bytes": {
+          "max": 122097831,
+          "median": 122097831,
+          "min": 122097831,
+          "values": [
+            122097831,
+            122097831,
+            122097831
+          ]
+        },
+        "wall_s": {
+          "max": 10.313353,
+          "median": 10.206529,
+          "min": 10.122397,
+          "values": [
+            10.313353,
+            10.122397,
+            10.206529
+          ]
+        }
+      },
+      "current_memory_limits": {
+        "passed": true,
+        "rss_limit_bytes": 1073741824,
+        "traced_limit_bytes": 536870912
+      },
+      "exact_output_parity": true,
+      "respondents": 30000,
+      "srv_answer_rows": 900000,
+      "survey_id": 9103
+    }
+  ],
+  "repository_contract": {
+    "everyone_base_n": [
+      100
+    ],
+    "everyone_n": [
+      14
+    ],
+    "everyone_rows": 3,
+    "positive_base_n": [
+      20
+    ],
+    "positive_n": [
+      2
+    ],
+    "positive_rows": 3
+  },
+  "seed": {
+    "seed_seconds": 10.25757,
+    "surveys": [
+      {
+        "respondents": 2000,
+        "srv_answer_rows": 60000,
+        "survey_id": 9101
+      },
+      {
+        "respondents": 10000,
+        "srv_answer_rows": 300000,
+        "survey_id": 9102
+      },
+      {
+        "respondents": 30000,
+        "srv_answer_rows": 900000,
+        "survey_id": 9103
+      }
+    ],
+    "total_srv_answer_rows": 1260000
+  },
+  "stream_exception_cleanup": {
+    "connection_reusable": true,
+    "pool_checked_out_after": 0,
+    "raised": true,
+    "result_closed": true
+  }
+}

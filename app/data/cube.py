@@ -134,6 +134,8 @@ def build_cube(survey_id: int, cohort_ids: Optional[Sequence[Optional[int]]] = N
             return build_cube(survey_id, cohort_ids, own)
     targets = list(cohort_ids) if cohort_ids is not None else \
         [None] + [c["cohort_id"] for c in cohorts.current_cohorts()]
+    if any(cohort_id is not None and int(cohort_id) <= 0 for cohort_id in targets):
+        raise ValueError("cohort_id must be a positive cohort identifier or None for everyone")
     if cohort_ids is None:
         conn.execute(text("DELETE FROM cip_agg_cell WHERE survey_id = :sid"), {"sid": survey_id})
     else:

@@ -1,0 +1,2178 @@
+diff --git a/scripts/cip_final_benchmark.py b/scripts/cip_final_benchmark.py
+new file mode 100644
+index 0000000..5137e5e
+--- /dev/null
++++ b/scripts/cip_final_benchmark.py
+@@ -0,0 +1,257 @@
++"""Offline synthetic before/after benchmark for CIP remediation."""
++from __future__ import annotations
++
++import argparse
++import gzip
++import hashlib
++import json
++import logging
++import os
++import resource
++import socket
++import statistics
++import sys
++import tempfile
++import time
++from datetime import date, timedelta
++from pathlib import Path
++
++
++def _blocked(*_args, **_kwargs):
++    raise RuntimeError("network disabled for CIP benchmark")
++
++
++socket.socket.connect = _blocked
++socket.socket.connect_ex = _blocked
++socket.socket.sendto = _blocked
++if hasattr(socket.socket, "sendmsg"):
++    socket.socket.sendmsg = _blocked
++socket.create_connection = _blocked
++os.environ["APP_ENV"] = "LOCAL"
++os.environ["LOCAL_SQLITE_PATH"] = str(Path(tempfile.gettempdir()) / "cip-benchmark-unused.db")
++for _name in (
++    "ANTHROPIC_API_KEY", "APP_DB_PASSWORD", "APP_DB_USER", "CIP_NGINX_URL",
++    "CIP_OIDC_CLIENT_ID", "CIP_OIDC_CLIENT_SECRET", "CIP_OIDC_ISSUER",
++    "CIP_PUBLISH_BACKUP_URL", "EMAIL_PASSWORD", "FORSTA_API_KEY", "IDP_BASE_URL",
++    "IDP_TOKEN_URL", "IDP_USERINFO_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET",
++    "STG_DB_HOST", "STG_DB_NAME", "STG_DB_PASSWORD", "STG_DB_USER", "TEAMS_WEBHOOK_URL",
++):
++    os.environ[_name] = ""
++
++
++def percentile(samples: list[float], percentile_value: float) -> float:
++    ordered = sorted(samples)
++    return ordered[min(len(ordered) - 1, int((len(ordered) - 1) * percentile_value))]
++
++
++def peak_rss_bytes() -> int:
++    value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
++    return int(value if sys.platform == "darwin" else value * 1024)
++
++
++def engine_at(path: Path):
++    import sqlalchemy as sa
++    from app.core import database, schema_upgrade
++
++    engine = sa.create_engine(f"sqlite:///{path}", future=True)
++
++    @sa.event.listens_for(engine, "connect")
++    def foreign_keys(connection, _record):
++        connection.execute("PRAGMA foreign_keys=ON")
++
++    schema_upgrade.install(engine)
++    database._install_sqlite_translation(engine)
++    database._engines["app"] = engine
++    database._engines["etl"] = engine
++    return engine
++
++
++def digest_rows(engine) -> str:
++    from sqlalchemy import text
++
++    digest = hashlib.sha256()
++    with engine.connect() as conn:
++        for sql in (
++            "SELECT survey_id, record_no, forsta_uuid, status_code, status_label, is_qualified "
++            "FROM cip_respondent ORDER BY survey_id, record_no",
++            "SELECT a.survey_id, r.record_no, f.field_name, a.value_code, a.value_label, a.value_number, a.value_text "
++            "FROM cip_answer a JOIN cip_respondent r ON r.respondent_id=a.respondent_id "
++            "JOIN cip_field f ON f.field_id=a.field_id ORDER BY a.survey_id, r.record_no, f.field_name",
++        ):
++            for row in conn.execute(text(sql)):
++                digest.update(json.dumps(list(row), default=str, ensure_ascii=False).encode())
++    return digest.hexdigest()
++
++
++def qualtrics(size: int, samples: int) -> dict:
++    import openpyxl
++    import sqlalchemy as sa
++    from etl import qualtrics_export
++    from tests.test_phase3 import qualtrics_file
++
++    timings, queries, transactions, hashes, errors = [], [], [], [], 0
++    with tempfile.TemporaryDirectory(prefix="cip-final-qualtrics-") as raw:
++        temp = Path(raw)
++        export = qualtrics_file(temp)
++        workbook = openpyxl.load_workbook(export)
++        sheet = workbook.active
++        templates = [list(row) for row in sheet.iter_rows(min_row=3, values_only=True)]
++        sheet.delete_rows(3, sheet.max_row - 2)
++        for index in range(size):
++            row = list(templates[index % len(templates)])
++            row[4] = f"R_synthetic_{index}"
++            row[1] = f"2025-05-12 {8 + index % 12:02d}:{index % 60:02d}:00"
++            sheet.append(row)
++        workbook.save(export)
++
++        for sample in range(samples):
++            engine = engine_at(temp / f"qualtrics-{sample}.db")
++            counters = {"queries": 0, "transactions": 0}
++            sa.event.listen(engine, "before_cursor_execute",
++                            lambda *_args, c=counters: c.__setitem__("queries", c["queries"] + 1))
++            sa.event.listen(engine, "begin",
++                            lambda *_args, c=counters: c.__setitem__("transactions", c["transactions"] + 1))
++            started = time.perf_counter()
++            try:
++                qualtrics_export.ingest_export(export, "2025-05-12")
++                hashes.append(digest_rows(engine))
++            except Exception:
++                errors += 1
++                hashes.append("")
++            timings.append(time.perf_counter() - started)
++            queries.append(counters["queries"])
++            transactions.append(counters["transactions"])
++            engine.dispose()
++    return {
++        "mode": "qualtrics",
++        "respondents": size,
++        "samples": samples,
++        "elapsed_samples_s": [round(value, 6) for value in timings],
++        "median_s": round(statistics.median(timings), 6),
++        "p95_s": round(percentile(timings, 0.95), 6),
++        "min_s": round(min(timings), 6),
++        "max_s": round(max(timings), 6),
++        "query_counts": queries,
++        "transaction_counts": transactions,
++        "output_sha256": sorted(set(hashes)),
++        "peak_rss_bytes": peak_rss_bytes(),
++        "errors": errors,
++    }
++
++
++def published_digest(root: Path) -> tuple[str, int]:
++    digest, size = hashlib.sha256(), 0
++    for path in sorted(root.rglob("*.json.gz")):
++        body = gzip.decompress(path.read_bytes())
++        digest.update(str(path.relative_to(root)).encode())
++        digest.update(body)
++        size += len(body)
++    return digest.hexdigest(), size
++
++
++def publisher(waves: int, jobs: int, samples: int) -> dict:
++    import sqlalchemy as sa
++    from sqlalchemy import text
++    from etl import publish, serving
++    from tests.test_serving import seed
++
++    with tempfile.TemporaryDirectory(prefix="cip-final-publish-") as raw:
++        temp = Path(raw)
++        engine = engine_at(temp / "publish.db")
++        start_day = date(2026, 1, 5)
++        with engine.begin() as conn:
++            for index in range(waves):
++                sid = 1000 + index
++                seed(conn, sid, start_day + timedelta(days=7 * index), qualified=404,
++                     xm1_yes=125 + index % 20, xm1_base=404)
++        for index in range(waves):
++            sid = 1000 + index
++            serving.build_wave(sid)
++            with engine.begin() as conn:
++                options = dict(conn.execute(text(
++                    "SELECT option_label, option_id FROM srv_result "
++                    "WHERE survey_id=:s AND qcode='XM1' AND dim='total'"
++                ), {"s": sid}).all())
++                respondents = [row[0] for row in conn.execute(text(
++                    "SELECT respondent_id FROM cip_respondent WHERE survey_id=:s ORDER BY record_no"
++                ), {"s": sid})]
++                conn.execute(text(
++                    "INSERT INTO srv_answer "
++                    "(survey_id,qcode,item_id,option_id,respondent_id,gender,age_band,generation,income_band,census_region,urbanicity) "
++                    "VALUES (:s,'XM1',0,:o,:r,:g,:a,:gen,:i,:c,:u)"
++                ), [{
++                    "s": sid,
++                    "o": options["Yes" if n < 125 + index % 20 else "No"],
++                    "r": respondent_id,
++                    "g": "Female" if n % 2 else "Male",
++                    "a": "18-29" if n % 3 else "30-44",
++                    "gen": "GenZ" if n % 3 else "Millennial",
++                    "i": "Under $25,000" if n % 2 else "$25,000-$49,999",
++                    "c": "South" if n % 2 else "Northeast",
++                    "u": "Urban" if n % 2 else "Rural",
++                } for n, respondent_id in enumerate(respondents)])
++
++        timings, query_counts, discovery_counts, hashes, sizes, errors = [], [], [], [], [], 0
++        for sample in range(samples):
++            counters = {"queries": 0, "discovery": 0}
++
++            def count_sql(_conn, _cursor, statement, _parameters, _context, _many):
++                normalized = " ".join(statement.lower().split())
++                counters["queries"] += 1
++                if "select distinct w.survey_family" in normalized and "join srv_wave" in normalized:
++                    counters["discovery"] += 1
++
++            sa.event.listen(engine, "before_cursor_execute", count_sql)
++            root = temp / f"out-{sample}"
++            started = time.perf_counter()
++            try:
++                built = publish.build(root, jobs=jobs)
++                digest, size = published_digest(built)
++                hashes.append(digest)
++                sizes.append(size)
++            except Exception:
++                errors += 1
++                hashes.append("")
++                sizes.append(0)
++            timings.append(time.perf_counter() - started)
++            query_counts.append(counters["queries"])
++            discovery_counts.append(counters["discovery"])
++            sa.event.remove(engine, "before_cursor_execute", count_sql)
++        engine.dispose()
++    return {
++        "mode": "publisher",
++        "waves": waves,
++        "respondents_per_wave": 404,
++        "jobs": jobs,
++        "samples": samples,
++        "elapsed_samples_s": [round(value, 6) for value in timings],
++        "median_s": round(statistics.median(timings), 6),
++        "p95_s": round(percentile(timings, 0.95), 6),
++        "min_s": round(min(timings), 6),
++        "max_s": round(max(timings), 6),
++        "query_counts": query_counts,
++        "discovery_query_counts": discovery_counts,
++        "output_sha256": sorted(set(hashes)),
++        "result_bytes": sorted(set(sizes)),
++        "peak_rss_bytes": peak_rss_bytes(),
++        "errors": errors,
++    }
++
++
++def main() -> None:
++    logging.basicConfig(level=logging.WARNING, force=True)
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--source-root", type=Path, required=True)
++    parser.add_argument("--label", required=True)
++    parser.add_argument("--mode", choices=("qualtrics", "publisher"), required=True)
++    parser.add_argument("--size", type=int, required=True)
++    parser.add_argument("--jobs", type=int, default=1)
++    parser.add_argument("--samples", type=int, default=5)
++    args = parser.parse_args()
++    sys.path.insert(0, str(args.source_root.resolve()))
++    result = qualtrics(args.size, args.samples) if args.mode == "qualtrics" else publisher(args.size, args.jobs, args.samples)
++    print(json.dumps({"label": args.label, **result}, sort_keys=True))
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tests/analysis_fixture.py b/tests/analysis_fixture.py
+new file mode 100644
+index 0000000..6c3d03f
+--- /dev/null
++++ b/tests/analysis_fixture.py
+@@ -0,0 +1,248 @@
++"""Deterministic, synthetic survey data for repository analysis tests."""
++from __future__ import annotations
++
++from sqlalchemy import text
++
++
++def seed_analysis_data(engine) -> None:
++    """Seed two synthetic waves with the published counts asserted by tests."""
++    with engine.begin() as conn:
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_survey
++                    (survey_id, forsta_host, forsta_path, title, survey_family,
++                     wave_label, platform, source_ref, load_status)
++                VALUES
++                    (1, 'synthetic.invalid', 'synthetic/wave-1', 'Synthetic Wave 1',
++                     'CSI-US', '2026-09-21', 'forsta', 'synthetic/wave-1', 'verified'),
++                    (2, 'synthetic.invalid', 'synthetic/wave-2', 'Synthetic Wave 2',
++                     'CSI-US', '2026-09-28', 'forsta', 'synthetic/wave-2', 'verified')
++                """
++            )
++        )
++
++        questions = [
++            (101, 1, "BN1", "BNPL usage", "single", 0, 1),
++            (102, 1, "DP1", "Department-store buyer", "single", 0, 2),
++            (103, 1, "GP1", "GLP-1 usage", "single", 0, 3),
++            (104, 1, "q4", "Retailer shopped", "multi", 1, 4),
++            (105, 1, "DP2", "Routed department-store question", "multi", 1, 5),
++            (201, 2, "BT8", "Beauty products", "multi", 1, 1),
++            (202, 2, "HX1", "Holiday behavior", "single", 0, 2),
++            (203, 2, "BT14", "Retailer ratings", "grid_single", 0, 3),
++        ]
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_question
++                    (question_id, survey_id, qcode, qtext, qtype, is_multi, sort_order)
++                VALUES
++                    (:question_id, :survey_id, :qcode, :qtext, :qtype, :is_multi, :sort_order)
++                """
++            ),
++            [
++                {
++                    "question_id": qid,
++                    "survey_id": sid,
++                    "qcode": qcode,
++                    "qtext": qtext,
++                    "qtype": qtype,
++                    "is_multi": is_multi,
++                    "sort_order": order,
++                }
++                for qid, sid, qcode, qtext, qtype, is_multi, order in questions
++            ],
++        )
++
++        items = [
++            (1041, 104, "q4r1", "Walmart", 1),
++            (1042, 104, "q4r2", "Target", 2),
++            (1051, 105, "DP2r1", "Macy's", 1),
++            (2011, 201, "BT8r1", "Mascara", 1),
++            (2012, 201, "BT8r2", "Other beauty product", 2),
++            (2031, 203, "BT14r1", "Retailer A", 1),
++            (2032, 203, "BT14r2", "Retailer B", 2),
++        ]
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_item
++                    (item_id, question_id, item_code, item_label, sort_order)
++                VALUES (:item_id, :question_id, :item_code, :item_label, :sort_order)
++                """
++            ),
++            [
++                {
++                    "item_id": item_id,
++                    "question_id": qid,
++                    "item_code": code,
++                    "item_label": label,
++                    "sort_order": order,
++                }
++                for item_id, qid, code, label, order in items
++            ],
++        )
++
++        option_labels = {
++            101: ["Yes", "No", "Maybe", "Never"],
++            102: ["Yes", "No"],
++            103: ["Yes", "No"],
++            202: [f"Holiday option {code}" for code in range(1, 8)],
++            203: ["Poor", "Average", "Excellent"],
++        }
++        options = []
++        option_id = 1
++        for question_id, labels in option_labels.items():
++            for value_code, label in enumerate(labels, 1):
++                options.append(
++                    {
++                        "option_id": option_id,
++                        "question_id": question_id,
++                        "value_code": value_code,
++                        "value_label": label,
++                        "sort_order": value_code,
++                    }
++                )
++                option_id += 1
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_option
++                    (option_id, question_id, value_code, value_label, sort_order)
++                VALUES (:option_id, :question_id, :value_code, :value_label, :sort_order)
++                """
++            ),
++            options,
++        )
++
++        fields = [
++            (1011, 1, 101, None, "BN1"),
++            (1021, 1, 102, None, "DP1"),
++            (1031, 1, 103, None, "GP1"),
++            (1041, 1, 104, 1041, "q4r1"),
++            (1042, 1, 104, 1042, "q4r2"),
++            (1051, 1, 105, 1051, "DP2r1"),
++            (2011, 2, 201, 2011, "BT8r1"),
++            (2012, 2, 201, 2012, "BT8r2"),
++            (2021, 2, 202, None, "HX1"),
++            (2031, 2, 203, 2031, "BT14r1"),
++            (2032, 2, 203, 2032, "BT14r2"),
++        ]
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_field
++                    (field_id, survey_id, question_id, item_id, field_name, value_type)
++                VALUES (:field_id, :survey_id, :question_id, :item_id, :field_name, 'code')
++                """
++            ),
++            [
++                {
++                    "field_id": fid,
++                    "survey_id": sid,
++                    "question_id": qid,
++                    "item_id": item_id,
++                    "field_name": name,
++                }
++                for fid, sid, qid, item_id, name in fields
++            ],
++        )
++
++        wave1 = [
++            {
++                "respondent_id": respondent_id,
++                "survey_id": 1,
++                "record_no": respondent_id,
++                "generation": (
++                    "GenZ" if respondent_id <= 54
++                    else "Millennial" if respondent_id <= 213
++                    else "GenX"
++                ),
++            }
++            for respondent_id in range(1, 405)
++        ]
++        wave2 = [
++            {
++                "respondent_id": 1000 + record_no,
++                "survey_id": 2,
++                "record_no": record_no,
++                "generation": "GenX",
++            }
++            for record_no in range(1, 404)
++        ]
++        respondents = wave1 + wave2
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_respondent
++                    (respondent_id, survey_id, record_no, status_code, status_label, is_qualified)
++                VALUES (:respondent_id, :survey_id, :record_no, 3, 'Qualified', 1)
++                """
++            ),
++            respondents,
++        )
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_profile (respondent_id, survey_id, generation)
++                VALUES (:respondent_id, :survey_id, :generation)
++                """
++            ),
++            respondents,
++        )
++
++        answers = []
++
++        def answer(respondent_id: int, survey_id: int, field_id: int, code: int) -> None:
++            answers.append(
++                {
++                    "respondent_id": respondent_id,
++                    "survey_id": survey_id,
++                    "field_id": field_id,
++                    "value_code": code,
++                }
++            )
++
++        dp1_yes = (
++            set(range(1, 55))
++            | set(range(55, 143))
++            | set(range(214, 264))
++            | set(range(324, 354))
++        )
++        for respondent_id in range(1, 405):
++            answer(
++                respondent_id,
++                1,
++                1011,
++                1 if respondent_id <= 133 else 2 if respondent_id <= 381 else 3 if respondent_id <= 392 else 4,
++            )
++            answer(respondent_id, 1, 1021, 1 if respondent_id in dp1_yes else 2)
++            answer(respondent_id, 1, 1031, 1 if respondent_id <= 71 else 2)
++            answer(respondent_id, 1, 1041, 1 if respondent_id <= 241 else 0)
++            answer(respondent_id, 1, 1042, 1 if respondent_id % 2 == 0 else 0)
++            if respondent_id in dp1_yes:
++                answer(respondent_id, 1, 1051, 1 if 55 <= respondent_id <= 70 else 0)
++
++        for record_no in range(1, 404):
++            respondent_id = 1000 + record_no
++            answer(respondent_id, 2, 2021, ((record_no - 1) % 7) + 1)
++            if record_no <= 264:
++                answer(respondent_id, 2, 2012, 1 if record_no % 2 else 0)
++            if record_no <= 83:
++                answer(respondent_id, 2, 2011, 1 if record_no <= 40 else 0)
++            if record_no <= 120:
++                answer(respondent_id, 2, 2031, ((record_no - 1) % 3) + 1)
++            if record_no <= 80:
++                answer(respondent_id, 2, 2032, ((record_no - 1) % 3) + 1)
++
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_answer
++                    (respondent_id, survey_id, field_id, value_code, value_label)
++                VALUES (:respondent_id, :survey_id, :field_id, :value_code, NULL)
++                """
++            ),
++            answers,
++        )
+diff --git a/tests/test_test_isolation.py b/tests/test_test_isolation.py
+new file mode 100644
+index 0000000..455aee1
+--- /dev/null
++++ b/tests/test_test_isolation.py
+@@ -0,0 +1,44 @@
++"""Fail-closed checks for the local test process."""
++from __future__ import annotations
++
++import os
++import socket
++
++import pytest
++
++from app.core.config import config
++
++
++def test_tests_use_only_local_sqlite_and_blank_live_integrations():
++    assert config.database("app").sqlite_path
++    assert config.database("etl").sqlite_path
++    assert config.database("app").host == config.database("etl").host == ""
++    for name in (
++        "ANTHROPIC_API_KEY",
++        "APP_DB_PASSWORD",
++        "APP_DB_USER",
++        "CIP_NGINX_URL",
++        "CIP_OIDC_CLIENT_ID",
++        "CIP_OIDC_CLIENT_SECRET",
++        "CIP_OIDC_ISSUER",
++        "CIP_PUBLISH_BACKUP_URL",
++        "EMAIL_PASSWORD",
++        "FORSTA_API_KEY",
++        "STG_DB_HOST",
++        "STG_DB_NAME",
++        "STG_DB_PASSWORD",
++        "STG_DB_USER",
++        "TEAMS_WEBHOOK_URL",
++    ):
++        assert os.environ[name] == ""
++
++
++def test_tests_cannot_open_a_network_socket():
++    with socket.socket() as candidate, pytest.raises(AssertionError, match="real network connection"):
++        candidate.connect(("example.invalid", 443))
++    with socket.socket() as candidate, pytest.raises(AssertionError, match="real network connection"):
++        candidate.connect_ex(("example.invalid", 443))
++    with socket.socket(type=socket.SOCK_DGRAM) as candidate, pytest.raises(AssertionError, match="real network connection"):
++        candidate.sendto(b"blocked", ("example.invalid", 53))
++    with pytest.raises(AssertionError, match="real network connection"):
++        socket.create_connection(("example.invalid", 443))
+diff --git a/docs/performance/cip_final_remediation/00_EXECUTIVE_VERDICT.md b/docs/performance/cip_final_remediation/00_EXECUTIVE_VERDICT.md
+new file mode 100644
+index 0000000..2d874cc
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/00_EXECUTIVE_VERDICT.md
+@@ -0,0 +1,50 @@
++# CIP final remediation — executive verdict
++
++Date: 2026-10-27  
++Repository: `consumer-insight-portal`  
++Branch/base: `master` / `6f978b0595b2c71c064991ae10b832514637a0da`  
++State: uncommitted local patch; base HEAD is not a fix commit
++
++## Decision
++
++**PASS FOR LOCAL REVIEW. NOT READY FOR DEPLOYMENT.**
++
++The clean patched worktree passes all 350 deterministic tests with no failures, errors, skips or xfails. The original 13 analysis failures are repaired with real-schema synthetic fixtures. Qualtrics snapshot ingestion has a measured SQLite improvement and exact output hashes. Publisher artifacts remain byte-identical in the synthetic comparison, and the redundant `srv_result`/`srv_wave` discovery query is removed.
++
++Deployment remains blocked because no disposable MySQL 8 runtime was available, no approved staging test was run, actual MySQL collation/FK/query-plan behavior was not verified, and the shared-server four-worker capacity decision remains open.
++
++## Implemented fixes (13)
++
++1. Replaced the 13-test ignored-database gate with deterministic two-wave real-schema data.
++2. Replaced the remaining trend tests' ignored-database copy with synthetic fixtures.
++3. Enforced pre-import local SQLite, blank live integration settings, socket blocking and mocked notifications.
++4. Preserved MySQL SQL aggregation; no Python grouping replacement exists.
++5. Removed the redundant pre-shrink full `cip_answer` delete while preserving one transactional replacement.
++6. Preserved multi-select item labels when 0/1 option metadata would otherwise display `Yes`/`No`.
++7. Made Forsta reconciliation compare label-only coded answers.
++8. Made empty existing-wave Forsta reloads valid and verified derived-row cleanup after shrink.
++9. Replaced Qualtrics per-respondent transactions with one transactional snapshot/bulk answer load, including stale-row removal and rollback.
++10. Added bounded, documented publisher and serving worker validation; publisher default remains four.
++11. Separated publisher cut and respondent materialization, releasing cuts before respondent extraction; telemetry now distinguishes expected reads and phase/wall time.
++12. Removed the publisher's redundant `SELECT DISTINCT ... srv_result JOIN srv_wave` discovery query by using versioned cut-file inventories.
++13. Reused published cuts for MCP crosstabs, retaining the live SQL fallback for missing/incomplete artifacts.
++
++## Material bottlenecks still not fixed (5)
++
++1. `srv_answer` publishing still performs one MySQL `GROUP BY` read and one respondent extraction read per fresh wave. Historic caller attribution remains unknown.
++2. `cip_agg_cell` serving joins have no approved MySQL `EXPLAIN FORMAT=JSON`; no SQL/index change was safe to make.
++3. The historic `v_cip_answer_long` count has no confirmed current application caller; no speculative summary/index was added.
++4. Forsta `LOAD DATA LOCAL INFILE`, live MySQL import throughput and exact runtime memory remain unvalidated outside SQLite.
++5. Shared scheduler overlap and the default publisher capacity of four require owner/DBA review; repository locks are improved but shared runtime configuration was not changed.
++
++## Evidence map
++
++- [Full test closure](01_FULL_TEST_CLOSURE.md)
++- [Code changes and rollback](02_CODE_CHANGES_WITH_EVIDENCE.md)
++- [Before/after benchmarks](03_BENCHMARK_BEFORE_AFTER.md)
++- [Approval requests](04_OPEN_DB_APPROVAL_ITEMS.md)
++- [Safety attestation](05_SAFETY_AND_NO_MESSAGE_ATTESTATION.md)
++- [Release gate](06_RELEASE_AND_ROLLBACK_GATE.md)
++- [Review patch](CIP_FINAL_REVIEW_PATCH.diff)
++
++GO for local code review. NO-GO for deployment until every gate in `06_RELEASE_AND_ROLLBACK_GATE.md` passes.
+diff --git a/docs/performance/cip_final_remediation/01_FULL_TEST_CLOSURE.md b/docs/performance/cip_final_remediation/01_FULL_TEST_CLOSURE.md
+new file mode 100644
+index 0000000..e02ee8d
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/01_FULL_TEST_CLOSURE.md
+@@ -0,0 +1,104 @@
++# CIP final remediation — full test closure
++
++Date: 2026-10-27  
++Base HEAD: `6f978b0595b2c71c064991ae10b832514637a0da`  
++Cross-links: [verdict](00_EXECUTIVE_VERDICT.md), [benchmarks](03_BENCHMARK_BEFORE_AFTER.md), [safety](05_SAFETY_AND_NO_MESSAGE_ATTESTATION.md)
++
++## Original non-passing state
++
++Prior captured full run: `327 passed, 4 failed, 9 errors in 19.63s`.
++
++All 13 cases reached `sqlite3.OperationalError: no such table: cip_question`. `tests/test_analysis.py` used the existence of ignored `data/csi_local.db` as a run marker while `tests/conftest.py` correctly redirected application engines to a new empty safe database.
++
++The affected IDs were:
++
++- `test_single_punch_answers_keep_distinct_codes`
++- `test_gate_question_cohorts_match_published_bases[BN1-133]`
++- `test_gate_question_cohorts_match_published_bases[DP1-222]`
++- `test_gate_question_cohorts_match_published_bases[GP1-71]`
++- `test_demographic_cohorts_match_the_crosstab_summary`
++- `test_criteria_intersect_rather_than_union`
++- `test_unfiltered_analysis_matches_the_published_crosstab`
++- `test_routed_question_keeps_its_own_base_after_filtering`
++- `test_break_by_splits_without_losing_the_total`
++- `test_excel_export_is_a_readable_workbook_with_provenance`
++- `test_multi_select_base_is_everyone_answering_the_question`
++- `test_every_single_punch_answer_resolves_to_a_code`
++- `test_grid_rows_are_separate_distributions`
++
++## Fixture repair
++
++`tests/analysis_fixture.py` installs the checked-in schema with SQLite foreign keys enabled before transactions and seeds:
++
++- 2 waves; 404 and 403 qualified synthetic respondents.
++- 8 reportable questions covering single, multi and grid.
++- 807 profiles and 3,192 answers.
++- Exact asserted counts: BN1 133/248/four answers, DP1 222, GP1 71, GenZ 54, Millennials 159, Walmart 241/404, BT8 Mascara 40/264, HX1 seven groups totaling 403, and two routed BT14 rows.
++- `cip_agg_cell` intentionally empty so the raw-answer analysis SQL is exercised.
++
++`tests/test_trends_multiwave.py` now creates two synthetic waves in `csi_db`; it no longer copies or checks `data/csi_local.db`.
++
++No expectation was weakened. The wave-2 skip was replaced by an assertion that required questions exist.
++
++## Actual results
++
++Focused closure:
++
++```text
++.venv/bin/python -m pytest tests/test_analysis.py -q -ra
++13 passed in 1.19s
++```
++
++Clean detached worktree, no `data/csi_local.db`:
++
++```text
++/Users/.../.venv/bin/python -m pytest -q -ra
++350 passed in 17.78s
++```
++
++Same clean worktree with a zero-byte dummy `data/csi_local.db` marker:
++
++```text
++pytest tests/test_analysis.py tests/test_trends_multiwave.py -q -ra
++15 passed in 0.66s
++marker remained 0 bytes
++```
++
++Focused remediation suite, repeated in the detached patched worktree:
++
++```text
++pytest tests/test_analysis.py tests/test_trends_multiwave.py tests/test_forsta_etl.py \
++  tests/test_phase3.py tests/test_publish.py tests/test_api_speed.py \
++  tests/test_serving.py tests/test_test_isolation.py -q -ra
++run 1: 125 passed in 8.21s
++run 2: 125 passed in 8.13s
++run 3: 125 passed in 7.94s
++```
++
++Additional checks:
++
++```text
++python -m compileall -q api app etl tests
++git diff --check
++web: npm run check        -> stats checks passed
++web: npm run build        -> TypeScript/Vite build passed
++```
++
++Final totals: **350 passed, 0 failed, 0 errors, 0 skipped, 0 xfailed**. The web check and build also passed.
++
++## Scenario coverage
++
++- Fresh, same-wave, shrinking and empty Forsta loads.
++- Label metadata case/accent/trailing-space preservation, unknown codes, explicit multi 0/1 options and label-only reconciliation.
++- FK child cleanup, `PRAGMA foreign_key_check`, idempotent rerun and injected rollback.
++- Full-pipeline rebuild of `cip_tracker_line` and `srv_answer` after respondent removal.
++- Fresh/repeated/shrinking/empty Qualtrics snapshot and injected answer failure rollback.
++- Publisher 1/2/4 workers, environment/CLI precedence, artifact bytes, question removal, rule invalidation, failed gate and rollback.
++- HTTP and MCP published-crosstab reuse with live fallback.
++- SMTP/Teams fakes and TCP/UDP fail-closed tests.
++
++## Unavailable checks
++
++- MySQL 8: no Docker MySQL image; local `mysqld` is a broken MySQL 9.4 installation with a missing dynamic library. Nothing was downloaded or repaired.
++- `pip-audit`: not run because dependency advisory refresh can require external network access.
++- Container image/boot check: not run because it starts a service and the required local image/toolchain was not established offline.
+diff --git a/docs/performance/cip_final_remediation/02_CODE_CHANGES_WITH_EVIDENCE.md b/docs/performance/cip_final_remediation/02_CODE_CHANGES_WITH_EVIDENCE.md
+new file mode 100644
+index 0000000..fce3fbd
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/02_CODE_CHANGES_WITH_EVIDENCE.md
+@@ -0,0 +1,79 @@
++# CIP final remediation — code changes with evidence
++
++Date: 2026-10-27  
++Base HEAD: `6f978b0595b2c71c064991ae10b832514637a0da`  
++State: local uncommitted patch
++
++## Change matrix
++
++| Decision | Area | Before | After | Evidence / rollback |
++|---|---|---|---|---|
++| FIXED LOCALLY | Analysis fixtures | Test execution depended on an unrelated ignored DB marker; application engines used an empty DB. | Real schema plus deterministic two-wave synthetic seed. | 13/13 pass; clean/no-marker and dummy-marker runs. Revert `tests/analysis_fixture.py` and `tests/test_analysis.py`. |
++| FIXED LOCALLY | Trend fixtures | Copied ignored `data/csi_local.db`. | Two synthetic waves in `csi_db`. | 2/2 pass without marker. Revert `tests/test_trends_multiwave.py`. |
++| FIXED LOCALLY | Test isolation | Live `.env` values could be imported before fixtures; socket/message protection was incomplete. | Local SQLite and blank integrations before imports; TCP/UDP blocked; SMTP/Teams mocked. | `tests/test_test_isolation.py`; full suite green. Revert test-only files. |
++| FIXED LOCALLY | Forsta labels | Every coded row stored a label, then a wave-wide cleanup UPDATE cleared derived labels. The first optimization cleared multi labels too. | Single/grid metadata labels remain NULL; multi item label is retained only when option metadata could override it. Forsta skips the cleanup UPDATE. | View output, case/accent/spacing, unknown code and multi Yes/No regression tests. Revert `_answer` and `drop_labels=False`. |
++| FIXED LOCALLY | Reconciliation | Selected only code/number/text; label-only coded values were treated as equal. | Selects and compares `value_label`. | Changed synthetic label is detected. Revert tuple/query hunk in `reconcile_survey`. |
++| FIXED LOCALLY | Forsta shrink/empty | Shrink performed a redundant survey-wide answer delete before the normal replacement; empty `people` executemany failed. | One answer delete remains inside one transaction; empty respondent batches are skipped; child and derived rebuilds tested. | FK, rollback, idempotency, full shrink and empty reload tests. Revert `_write` hunks. |
++| FIXED LOCALLY | Qualtrics import | One transaction, respondent upsert, ID lookup and answer upsert per respondent; removed cells/respondents could persist. | `_replace_respondents` performs batched respondent upsert, one ID lookup, one answer replacement, ordered missing-child cleanup and one bulk answer load in one transaction. | Exact output hashes; shrink/empty/rollback tests; benchmark below. Revert `qualtrics_export.py` call and remove `_replace_respondents`. |
++| FIXED LOCALLY | Publisher workers | Fixed default argument; no environment control/range guard. | CLI argument > `CIP_PUBLISH_JOBS` > default 4; range 1–4. `.env.example` documents it. | Precedence/invalid-value tests. Revert `worker_count` and config line. |
++| FIXED LOCALLY | Serving workers | `build_all` accepted arbitrary thread counts. | 1–4 validator; default remains 1. | Unit coverage for bounds. Revert `serving_worker_count`. |
++| FIXED LOCALLY | Publisher memory/telemetry | Grouped cuts and respondent bitsets coexisted; `query_count=2` looked measured; one whole-wave timer was attributed to a query fingerprint. | Writes/releases cuts before people; logs expected reads, configured/effective workers, group count, two read/build phases and wall time. | Canonical payload tests and log assertions. RSS reduction was not demonstrated; see benchmark. |
++| FIXED LOCALLY | Publisher discovery | `SELECT DISTINCT w.survey_family, w.study_type, r.qcode FROM srv_result r JOIN srv_wave w ...`. | Enumerates complete, versioned `waves/<sid>/cuts/*.json.gz`; `cut_inventory` rule forces a safe first rebuild. | SQL spy: 1 discovery query to 0; exact artifact hashes; stale-question and invalidation tests. Revert inventory block/rule. |
++| FIXED LOCALLY | MCP crosstab | MCP always called live `payloads.crosstab`, even when the same cuts were published. | HTTP and MCP share `_crosstab_payload` and serving-version cache; absent/incomplete files retain live fallback. | ASGI test fails on any DB access and still returns MCP result; fallback test passes. Revert `api/main.py`, `api/mcp.py`. |
++| FIXED LOCALLY | Qualtrics writer overlap | CLI lacked the repository MySQL named lock. | CLI wraps ingest in `etl_lock`; direct function remains composable for tests. | Static caller trace and existing lock tests. Revert `main` hunk. |
++
++## SQL and data contracts
++
++### MySQL grouping is unchanged
++
++`app/data/payloads.py::question_cuts` still executes:
++
++```sql
++SELECT survey_id, qcode, item_id, option_id, <six cuts>, COUNT(*)
++FROM srv_answer
++WHERE survey_id IN (...)
++GROUP BY survey_id, qcode, item_id, option_id, <six cuts>
++```
++
++There is no Python tuple/dictionary grouping replacement. This preserves `utf8mb4_0900_ai_ci` behavior. SQLite tests prove payload structure and arithmetic, not MySQL collation equivalence.
++
++### Forsta answer replacement
++
++Before shrink path:
++
++```sql
++DELETE FROM cip_answer WHERE survey_id = :s; -- early
++DELETE FROM child tables for removed respondents;
++DELETE FROM cip_answer WHERE survey_id = :s; -- normal replacement
++```
++
++After:
++
++```sql
++DELETE FROM child tables for removed respondents;
++DELETE FROM cip_answer WHERE survey_id = :s; -- exactly once
++bulk insert replacement answers;
++```
++
++All statements remain inside one `engine.begin()` transaction. Checked-in FKs cascade `cip_answer`, `cip_profile`, `cip_weight` and `cip_respondent_cohort`; `cip_tracker_line` and `srv_answer` are rebuilt by the full load and explicitly tested.
++
++### Qualtrics snapshot
++
++Before: `O(respondents)` transactions and ID lookups, answer upserts, no full stale-row cleanup.
++
++After: one transaction containing one respondent executemany, one respondent map SELECT, one survey answer DELETE, missing respondent cleanup and one bulk answer insert. Downstream profile/base/cube behavior is unchanged.
++
++## Explicitly not changed
++
++- No index, schema migration, DDL or MySQL setting change.
++- No Python grouping for `srv_answer`.
++- No change to publisher default four workers.
++- No `cip_agg_cell` SQL rewrite without a MySQL plan.
++- No `v_cip_answer_long` summary/index without a confirmed caller.
++- No deployment, scheduler, cloud or shared DB change.
++
++## Review files
++
++- Source/test patch: [CIP_FINAL_REVIEW_PATCH.diff](CIP_FINAL_REVIEW_PATCH.diff)
++- Measurements: [03_BENCHMARK_BEFORE_AFTER.md](03_BENCHMARK_BEFORE_AFTER.md)
++- Release/rollback: [06_RELEASE_AND_ROLLBACK_GATE.md](06_RELEASE_AND_ROLLBACK_GATE.md)
+diff --git a/docs/performance/cip_final_remediation/03_BENCHMARK_BEFORE_AFTER.md b/docs/performance/cip_final_remediation/03_BENCHMARK_BEFORE_AFTER.md
+new file mode 100644
+index 0000000..c0d6665
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/03_BENCHMARK_BEFORE_AFTER.md
+@@ -0,0 +1,66 @@
++# CIP final remediation — before/after benchmarks
++
++Date: 2026-10-27  
++Base: clean detached `6f978b0595b2c71c064991ae10b832514637a0da`  
++Patched: identical detached base plus the review patch  
++Runner: `scripts/cip_final_benchmark.py`
++
++## Controls and limitations
++
++- Apple host, Python 3.13, same virtual environment and filesystem.
++- Separate processes for base and patched runs; five samples per case.
++- Temporary SQLite databases with checked-in schema and foreign keys enabled.
++- Synthetic data only; sockets blocked and live integration variables blank.
++- Output hashes exclude volatile manifests but include every decompressed published JSON path/body.
++- `p95` is the fourth ordered observation of five, as implemented by the checked-in runner; raw samples are below.
++- SQLite does not reproduce MySQL collation, execution plans, rows examined, TempTable behavior, `LOAD DATA`, network latency, CPU/IOPS or shared-server contention.
++
++## Qualtrics snapshot import
++
++| Respondents | Variant | elapsed samples, seconds | median | p95 | SQL statements/sample | transactions/sample | peak RSS | output SHA-256 |
++|---:|---|---|---:|---:|---:|---:|---:|---|
++| 100 | Base | 0.093087, 0.080945, 0.083599, 0.082991, 0.083133 | 0.083133 | 0.083599 | 359 | 118 | 91,111,424 B | `94b9fc1b…b25220` |
++| 100 | Patched | 0.037454, 0.026560, 0.027353, 0.026539, 0.026617 | 0.026617 | 0.027353 | 63 | 19 | 91,373,568 B | `94b9fc1b…b25220` |
++| 500 | Base | 0.407930, 0.462774, 0.402584, 0.412692, 0.413002 | 0.412692 | 0.413002 | 1,559 | 518 | 96,075,776 B | `dcf3c323…b88f3` |
++| 500 | Patched | 0.096586, 0.084365, 0.084027, 0.084567, 0.085354 | 0.084567 | 0.085354 | 63 | 19 | 96,665,600 B | `dcf3c323…b88f3` |
++| 2,000 | Base | 1.782597, 1.781923, 1.782160, 1.755413, 1.735497 | 1.781923 | 1.782160 | 6,060 | 2,018 | 105,316,352 B | `11fb69a6…f1deb` |
++| 2,000 | Patched | 0.318133, 0.306260, 0.307043, 0.305703, 0.305406 | 0.306260 | 0.307043 | 66 | 19 | 112,377,856 B | `11fb69a6…f1deb` |
++
++Observed SQLite median reductions: 68.0%, 79.5% and 82.8%. Query and transaction counts become bounded instead of respondent-linear. Each size has identical base/patched output hashes and zero errors. Peak RSS did not improve at 2,000 respondents; it rose about 6.7 MiB, so no memory improvement is claimed.
++
++This is a demonstrated local application/round-trip improvement, not a MySQL/staging speedup.
++
++## Publisher
++
++Each wave has 404 synthetic respondents and one question. Every base/patched pair produced the same output hash and byte count:
++
++| Waves | Output SHA-256 | JSON bytes |
++|---:|---|---:|
++| 2 | `a4183f033240d7b2864816f00fb1a1410e495c1cf902e97a97e7b537a05248a6` | 9,030 |
++| 8 | `fdc994b873760427fa2d7da9618d7cb8d5a9c6d0d010e85f29565ec5c000fdaa` | 35,519 |
++| 24 | `18665e5056445ee3565512f98eb8e3b7fc7ad6de277bd317453a9373e5690e3b` | 106,331 |
++
++SQL result: every base sample executed one discovery query; every patched sample executed zero. Total SQL statements fell by exactly one: 29→28 (2 waves), 89→88 (8), 249→248 (24). The two `srv_answer` reads per fresh wave remain.
++
++| Waves/jobs | Base samples (s) | Patched samples (s) | Base median/p95 | Patched median/p95 |
++|---|---|---|---|---|
++| 2/1 | .017847, .007317, .007135, .007294, .007086 | .017450, .007101, .007152, .007229, .007047 | .007294/.007317 | .007152/.007229 |
++| 2/2 | .016951, .008236, .007798, .007833, .007537 | .016975, .008146, .007818, .007881, .007704 | .007833/.008236 | .007881/.008146 |
++| 2/4 | .016870, .007793, .007791, .007563, .008535 | .016727, .007957, .007739, .007985, .007578 | .007793/.008535 | .007957/.007985 |
++| 8/1 | .032786, .023727, .022535, .022770, .022690 | .033481, .023285, .023418, .023585, .023068 | .022770/.023727 | .023418/.023585 |
++| 8/2 | .032111, .025533, .024901, .024990, .024528 | .033007, .025639, .025560, .023608, .025462 | .024990/.025533 | .025560/.025639 |
++| 8/4 | .054209, .047872, .046278, .049735, .051194 | .055278, .054186, .052693, .052755, .052927 | .049735/.051194 | .052927/.054186 |
++| 24/1 | .075010, .064402, .063909, .063755, .063904 | .076304, .067879, .065957, .067130, .065892 | .063909/.064402 | .067130/.067879 |
++| 24/2 | .080141, .070127, .070386, .074914, .074594 | .075904, .067894, .071119, .066442, .071110 | .074594/.074914 | .071110/.071119 |
++| 24/4 | .142885, .133424, .136045, .134825, .138499 | .159694, .153796, .152930, .155764, .154201 | .136045/.138499 | .154201/.155764 |
++
++Peak RSS was higher in every patched publisher process by roughly 5–6 MiB. The code no longer retains cut and people dictionaries together, but process-level RSS did not demonstrate a gain and Python's high-water mark cannot show released-object timing. **NO PUBLISHER WALL-CLOCK OR RSS PERFORMANCE GAIN DEMONSTRATED.** The proven improvement is removal of one exact discovery SQL statement with identical artifacts.
++
++SQLite favored one worker at 8 and 24 waves; four workers was slower in both trees. This does not establish the best shared-MySQL setting. Default remains four pending an approved representative server run.
++
++## Not measured
++
++- Rows examined: SQLite does not expose a comparable MySQL counter.
++- MySQL plan/collation/FK/trigger parity: unavailable.
++- Historic slow-log attribution: not inferable from synthetic runs.
++- Shared-server CPU, IOPS, lock waits, TempTable spills and connection pressure: no staging workload was run.
+diff --git a/docs/performance/cip_final_remediation/04_OPEN_DB_APPROVAL_ITEMS.md b/docs/performance/cip_final_remediation/04_OPEN_DB_APPROVAL_ITEMS.md
+new file mode 100644
+index 0000000..e6c44db
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/04_OPEN_DB_APPROVAL_ITEMS.md
+@@ -0,0 +1,80 @@
++# CIP final remediation — open DB and approval items
++
++Date: 2026-10-27  
++Base HEAD: `6f978b0595b2c71c064991ae10b832514637a0da`
++
++No request below was executed. All shared-DB work requires explicit authorization and a read-only account unless separately stated.
++
++## 1. Deployed schema contract — BLOCKED BY DBA APPROVAL
++
++Purpose: confirm checked-in assumptions, not change schema.
++
++Requested read-only metadata:
++
++```sql
++SHOW FULL COLUMNS FROM srv_answer;
++SHOW INDEX FROM srv_answer;
++SHOW INDEX FROM srv_result;
++SHOW INDEX FROM cip_agg_cell;
++SHOW INDEX FROM cip_answer;
++
++SELECT table_name, constraint_name, column_name, referenced_table_name, referenced_column_name
++FROM information_schema.key_column_usage
++WHERE table_schema = DATABASE()
++  AND table_name IN ('cip_answer','cip_profile','cip_weight','cip_respondent_cohort','srv_answer');
++
++SELECT trigger_name, event_object_table, action_timing, event_manipulation
++FROM information_schema.triggers
++WHERE trigger_schema = DATABASE()
++  AND event_object_table LIKE 'cip\_%';
++```
++
++Acceptance: `srv_answer` text columns use `utf8mb4_0900_ai_ci`; FK/delete behavior matches checked-in schema; no unreviewed triggers alter reload semantics; no redundant `(survey_id,qcode)` index is proposed because the primary key already has that left prefix.
++
++## 2. Bounded `cip_agg_cell` plan — BLOCKED BY DBA APPROVAL
++
++Run `EXPLAIN FORMAT=JSON`, never `EXPLAIN ANALYZE`, for `etl/serving.py::cube_rows` on one approved modest wave and its current/prior/LY IDs. Capture chosen indexes, estimated examined rows, join order and temporary-table flags. Also capture `SHOW INDEX` cardinalities.
++
++Decision rule: propose a SQL/index change only if the deployed plan demonstrates a selective mismatch and a disposable MySQL 8 parity test proves exact row/cardinality output. No index is currently proposed.
++
++## 3. `srv_answer` publisher validation — BLOCKED BY APPROVAL
++
++On an approved isolated MySQL 8 clone or explicitly approved modest staging wave:
++
++- Run publisher jobs 1, 2 and 4 one at a time.
++- Capture two `srv_answer` reads per fresh wave, elapsed p50/p95, rows sent/examined, process RSS, server CPU/IOPS/temp-table counters and output hashes.
++- Confirm case/accent/trailing-space grouping under `utf8mb4_0900_ai_ci`.
++- Attribute whether the historic 681 grouped statements came from publisher, HTTP fallback, MCP before this patch, retries or another caller.
++
++Do not replay the historic monster queries on shared staging.
++
++## 4. Qualtrics MySQL gate — BLOCKED BY APPROVAL
++
++Use a disposable MySQL 8 database or approved anonymized clone. Validate:
++
++- Fresh, same-file, shrinking, removed-cell, empty and injected-failure snapshots.
++- One transaction for the respondent/answer snapshot.
++- `LOAD DATA LOCAL INFILE` warning behavior and fallback.
++- Exact hashes/counts versus base semantics.
++- FK/trigger behavior and transaction rollback.
++
++SQLite evidence is strong but does not prove MySQL `LOAD DATA`, collation or isolation behavior.
++
++## 5. External label consumers — OWNER CONFIRMATION REQUIRED
++
++Repository consumers reconstruct coded single/grid labels with metadata; multi values retain item labels when needed. Confirm that no external direct-table consumer requires denormalized `cip_answer.value_label` for known single/grid codes. If one does, gate the optimization or provide that consumer a documented view contract.
++
++## 6. `v_cip_answer_long` historic count — OWNER/DBA CONFIRMATION REQUIRED
++
++No current application caller was found. Identify the owner, count semantics and required freshness before considering a summary table, narrower query or index. Until then: `NO SAFE FIX PROVEN`.
++
++## 7. Scheduler and capacity — OWNER/DBA/IT APPROVAL REQUIRED
++
++- Decide whether production sets `CIP_PUBLISH_JOBS`; default remains 4.
++- Verify the weekly wrapper, ad-hoc CLIs and any external schedulers cannot overlap outside the `cip_etl` named lock.
++- Add shared observability for lock contention and actual active DB connections before changing capacity.
++- Review still-unlocked manual mutation paths separately; do not alter shared schedules in this patch.
++
++## Rollback of proposed validation
++
++All requests above are read-only except a future isolated benchmark. End read-only sessions after capture. An isolated clone/container must be disposable. No shared schema rollback is needed because this patch executes no DDL.
+diff --git a/docs/performance/cip_final_remediation/05_SAFETY_AND_NO_MESSAGE_ATTESTATION.md b/docs/performance/cip_final_remediation/05_SAFETY_AND_NO_MESSAGE_ATTESTATION.md
+new file mode 100644
+index 0000000..37b9c44
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/05_SAFETY_AND_NO_MESSAGE_ATTESTATION.md
+@@ -0,0 +1,41 @@
++# CIP final remediation — safety and no-message attestation
++
++Date: 2026-10-27  
++Base HEAD: `6f978b0595b2c71c064991ae10b832514637a0da`
++
++## Controls used
++
++- `tests/conftest.py` sets `APP_ENV=LOCAL`, a temporary `LOCAL_SQLITE_PATH` and temporary publish directory before application imports.
++- Live DB, Forsta, AI, OIDC, SMTP, Teams, backup and nginx values are blanked before imports.
++- Python TCP, UDP and `socket.create_connection` calls raise immediately.
++- SMTP is replaced with an in-memory `FakeSMTP` only in notification unit tests; all other SMTP calls fail.
++- Teams/webhook functions are replaced with in-memory spies/failures.
++- Benchmarks repeat the blank-environment and socket-block controls in a separate process.
++- Only synthetic respondents and temporary SQLite databases were used.
++- No scheduler, watch process, CLI ETL entrypoint, public tunnel, deployment compose stack or queue worker was invoked.
++
++## Executions
++
++- Targeted and complete `pytest` runs.
++- `compileall`, `git diff --check`.
++- Local web `npm run check` and `npm run build` using existing dependencies; no install.
++- Offline synthetic benchmark runner against clean base and patched worktrees.
++- Read-only local tool inventory (`mysqld --version`, `mysql --version`, local Docker image inspect). No image pull or package install.
++
++## State changes not performed
++
++- No staging/production connection or query.
++- No database DML/DDL outside temporary SQLite files.
++- No email, Teams, Slack, webhook, SMS, push or queue dispatch.
++- No deployment, service/tunnel restart, cloud modification, cache purge, CI trigger, commit, push or PR.
++- No SIP, ChainXY, WordPress, CoreIQ, DWH, Matomo or other-product change.
++
++## Local database boundary disclosure
++
++An early in-place full-suite run executed the legacy `tests/test_trends_multiwave.py` because the ignored `data/csi_local.db` marker existed. That legacy fixture opened the file read-only and copied it to a pytest temporary database; it did not modify the source. This was outside the requested no-read boundary. The test was immediately replaced with a fully synthetic fixture. Final authoritative results come from a detached worktree where the ignored DB did not exist. A second run with a zero-byte dummy marker proved the test selection is now independent of the file.
++
++## Attestation
++
++Execution logs and code-side spies show zero real outbound messages and zero staging/production DB connections or writes. No OS-level egress sandbox was available; protection was process-level socket blocking plus transport mocks for every Python test/benchmark path used.
++
++**No real emails or outbound notifications were sent. No staging/production database writes, schema changes, deployments or cloud modifications were performed.**
+diff --git a/docs/performance/cip_final_remediation/06_RELEASE_AND_ROLLBACK_GATE.md b/docs/performance/cip_final_remediation/06_RELEASE_AND_ROLLBACK_GATE.md
+new file mode 100644
+index 0000000..cd8b1bc
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/06_RELEASE_AND_ROLLBACK_GATE.md
+@@ -0,0 +1,52 @@
++# CIP final remediation — release and rollback gate
++
++Date: 2026-10-27  
++Base HEAD: `6f978b0595b2c71c064991ae10b832514637a0da`  
++Current decision: **PASS FOR LOCAL REVIEW / NOT READY FOR DEPLOYMENT**
++
++## Gate status
++
++| Gate | Status | Evidence / remaining action |
++|---|---|---|
++| 1. Deterministic tests: zero failures/errors | PASS | Clean detached worktree: 350 passed, 0 failed/errors/skipped. |
++| 2. Business output parity | PARTIAL | Synthetic exact hashes/counts pass. MySQL collation/FK and approved representative wave parity remain. |
++| 3. Regression coverage | PASS locally | Python grouping remains absent; labels, reconciliation, shrink, empty, rollback, Qualtrics snapshot, discovery and MCP reuse covered. |
++| 4. No real notifications/remote writes | PASS for executed paths | Pre-import environment isolation, socket block, fake transports; no staging connection. |
++| 5. Optimization evidence | PARTIAL | Qualtrics local gain proven. Publisher one-query removal proven; no wall/RSS gain and no MySQL gain claimed. |
++| 6. Approval-only work separated | PASS | See `04_OPEN_DB_APPROVAL_ITEMS.md`; nothing shared was changed. |
++
++## Required approvers before any deployment
++
++1. CIP code owner: source diff, output contracts and external `value_label` consumers.
++2. DBA: deployed collations/indexes/FKs/triggers, bounded plans and isolated MySQL validation.
++3. ETL/scheduler owner: named-lock coverage, schedule overlap and `CIP_PUBLISH_JOBS` capacity.
++4. Release owner: approved staging revision, canary scope, rollback authority and observation window.
++
++## First approved rollout plan
++
++1. Apply the review patch to a review branch; do not include unrelated untracked artifacts.
++2. Run the 350-test suite and web checks in CI with notifications/credentials absent.
++3. Run the MySQL gates in `04_OPEN_DB_APPROVAL_ITEMS.md` on a disposable MySQL 8 instance.
++4. On one approved modest staging wave, publish to a separate output root at jobs 1, 2 and 4; never swap `current` during benchmarking.
++5. Require exact book/cut/people/question hashes or documented volatile-field normalization.
++6. Canary one authorized ETL run with query/connection/RSS/error telemetry and zero notification testing.
++7. Deploy only if counts, denominators, labels, bitsets and visible API outputs match and p95/error/resource gates do not regress.
++
++## Fail criteria
++
++- Any test failure/error or unexpected skip.
++- Any MySQL collation grouping difference.
++- Any stale respondent/answer/profile/cohort/tracker/serving row after reload.
++- Any output hash/count/base/label difference not explicitly approved.
++- Unbounded worker/connection behavior, material p95/RSS regression or new lock overlap.
++- Any real notification from a validation environment.
++
++## Rollback
++
++- Application: deploy the previous approved revision based on `6f978b0`; this patch has no schema migration.
++- Configuration: remove `CIP_PUBLISH_JOBS` to return to default 4, or restore the prior approved value.
++- Published artifacts: use the existing atomic publisher rollback to repoint `current` to the prior verified version.
++- Data: do not attempt manual shared-DB repair. Stop the writer, preserve logs, and use the pre-approved snapshot/restore procedure if an authorized rollout changed data.
++- Code-review rollback: reverse the focused hunks listed in `02_CODE_CHANGES_WITH_EVIDENCE.md`; the test fixture/isolation changes may remain independently.
++
++Deployment readiness becomes `READY FOR APPROVED DEPLOYMENT` only after Gates 2 and 5 pass on MySQL and all named approvers sign off.
+diff --git a/scripts/cip_final_benchmark.py b/scripts/cip_final_benchmark.py
+new file mode 100644
+index 0000000..5137e5e
+--- /dev/null
++++ b/scripts/cip_final_benchmark.py
+@@ -0,0 +1,257 @@
++"""Offline synthetic before/after benchmark for CIP remediation."""
++from __future__ import annotations
++
++import argparse
++import gzip
++import hashlib
++import json
++import logging
++import os
++import resource
++import socket
++import statistics
++import sys
++import tempfile
++import time
++from datetime import date, timedelta
++from pathlib import Path
++
++
++def _blocked(*_args, **_kwargs):
++    raise RuntimeError("network disabled for CIP benchmark")
++
++
++socket.socket.connect = _blocked
++socket.socket.connect_ex = _blocked
++socket.socket.sendto = _blocked
++if hasattr(socket.socket, "sendmsg"):
++    socket.socket.sendmsg = _blocked
++socket.create_connection = _blocked
++os.environ["APP_ENV"] = "LOCAL"
++os.environ["LOCAL_SQLITE_PATH"] = str(Path(tempfile.gettempdir()) / "cip-benchmark-unused.db")
++for _name in (
++    "ANTHROPIC_API_KEY", "APP_DB_PASSWORD", "APP_DB_USER", "CIP_NGINX_URL",
++    "CIP_OIDC_CLIENT_ID", "CIP_OIDC_CLIENT_SECRET", "CIP_OIDC_ISSUER",
++    "CIP_PUBLISH_BACKUP_URL", "EMAIL_PASSWORD", "FORSTA_API_KEY", "IDP_BASE_URL",
++    "IDP_TOKEN_URL", "IDP_USERINFO_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET",
++    "STG_DB_HOST", "STG_DB_NAME", "STG_DB_PASSWORD", "STG_DB_USER", "TEAMS_WEBHOOK_URL",
++):
++    os.environ[_name] = ""
++
++
++def percentile(samples: list[float], percentile_value: float) -> float:
++    ordered = sorted(samples)
++    return ordered[min(len(ordered) - 1, int((len(ordered) - 1) * percentile_value))]
++
++
++def peak_rss_bytes() -> int:
++    value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
++    return int(value if sys.platform == "darwin" else value * 1024)
++
++
++def engine_at(path: Path):
++    import sqlalchemy as sa
++    from app.core import database, schema_upgrade
++
++    engine = sa.create_engine(f"sqlite:///{path}", future=True)
++
++    @sa.event.listens_for(engine, "connect")
++    def foreign_keys(connection, _record):
++        connection.execute("PRAGMA foreign_keys=ON")
++
++    schema_upgrade.install(engine)
++    database._install_sqlite_translation(engine)
++    database._engines["app"] = engine
++    database._engines["etl"] = engine
++    return engine
++
++
++def digest_rows(engine) -> str:
++    from sqlalchemy import text
++
++    digest = hashlib.sha256()
++    with engine.connect() as conn:
++        for sql in (
++            "SELECT survey_id, record_no, forsta_uuid, status_code, status_label, is_qualified "
++            "FROM cip_respondent ORDER BY survey_id, record_no",
++            "SELECT a.survey_id, r.record_no, f.field_name, a.value_code, a.value_label, a.value_number, a.value_text "
++            "FROM cip_answer a JOIN cip_respondent r ON r.respondent_id=a.respondent_id "
++            "JOIN cip_field f ON f.field_id=a.field_id ORDER BY a.survey_id, r.record_no, f.field_name",
++        ):
++            for row in conn.execute(text(sql)):
++                digest.update(json.dumps(list(row), default=str, ensure_ascii=False).encode())
++    return digest.hexdigest()
++
++
++def qualtrics(size: int, samples: int) -> dict:
++    import openpyxl
++    import sqlalchemy as sa
++    from etl import qualtrics_export
++    from tests.test_phase3 import qualtrics_file
++
++    timings, queries, transactions, hashes, errors = [], [], [], [], 0
++    with tempfile.TemporaryDirectory(prefix="cip-final-qualtrics-") as raw:
++        temp = Path(raw)
++        export = qualtrics_file(temp)
++        workbook = openpyxl.load_workbook(export)
++        sheet = workbook.active
++        templates = [list(row) for row in sheet.iter_rows(min_row=3, values_only=True)]
++        sheet.delete_rows(3, sheet.max_row - 2)
++        for index in range(size):
++            row = list(templates[index % len(templates)])
++            row[4] = f"R_synthetic_{index}"
++            row[1] = f"2025-05-12 {8 + index % 12:02d}:{index % 60:02d}:00"
++            sheet.append(row)
++        workbook.save(export)
++
++        for sample in range(samples):
++            engine = engine_at(temp / f"qualtrics-{sample}.db")
++            counters = {"queries": 0, "transactions": 0}
++            sa.event.listen(engine, "before_cursor_execute",
++                            lambda *_args, c=counters: c.__setitem__("queries", c["queries"] + 1))
++            sa.event.listen(engine, "begin",
++                            lambda *_args, c=counters: c.__setitem__("transactions", c["transactions"] + 1))
++            started = time.perf_counter()
++            try:
++                qualtrics_export.ingest_export(export, "2025-05-12")
++                hashes.append(digest_rows(engine))
++            except Exception:
++                errors += 1
++                hashes.append("")
++            timings.append(time.perf_counter() - started)
++            queries.append(counters["queries"])
++            transactions.append(counters["transactions"])
++            engine.dispose()
++    return {
++        "mode": "qualtrics",
++        "respondents": size,
++        "samples": samples,
++        "elapsed_samples_s": [round(value, 6) for value in timings],
++        "median_s": round(statistics.median(timings), 6),
++        "p95_s": round(percentile(timings, 0.95), 6),
++        "min_s": round(min(timings), 6),
++        "max_s": round(max(timings), 6),
++        "query_counts": queries,
++        "transaction_counts": transactions,
++        "output_sha256": sorted(set(hashes)),
++        "peak_rss_bytes": peak_rss_bytes(),
++        "errors": errors,
++    }
++
++
++def published_digest(root: Path) -> tuple[str, int]:
++    digest, size = hashlib.sha256(), 0
++    for path in sorted(root.rglob("*.json.gz")):
++        body = gzip.decompress(path.read_bytes())
++        digest.update(str(path.relative_to(root)).encode())
++        digest.update(body)
++        size += len(body)
++    return digest.hexdigest(), size
++
++
++def publisher(waves: int, jobs: int, samples: int) -> dict:
++    import sqlalchemy as sa
++    from sqlalchemy import text
++    from etl import publish, serving
++    from tests.test_serving import seed
++
++    with tempfile.TemporaryDirectory(prefix="cip-final-publish-") as raw:
++        temp = Path(raw)
++        engine = engine_at(temp / "publish.db")
++        start_day = date(2026, 1, 5)
++        with engine.begin() as conn:
++            for index in range(waves):
++                sid = 1000 + index
++                seed(conn, sid, start_day + timedelta(days=7 * index), qualified=404,
++                     xm1_yes=125 + index % 20, xm1_base=404)
++        for index in range(waves):
++            sid = 1000 + index
++            serving.build_wave(sid)
++            with engine.begin() as conn:
++                options = dict(conn.execute(text(
++                    "SELECT option_label, option_id FROM srv_result "
++                    "WHERE survey_id=:s AND qcode='XM1' AND dim='total'"
++                ), {"s": sid}).all())
++                respondents = [row[0] for row in conn.execute(text(
++                    "SELECT respondent_id FROM cip_respondent WHERE survey_id=:s ORDER BY record_no"
++                ), {"s": sid})]
++                conn.execute(text(
++                    "INSERT INTO srv_answer "
++                    "(survey_id,qcode,item_id,option_id,respondent_id,gender,age_band,generation,income_band,census_region,urbanicity) "
++                    "VALUES (:s,'XM1',0,:o,:r,:g,:a,:gen,:i,:c,:u)"
++                ), [{
++                    "s": sid,
++                    "o": options["Yes" if n < 125 + index % 20 else "No"],
++                    "r": respondent_id,
++                    "g": "Female" if n % 2 else "Male",
++                    "a": "18-29" if n % 3 else "30-44",
++                    "gen": "GenZ" if n % 3 else "Millennial",
++                    "i": "Under $25,000" if n % 2 else "$25,000-$49,999",
++                    "c": "South" if n % 2 else "Northeast",
++                    "u": "Urban" if n % 2 else "Rural",
++                } for n, respondent_id in enumerate(respondents)])
++
++        timings, query_counts, discovery_counts, hashes, sizes, errors = [], [], [], [], [], 0
++        for sample in range(samples):
++            counters = {"queries": 0, "discovery": 0}
++
++            def count_sql(_conn, _cursor, statement, _parameters, _context, _many):
++                normalized = " ".join(statement.lower().split())
++                counters["queries"] += 1
++                if "select distinct w.survey_family" in normalized and "join srv_wave" in normalized:
++                    counters["discovery"] += 1
++
++            sa.event.listen(engine, "before_cursor_execute", count_sql)
++            root = temp / f"out-{sample}"
++            started = time.perf_counter()
++            try:
++                built = publish.build(root, jobs=jobs)
++                digest, size = published_digest(built)
++                hashes.append(digest)
++                sizes.append(size)
++            except Exception:
++                errors += 1
++                hashes.append("")
++                sizes.append(0)
++            timings.append(time.perf_counter() - started)
++            query_counts.append(counters["queries"])
++            discovery_counts.append(counters["discovery"])
++            sa.event.remove(engine, "before_cursor_execute", count_sql)
++        engine.dispose()
++    return {
++        "mode": "publisher",
++        "waves": waves,
++        "respondents_per_wave": 404,
++        "jobs": jobs,
++        "samples": samples,
++        "elapsed_samples_s": [round(value, 6) for value in timings],
++        "median_s": round(statistics.median(timings), 6),
++        "p95_s": round(percentile(timings, 0.95), 6),
++        "min_s": round(min(timings), 6),
++        "max_s": round(max(timings), 6),
++        "query_counts": query_counts,
++        "discovery_query_counts": discovery_counts,
++        "output_sha256": sorted(set(hashes)),
++        "result_bytes": sorted(set(sizes)),
++        "peak_rss_bytes": peak_rss_bytes(),
++        "errors": errors,
++    }
++
++
++def main() -> None:
++    logging.basicConfig(level=logging.WARNING, force=True)
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--source-root", type=Path, required=True)
++    parser.add_argument("--label", required=True)
++    parser.add_argument("--mode", choices=("qualtrics", "publisher"), required=True)
++    parser.add_argument("--size", type=int, required=True)
++    parser.add_argument("--jobs", type=int, default=1)
++    parser.add_argument("--samples", type=int, default=5)
++    args = parser.parse_args()
++    sys.path.insert(0, str(args.source_root.resolve()))
++    result = qualtrics(args.size, args.samples) if args.mode == "qualtrics" else publisher(args.size, args.jobs, args.samples)
++    print(json.dumps({"label": args.label, **result}, sort_keys=True))
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tests/analysis_fixture.py b/tests/analysis_fixture.py
+new file mode 100644
+index 0000000..6c3d03f
+--- /dev/null
++++ b/tests/analysis_fixture.py
+@@ -0,0 +1,248 @@
++"""Deterministic, synthetic survey data for repository analysis tests."""
++from __future__ import annotations
++
++from sqlalchemy import text
++
++
++def seed_analysis_data(engine) -> None:
++    """Seed two synthetic waves with the published counts asserted by tests."""
++    with engine.begin() as conn:
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_survey
++                    (survey_id, forsta_host, forsta_path, title, survey_family,
++                     wave_label, platform, source_ref, load_status)
++                VALUES
++                    (1, 'synthetic.invalid', 'synthetic/wave-1', 'Synthetic Wave 1',
++                     'CSI-US', '2026-09-21', 'forsta', 'synthetic/wave-1', 'verified'),
++                    (2, 'synthetic.invalid', 'synthetic/wave-2', 'Synthetic Wave 2',
++                     'CSI-US', '2026-09-28', 'forsta', 'synthetic/wave-2', 'verified')
++                """
++            )
++        )
++
++        questions = [
++            (101, 1, "BN1", "BNPL usage", "single", 0, 1),
++            (102, 1, "DP1", "Department-store buyer", "single", 0, 2),
++            (103, 1, "GP1", "GLP-1 usage", "single", 0, 3),
++            (104, 1, "q4", "Retailer shopped", "multi", 1, 4),
++            (105, 1, "DP2", "Routed department-store question", "multi", 1, 5),
++            (201, 2, "BT8", "Beauty products", "multi", 1, 1),
++            (202, 2, "HX1", "Holiday behavior", "single", 0, 2),
++            (203, 2, "BT14", "Retailer ratings", "grid_single", 0, 3),
++        ]
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_question
++                    (question_id, survey_id, qcode, qtext, qtype, is_multi, sort_order)
++                VALUES
++                    (:question_id, :survey_id, :qcode, :qtext, :qtype, :is_multi, :sort_order)
++                """
++            ),
++            [
++                {
++                    "question_id": qid,
++                    "survey_id": sid,
++                    "qcode": qcode,
++                    "qtext": qtext,
++                    "qtype": qtype,
++                    "is_multi": is_multi,
++                    "sort_order": order,
++                }
++                for qid, sid, qcode, qtext, qtype, is_multi, order in questions
++            ],
++        )
++
++        items = [
++            (1041, 104, "q4r1", "Walmart", 1),
++            (1042, 104, "q4r2", "Target", 2),
++            (1051, 105, "DP2r1", "Macy's", 1),
++            (2011, 201, "BT8r1", "Mascara", 1),
++            (2012, 201, "BT8r2", "Other beauty product", 2),
++            (2031, 203, "BT14r1", "Retailer A", 1),
++            (2032, 203, "BT14r2", "Retailer B", 2),
++        ]
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_item
++                    (item_id, question_id, item_code, item_label, sort_order)
++                VALUES (:item_id, :question_id, :item_code, :item_label, :sort_order)
++                """
++            ),
++            [
++                {
++                    "item_id": item_id,
++                    "question_id": qid,
++                    "item_code": code,
++                    "item_label": label,
++                    "sort_order": order,
++                }
++                for item_id, qid, code, label, order in items
++            ],
++        )
++
++        option_labels = {
++            101: ["Yes", "No", "Maybe", "Never"],
++            102: ["Yes", "No"],
++            103: ["Yes", "No"],
++            202: [f"Holiday option {code}" for code in range(1, 8)],
++            203: ["Poor", "Average", "Excellent"],
++        }
++        options = []
++        option_id = 1
++        for question_id, labels in option_labels.items():
++            for value_code, label in enumerate(labels, 1):
++                options.append(
++                    {
++                        "option_id": option_id,
++                        "question_id": question_id,
++                        "value_code": value_code,
++                        "value_label": label,
++                        "sort_order": value_code,
++                    }
++                )
++                option_id += 1
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_option
++                    (option_id, question_id, value_code, value_label, sort_order)
++                VALUES (:option_id, :question_id, :value_code, :value_label, :sort_order)
++                """
++            ),
++            options,
++        )
++
++        fields = [
++            (1011, 1, 101, None, "BN1"),
++            (1021, 1, 102, None, "DP1"),
++            (1031, 1, 103, None, "GP1"),
++            (1041, 1, 104, 1041, "q4r1"),
++            (1042, 1, 104, 1042, "q4r2"),
++            (1051, 1, 105, 1051, "DP2r1"),
++            (2011, 2, 201, 2011, "BT8r1"),
++            (2012, 2, 201, 2012, "BT8r2"),
++            (2021, 2, 202, None, "HX1"),
++            (2031, 2, 203, 2031, "BT14r1"),
++            (2032, 2, 203, 2032, "BT14r2"),
++        ]
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_field
++                    (field_id, survey_id, question_id, item_id, field_name, value_type)
++                VALUES (:field_id, :survey_id, :question_id, :item_id, :field_name, 'code')
++                """
++            ),
++            [
++                {
++                    "field_id": fid,
++                    "survey_id": sid,
++                    "question_id": qid,
++                    "item_id": item_id,
++                    "field_name": name,
++                }
++                for fid, sid, qid, item_id, name in fields
++            ],
++        )
++
++        wave1 = [
++            {
++                "respondent_id": respondent_id,
++                "survey_id": 1,
++                "record_no": respondent_id,
++                "generation": (
++                    "GenZ" if respondent_id <= 54
++                    else "Millennial" if respondent_id <= 213
++                    else "GenX"
++                ),
++            }
++            for respondent_id in range(1, 405)
++        ]
++        wave2 = [
++            {
++                "respondent_id": 1000 + record_no,
++                "survey_id": 2,
++                "record_no": record_no,
++                "generation": "GenX",
++            }
++            for record_no in range(1, 404)
++        ]
++        respondents = wave1 + wave2
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_respondent
++                    (respondent_id, survey_id, record_no, status_code, status_label, is_qualified)
++                VALUES (:respondent_id, :survey_id, :record_no, 3, 'Qualified', 1)
++                """
++            ),
++            respondents,
++        )
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_profile (respondent_id, survey_id, generation)
++                VALUES (:respondent_id, :survey_id, :generation)
++                """
++            ),
++            respondents,
++        )
++
++        answers = []
++
++        def answer(respondent_id: int, survey_id: int, field_id: int, code: int) -> None:
++            answers.append(
++                {
++                    "respondent_id": respondent_id,
++                    "survey_id": survey_id,
++                    "field_id": field_id,
++                    "value_code": code,
++                }
++            )
++
++        dp1_yes = (
++            set(range(1, 55))
++            | set(range(55, 143))
++            | set(range(214, 264))
++            | set(range(324, 354))
++        )
++        for respondent_id in range(1, 405):
++            answer(
++                respondent_id,
++                1,
++                1011,
++                1 if respondent_id <= 133 else 2 if respondent_id <= 381 else 3 if respondent_id <= 392 else 4,
++            )
++            answer(respondent_id, 1, 1021, 1 if respondent_id in dp1_yes else 2)
++            answer(respondent_id, 1, 1031, 1 if respondent_id <= 71 else 2)
++            answer(respondent_id, 1, 1041, 1 if respondent_id <= 241 else 0)
++            answer(respondent_id, 1, 1042, 1 if respondent_id % 2 == 0 else 0)
++            if respondent_id in dp1_yes:
++                answer(respondent_id, 1, 1051, 1 if 55 <= respondent_id <= 70 else 0)
++
++        for record_no in range(1, 404):
++            respondent_id = 1000 + record_no
++            answer(respondent_id, 2, 2021, ((record_no - 1) % 7) + 1)
++            if record_no <= 264:
++                answer(respondent_id, 2, 2012, 1 if record_no % 2 else 0)
++            if record_no <= 83:
++                answer(respondent_id, 2, 2011, 1 if record_no <= 40 else 0)
++            if record_no <= 120:
++                answer(respondent_id, 2, 2031, ((record_no - 1) % 3) + 1)
++            if record_no <= 80:
++                answer(respondent_id, 2, 2032, ((record_no - 1) % 3) + 1)
++
++        conn.execute(
++            text(
++                """
++                INSERT INTO cip_answer
++                    (respondent_id, survey_id, field_id, value_code, value_label)
++                VALUES (:respondent_id, :survey_id, :field_id, :value_code, NULL)
++                """
++            ),
++            answers,
++        )
+diff --git a/tests/test_test_isolation.py b/tests/test_test_isolation.py
+new file mode 100644
+index 0000000..455aee1
+--- /dev/null
++++ b/tests/test_test_isolation.py
+@@ -0,0 +1,44 @@
++"""Fail-closed checks for the local test process."""
++from __future__ import annotations
++
++import os
++import socket
++
++import pytest
++
++from app.core.config import config
++
++
++def test_tests_use_only_local_sqlite_and_blank_live_integrations():
++    assert config.database("app").sqlite_path
++    assert config.database("etl").sqlite_path
++    assert config.database("app").host == config.database("etl").host == ""
++    for name in (
++        "ANTHROPIC_API_KEY",
++        "APP_DB_PASSWORD",
++        "APP_DB_USER",
++        "CIP_NGINX_URL",
++        "CIP_OIDC_CLIENT_ID",
++        "CIP_OIDC_CLIENT_SECRET",
++        "CIP_OIDC_ISSUER",
++        "CIP_PUBLISH_BACKUP_URL",
++        "EMAIL_PASSWORD",
++        "FORSTA_API_KEY",
++        "STG_DB_HOST",
++        "STG_DB_NAME",
++        "STG_DB_PASSWORD",
++        "STG_DB_USER",
++        "TEAMS_WEBHOOK_URL",
++    ):
++        assert os.environ[name] == ""
++
++
++def test_tests_cannot_open_a_network_socket():
++    with socket.socket() as candidate, pytest.raises(AssertionError, match="real network connection"):
++        candidate.connect(("example.invalid", 443))
++    with socket.socket() as candidate, pytest.raises(AssertionError, match="real network connection"):
++        candidate.connect_ex(("example.invalid", 443))
++    with socket.socket(type=socket.SOCK_DGRAM) as candidate, pytest.raises(AssertionError, match="real network connection"):
++        candidate.sendto(b"blocked", ("example.invalid", 53))
++    with pytest.raises(AssertionError, match="real network connection"):
++        socket.create_connection(("example.invalid", 443))
+diff --git a/docs/performance/cip_final_remediation/00_EXECUTIVE_VERDICT.md b/docs/performance/cip_final_remediation/00_EXECUTIVE_VERDICT.md
+new file mode 100644
+index 0000000..2d874cc
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/00_EXECUTIVE_VERDICT.md
+@@ -0,0 +1,50 @@
++# CIP final remediation — executive verdict
++
++Date: 2026-10-27  
++Repository: `consumer-insight-portal`  
++Branch/base: `master` / `6f978b0595b2c71c064991ae10b832514637a0da`  
++State: uncommitted local patch; base HEAD is not a fix commit
++
++## Decision
++
++**PASS FOR LOCAL REVIEW. NOT READY FOR DEPLOYMENT.**
++
++The clean patched worktree passes all 350 deterministic tests with no failures, errors, skips or xfails. The original 13 analysis failures are repaired with real-schema synthetic fixtures. Qualtrics snapshot ingestion has a measured SQLite improvement and exact output hashes. Publisher artifacts remain byte-identical in the synthetic comparison, and the redundant `srv_result`/`srv_wave` discovery query is removed.
++
++Deployment remains blocked because no disposable MySQL 8 runtime was available, no approved staging test was run, actual MySQL collation/FK/query-plan behavior was not verified, and the shared-server four-worker capacity decision remains open.
++
++## Implemented fixes (13)
++
++1. Replaced the 13-test ignored-database gate with deterministic two-wave real-schema data.
++2. Replaced the remaining trend tests' ignored-database copy with synthetic fixtures.
++3. Enforced pre-import local SQLite, blank live integration settings, socket blocking and mocked notifications.
++4. Preserved MySQL SQL aggregation; no Python grouping replacement exists.
++5. Removed the redundant pre-shrink full `cip_answer` delete while preserving one transactional replacement.
++6. Preserved multi-select item labels when 0/1 option metadata would otherwise display `Yes`/`No`.
++7. Made Forsta reconciliation compare label-only coded answers.
++8. Made empty existing-wave Forsta reloads valid and verified derived-row cleanup after shrink.
++9. Replaced Qualtrics per-respondent transactions with one transactional snapshot/bulk answer load, including stale-row removal and rollback.
++10. Added bounded, documented publisher and serving worker validation; publisher default remains four.
++11. Separated publisher cut and respondent materialization, releasing cuts before respondent extraction; telemetry now distinguishes expected reads and phase/wall time.
++12. Removed the publisher's redundant `SELECT DISTINCT ... srv_result JOIN srv_wave` discovery query by using versioned cut-file inventories.
++13. Reused published cuts for MCP crosstabs, retaining the live SQL fallback for missing/incomplete artifacts.
++
++## Material bottlenecks still not fixed (5)
++
++1. `srv_answer` publishing still performs one MySQL `GROUP BY` read and one respondent extraction read per fresh wave. Historic caller attribution remains unknown.
++2. `cip_agg_cell` serving joins have no approved MySQL `EXPLAIN FORMAT=JSON`; no SQL/index change was safe to make.
++3. The historic `v_cip_answer_long` count has no confirmed current application caller; no speculative summary/index was added.
++4. Forsta `LOAD DATA LOCAL INFILE`, live MySQL import throughput and exact runtime memory remain unvalidated outside SQLite.
++5. Shared scheduler overlap and the default publisher capacity of four require owner/DBA review; repository locks are improved but shared runtime configuration was not changed.
++
++## Evidence map
++
++- [Full test closure](01_FULL_TEST_CLOSURE.md)
++- [Code changes and rollback](02_CODE_CHANGES_WITH_EVIDENCE.md)
++- [Before/after benchmarks](03_BENCHMARK_BEFORE_AFTER.md)
++- [Approval requests](04_OPEN_DB_APPROVAL_ITEMS.md)
++- [Safety attestation](05_SAFETY_AND_NO_MESSAGE_ATTESTATION.md)
++- [Release gate](06_RELEASE_AND_ROLLBACK_GATE.md)
++- [Review patch](CIP_FINAL_REVIEW_PATCH.diff)
++
++GO for local code review. NO-GO for deployment until every gate in `06_RELEASE_AND_ROLLBACK_GATE.md` passes.
+diff --git a/docs/performance/cip_final_remediation/01_FULL_TEST_CLOSURE.md b/docs/performance/cip_final_remediation/01_FULL_TEST_CLOSURE.md
+new file mode 100644
+index 0000000..992b909
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/01_FULL_TEST_CLOSURE.md
+@@ -0,0 +1,106 @@
++# CIP final remediation — full test closure
++
++Date: 2026-10-27  
++Repository: `consumer-insight-portal`  
++Base HEAD: `6f978b0595b2c71c064991ae10b832514637a0da`  
++State: uncommitted local patch  
++Cross-links: [verdict](00_EXECUTIVE_VERDICT.md), [benchmarks](03_BENCHMARK_BEFORE_AFTER.md), [safety](05_SAFETY_AND_NO_MESSAGE_ATTESTATION.md)
++
++## Original non-passing state
++
++Prior captured full run: `327 passed, 4 failed, 9 errors in 19.63s`.
++
++All 13 cases reached `sqlite3.OperationalError: no such table: cip_question`. `tests/test_analysis.py` used the existence of ignored `data/csi_local.db` as a run marker while `tests/conftest.py` correctly redirected application engines to a new empty safe database.
++
++The affected IDs were:
++
++- `test_single_punch_answers_keep_distinct_codes`
++- `test_gate_question_cohorts_match_published_bases[BN1-133]`
++- `test_gate_question_cohorts_match_published_bases[DP1-222]`
++- `test_gate_question_cohorts_match_published_bases[GP1-71]`
++- `test_demographic_cohorts_match_the_crosstab_summary`
++- `test_criteria_intersect_rather_than_union`
++- `test_unfiltered_analysis_matches_the_published_crosstab`
++- `test_routed_question_keeps_its_own_base_after_filtering`
++- `test_break_by_splits_without_losing_the_total`
++- `test_excel_export_is_a_readable_workbook_with_provenance`
++- `test_multi_select_base_is_everyone_answering_the_question`
++- `test_every_single_punch_answer_resolves_to_a_code`
++- `test_grid_rows_are_separate_distributions`
++
++## Fixture repair
++
++`tests/analysis_fixture.py` installs the checked-in schema with SQLite foreign keys enabled before transactions and seeds:
++
++- 2 waves; 404 and 403 qualified synthetic respondents.
++- 8 reportable questions covering single, multi and grid.
++- 807 profiles and 3,192 answers.
++- Exact asserted counts: BN1 133/248/four answers, DP1 222, GP1 71, GenZ 54, Millennials 159, Walmart 241/404, BT8 Mascara 40/264, HX1 seven groups totaling 403, and two routed BT14 rows.
++- `cip_agg_cell` intentionally empty so the raw-answer analysis SQL is exercised.
++
++`tests/test_trends_multiwave.py` now creates two synthetic waves in `csi_db`; it no longer copies or checks `data/csi_local.db`.
++
++No expectation was weakened. The wave-2 skip was replaced by an assertion that required questions exist.
++
++## Actual results
++
++Focused closure:
++
++```text
++.venv/bin/python -m pytest tests/test_analysis.py -q -ra
++13 passed in 1.19s
++```
++
++Clean detached worktree, no `data/csi_local.db`:
++
++```text
++/Users/.../.venv/bin/python -m pytest -q -ra
++350 passed in 17.78s
++```
++
++Same clean worktree with a zero-byte dummy `data/csi_local.db` marker:
++
++```text
++pytest tests/test_analysis.py tests/test_trends_multiwave.py -q -ra
++15 passed in 0.66s
++marker remained 0 bytes
++```
++
++Focused remediation suite, repeated in the detached patched worktree:
++
++```text
++pytest tests/test_analysis.py tests/test_trends_multiwave.py tests/test_forsta_etl.py \
++  tests/test_phase3.py tests/test_publish.py tests/test_api_speed.py \
++  tests/test_serving.py tests/test_test_isolation.py -q -ra
++run 1: 125 passed in 8.21s
++run 2: 125 passed in 8.13s
++run 3: 125 passed in 7.94s
++```
++
++Additional checks:
++
++```text
++python -m compileall -q api app etl tests
++git diff --check
++web: npm run check        -> stats checks passed
++web: npm run build        -> TypeScript/Vite build passed
++```
++
++Final totals: **350 passed, 0 failed, 0 errors, 0 skipped, 0 xfailed**. The web check and build also passed.
++
++## Scenario coverage
++
++- Fresh, same-wave, shrinking and empty Forsta loads.
++- Label metadata case/accent/trailing-space preservation, unknown codes, explicit multi 0/1 options and label-only reconciliation.
++- FK child cleanup, `PRAGMA foreign_key_check`, idempotent rerun and injected rollback.
++- Full-pipeline rebuild of `cip_tracker_line` and `srv_answer` after respondent removal.
++- Fresh/repeated/shrinking/empty Qualtrics snapshot and injected answer failure rollback.
++- Publisher 1/2/4 workers, environment/CLI precedence, artifact bytes, question removal, rule invalidation, failed gate and rollback.
++- HTTP and MCP published-crosstab reuse with live fallback.
++- SMTP/Teams fakes and TCP/UDP fail-closed tests.
++
++## Unavailable checks
++
++- MySQL 8: no Docker MySQL image; local `mysqld` is a broken MySQL 9.4 installation with a missing dynamic library. Nothing was downloaded or repaired.
++- `pip-audit`: not run because dependency advisory refresh can require external network access.
++- Container image/boot check: not run because it starts a service and the required local image/toolchain was not established offline.
+diff --git a/docs/performance/cip_final_remediation/02_CODE_CHANGES_WITH_EVIDENCE.md b/docs/performance/cip_final_remediation/02_CODE_CHANGES_WITH_EVIDENCE.md
+new file mode 100644
+index 0000000..b8a83cf
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/02_CODE_CHANGES_WITH_EVIDENCE.md
+@@ -0,0 +1,80 @@
++# CIP final remediation — code changes with evidence
++
++Date: 2026-10-27  
++Repository: `consumer-insight-portal`  
++Base HEAD: `6f978b0595b2c71c064991ae10b832514637a0da`  
++State: local uncommitted patch
++
++## Change matrix
++
++| Decision | Area | Before | After | Evidence / rollback |
++|---|---|---|---|---|
++| FIXED LOCALLY | Analysis fixtures | Test execution depended on an unrelated ignored DB marker; application engines used an empty DB. | Real schema plus deterministic two-wave synthetic seed. | 13/13 pass; clean/no-marker and dummy-marker runs. Revert `tests/analysis_fixture.py` and `tests/test_analysis.py`. |
++| FIXED LOCALLY | Trend fixtures | Copied ignored `data/csi_local.db`. | Two synthetic waves in `csi_db`. | 2/2 pass without marker. Revert `tests/test_trends_multiwave.py`. |
++| FIXED LOCALLY | Test isolation | Live `.env` values could be imported before fixtures; socket/message protection was incomplete. | Local SQLite and blank integrations before imports; TCP/UDP blocked; SMTP/Teams mocked. | `tests/test_test_isolation.py`; full suite green. Revert test-only files. |
++| FIXED LOCALLY | Forsta labels | Every coded row stored a label, then a wave-wide cleanup UPDATE cleared derived labels. The first optimization cleared multi labels too. | Single/grid metadata labels remain NULL; multi item label is retained only when option metadata could override it. Forsta skips the cleanup UPDATE. | View output, case/accent/spacing, unknown code and multi Yes/No regression tests. Revert `_answer` and `drop_labels=False`. |
++| FIXED LOCALLY | Reconciliation | Selected only code/number/text; label-only coded values were treated as equal. | Selects and compares `value_label`. | Changed synthetic label is detected. Revert tuple/query hunk in `reconcile_survey`. |
++| FIXED LOCALLY | Forsta shrink/empty | Shrink performed a redundant survey-wide answer delete before the normal replacement; empty `people` executemany failed. | One answer delete remains inside one transaction; empty respondent batches are skipped; child and derived rebuilds tested. | FK, rollback, idempotency, full shrink and empty reload tests. Revert `_write` hunks. |
++| FIXED LOCALLY | Qualtrics import | One transaction, respondent upsert, ID lookup and answer upsert per respondent; removed cells/respondents could persist. | `_replace_respondents` performs batched respondent upsert, one ID lookup, one answer replacement, ordered missing-child cleanup and one bulk answer load in one transaction. | Exact output hashes; shrink/empty/rollback tests; benchmark below. Revert `qualtrics_export.py` call and remove `_replace_respondents`. |
++| FIXED LOCALLY | Publisher workers | Fixed default argument; no environment control/range guard. | CLI argument > `CIP_PUBLISH_JOBS` > default 4; range 1–4. `.env.example` documents it. | Precedence/invalid-value tests. Revert `worker_count` and config line. |
++| FIXED LOCALLY | Serving workers | `build_all` accepted arbitrary thread counts. | 1–4 validator; default remains 1. | Unit coverage for bounds. Revert `serving_worker_count`. |
++| FIXED LOCALLY | Publisher memory/telemetry | Grouped cuts and respondent bitsets coexisted; `query_count=2` looked measured; one whole-wave timer was attributed to a query fingerprint. | Writes/releases cuts before people; logs expected reads, configured/effective workers, group count, two read/build phases and wall time. | Canonical payload tests and log assertions. RSS reduction was not demonstrated; see benchmark. |
++| FIXED LOCALLY | Publisher discovery | `SELECT DISTINCT w.survey_family, w.study_type, r.qcode FROM srv_result r JOIN srv_wave w ...`. | Enumerates complete, versioned `waves/<sid>/cuts/*.json.gz`; `cut_inventory` rule forces a safe first rebuild. | SQL spy: 1 discovery query to 0; exact artifact hashes; stale-question and invalidation tests. Revert inventory block/rule. |
++| FIXED LOCALLY | MCP crosstab | MCP always called live `payloads.crosstab`, even when the same cuts were published. | HTTP and MCP share `_crosstab_payload` and serving-version cache; absent/incomplete files retain live fallback. | ASGI test fails on any DB access and still returns MCP result; fallback test passes. Revert `api/main.py`, `api/mcp.py`. |
++| FIXED LOCALLY | Qualtrics writer overlap | CLI lacked the repository MySQL named lock. | CLI wraps ingest in `etl_lock`; direct function remains composable for tests. | Static caller trace and existing lock tests. Revert `main` hunk. |
++
++## SQL and data contracts
++
++### MySQL grouping is unchanged
++
++`app/data/payloads.py::question_cuts` still executes:
++
++```sql
++SELECT survey_id, qcode, item_id, option_id, <six cuts>, COUNT(*)
++FROM srv_answer
++WHERE survey_id IN (...)
++GROUP BY survey_id, qcode, item_id, option_id, <six cuts>
++```
++
++There is no Python tuple/dictionary grouping replacement. This preserves `utf8mb4_0900_ai_ci` behavior. SQLite tests prove payload structure and arithmetic, not MySQL collation equivalence.
++
++### Forsta answer replacement
++
++Before shrink path:
++
++```sql
++DELETE FROM cip_answer WHERE survey_id = :s; -- early
++DELETE FROM child tables for removed respondents;
++DELETE FROM cip_answer WHERE survey_id = :s; -- normal replacement
++```
++
++After:
++
++```sql
++DELETE FROM child tables for removed respondents;
++DELETE FROM cip_answer WHERE survey_id = :s; -- exactly once
++bulk insert replacement answers;
++```
++
++All statements remain inside one `engine.begin()` transaction. Checked-in FKs cascade `cip_answer`, `cip_profile`, `cip_weight` and `cip_respondent_cohort`; `cip_tracker_line` and `srv_answer` are rebuilt by the full load and explicitly tested.
++
++### Qualtrics snapshot
++
++Before: `O(respondents)` transactions and ID lookups, answer upserts, no full stale-row cleanup.
++
++After: one transaction containing one respondent executemany, one respondent map SELECT, one survey answer DELETE, missing respondent cleanup and one bulk answer insert. Downstream profile/base/cube behavior is unchanged.
++
++## Explicitly not changed
++
++- No index, schema migration, DDL or MySQL setting change.
++- No Python grouping for `srv_answer`.
++- No change to publisher default four workers.
++- No `cip_agg_cell` SQL rewrite without a MySQL plan.
++- No `v_cip_answer_long` summary/index without a confirmed caller.
++- No deployment, scheduler, cloud or shared DB change.
++
++## Review files
++
++- Source/test patch: [CIP_FINAL_REVIEW_PATCH.diff](CIP_FINAL_REVIEW_PATCH.diff)
++- Measurements: [03_BENCHMARK_BEFORE_AFTER.md](03_BENCHMARK_BEFORE_AFTER.md)
++- Release/rollback: [06_RELEASE_AND_ROLLBACK_GATE.md](06_RELEASE_AND_ROLLBACK_GATE.md)
+diff --git a/docs/performance/cip_final_remediation/03_BENCHMARK_BEFORE_AFTER.md b/docs/performance/cip_final_remediation/03_BENCHMARK_BEFORE_AFTER.md
+new file mode 100644
+index 0000000..4c822c7
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/03_BENCHMARK_BEFORE_AFTER.md
+@@ -0,0 +1,69 @@
++# CIP final remediation — before/after benchmarks
++
++Date: 2026-10-27  
++Repository: `consumer-insight-portal`  
++Base: clean detached `6f978b0595b2c71c064991ae10b832514637a0da`  
++Patched: identical detached base plus the review patch  
++State: uncommitted local patch  
++Runner: `scripts/cip_final_benchmark.py`  
++Cross-links: [verdict](00_EXECUTIVE_VERDICT.md), [changes](02_CODE_CHANGES_WITH_EVIDENCE.md), [approvals](04_OPEN_DB_APPROVAL_ITEMS.md)
++
++## Controls and limitations
++
++- Apple host, Python 3.13, same virtual environment and filesystem.
++- Separate processes for base and patched runs; five samples per case.
++- Temporary SQLite databases with checked-in schema and foreign keys enabled.
++- Synthetic data only; sockets blocked and live integration variables blank.
++- Output hashes exclude volatile manifests but include every decompressed published JSON path/body.
++- `p95` is the fourth ordered observation of five, as implemented by the checked-in runner; raw samples are below.
++- SQLite does not reproduce MySQL collation, execution plans, rows examined, TempTable behavior, `LOAD DATA`, network latency, CPU/IOPS or shared-server contention.
++
++## Qualtrics snapshot import
++
++| Respondents | Variant | elapsed samples, seconds | median | p95 | SQL statements/sample | transactions/sample | peak RSS | output SHA-256 |
++|---:|---|---|---:|---:|---:|---:|---:|---|
++| 100 | Base | 0.093087, 0.080945, 0.083599, 0.082991, 0.083133 | 0.083133 | 0.083599 | 359 | 118 | 91,111,424 B | `94b9fc1b…b25220` |
++| 100 | Patched | 0.037454, 0.026560, 0.027353, 0.026539, 0.026617 | 0.026617 | 0.027353 | 63 | 19 | 91,373,568 B | `94b9fc1b…b25220` |
++| 500 | Base | 0.407930, 0.462774, 0.402584, 0.412692, 0.413002 | 0.412692 | 0.413002 | 1,559 | 518 | 96,075,776 B | `dcf3c323…b88f3` |
++| 500 | Patched | 0.096586, 0.084365, 0.084027, 0.084567, 0.085354 | 0.084567 | 0.085354 | 63 | 19 | 96,665,600 B | `dcf3c323…b88f3` |
++| 2,000 | Base | 1.782597, 1.781923, 1.782160, 1.755413, 1.735497 | 1.781923 | 1.782160 | 6,060 | 2,018 | 105,316,352 B | `11fb69a6…f1deb` |
++| 2,000 | Patched | 0.318133, 0.306260, 0.307043, 0.305703, 0.305406 | 0.306260 | 0.307043 | 66 | 19 | 112,377,856 B | `11fb69a6…f1deb` |
++
++Observed SQLite median reductions: 68.0%, 79.5% and 82.8%. Query and transaction counts become bounded instead of respondent-linear. Each size has identical base/patched output hashes and zero errors. Peak RSS did not improve at 2,000 respondents; it rose about 6.7 MiB, so no memory improvement is claimed.
++
++This is a demonstrated local application/round-trip improvement, not a MySQL/staging speedup.
++
++## Publisher
++
++Each wave has 404 synthetic respondents and one question. Every base/patched pair produced the same output hash and byte count:
++
++| Waves | Output SHA-256 | JSON bytes |
++|---:|---|---:|
++| 2 | `a4183f033240d7b2864816f00fb1a1410e495c1cf902e97a97e7b537a05248a6` | 9,030 |
++| 8 | `fdc994b873760427fa2d7da9618d7cb8d5a9c6d0d010e85f29565ec5c000fdaa` | 35,519 |
++| 24 | `18665e5056445ee3565512f98eb8e3b7fc7ad6de277bd317453a9373e5690e3b` | 106,331 |
++
++SQL result: every base sample executed one discovery query; every patched sample executed zero. Total SQL statements fell by exactly one: 29→28 (2 waves), 89→88 (8), 249→248 (24). The two `srv_answer` reads per fresh wave remain.
++
++| Waves/jobs | Base samples (s) | Patched samples (s) | Base median/p95 | Patched median/p95 |
++|---|---|---|---|---|
++| 2/1 | .017847, .007317, .007135, .007294, .007086 | .017450, .007101, .007152, .007229, .007047 | .007294/.007317 | .007152/.007229 |
++| 2/2 | .016951, .008236, .007798, .007833, .007537 | .016975, .008146, .007818, .007881, .007704 | .007833/.008236 | .007881/.008146 |
++| 2/4 | .016870, .007793, .007791, .007563, .008535 | .016727, .007957, .007739, .007985, .007578 | .007793/.008535 | .007957/.007985 |
++| 8/1 | .032786, .023727, .022535, .022770, .022690 | .033481, .023285, .023418, .023585, .023068 | .022770/.023727 | .023418/.023585 |
++| 8/2 | .032111, .025533, .024901, .024990, .024528 | .033007, .025639, .025560, .023608, .025462 | .024990/.025533 | .025560/.025639 |
++| 8/4 | .054209, .047872, .046278, .049735, .051194 | .055278, .054186, .052693, .052755, .052927 | .049735/.051194 | .052927/.054186 |
++| 24/1 | .075010, .064402, .063909, .063755, .063904 | .076304, .067879, .065957, .067130, .065892 | .063909/.064402 | .067130/.067879 |
++| 24/2 | .080141, .070127, .070386, .074914, .074594 | .075904, .067894, .071119, .066442, .071110 | .074594/.074914 | .071110/.071119 |
++| 24/4 | .142885, .133424, .136045, .134825, .138499 | .159694, .153796, .152930, .155764, .154201 | .136045/.138499 | .154201/.155764 |
++
++Peak RSS was higher in every patched publisher process by roughly 5–6 MiB. The code no longer retains cut and people dictionaries together, but process-level RSS did not demonstrate a gain and Python's high-water mark cannot show released-object timing. **NO PUBLISHER WALL-CLOCK OR RSS PERFORMANCE GAIN DEMONSTRATED.** The proven improvement is removal of one exact discovery SQL statement with identical artifacts.
++
++SQLite favored one worker at 8 and 24 waves; four workers was slower in both trees. This does not establish the best shared-MySQL setting. Default remains four pending an approved representative server run.
++
++## Not measured
++
++- Rows examined: SQLite does not expose a comparable MySQL counter.
++- MySQL plan/collation/FK/trigger parity: unavailable.
++- Historic slow-log attribution: not inferable from synthetic runs.
++- Shared-server CPU, IOPS, lock waits, TempTable spills and connection pressure: no staging workload was run.
+diff --git a/docs/performance/cip_final_remediation/04_OPEN_DB_APPROVAL_ITEMS.md b/docs/performance/cip_final_remediation/04_OPEN_DB_APPROVAL_ITEMS.md
+new file mode 100644
+index 0000000..0f68822
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/04_OPEN_DB_APPROVAL_ITEMS.md
+@@ -0,0 +1,83 @@
++# CIP final remediation — open DB and approval items
++
++Date: 2026-10-27  
++Repository: `consumer-insight-portal`  
++Base HEAD: `6f978b0595b2c71c064991ae10b832514637a0da`  
++State: uncommitted local patch  
++Cross-links: [verdict](00_EXECUTIVE_VERDICT.md), [benchmarks](03_BENCHMARK_BEFORE_AFTER.md), [release gate](06_RELEASE_AND_ROLLBACK_GATE.md)
++
++No request below was executed. All shared-DB work requires explicit authorization and a read-only account unless separately stated.
++
++## 1. Deployed schema contract — BLOCKED BY DBA APPROVAL
++
++Purpose: confirm checked-in assumptions, not change schema.
++
++Requested read-only metadata:
++
++```sql
++SHOW FULL COLUMNS FROM srv_answer;
++SHOW INDEX FROM srv_answer;
++SHOW INDEX FROM srv_result;
++SHOW INDEX FROM cip_agg_cell;
++SHOW INDEX FROM cip_answer;
++
++SELECT table_name, constraint_name, column_name, referenced_table_name, referenced_column_name
++FROM information_schema.key_column_usage
++WHERE table_schema = DATABASE()
++  AND table_name IN ('cip_answer','cip_profile','cip_weight','cip_respondent_cohort','srv_answer');
++
++SELECT trigger_name, event_object_table, action_timing, event_manipulation
++FROM information_schema.triggers
++WHERE trigger_schema = DATABASE()
++  AND event_object_table LIKE 'cip\_%';
++```
++
++Acceptance: `srv_answer` text columns use `utf8mb4_0900_ai_ci`; FK/delete behavior matches checked-in schema; no unreviewed triggers alter reload semantics; no redundant `(survey_id,qcode)` index is proposed because the primary key already has that left prefix.
++
++## 2. Bounded `cip_agg_cell` plan — BLOCKED BY DBA APPROVAL
++
++Run `EXPLAIN FORMAT=JSON`, never `EXPLAIN ANALYZE`, for `etl/serving.py::cube_rows` on one approved modest wave and its current/prior/LY IDs. Capture chosen indexes, estimated examined rows, join order and temporary-table flags. Also capture `SHOW INDEX` cardinalities.
++
++Decision rule: propose a SQL/index change only if the deployed plan demonstrates a selective mismatch and a disposable MySQL 8 parity test proves exact row/cardinality output. No index is currently proposed.
++
++## 3. `srv_answer` publisher validation — BLOCKED BY APPROVAL
++
++On an approved isolated MySQL 8 clone or explicitly approved modest staging wave:
++
++- Run publisher jobs 1, 2 and 4 one at a time.
++- Capture two `srv_answer` reads per fresh wave, elapsed p50/p95, rows sent/examined, process RSS, server CPU/IOPS/temp-table counters and output hashes.
++- Confirm case/accent/trailing-space grouping under `utf8mb4_0900_ai_ci`.
++- Attribute whether the historic 681 grouped statements came from publisher, HTTP fallback, MCP before this patch, retries or another caller.
++
++Do not replay the historic monster queries on shared staging.
++
++## 4. Qualtrics MySQL gate — BLOCKED BY APPROVAL
++
++Use a disposable MySQL 8 database or approved anonymized clone. Validate:
++
++- Fresh, same-file, shrinking, removed-cell, empty and injected-failure snapshots.
++- One transaction for the respondent/answer snapshot.
++- `LOAD DATA LOCAL INFILE` warning behavior and fallback.
++- Exact hashes/counts versus base semantics.
++- FK/trigger behavior and transaction rollback.
++
++SQLite evidence is strong but does not prove MySQL `LOAD DATA`, collation or isolation behavior.
++
++## 5. External label consumers — OWNER CONFIRMATION REQUIRED
++
++Repository consumers reconstruct coded single/grid labels with metadata; multi values retain item labels when needed. Confirm that no external direct-table consumer requires denormalized `cip_answer.value_label` for known single/grid codes. If one does, gate the optimization or provide that consumer a documented view contract.
++
++## 6. `v_cip_answer_long` historic count — OWNER/DBA CONFIRMATION REQUIRED
++
++No current application caller was found. Identify the owner, count semantics and required freshness before considering a summary table, narrower query or index. Until then: `NO SAFE FIX PROVEN`.
++
++## 7. Scheduler and capacity — OWNER/DBA/IT APPROVAL REQUIRED
++
++- Decide whether production sets `CIP_PUBLISH_JOBS`; default remains 4.
++- Verify the weekly wrapper, ad-hoc CLIs and any external schedulers cannot overlap outside the `cip_etl` named lock.
++- Add shared observability for lock contention and actual active DB connections before changing capacity.
++- Review still-unlocked manual mutation paths separately; do not alter shared schedules in this patch.
++
++## Rollback of proposed validation
++
++All requests above are read-only except a future isolated benchmark. End read-only sessions after capture. An isolated clone/container must be disposable. No shared schema rollback is needed because this patch executes no DDL.
+diff --git a/docs/performance/cip_final_remediation/05_SAFETY_AND_NO_MESSAGE_ATTESTATION.md b/docs/performance/cip_final_remediation/05_SAFETY_AND_NO_MESSAGE_ATTESTATION.md
+new file mode 100644
+index 0000000..e98cbbe
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/05_SAFETY_AND_NO_MESSAGE_ATTESTATION.md
+@@ -0,0 +1,44 @@
++# CIP final remediation — safety and no-message attestation
++
++Date: 2026-10-27  
++Repository: `consumer-insight-portal`  
++Base HEAD: `6f978b0595b2c71c064991ae10b832514637a0da`  
++State: uncommitted local patch  
++Cross-links: [test closure](01_FULL_TEST_CLOSURE.md), [approvals](04_OPEN_DB_APPROVAL_ITEMS.md), [release gate](06_RELEASE_AND_ROLLBACK_GATE.md)
++
++## Controls used
++
++- `tests/conftest.py` sets `APP_ENV=LOCAL`, a temporary `LOCAL_SQLITE_PATH` and temporary publish directory before application imports.
++- Live DB, Forsta, AI, OIDC, SMTP, Teams, backup and nginx values are blanked before imports.
++- Python TCP, UDP and `socket.create_connection` calls raise immediately.
++- SMTP is replaced with an in-memory `FakeSMTP` only in notification unit tests; all other SMTP calls fail.
++- Teams/webhook functions are replaced with in-memory spies/failures.
++- Benchmarks repeat the blank-environment and socket-block controls in a separate process.
++- Only synthetic respondents and temporary SQLite databases were used.
++- No scheduler, watch process, CLI ETL entrypoint, public tunnel, deployment compose stack or queue worker was invoked.
++
++## Executions
++
++- Targeted and complete `pytest` runs.
++- `compileall`, `git diff --check`.
++- Local web `npm run check` and `npm run build` using existing dependencies; no install.
++- Offline synthetic benchmark runner against clean base and patched worktrees.
++- Read-only local tool inventory (`mysqld --version`, `mysql --version`, local Docker image inspect). No image pull or package install.
++
++## State changes not performed
++
++- No staging/production connection or query.
++- No database DML/DDL outside temporary SQLite files.
++- No email, Teams, Slack, webhook, SMS, push or queue dispatch.
++- No deployment, service/tunnel restart, cloud modification, cache purge, CI trigger, commit, push or PR.
++- No SIP, ChainXY, WordPress, CoreIQ, DWH, Matomo or other-product change.
++
++## Local database boundary disclosure
++
++An early in-place full-suite run executed the legacy `tests/test_trends_multiwave.py` because the ignored `data/csi_local.db` marker existed. That legacy fixture opened the file read-only and copied it to a pytest temporary database; it did not modify the source. This was outside the requested no-read boundary. The test was immediately replaced with a fully synthetic fixture. Final authoritative results come from a detached worktree where the ignored DB did not exist. A second run with a zero-byte dummy marker proved the test selection is now independent of the file.
++
++## Attestation
++
++Execution logs and code-side spies show zero real outbound messages and zero staging/production DB connections or writes. No OS-level egress sandbox was available; protection was process-level socket blocking plus transport mocks for every Python test/benchmark path used.
++
++**No real emails or outbound notifications were sent. No staging/production database writes, schema changes, deployments or cloud modifications were performed.**
+diff --git a/docs/performance/cip_final_remediation/06_RELEASE_AND_ROLLBACK_GATE.md b/docs/performance/cip_final_remediation/06_RELEASE_AND_ROLLBACK_GATE.md
+new file mode 100644
+index 0000000..4e06700
+--- /dev/null
++++ b/docs/performance/cip_final_remediation/06_RELEASE_AND_ROLLBACK_GATE.md
+@@ -0,0 +1,56 @@
++# CIP final remediation — release and rollback gate
++
++Date: 2026-10-27  
++Repository: `consumer-insight-portal`  
++Base HEAD: `6f978b0595b2c71c064991ae10b832514637a0da`  
++State: uncommitted local patch  
++Current decision: **PASS FOR LOCAL REVIEW / NOT READY FOR DEPLOYMENT**
++
++Cross-links: [verdict](00_EXECUTIVE_VERDICT.md), [tests](01_FULL_TEST_CLOSURE.md), [changes](02_CODE_CHANGES_WITH_EVIDENCE.md), [benchmarks](03_BENCHMARK_BEFORE_AFTER.md), [approvals](04_OPEN_DB_APPROVAL_ITEMS.md), [safety](05_SAFETY_AND_NO_MESSAGE_ATTESTATION.md)
++
++## Gate status
++
++| Gate | Status | Evidence / remaining action |
++|---|---|---|
++| 1. Deterministic tests: zero failures/errors | PASS | Clean detached worktree: 350 passed, 0 failed/errors/skipped. |
++| 2. Business output parity | PARTIAL | Synthetic exact hashes/counts pass. MySQL collation/FK and approved representative wave parity remain. |
++| 3. Regression coverage | PASS locally | Python grouping remains absent; labels, reconciliation, shrink, empty, rollback, Qualtrics snapshot, discovery and MCP reuse covered. |
++| 4. No real notifications/remote writes | PASS for executed paths | Pre-import environment isolation, socket block, fake transports; no staging connection. |
++| 5. Optimization evidence | PARTIAL | Qualtrics local gain proven. Publisher one-query removal proven; no wall/RSS gain and no MySQL gain claimed. |
++| 6. Approval-only work separated | PASS | See `04_OPEN_DB_APPROVAL_ITEMS.md`; nothing shared was changed. |
++
++## Required approvers before any deployment
++
++1. CIP code owner: source diff, output contracts and external `value_label` consumers.
++2. DBA: deployed collations/indexes/FKs/triggers, bounded plans and isolated MySQL validation.
++3. ETL/scheduler owner: named-lock coverage, schedule overlap and `CIP_PUBLISH_JOBS` capacity.
++4. Release owner: approved staging revision, canary scope, rollback authority and observation window.
++
++## First approved rollout plan
++
++1. Apply the review patch to a review branch; do not include unrelated untracked artifacts.
++2. Run the 350-test suite and web checks in CI with notifications/credentials absent.
++3. Run the MySQL gates in `04_OPEN_DB_APPROVAL_ITEMS.md` on a disposable MySQL 8 instance.
++4. On one approved modest staging wave, publish to a separate output root at jobs 1, 2 and 4; never swap `current` during benchmarking.
++5. Require exact book/cut/people/question hashes or documented volatile-field normalization.
++6. Canary one authorized ETL run with query/connection/RSS/error telemetry and zero notification testing.
++7. Deploy only if counts, denominators, labels, bitsets and visible API outputs match and p95/error/resource gates do not regress.
++
++## Fail criteria
++
++- Any test failure/error or unexpected skip.
++- Any MySQL collation grouping difference.
++- Any stale respondent/answer/profile/cohort/tracker/serving row after reload.
++- Any output hash/count/base/label difference not explicitly approved.
++- Unbounded worker/connection behavior, material p95/RSS regression or new lock overlap.
++- Any real notification from a validation environment.
++
++## Rollback
++
++- Application: deploy the previous approved revision based on `6f978b0`; this patch has no schema migration.
++- Configuration: remove `CIP_PUBLISH_JOBS` to return to default 4, or restore the prior approved value.
++- Published artifacts: use the existing atomic publisher rollback to repoint `current` to the prior verified version.
++- Data: do not attempt manual shared-DB repair. Stop the writer, preserve logs, and use the pre-approved snapshot/restore procedure if an authorized rollout changed data.
++- Code-review rollback: reverse the focused hunks listed in `02_CODE_CHANGES_WITH_EVIDENCE.md`; the test fixture/isolation changes may remain independently.
++
++Deployment readiness becomes `READY FOR APPROVED DEPLOYMENT` only after Gates 2 and 5 pass on MySQL and all named approvers sign off.

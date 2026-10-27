@@ -104,7 +104,7 @@ def admin(who: dict = Depends(user)) -> dict:
 
 def remember(sid: str, who: dict, how: str) -> None:
     try:
-        with get_engine("app").begin() as conn:
+        with get_engine("api_write").begin() as conn:
             conn.execute(text("INSERT INTO cip_access_session (session_hash, email, client, role, provider, expires_at)"
                               " VALUES (:h, :e, :c, :r, :p, :x)"),
                          {"h": digest(sid), "e": who["email"], "c": who["client"], "r": who["role"], "p": how,
@@ -223,7 +223,7 @@ def revoke(hashes: list[str], email: str | None = None) -> None:
     REVOKED.update(hashes)
     share_revoked()
     try:
-        with get_engine("app").begin() as conn:
+        with get_engine("api_write").begin() as conn:
             if email:
                 conn.execute(text("UPDATE cip_access_session SET revoked_at = CURRENT_TIMESTAMP WHERE email = :e AND revoked_at IS NULL"), {"e": email})
             for h in hashes:

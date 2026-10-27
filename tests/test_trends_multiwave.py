@@ -1,94 +1,44 @@
-"""Trends across more than one wave.
-
-The demo database may hold one real wave or several; this test adds one more,
-SYNTHETIC wave in a throwaway copy so there are always at least two. The numbers in it are invented and exist purely to prove
-the trend code path works; nothing here touches the real data or the demo
-database, and nothing synthetic is ever loaded into dwh_stg.
-"""
+"""Trends across two deterministic synthetic waves."""
 from __future__ import annotations
 
-import os
-import sqlite3
-import tempfile
-from pathlib import Path
-
 import pytest
-
-REPO = Path(__file__).resolve().parents[1]
-DEMO = REPO / "data" / "csi_local.db"
-pytestmark = pytest.mark.skipif(not DEMO.exists(), reason="no local database built")
+import sqlalchemy as sa
 
 
 @pytest.fixture()
-def two_wave_db(tmp_path):
-    """Copy the real wave, then clone it under a second label with shifted
-    percentages so the trend has two points to join."""
-    db = tmp_path / "trend.db"
-    src = sqlite3.connect(str(DEMO))
-    dst = sqlite3.connect(str(db))
-    src.backup(dst)
-    src.close()
-
-    dst.execute(
-        "INSERT INTO cip_survey (forsta_host, forsta_path, title, survey_family,"
-        " wave_label, wave_date, status) VALUES"
-        " ('synthetic', 'synthetic/test/wave2', 'SYNTHETIC TEST WAVE',"
-        "  'CSI-US', '2026-10', '2026-10-01', 'closed')"
-    )
-    new_id = dst.execute("SELECT MAX(survey_id) FROM cip_survey").fetchone()[0]
-
-    # clone the definition layer
-    dst.execute("INSERT INTO cip_question (survey_id, topic_id, qcode, qtext,"
-                " qtext_short, qtype, value_min, value_max, is_technical, is_multi,"
-                " base_n, sort_order)"
-                " SELECT ?, topic_id, qcode, qtext, qtext_short, qtype, value_min,"
-                " value_max, is_technical, is_multi, base_n, sort_order"
-                " FROM cip_question WHERE survey_id = 1", (new_id,))
-    dst.execute("INSERT INTO cip_item (question_id, item_code, item_label, item_short,"
-                " is_exclusive, is_other, sort_order)"
-                " SELECT q2.question_id, i.item_code, i.item_label, i.item_short,"
-                " i.is_exclusive, i.is_other, i.sort_order"
-                " FROM cip_item i"
-                " JOIN cip_question q1 ON q1.question_id = i.question_id AND q1.survey_id = 1"
-                " JOIN cip_question q2 ON q2.qcode = q1.qcode AND q2.survey_id = ?", (new_id,))
-    dst.execute("INSERT INTO cip_field (survey_id, question_id, item_id, field_name, value_type)"
-                " SELECT ?, q2.question_id, i2.item_id, f.field_name, f.value_type"
-                " FROM cip_field f"
-                " JOIN cip_question q1 ON q1.question_id = f.question_id AND q1.survey_id = 1"
-                " JOIN cip_question q2 ON q2.qcode = q1.qcode AND q2.survey_id = ?"
-                " LEFT JOIN cip_item i1 ON i1.item_id = f.item_id"
-                " LEFT JOIN cip_item i2 ON i2.question_id = q2.question_id"
-                "        AND i2.item_code = i1.item_code", (new_id, new_id))
-
-    # clone half the respondents, so the second wave has a different base
-    dst.execute("INSERT INTO cip_respondent (survey_id, record_no, status_code,"
-                " status_label, is_qualified, completed_at)"
-                " SELECT ?, record_no, status_code, status_label, is_qualified,"
-                " completed_at FROM cip_respondent WHERE survey_id = 1"
-                " AND record_no % 2 = 0", (new_id,))
-    dst.execute("INSERT INTO cip_answer (respondent_id, survey_id, field_id,"
-                " value_code, value_label)"
-                " SELECT r2.respondent_id, ?, f2.field_id, a.value_code, a.value_label"
-                " FROM cip_answer a"
-                " JOIN cip_respondent r1 ON r1.respondent_id = a.respondent_id AND r1.survey_id = 1"
-                " JOIN cip_respondent r2 ON r2.record_no = r1.record_no AND r2.survey_id = ?"
-                " JOIN cip_field f1 ON f1.field_id = a.field_id"
-                " JOIN cip_field f2 ON f2.field_name = f1.field_name AND f2.survey_id = ?",
-                (new_id, new_id, new_id))
-    dst.commit()
-    dst.close()
-
-    old = os.environ.get("LOCAL_SQLITE_PATH")
-    os.environ["LOCAL_SQLITE_PATH"] = str(db)
-    os.environ["APP_ENV"] = "LOCAL"
-
-    import app.core.database as database
-    database._engines.clear()
-    database._conflict_targets.cache_clear()
-    yield db
-    database._engines.clear()
-    if old:
-        os.environ["LOCAL_SQLITE_PATH"] = old
+def two_wave_db(csi_db):
+    with csi_db.begin() as conn:
+        for survey_id, wave, respondents, selected in (
+            (1, "2026-09-21", 10, 6),
+            (2, "2026-09-28", 5, 2),
+        ):
+            conn.execute(sa.text(
+                "INSERT INTO cip_survey (survey_id,forsta_host,forsta_path,title,survey_family,wave_label,wave_date,"
+                "platform,source_ref,load_status) VALUES (:s,'synthetic.invalid',:p,'Synthetic trend','CSI-US',:w,:w,"
+                "'forsta',:p,'verified')"
+            ), {"s": survey_id, "p": f"synthetic/trend/{survey_id}", "w": wave})
+            question_id = conn.execute(sa.text(
+                "INSERT INTO cip_question (survey_id,qcode,qtext,qtype,is_multi,base_n) "
+                "VALUES (:s,'q1','Synthetic trend question','multi',1,:n)"
+            ), {"s": survey_id, "n": respondents}).lastrowid
+            item_id = conn.execute(sa.text(
+                "INSERT INTO cip_item (question_id,item_code,item_label,sort_order) VALUES (:q,'q1r1','Selected',1)"
+            ), {"q": question_id}).lastrowid
+            field_id = conn.execute(sa.text(
+                "INSERT INTO cip_field (survey_id,question_id,item_id,field_name,value_type) "
+                "VALUES (:s,:q,:i,'q1r1','code')"
+            ), {"s": survey_id, "q": question_id, "i": item_id}).lastrowid
+            for record_no in range(1, respondents + 1):
+                respondent_id = conn.execute(sa.text(
+                    "INSERT INTO cip_respondent (survey_id,record_no,status_code,status_label,is_qualified) "
+                    "VALUES (:s,:r,3,'Qualified',1)"
+                ), {"s": survey_id, "r": record_no}).lastrowid
+                conn.execute(sa.text(
+                    "INSERT INTO cip_answer (respondent_id,survey_id,field_id,value_code,value_label) "
+                    "VALUES (:r,:s,:f,:v,'Selected')"
+                ), {"r": respondent_id, "s": survey_id, "f": field_id,
+                    "v": 1 if record_no <= selected else 0})
+    return csi_db
 
 
 def test_trend_joins_two_waves(two_wave_db):
