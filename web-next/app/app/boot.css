@@ -1,0 +1,13 @@
+/* the app shell painted before the portal's script runs; React replaces it */
+:root { --paper: #FAFAFA; --surface: #FFFFFF; --ink: #2D2A29; --rail: #2D2A29; --line: #E5E3E1; --fill: #F2F1F0; --red: #D62E2F; color-scheme: light; }
+:root[data-theme="dark"] { --paper: #1B1918; --surface: #242120; --ink: #FAFAFA; --rail: #121010; --line: #3D3937; --fill: #332F2D; color-scheme: dark; }
+body { margin: 0; background: var(--paper); }
+.boot { display: grid; grid-template-columns: 248px 1fr; grid-template-rows: 56px 1fr; min-height: 100vh; }
+.boot-head { grid-column: 1 / -1; display: flex; align-items: center; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--line);
+             font: 600 14px/20px Montserrat, system-ui, sans-serif; color: var(--ink); }
+.boot-rail { background: var(--rail); border-right: 1px solid #2D2A29; }
+.boot-main { padding: 26px 28px; }
+.boot-main b, .boot-main s { display: block; border-radius: 6px; background: var(--fill); }
+.boot-main b { height: 34px; width: min(620px, 90%); border-left: 5px solid var(--red); border-radius: 0 6px 6px 0; }
+.boot-main s { height: 16px; width: min(480px, 70%); margin-top: 12px; }
+@media (max-width: 900px) { .boot { grid-template-columns: 1fr; } .boot-rail { display: none; } .boot-head { padding: 0 16px; } .boot-main { padding: 18px 16px; } }

@@ -1,10 +1,12 @@
-# Nothing secret or bulky reaches an image: only api/, app/, etl/, config/, sql/ and web/ sources.
+# Nothing secret or bulky reaches an image: only the sources the Dockerfile copies.
 **
 !api/**
 !app/**
 !etl/**
 !config/**
 !sql/**
+!scripts/**
+!requirements.txt
 !web/package.json
 !web/package-lock.json
 !web/index.html
@@ -12,6 +14,13 @@
 !web/vite.config.ts
 !web/src/**
 !web/public/**
+!web-next/package.json
+!web-next/package-lock.json
+!web-next/next.config.ts
+!web-next/tsconfig.json
+!web-next/app/**
+!web-next/src/**
+!web-next/public/**
 !deploy/**
 !DigiCertGlobalRootG2.crt.pem
 **/__pycache__

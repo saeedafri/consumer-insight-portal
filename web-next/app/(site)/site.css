@@ -1,0 +1,39 @@
+:root { --red: #D62E2F; --ink: #2D2A29; --ink-2: #5C5856; --paper: #FAFAFA; --surface: #FFF; --line: #E5E3E1; --blue: #1F4E79; color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root { --ink: #FAFAFA; --ink-2: #BDB8B5; --paper: #1B1918; --surface: #242120; --line: #3D3937; --blue: #8DB8E2; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.6 "Roboto Variable", system-ui, sans-serif; }
+h1, h2, h3 { font-family: "Montserrat Variable", system-ui, sans-serif; line-height: 1.2; margin: 0 0 12px; }
+h1 { font-size: clamp(32px, 5vw, 52px); letter-spacing: -0.02em; }
+h2 { font-size: clamp(24px, 3vw, 32px); }
+h3 { font-size: 19px; }
+a { color: inherit; }
+p { margin: 0 0 14px; color: var(--ink-2); }
+main { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+.top, .foot { max-width: 1120px; margin: 0 auto; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.top nav, .foot nav { display: flex; align-items: center; gap: 22px; }
+.top nav a, .foot nav a { text-decoration: none; font-weight: 500; }
+.foot { border-top: 1px solid var(--line); margin-top: 72px; font-size: 14px; }
+.foot p { margin: 0; }
+.btn { display: inline-block; padding: 10px 18px; border-radius: 8px; border: 1px solid var(--ink); text-decoration: none; font-weight: 600; }
+.btn.primary, .top .btn { background: var(--red); border-color: var(--red); color: #FFF; }
+.hero { padding: 72px 0 48px; max-width: 780px; }
+.hero p { font-size: 20px; }
+.eyebrow { color: var(--red); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; font-size: 13px; margin-bottom: 10px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; padding: 0; margin: 0 0 56px; list-style: none; }
+.stats li { border-left: 4px solid var(--red); padding: 4px 0 4px 16px; }
+.stats b { display: block; font: 700 30px/1.2 "Montserrat Variable", system-ui, sans-serif; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; padding: 0; list-style: none; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 22px; }
+.card p { margin: 0; }
+section { margin: 56px 0; }
+.prose { max-width: 760px; }
+.prose h2 { margin-top: 40px; }
+.signin { max-width: 440px; margin: 72px auto; text-align: center; }
+.signin .btn { width: 100%; margin: 18px 0 10px; padding: 14px; }
+.small { font-size: 14px; }
+@media (max-width: 640px) { .top nav a:not(.btn) { display: none; } .foot { flex-direction: column; align-items: flex-start; } .hero { padding-top: 40px; } }
+.h2 { font-size: clamp(24px, 3vw, 32px); }
+.h3 { font-size: 19px; }

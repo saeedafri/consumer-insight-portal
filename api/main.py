@@ -58,7 +58,7 @@ from etl.serving import CUTS
 
 log = logging.getLogger("cip.api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s")   # [PERF] lines show
-WEB = Path(__file__).resolve().parents[1] / "web" / "dist"
+WEB = Path(os.environ.get("CIP_WEB_DIR") or Path(__file__).resolve().parents[1] / "web" / "dist")
 SECRET = os.environ.get("CIP_SESSION_SECRET", "").encode()
 REFRESH_SECONDS = 60
 METHODOLOGY = Path(__file__).resolve().parents[1] / "config" / "methodology.yml"
@@ -608,13 +608,10 @@ async def performance_logging_middleware(request: Request, call_next):
 
 @lru_cache(maxsize=4)
 def _script_hashes(stamp: int) -> str:
-    """CSP hashes of index.html's inline scripts (the theme-before-paint one), for this build of web/dist."""
-    try:
-        page = (WEB / "index.html").read_text(encoding="utf-8")
-    except OSError:
-        return ""
-    return " ".join("'sha256-" + base64.b64encode(hashlib.sha256(body.encode()).digest()).decode() + "'"
-                    for body in re.findall(r"<script>(.*?)</script>", page, re.S))
+    """CSP hashes of every page's inline scripts (the theme-before-paint one; Next.js's own), for this build of WEB."""
+    pages = "".join(page.read_text(encoding="utf-8") for page in WEB.rglob("*.html"))
+    return " ".join(sorted({"'sha256-" + base64.b64encode(hashlib.sha256(body.encode()).digest()).decode() + "'"
+                            for body in re.findall(r'<script(?: id="\w+")?>(.*?)</script>', pages, re.S)}))
 
 
 def policy() -> str:
@@ -658,7 +655,7 @@ async def body_limit(request: Request, call_next):
 @app.middleware("http")
 async def cache_static(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/assets/"):   # Vite's content-hashed files never change
+    if request.url.path.startswith(("/assets/", "/_next/static/")):   # content-hashed files never change
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     elif response.headers.get("content-type", "").startswith("text/html"):   # index.html names this release's
         response.headers["Cache-Control"] = "no-cache"                        # assets: always revalidate it
@@ -666,14 +663,18 @@ async def cache_static(request: Request, call_next):
 
 
 class SinglePageApp(StaticFiles):
-    """dist/ as files, and index.html for any other path, so a deep link like /w/412/crosstab opens the app."""
+    """WEB as files. A deep link into the app (/app/w/412/crosstab; /w/412/crosstab in the Vite build) gets the app's
+    page and its router picks the screen; anything else unknown gets the 404 page when the build has one."""
     async def get_response(self, path: str, scope):
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)   # a build with 404.html gets it here, as a 404
         except StarletteHTTPException as exc:   # StaticFiles raises Starlette's 404, not FastAPI's
             if exc.status_code != 404 or path.startswith(("api/", "auth/", "assets/")):
                 raise
             return await super().get_response("index.html", scope)
+        if response.status_code == 404 and path.startswith("app/") and (WEB / "app").is_dir():
+            return await super().get_response("app/index.html", scope)
+        return response
 
 
 if WEB.exists():

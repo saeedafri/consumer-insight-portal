@@ -1,25 +1,27 @@
 # The CIP portal for one Linux server (deploy/compose.yml): the FastAPI API and the ETL (one image, the repo's own
-# requirements.txt, so the image runs exactly what the tests ran), and nginx serving the React + Vite files and the
+# requirements.txt, so the image runs exactly what the tests ran), and nginx serving the Next.js static export and the
 # ETL-published payloads.
 #   docker build -f deploy/Dockerfile --target api -t cip-portal .      (the API; also the etl and backup services)
 #   docker build -f deploy/Dockerfile --target nginx -t cip-web .
 FROM node:26-trixie-slim AS web
 WORKDIR /w
-COPY web/package.json web/package-lock.json ./
+COPY web-next/package.json web-next/package-lock.json ./
 RUN npm ci --no-audit --no-fund
-COPY web/ ./
+COPY web-next/ ./
+# the CSP hashes of every page's inline scripts (Next.js's own and the theme one): api/main.py policy() does the same
 RUN npm run build \
- && node -e "const c=require('crypto'),h=require('fs').readFileSync('dist/index.html','utf8');\
-process.stdout.write([...h.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>\"'sha256-\"+c.createHash('sha256').update(m[1]).digest('base64')+\"'\").join(' '))" > /w/csp-hashes.txt
+ && node -e "const c=require('crypto'),f=require('fs'),h=f.readdirSync('out',{recursive:true}).filter(n=>n.endsWith('.html')).map(n=>f.readFileSync('out/'+n,'utf8')).join('');\
+process.stdout.write([...new Set([...h.matchAll(/<script(?: id=\"\\w+\")?>([\s\S]*?)<\/script>/g)].map(m=>\"'sha256-\"+c.createHash('sha256').update(m[1]).digest('base64')+\"'\"))].sort().join(' '))" > /w/csp-hashes.txt
 
 # bookworm, not trixie: MySQL's own client (mysqldump, for the backup service) is published for bookworm; Debian's is
-# MariaDB's, which scripts/backup_db.py's options do not fit
+# MariaDB's, which scripts/backup_db.py's options do not fit. MySQL publishes it for amd64 only (the Azure VM): an ARM
+# build, such as a test on the dev Mac, skips it and so has no backup service
 FROM python:3.13-slim-bookworm AS api
-RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
- && curl -fsSL https://repo.mysql.com/RPM-GPG-KEY-mysql-2023 | gpg --dearmor -o /usr/share/keyrings/mysql.gpg \
+RUN [ "$(dpkg --print-architecture)" != amd64 ] || { apt-get update && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
+ && curl -fsSL https://repo.mysql.com/RPM-GPG-KEY-mysql-2025 | gpg --dearmor -o /usr/share/keyrings/mysql.gpg \
  && echo "deb [signed-by=/usr/share/keyrings/mysql.gpg] http://repo.mysql.com/apt/debian bookworm mysql-8.4-lts" > /etc/apt/sources.list.d/mysql.list \
  && apt-get update && apt-get install -y --no-install-recommends mysql-community-client \
- && apt-get purge -y curl gnupg && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+ && apt-get purge -y curl gnupg && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*; }
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt \
  && useradd --system --create-home --uid 10001 cip
@@ -32,7 +34,7 @@ COPY scripts/ scripts/
 COPY sql/ sql/
 COPY deploy/etl-loop.sh deploy/backup.sh deploy/
 COPY DigiCertGlobalRootG2.crt.pem ./
-COPY --from=web /w/dist web/dist
+COPY --from=web /w/out web/dist
 RUN mkdir -p logs backups && chown cip logs backups && chmod -R a+rX /srv/cip   # sources may arrive owner-only
 USER cip
 EXPOSE 8000
@@ -51,5 +53,5 @@ COPY deploy/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/cip_proxy.conf deploy/cip_headers.conf deploy/cip_locations.conf deploy/cip_auth.js /etc/nginx/
 COPY --from=web /w/csp-hashes.txt /tmp/csp-hashes.txt
 RUN sed -i "s|__SCRIPT_HASHES__|$(cat /tmp/csp-hashes.txt)|" /etc/nginx/cip_headers.conf
-COPY --from=web /w/dist /srv/cip/web
+COPY --from=web /w/out /srv/cip/web
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'

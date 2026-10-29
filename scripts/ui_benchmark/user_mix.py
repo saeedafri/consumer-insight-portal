@@ -37,8 +37,15 @@ class Http:
                 headers = {}
                 while (line := await self.r.readline()) not in (b"\r\n", b""):
                     k, _, v = line.decode().partition(":")
-                    headers[k.strip().lower()] = v.strip()
-                body = await self.r.readexactly(int(headers.get("content-length", 0)))
+                    headers.setdefault(k.strip().lower(), v.strip())   # the first Set-Cookie: cip_session
+                if headers.get("transfer-encoding") == "chunked":   # an answer streamed by the API through nginx
+                    body = b""
+                    while size := int((await self.r.readline()).split(b";")[0], 16):
+                        body += await self.r.readexactly(size + 2)
+                        body = body[:-2]
+                    await self.r.readline()
+                else:
+                    body = await self.r.readexactly(int(headers.get("content-length", 0)))
                 return int(status.split()[1]), headers, body
             except (ConnectionError, asyncio.IncompleteReadError, OSError):
                 if self.w:
@@ -50,13 +57,14 @@ class Http:
 
 class Stats:
     def __init__(self):
-        self.lat, self.errors, self.done = defaultdict(list), defaultdict(int), 0
+        self.lat, self.errors, self.done, self.codes = defaultdict(list), defaultdict(int), 0, defaultdict(int)
 
-    def add(self, kind, ms, ok):
+    def add(self, kind, ms, status):
         self.lat[kind].append(ms)
         self.done += 1
-        if not ok:
+        if status != 200:
             self.errors[kind] += 1
+            self.codes[f"{kind} {status}"] += 1
 
 
 async def user(base, cookie, waves, recent, think, stop, stats, measuring, books, families):
@@ -71,7 +79,7 @@ async def user(base, cookie, waves, recent, think, stop, stats, measuring, books
         except Exception:
             status, body, ok = 0, b"", False
         if measuring():
-            stats.add(kind, (time.perf_counter() - start) * 1000, ok)
+            stats.add(kind, (time.perf_counter() - start) * 1000, status)
         return body if ok else None
 
     while time.time() < stop:
@@ -80,7 +88,7 @@ async def user(base, cookie, waves, recent, think, stop, stats, measuring, books
         wave = random.choice(recent) if random.random() < 0.7 else random.choice(waves)
         body = await call("book", f"/api/v1/waves/{wave}/book")
         if wave not in books and body:
-            books[wave] = [q["id"] for q in unzip(body)["questions"]]
+            books[wave] = [q["id"] for q in unzip(body).get("questions", [])]   # a wave with no results loaded has none
         qs = books.get(wave) or []
         for _ in range(random.randint(1, 3)):   # a few more clicks in this wave
             await asyncio.sleep(random.expovariate(1 / think))
@@ -91,8 +99,8 @@ async def user(base, cookie, waves, recent, think, stop, stats, measuring, books
                 a, b = random.sample(CUTS, 2)
                 await call("crosstab", f"/api/v1/waves/{wave}/crosstab?q={q}&by={a},{b}&weeks={random.choice([1, 1, 4])}")
             elif roll < 0.85:
-                family, study = families[wave]   # the Trends screen asks for the family's published trend
-                await call("trend", f"/api/v1/trends/{quote(family)}/{study}/{q}/total/Total")
+                family, study = families[wave]   # Trends and Compare read the question's published file
+                await call("trend", f"/api/v1/questions/{quote(family)}/{study}/{q}")
             else:
                 await call("search", f"/api/v1/search?q={quote(random.choice(['holiday', 'amazon', 'gas', 'grocery', 'ai tools', 'walmart', 'income', 'denim']))}")
         await asyncio.sleep(random.expovariate(1 / think))
@@ -114,6 +122,8 @@ async def step(a, n, cookie, waves, recent, books, families):
         if v:
             print(f"   {kind:<9} {len(v) / took:8.1f} req/s  p50 {statistics.median(v):7.1f}  p95 {pick(v, .95):7.1f}  p99 {pick(v, .99):7.1f} ms"
                   f"  errors {stats.errors[kind]}", flush=True)
+    if stats.codes:
+        print("   errors by status (0 = connection failed):", dict(stats.codes), flush=True)
 
 
 async def main(a):

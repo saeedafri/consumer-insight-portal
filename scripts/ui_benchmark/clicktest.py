@@ -8,7 +8,7 @@ the layout at four widths (no sideways scrolling) and the theme toggle.
 
 Headless Chrome with DevTools on :9333 (scripts/ui_benchmark/shots.py notes). Read-only: it never submits data.
 
-    python scripts/ui_benchmark/clicktest.py http://127.0.0.1:8080 --waves 412,415,261,259
+    python scripts/ui_benchmark/clicktest.py http://127.0.0.1:8080 --waves 412,415,261,259   [--app /app: the Next.js build]
 """
 import argparse, asyncio, json, time, urllib.request
 from tornado.websocket import websocket_connect
@@ -41,6 +41,8 @@ class Page:
                 self.errors.append(msg["params"]["exceptionDetails"].get("exception", {}).get("description", "exception")[:160])
             elif msg.get("method") == "Runtime.consoleAPICalled" and msg["params"]["type"] == "error":
                 self.errors.append(" ".join(str(a.get("value", a.get("description", ""))) for a in msg["params"]["args"])[:160])
+            elif msg.get("method") == "Log.entryAdded" and msg["params"]["entry"]["level"] == "error":   # CSP refusals
+                self.errors.append(msg["params"]["entry"]["text"][:160])
             elif msg.get("method") == "Network.responseReceived" and msg["params"]["response"]["status"] >= 400:
                 r = msg["params"]["response"]
                 self.failed.append(f'{r["status"]} {r["url"].split("?")[0][-80:]}')
@@ -97,16 +99,16 @@ async def main(a):
     target = json.load(urllib.request.urlopen(urllib.request.Request(f"{CDP}/json/new?about:blank", method="PUT")))
     ws = await websocket_connect(target["webSocketDebuggerUrl"], max_message_size=2**27)
     page = Page(ws)
-    for domain in ("Runtime", "Network", "Page"):
+    for domain in ("Runtime", "Network", "Page", "Log"):
         await page.call(f"{domain}.enable")
     await page.call("Emulation.setDeviceMetricsOverride", {"width": 1440, "height": 900, "deviceScaleFactor": 1, "mobile": False})
-    await page.call("Page.navigate", {"url": f"{a.base}/auth/dev-login?next=/"})
+    await page.call("Page.navigate", {"url": f"{a.base}/auth/dev-login?next={a.app}/"})
     await asyncio.sleep(2)
     rows, total_actions, all_failures = [], 0, []
     for wave in [int(x) for x in a.waves.split(",")]:
         for name, (path, check) in SCREENS.items():
             start = time.perf_counter()
-            await page.call("Page.navigate", {"url": f"{a.base}/w/{wave}{path}"})
+            await page.call("Page.navigate", {"url": f"{a.base}{a.app}/w/{wave}{path}"})
             loaded = await page.settle(f"({check}) && {NO_ERROR}", 45)
             first = time.perf_counter() - start
             actions, failures, slowest = await exercise(page, check) if loaded == loaded else (0, ["screen never showed its data"], 0)
@@ -122,14 +124,14 @@ async def main(a):
     for width in (1440, 1024, 768, 390):
         await page.call("Emulation.setDeviceMetricsOverride", {"width": width, "height": 900, "deviceScaleFactor": 1, "mobile": width < 700})
         for path in (f"/w/{a.waves.split(',')[0]}", f"/w/{a.waves.split(',')[0]}/crosstab", "/"):
-            await page.call("Page.navigate", {"url": a.base + path})
+            await page.call("Page.navigate", {"url": a.base + a.app + path})
             await page.settle("document.querySelector('main')?.children.length > 0", 20)
             over = await page.js("document.documentElement.scrollWidth - innerWidth")
             layout.append((width, path, over))
             print(f"layout {width:>4}px {path:<22} sideways overflow {over} px {'pass' if over <= 1 else 'FAIL'}", flush=True)
     # theme toggle round trip
     await page.call("Emulation.setDeviceMetricsOverride", {"width": 1440, "height": 900, "deviceScaleFactor": 1, "mobile": False})
-    await page.call("Page.navigate", {"url": f"{a.base}/w/{a.waves.split(',')[0]}"})
+    await page.call("Page.navigate", {"url": f"{a.base}{a.app}/w/{a.waves.split(',')[0]}"})
     await page.settle(SCREENS["overview"][1], 30)
     themes = []
     for _ in range(2):
@@ -150,4 +152,5 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("base")
     p.add_argument("--waves", default="412,415")
+    p.add_argument("--app", default="", help="where the portal lives: /app on the Next.js build")
     asyncio.run(main(p.parse_args()))
