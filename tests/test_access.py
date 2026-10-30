@@ -199,10 +199,10 @@ def test_published_paths_never_climb_out():
 
 
 def test_every_feature_the_portal_checks_is_one_the_config_knows():
-    """web/src hides a link whose feature a sign-in lacks: a name missing from config/access.yml hides it from everyone
+    """web-next/src hides a link whose feature a sign-in lacks: a name missing from config/access.yml hides it from everyone
     (the Launch schedule link, 23 Oct 2026)."""
     from pathlib import Path
     import re
-    checked = {m for f in Path("web/src").rglob("*.tsx") for m in re.findall(r'allowed\(me, "([a-z_]+)"\)', f.read_text())}
+    checked = {m for f in Path("web-next/src").rglob("*.tsx") for m in re.findall(r'allowed\(me, "([a-z_]+)"\)', f.read_text())}
     assert checked and checked <= set(access.rules()["features"])
     assert set(access.profile("analyst@coresight.com")["features"]) >= checked   # staff see every page

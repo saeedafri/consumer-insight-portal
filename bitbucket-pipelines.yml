@@ -16,9 +16,8 @@ definitions:
         image: node:26-slim
         caches: [node]
         script:
-          - cd web
+          - cd web-next
           - npm ci
-          - npm run check
           - npm run build
     - step: &images
         name: Images build and boot

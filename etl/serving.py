@@ -12,7 +12,7 @@ Significance is decided here, once, for every screen (flags sig_prior / sig_ly o
 two-proportion z-test (pooled) of the row against the same answer in the prior week, and in the same week last
 year, then Benjamini-Hochberg at a 5 % false-discovery rate over the wave's testable Total rows only. A row is
 testable when both percentages are present, both bases are at least TEST_BASE, its base did not shift
-(base_changed_*) and it is not a filler answer (None of these, Other -, Prefer not…; web/src/api.ts isFiller).
+(base_changed_*) and it is not a filler answer (None of these, Other -, Prefer not…; web-next/src/api.ts isFiller).
 Untestable rows are left out of the correction (they never count as p = 1).
 
 Every verified wave is served, however few people answered it: nothing is excluded (the user's rule, 23 Oct 2026).
@@ -47,7 +47,7 @@ PRIOR_DAYS = 14       # a tracker's previous wave must be at most this old to co
 YEAR_DAYS = (300, 430)   # an annual or ad hoc study's "last year": its family's latest wave this many days earlier
 TEST_BASE = 30        # respondents on each side before a difference is tested (= app/data/payloads.TEST_BASE)
 FDR = 0.05            # Benjamini-Hochberg false-discovery rate for sig_prior / sig_ly
-FILLER = re.compile(r"^(none of (these|the above)|other\s*[-–(]|prefer not)", re.I)   # = web/src/api.ts isFiller
+FILLER = re.compile(r"^(none of (these|the above)|other\s*[-–(]|prefer not)", re.I)   # = web-next/src/api.ts isFiller
 CUTS = tuple(d for d in CUBE_DIMS if d != "total")
 RESULT_COLUMNS = ("survey_id", "qcode", "dim", "dim_value", "item_id", "option_id", "question_id", "qtype", "item_label",
                   "option_code", "option_label", "sort_order", "concept_option_id", "n", "base_n", "pct", "prior_pct",
@@ -204,7 +204,7 @@ def rows_for(wave: dict, cells: list[dict]) -> list[dict]:
 
 
 def p_value(n1: int, base1: int, n2: int, base2: int) -> float:
-    """Two-sided p of the pooled two-proportion z-test (as web/src/stats.ts pValue)."""
+    """Two-sided p of the pooled two-proportion z-test (as web-next/src/stats.ts pValue)."""
     pooled = (n1 + n2) / (base1 + base2)
     se = math.sqrt(pooled * (1 - pooled) * (1 / base1 + 1 / base2))
     return math.erfc(abs(n1 / base1 - n2 / base2) / se / math.sqrt(2)) if se > 0 else 1.0
