@@ -1,1 +1,0 @@
-import{t as e}from"./jsx-runtime-Wy9s6hX0.js";var t=e();function n({className:e=``,...n}){return(0,t.jsx)(`input`,{className:`field ${e}`.trim(),...n})}export{n as t};
