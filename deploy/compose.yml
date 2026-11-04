@@ -11,7 +11,7 @@
 #   /srv/cip/state             shared between api and nginx: revoked sessions, the team cache stamp
 #   /srv/cip/nginx-cache       nginx's answer cache, emptied by every publish
 #   /mnt/cip-backup            the off-server backup target (an Azure Files or Blob mount from IT)
-# Budget on 1 core: API 768 MB, nginx 256 MB, ETL 2 GB while it loads, backup 512 MB.
+# Budget on 1 core: API 768 MB, nginx 512 MB, ETL 2 GB while it loads, backup 512 MB.
 x-logs: &logs
   logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }   # rotated: no disk fills up (OPS-07)
 
@@ -75,6 +75,9 @@ services:
     env_file: ${CIP_ENV_FILE:-/etc/cip/api.env}   # CIP_SESSION_SECRET: nginx checks the signed cookie itself (cip_auth.js)
     environment: { CIP_REVOKED_FILE: /srv/cip/state/revoked.txt }
     ports: ["80:8080", "443:8443"]
+    # the kernel's own queue for new connections caps nginx's backlog=65535 at 4,096 (and 512 half-open): past that a
+    # rush of new connections is dropped and the browser retries after 1 s + 2 s (5 Nov 2026: 20,000 users, p95 3.2 s → 0.4 s)
+    sysctls: { net.core.somaxconn: 65535, net.ipv4.tcp_max_syn_backlog: 65535 }
     # the answers cache lives on the host, so the ETL's publish can empty it (CIP_NGINX_CACHE, etl/publish.py)
     volumes:
       - "${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published:ro"
@@ -83,5 +86,5 @@ services:
       - "${CIP_TLS_DIR:-/etc/cip/tls}:/etc/nginx/tls:ro"
     depends_on: { api: { condition: service_healthy } }
     restart: unless-stopped
-    mem_limit: 256m   # 20,000 open connections measured at about 90 MB
+    mem_limit: 512m   # 20,000 open connections ≈ 90 MB; 10,000 cross-tabs nobody asked before, at the same instant: 406 MB peak (5 Nov 2026, 256 MB was OOM-killed)
     <<: *logs

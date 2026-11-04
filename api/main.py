@@ -319,7 +319,10 @@ async def wave(code: str, survey_id: int, request: Request, who: dict = Depends(
 async def _cached(key: tuple, build, *args) -> Payload:
     """A finished response from this worker's cache, or built in a thread and kept until the serving data
     changes. Least recently used responses leave first once the cache reaches CACHE_BYTES."""
-    global CACHED_BYTES
+    global CACHED_BYTES, RESULTS, PUBLISHED_VERSION
+    version = os.path.realpath(PUBLISHED)
+    if version != PUBLISHED_VERSION:   # a publish swapped in new files: drop old answers now, not at the next poll, or
+        RESULTS, CACHED_BYTES, PUBLISHED_VERSION = OrderedDict(), 0, version   # nginx files one under the new key
     item = RESULTS.get(key) if CACHE_RESULTS else None
     if item is not None:
         RESULTS.move_to_end(key)
@@ -432,8 +435,7 @@ async def crosstab(survey_id: int, request: Request, q: str, by: str, weeks: int
 
 def _crosstab_payload(survey_id: int, qcode: str, cuts: tuple, weeks: int) -> Payload:
     """Use versioned published cut files; query live only when they are absent or incomplete."""
-    listed = _published("waves")
-    waves = json.loads(listed.body) if listed else []
+    waves = all_waves()   # parsed once per version, not on every cross-tab (half of each one's time)
     me = next((w for w in waves if w["survey_id"] == survey_id), None)
     pool = payloads.chain(
         {w["survey_id"]: w for w in waves if me and w["survey_family"] == me["survey_family"]},
@@ -590,22 +592,6 @@ def audit_log(email: str = "", action: str = "", limit: int = Query(200, ge=1, l
     return {"rows": rows, "next": rows[-1]["log_id"] if len(rows) == limit else None}
 
 
-@app.middleware("http")
-async def performance_logging_middleware(request: Request, call_next):
-    start = time.perf_counter()
-    response = await call_next(request)
-    duration_ms = (time.perf_counter() - start) * 1000.0
-    response.headers["Server-Timing"] = f"total;dur={duration_ms:.2f}"
-    path = request.url.path
-    if path.startswith("/api/"):
-        status = response.status_code
-        if duration_ms > 200:
-            log.warning("[PERF-SLOW] %s %s took %.1f ms (status %d)", request.method, path, duration_ms, status)
-        else:
-            log.info("[PERF] %s %s took %.1f ms (status %d)", request.method, path, duration_ms, status)
-    return response
-
-
 @lru_cache(maxsize=4)
 def _script_hashes(stamp: int) -> str:
     """CSP hashes of every page's inline scripts (the theme-before-paint one; Next.js's own), for this build of WEB."""
@@ -614,51 +600,66 @@ def _script_hashes(stamp: int) -> str:
                             for body in re.findall(r'<script(?: id="\w+")?>(.*?)</script>', pages, re.S)}))
 
 
-def policy() -> str:
-    try:
-        stamp = (WEB / "index.html").stat().st_mtime_ns
-    except OSError:
-        stamp = 0
+@lru_cache(maxsize=4)
+def _policy(stamp: int) -> str:
     return ("default-src 'self'; script-src 'self' " + _script_hashes(stamp) + "; style-src 'self' 'unsafe-inline';"
             " img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none';"
             " frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
 
 
-@app.middleware("http")
-async def security_headers(request: Request, call_next):
-    """The same headers nginx adds (deploy/cip_headers.conf), for when the API is the front door (the tunnel)."""
-    response = await call_next(request)
-    response.headers.setdefault("Content-Security-Policy", policy())
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "same-origin"
-    if signin.https(request):
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    return response
+POLICY_CHECKED = [0.0, ""]   # when the build was last looked at, and its policy
+
+
+def policy() -> str:
+    """The CSP for the current build of WEB; the build is looked at once a second, not on every request."""
+    now = time.monotonic()
+    if now - POLICY_CHECKED[0] > 1:
+        try:
+            stamp = (WEB / "index.html").stat().st_mtime_ns
+        except OSError:
+            stamp = 0
+        POLICY_CHECKED[:] = [now, _policy(stamp)]
+    return POLICY_CHECKED[1]
 
 
 MAX_BODY = int(access.rules().get("max_body_kb", 1024)) * 1024
 
 
 @app.middleware("http")
-async def body_limit(request: Request, call_next):
-    """A request body over max_body_kb (config/access.yml) is refused before anything reads it."""
-    if request.method in ("POST", "PUT", "PATCH"):
+async def every_request(request: Request, call_next):
+    """One middleware, not four (each BaseHTTPMiddleware layer costs ~10 % of a small request): refuse oversized
+    bodies, time and log API calls, add the headers nginx adds (deploy/cip_headers.conf) for when the API is the
+    front door (the tunnel), and set browser caching."""
+    if request.method in ("POST", "PUT", "PATCH"):   # a body over max_body_kb (config/access.yml) is refused unread
         size = request.headers.get("content-length")
         if size is None and request.headers.get("transfer-encoding"):
             return failed(411, "Send the body with a Content-Length")
         if size is not None and (not size.isdigit() or int(size) > MAX_BODY):
             return failed(413, f"The request body is larger than {MAX_BODY // 1024} KB")
-    return await call_next(request)
-
-
-@app.middleware("http")
-async def cache_static(request: Request, call_next):
+    start = time.perf_counter()
     response = await call_next(request)
-    if request.url.path.startswith(("/assets/", "/_next/static/")):   # content-hashed files never change
-        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif response.headers.get("content-type", "").startswith("text/html"):   # index.html names this release's
-        response.headers["Cache-Control"] = "no-cache"                        # assets: always revalidate it
+    duration_ms = (time.perf_counter() - start) * 1000.0
+    headers = response.headers
+    headers["Server-Timing"] = f"total;dur={duration_ms:.2f}"
+    path = request.url.path
+    if path.startswith("/api/"):
+        status = response.status_code
+        if duration_ms > 200:
+            log.warning("[PERF-SLOW] %s %s took %.1f ms (status %d)", request.method, path, duration_ms, status)
+        else:
+            log.info("[PERF] %s %s took %.1f ms (status %d)", request.method, path, duration_ms, status)
+    html = headers.get("content-type", "").startswith("text/html")
+    # only a page runs scripts: everything else gets the short API policy, not the pages' ~4 KB list of script hashes
+    headers.setdefault("Content-Security-Policy", policy() if html else "default-src 'none'; frame-ancestors 'none'")
+    headers["X-Frame-Options"] = "DENY"
+    headers["X-Content-Type-Options"] = "nosniff"
+    headers["Referrer-Policy"] = "same-origin"
+    if signin.https(request):
+        headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    if path.startswith(("/assets/", "/_next/static/")):   # content-hashed files never change
+        headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif html:   # index.html names this release's assets: always revalidate it
+        headers["Cache-Control"] = "no-cache"
     return response
 
 

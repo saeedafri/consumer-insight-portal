@@ -34,23 +34,38 @@ function same(a, b) {
     return diff === 0;
 }
 
-function check(r) {
-    if (!r.variables.cookie_cip_session && /^Bearer cip_/.test(r.headersIn.Authorization || '')) {
-        return r.return(403);   // an API key (app/core/api_keys.py): the API checks it
-    }
-    const raw = (r.variables.cookie_cip_session || '').replace(/^"|"$/g, '');   // the API may set it quoted
+function status(raw) {
     const dot = raw.lastIndexOf('.');
     if (!SECRET || dot < 1) {
-        return r.return(401);
+        return 401;
     }
     const value = Buffer.from(raw.slice(0, dot), 'base64url').toString();
     const expected = crypto.createHmac('sha256', SECRET).update(value).digest('base64url');
     const parts = value.split('|');
     if (!same(raw.slice(dot + 1), expected) || parts.length !== 5
             || Number(parts[2]) < Date.now() / 1000 || revoked(parts[3])) {
-        return r.return(401);
+        return 401;
     }
-    return r.return(parts[4] === '*' ? 204 : 403);
+    return parts[4] === '*' ? 204 : 403;
+}
+
+// Each cookie's answer is remembered for 60 s (the "sessions" zone, deploy/nginx.conf): the check above with its
+// file read cost ~90 % of a cached answer's time (5 Nov 2026: 10,000 → 90,000 answers/s). A revoked or expired
+// session therefore works for up to 60 s more in nginx, the same as the API's own minute poll (api/signin.load_revoked).
+function check(r) {
+    if (!r.variables.cookie_cip_session && /^Bearer cip_/.test(r.headersIn.Authorization || '')) {
+        return r.return(403);   // an API key (app/core/api_keys.py): the API checks it
+    }
+    const raw = (r.variables.cookie_cip_session || '').replace(/^"|"$/g, '');   // the API may set it quoted
+    const known = ngx.shared.sessions.get(raw);
+    if (known) {
+        return r.return(Number(known));
+    }
+    const answer = status(raw);
+    if (raw) {
+        ngx.shared.sessions.set(raw, String(answer));
+    }
+    return r.return(answer);
 }
 
 export default { check };

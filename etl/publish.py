@@ -337,6 +337,7 @@ def warm_nginx(out: Path, waves: int = WARM_WAVES) -> int:
             for w in newest for q in json.loads(gzip.decompress((out / f"api/v1/waves/{w['survey_id']}/book.json.gz").read_bytes()))["questions"]
             for a in CUTS for b in CUTS if a != b for weeks in (1, 2, 4)]
     cookie = f'cip_session="{issue("publish@cip", hours=1)}"'
+    time.sleep(2)   # nginx looks at the swapped "current" once a second (open_file_cache_valid): warm the new version's keys
 
     def get(url: str) -> bool:
         try:

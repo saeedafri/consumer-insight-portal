@@ -8,10 +8,9 @@ WORKDIR /w
 COPY web-next/package.json web-next/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web-next/ ./
-# the CSP hashes of every page's inline scripts (Next.js's own and the theme one): api/main.py policy() does the same
-RUN npm run build \
- && node -e "const c=require('crypto'),f=require('fs'),h=f.readdirSync('out',{recursive:true}).filter(n=>n.endsWith('.html')).map(n=>f.readFileSync('out/'+n,'utf8')).join('');\
-process.stdout.write([...new Set([...h.matchAll(/<script(?: id=\"\\w+\")?>([\s\S]*?)<\/script>/g)].map(m=>\"'sha256-\"+c.createHash('sha256').update(m[1]).digest('base64')+\"'\"))].sort().join(' '))" > /w/csp-hashes.txt
+COPY deploy/csp_map.mjs ./
+# the CSP hashes of each page's inline scripts (Next.js's own and the theme one): api/main.py policy() does the same
+RUN npm run build && node csp_map.mjs out > /w/cip_csp_map.conf
 
 # bookworm, not trixie: MySQL's own client (mysqldump, for the backup service) is published for bookworm; Debian's is
 # MariaDB's, which scripts/backup_db.py's options do not fit. MySQL publishes it for amd64 only (the Azure VM): an ARM
@@ -51,7 +50,6 @@ CMD ["sh", "-c", "ulimit -n $(ulimit -Hn); exec gunicorn api.main:app -k uvicorn
 FROM nginx:1.29-trixie AS nginx
 COPY deploy/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/cip_proxy.conf deploy/cip_headers.conf deploy/cip_locations.conf deploy/cip_auth.js /etc/nginx/
-COPY --from=web /w/csp-hashes.txt /tmp/csp-hashes.txt
-RUN sed -i "s|__SCRIPT_HASHES__|$(cat /tmp/csp-hashes.txt)|" /etc/nginx/cip_headers.conf
+COPY --from=web /w/cip_csp_map.conf /etc/nginx/
 COPY --from=web /w/out /srv/cip/web
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'
