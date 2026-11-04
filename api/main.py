@@ -449,6 +449,10 @@ def _crosstab_payload(survey_id: int, qcode: str, cuts: tuple, weeks: int) -> Pa
     }
     if parts.get(survey_id, {}).get("counts"):
         return _json(payloads.crosstab_from(survey_id, qcode, cuts, pool, parts))
+    # a published wave's cuts folder lists every question it has (etl/publish.py): one missing from it (an "other,
+    # please specify" text) is not in the wave, so say so now instead of a 1–5 s database round trip to the same 404
+    if survey_id not in parts and (PUBLISHED / "api" / "v1" / "waves" / str(survey_id) / "cuts").is_dir():
+        raise LookupError("That question is not in that wave")
     return _json(payloads.crosstab(survey_id, qcode, cuts, weeks))
 
 
