@@ -17,8 +17,8 @@ docker push <acr>.azurecr.io/cip-portal:$BITBUCKET_COMMIT
 - No start command: the image starts itself (`bash deploy/start.sh`).
 - The build needs no secrets and no network beyond npm and PyPI. It builds the website (Node) and the Python environment
   in one Dockerfile.
-- `bitbucket-pipelines.yml` already runs the tests and builds the image on every push; add the push to ACR and the web
-  app update as its last step.
+- `bitbucket-pipelines.yml` builds the image on every push to `stg-deploy` (no tests: they run locally before a push);
+  add the push to ACR and the web app update after its build step.
 
 ## 2. Web app settings
 
