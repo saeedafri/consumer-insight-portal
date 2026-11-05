@@ -4,7 +4,6 @@
 # ══════════════════════════════════════════════════════════════════════════
 
 # ── Core framework ────────────────────────────────────────────────────────
-streamlit==1.55.0               # internal staff pages
 fastapi==0.150.0                # client API (api/): serves published dashboards from memory
 uvicorn[standard]==0.54.0
 gunicorn==26.2.0
@@ -14,7 +13,6 @@ pandas>=2.3.0
 numpy>=2.4.0
 
 # ── Visualization ─────────────────────────────────────────────────────────
-plotly>=6.5.0
 
 # ── Database (Azure MySQL / STG DWH) ──────────────────────────────────────
 sqlalchemy>=2.0.46
@@ -34,5 +32,3 @@ anthropic==2.0.0           # Ask CIP (api/assistant.py); without credentials it 
 python-dotenv>=1.0.0
 pyyaml>=6.0                 # config/survey_map.yml — the dynamic survey rules
 tenacity>=9.0.0             # retry/backoff on API pulls
-streamlit-aggrid>=1.0.5        # sortable, pinnable result grids
-streamlit-cookies-controller>=0.0.4  # sessions survive header navigation

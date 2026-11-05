@@ -29,10 +29,14 @@ import logging
 import math
 import os
 import re
+import sqlite3
+import tempfile
 import time
 from collections import Counter
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from itertools import islice
 from typing import Any, Optional
 
 from sqlalchemy import bindparam, text
@@ -43,6 +47,7 @@ from app.core.database import bulk_insert, get_engine
 from app.data import cube, harmonise
 from etl import forsta_api, launch_schedule, records as xp, serving, survey_calendar, survey_map, tracker_line
 from etl.forsta_client import ForstaError
+from etl.record_stream import source_records, survey_snapshot
 from etl.loaders import (Locked, drop_unlisted_items, etl_lock, finish_run, index_survey, load_definitions, start_run,
                          upsert_survey)
 from etl.run_pipeline import _dt, _rebuild_profiles, _rebuild_question_bases, wave_from_records
@@ -259,21 +264,26 @@ def _fields(conn, survey_id: int) -> dict[str, dict]:
 
 def _answer(field: dict, value: Any) -> Optional[dict]:
     """One stored answer from one API value — None when there is nothing to store."""
+    values = _answer_values(field, value)
+    return dict(zip(('code', 'label', 'num', 'txt'), values)) if values is not None else None
+
+
+def _answer_values(field, value):
     if value is None or str(value).strip() == "":
         return None
     if field["kind"] == "numeric":
         number = _number(value)
-        return None if number is None else {"code": None, "label": None, "num": number, "txt": None}
+        return None if number is None else (None, None, number, None)
     if field["kind"] == "text":
-        return {"code": None, "label": None, "num": None, "txt": str(value)}
+        return (None, None, None, str(value))
     code = forsta_api.whole(value)
     if code is None:
-        return {"code": None, "label": str(value)[:500], "num": None, "txt": None}
+        return (None, str(value)[:500], None, None)
     # Single/grid labels belong to cip_option and are joined back by readers.
     # Multi rows must retain their item label: some datamaps also expose 0/1
     # option labels, which otherwise win COALESCE and display "Yes"/"No".
     label = field["item"] if field["multi"] and field["labels"] else None
-    return {"code": code, "label": label[:500] if label else None, "num": None, "txt": None}
+    return (code, label[:500] if label else None, None, None)
 
 
 def _cut(value: Any, limit: int) -> Optional[str]:
@@ -309,15 +319,22 @@ def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
     meta = meta or _meta(client, path)
     datamap = client.survey_datamap(path)
     questions = forsta_api.questions_from_datamap(datamap)
-    records = [r for r in client.survey_data(path) if r.get("uuid")]
+    with survey_snapshot(client, path) as records:
+        return _load_snapshot(client, path, meta, datamap, questions, records, lap, seconds)
+
+
+def _load_snapshot(client, path, meta, datamap, questions, records, lap, seconds):
     lap("fetch")
     eng = get_engine("etl")
     with eng.connect() as conn:                   # a reload keeps its wave, even if the first date moved —
         existing = conn.execute(text(             # but only a wave this pipeline loaded from the API
             "SELECT s.wave_label, s.load_status FROM cip_load_log l JOIN cip_survey s ON s.survey_id = l.survey_id"
             " WHERE l.source_ref = :ref ORDER BY l.load_id LIMIT 1"), {"ref": f"forsta:{path}"}).first()
-    qualified = [r for r in records if forsta_api.whole(r.get("status")) == 3] or records
-    wave = existing.wave_label if existing else wave_from_records(qualified)
+    if existing:
+        wave = existing.wave_label
+    else:
+        has_qualified = any(forsta_api.whole(r.get("status")) == 3 for r in records)
+        wave = wave_from_records(r for r in records if not has_qualified or forsta_api.whole(r.get("status")) == 3)
     previous = existing.load_status if existing else None
     kind, fam = study_type(meta), family(meta)
 
@@ -376,14 +393,14 @@ def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
     return survey_id
 
 
-def _write(survey_id: int, records: list[dict], run: int) -> int:
+def _write(survey_id: int, records, run: int) -> int:
     """Respondents (one batched upsert) and answers (deleted, then batched
     inserts) — a constant number of round trips per wave, whatever its size."""
     eng = get_engine("etl")
     with eng.begin() as conn:
-        people = [_respondent(survey_id, r, run) for r in records]
-        if people:
-            conn.execute(text("""
+        people = (_respondent(survey_id, r, run) for r in records)
+        sent = set()
+        statement = text("""
             INSERT INTO cip_respondent (survey_id, record_no, forsta_uuid, status_code, status_label, is_qualified,
                 completed_at, interview_secs, markers, device, os, browser, dropout_qcode, panel_source,
                 respondent_key, load_id)
@@ -394,10 +411,12 @@ def _write(survey_id: int, records: list[dict], run: int) -> int:
                 completed_at = VALUES(completed_at), interview_secs = VALUES(interview_secs),
                 markers = VALUES(markers), device = VALUES(device), os = VALUES(os), browser = VALUES(browser),
                 dropout_qcode = VALUES(dropout_qcode), panel_source = VALUES(panel_source),
-                respondent_key = VALUES(respondent_key), sample_rid = NULL, load_id = VALUES(load_id)"""), people)
+                respondent_key = VALUES(respondent_key), sample_rid = NULL, load_id = VALUES(load_id)""")
+        for batch in iter(lambda: list(islice(people, 512)), []):
+            conn.execute(statement, batch)
+            sent.update(p['uuid'] for p in batch)
         ids = dict(conn.execute(text("SELECT forsta_uuid, respondent_id FROM cip_respondent WHERE survey_id = :s"),
                                 {"s": survey_id}).all())
-        sent = {p["uuid"] for p in people}
         gone = [rid for uuid, rid in ids.items() if uuid not in sent]   # removed in Forsta since the last load
         if gone:
             for table in ("cip_respondent_cohort", "cip_profile", "cip_respondent"):
@@ -414,12 +433,12 @@ def _write(survey_id: int, records: list[dict], run: int) -> int:
                 for name, value in rec.items():
                     field = fields.get(name)
                     if field:
-                        stored = _answer(field, value)
+                        stored = _answer_values(field, value)
                         if stored:
-                            yield {"rid": rid, "sid": survey_id, "fid": field["id"], **stored}
+                            yield (rid, survey_id, field["id"], *stored)
 
         insert_answers(conn, _stream_answers())
-    return len(people)
+    return len(records)
 
 
 ANSWER_COLUMNS = "respondent_id, survey_id, field_id, value_code, value_label, value_number, value_text"
@@ -427,8 +446,9 @@ ANSWER_KEYS = ("rid", "sid", "fid", "code", "label", "num", "txt")
 
 
 def insert_answers(conn, rows) -> None:
-    """The wave's answers (dicts keyed by ANSWER_KEYS), streamed into cip_answer (database.bulk_insert)."""
-    bulk_insert(conn, "cip_answer", ANSWER_COLUMNS.split(", "), (tuple(r[k] for k in ANSWER_KEYS) for r in rows))
+    """Stream positional answers, retaining mapping compatibility for adapters."""
+    bulk_insert(conn, "cip_answer", ANSWER_COLUMNS.split(", "),
+                (tuple(r[k] for k in ANSWER_KEYS) if isinstance(r, dict) else r for r in rows))
 
 
 def verify(survey_id: int, datamap: dict, records: list[dict]) -> list[str]:
@@ -454,34 +474,58 @@ def verify(survey_id: int, datamap: dict, records: list[dict]) -> list[str]:
 def reconcile_survey(survey_id: int, client=None) -> tuple[int, list[str]]:
     """Re-read the wave from Forsta (GET) and compare every stored answer."""
     client = client or _client()
+    # The index is scratch space, not a replacement for the warehouse. Keep the
+    # server cursor and local page cache bounded even for wide annual surveys.
+    with tempfile.TemporaryDirectory(prefix='cip-reconcile-') as directory:
+        with closing(sqlite3.connect(str(Path(directory) / 'answers.db'))) as index:
+            index.execute('PRAGMA cache_size=-2048')
+            index.execute('PRAGMA mmap_size=0')
+            index.execute('PRAGMA temp_store=FILE')
+            index.execute('PRAGMA journal_mode=OFF')
+            index.execute('CREATE TABLE answer (uuid TEXT, field TEXT, code, label, number, value_text)')
+            return _reconcile(survey_id, client, index)
+
+
+def _reconcile(survey_id, client, index):
     with get_engine("etl").connect() as conn:
         path = conn.execute(text("SELECT source_ref FROM cip_survey WHERE survey_id = :s"), {"s": survey_id}).scalar()
         fields = _fields(conn, survey_id)
-        stored = {(u, f): (c, l, n, t) for u, f, c, l, n, t in conn.execute(text("""
+        result = conn.execution_options(stream_results=True, max_row_buffer=1000).execute(text("""
             SELECT r.forsta_uuid, f.field_name, a.value_code, a.value_label, a.value_number, a.value_text FROM cip_answer a
               JOIN cip_field f ON f.field_id = a.field_id JOIN cip_respondent r ON r.respondent_id = a.respondent_id
-             WHERE a.survey_id = :s"""), {"s": survey_id})}
+             WHERE a.survey_id = :s"""), {"s": survey_id})
+        try:
+            index.executemany('INSERT INTO answer VALUES (?, ?, ?, ?, ?, ?)',
+                              ((u, f, c, l, str(n) if n is not None else None, t)
+                               for u, f, c, l, n, t in result))
+            index.execute('CREATE INDEX answer_uuid ON answer(uuid)')
+            index.commit()
+        finally:
+            result.close()
     checked, problems = 0, []
     try:
-        records = client.survey_data(path)
+        with source_records(client, path) as records:
+            for rec in records:
+                stored = {f: (c, l, n, t) for f, c, l, n, t in index.execute(
+                    'SELECT field, code, label, number, value_text FROM answer WHERE uuid=? ORDER BY rowid',
+                    (str(rec.get('uuid')),))}
+                for name, value in rec.items():
+                    field = fields.get(name)
+                    want = field and _answer_values(field, value)
+                    if not want:
+                        continue
+                    checked += 1
+                    got = stored.get(name)
+                    same = got is not None and (
+                        (want[0] is not None and got[0] == want[0]) or
+                        (want[1] is not None and got[1] == want[1]) or
+                        (want[2] is not None and got[2] is not None and round(float(got[2]), 4) == round(want[2], 4)) or
+                        (want[3] is not None and got[3] == want[3]))
+                    if not same and len(problems) < 200:
+                        problems.append(f"{rec.get('uuid')} {name}: Forsta {value!r}, stored {got}")
     except ForstaError as exc:                    # 428 = hibernated: nothing to compare against until reactivated
         log.warning("survey_id %s (%s) not checked: %s", survey_id, path, exc)
         return 0, []
-    for rec in records:
-        for name, value in rec.items():
-            field = fields.get(name)
-            want = field and _answer(field, value)
-            if not want:
-                continue
-            checked += 1
-            got = stored.get((str(rec.get("uuid")), name))
-            same = got is not None and (
-                (want["code"] is not None and got[0] == want["code"]) or
-                (want["label"] is not None and got[1] == want["label"]) or
-                (want["num"] is not None and got[2] is not None and round(float(got[2]), 4) == round(want["num"], 4)) or
-                (want["txt"] is not None and got[3] == want["txt"]))
-            if not same and len(problems) < 200:
-                problems.append(f"{rec.get('uuid')} {name}: Forsta {value!r}, stored {got}")
     return checked, problems
 
 

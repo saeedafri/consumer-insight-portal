@@ -18,6 +18,7 @@ import hashlib
 import html
 import json
 import logging
+import hmac
 import os
 import secrets
 import time
@@ -96,9 +97,14 @@ def user(request: Request) -> dict:
     return person
 
 
-def admin(who: dict = Depends(user)) -> dict:
+def admin(request: Request, who: dict = Depends(user)) -> dict:
     if who["role"] != "admin":
         raise HTTPException(403, "Only an admin can do that")
+    # the demo sign-in takes any email at its word, so anyone could type an admin's: admin pages (logs, audit,
+    # session revocation) then also need CIP_ADMIN_TOKEN (32+ characters) in the X-CIP-Admin-Token header
+    token = os.environ.get("CIP_ADMIN_TOKEN", "")
+    if demo() and not (len(token) >= 32 and hmac.compare_digest(token, request.headers.get("x-cip-admin-token", ""))):
+        raise HTTPException(403, "While sign-in is the demo, admin pages also need the admin token")
     return who
 
 

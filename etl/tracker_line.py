@@ -20,13 +20,15 @@ from collections import Counter
 from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
-import pandas as pd
 import yaml
 from sqlalchemy import bindparam, text
 
 from app.core.database import bulk_insert, get_engine
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 log = logging.getLogger("cip.tracker_line")
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "tracker_line.yml"
@@ -115,6 +117,8 @@ def lines(conn, survey_id: int) -> list[tuple[int, Any, dict]]:
 
 def read(survey_ids: Sequence[int], role: str = "app") -> pd.DataFrame:
     """The lines of these waves, in the team's column order (one indexed read)."""
+    import pandas as pd
+
     with get_engine(role).connect() as conn:
         lines = [json.loads(x) for (x,) in conn.execute(text(
             "SELECT line FROM cip_tracker_line WHERE survey_id IN :ids ORDER BY wave_date, respondent_id")
@@ -130,12 +134,16 @@ def read(survey_ids: Sequence[int], role: str = "app") -> pd.DataFrame:
 
 
 def _wave(stamp: Any) -> date:
+    import pandas as pd
+
     day = pd.to_datetime(stamp, format="%m/%d/%Y %H:%M").date()
     return date.fromordinal(day.toordinal() - day.weekday())
 
 
 def _counts(values: pd.Series) -> Counter:
     """Value counts, HTML entities decoded (the team's sheet keeps "Stop &amp; Shop")."""
+    import pandas as pd
+
     return Counter(html.unescape(str(v)).strip() for v in values if pd.notna(v) and str(v).strip() != "")
 
 
@@ -143,6 +151,8 @@ def compare(team: pd.DataFrame, ours: pd.DataFrame) -> list[str]:
     """Every wave both hold: same respondents, and every column the same count
     of every value. (Rows cannot be paired one to one — the team file keys them
     on the panel session id, which the warehouse never stores.)"""
+    import pandas as pd
+
     team, ours = team.copy(), ours.copy()
     by_case = {c.lower(): c for c in ours.columns}          # the team's "baby Toiletries" header
     team = team.rename(columns=lambda c: by_case.get(str(c).lower(), c))
@@ -183,6 +193,8 @@ def main() -> int:
     if args.rebuild:
         log.info("Built %d lines over %d waves", sum(build(s) for s in waves), len(waves))
         return 0
+    import pandas as pd
+
     team = pd.read_excel(args.compare, sheet_name="Raw Data")
     wanted = set(team["date"].map(_wave))
     with get_engine("etl").connect() as conn:          # computed fresh from the answers: reads only

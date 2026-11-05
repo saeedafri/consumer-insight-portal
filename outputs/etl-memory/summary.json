@@ -1,0 +1,180 @@
+{
+  "scope": "CIP Forsta memory optimization; not macros or MIP deployment",
+  "date": "2026-11-05",
+  "changes": [
+    "Incremental 64KiB JSON source decoding",
+    "Private temporary source snapshot before warehouse mutation",
+    "512-person write batches; positional answer rows",
+    "Disk-backed 2MiB-cache answer index and streaming warehouse cursor for full reconciliation",
+    "Lazy optional reporting/UI/API imports"
+  ],
+  "correctness": {
+    "offline_synthetic_answers": 686400,
+    "table_checksums_match": [
+      "cip_respondent",
+      "cip_answer",
+      "cip_agg_cell",
+      "cip_tracker_line",
+      "srv_result",
+      "srv_answer"
+    ],
+    "pytest_passed": 407,
+    "live_reconciled_answers": 158021,
+    "live_problem_count": 0
+  },
+  "measurements": {
+    "live_before": {
+      "scope": "one existing closed tracker wave; STG READ ONLY + Forsta GET; no email/reload/publication",
+      "version": "HEAD loader",
+      "survey_id": 530,
+      "wave": "2026-10-26",
+      "checked_answers": 158021,
+      "problem_count": 0,
+      "seconds": 7.472027084000729,
+      "process_peak_mib": 145.265625
+    },
+    "live_after_initial": {
+      "scope": "one existing closed tracker wave; STG READ ONLY + Forsta GET; no email/reload/publication",
+      "version": "working tree",
+      "survey_id": 530,
+      "wave": "2026-10-26",
+      "checked_answers": 158021,
+      "problem_count": 0,
+      "seconds": 9.682489165999868,
+      "process_peak_mib": 71.734375
+    },
+    "live_after_final": {
+      "scope": "one existing closed tracker wave; STG READ ONLY + Forsta GET; no email/reload/publication",
+      "version": "working tree",
+      "survey_id": 530,
+      "wave": "2026-10-26",
+      "checked_answers": 158021,
+      "problem_count": 0,
+      "seconds": 7.349483457997849,
+      "process_peak_mib": 71.8125
+    },
+    "allocation_before": {
+      "checked_answers": 686400,
+      "cube_cells": 4235,
+      "environment": "offline synthetic SQLite; no source/warehouse/SMTP calls",
+      "extra_fields": 300,
+      "load_python_peak_mib": 76.82340240478516,
+      "load_seconds": 27.371566541001812,
+      "people": 2200,
+      "problems": [],
+      "process_peak_mib": 746.59375,
+      "reconcile_python_peak_mib": 232.3236379623413,
+      "reconcile_seconds": 4.041213958997105,
+      "stored_answers": 686400,
+      "stored_people": 2200
+    },
+    "allocation_after_final": {
+      "environment": "offline synthetic SQLite; no warehouse/source/SMTP calls",
+      "baseline_ref": null,
+      "people": 2200,
+      "extra_fields": 300,
+      "trace_allocations": true,
+      "load_seconds": 28.60324083299929,
+      "load_python_peak_mib": 6.53447151184082,
+      "reconcile_seconds": 5.817478917000699,
+      "reconcile_python_peak_mib": 0.4110679626464844,
+      "checked_answers": 686400,
+      "problems": [],
+      "tables": {
+        "cip_respondent": {
+          "rows": 2200,
+          "sha256": "a8b91d5659e67fdc4d34e0b2886fe870f57110b37784240cfd2482434483dbae"
+        },
+        "cip_answer": {
+          "rows": 686400,
+          "sha256": "ba7657ff130b5288f606da39582c08dc3b8e06d24bf403cdfa5bd26126a6c2c8"
+        },
+        "cip_agg_cell": {
+          "rows": 4235,
+          "sha256": "bb499c5e66eb5e22fa36a7315aec7a49474825ddd99d295996bd7c669b122a9c"
+        },
+        "cip_tracker_line": {
+          "rows": 2200,
+          "sha256": "f4b5c769f76e34ba2111e2545c1035bac24e800b57824947937716b8003cb1a4"
+        },
+        "srv_result": {
+          "rows": 1210,
+          "sha256": "ce8fac099fd71d3b0ba0c257d4cbf7dbf3db73ba2f077856e59b3d70a0301dbb"
+        },
+        "srv_answer": {
+          "rows": 671000,
+          "sha256": "ec83b74f081fa378dda5d794e710eb21b0e0364468195faea597b95f0c8d5297"
+        }
+      },
+      "process_peak_mib": 190.703125,
+      "limits": "RSS includes test-fixture imports and SQLite; excludes email, publication, remote DB and live network. Baseline replaces loader only; cold-import results are separate."
+    },
+    "cold_import_before": {
+      "etl.forsta_etl": {
+        "seconds": 0.363369208000222,
+        "peak_rss_mib": 119.9375,
+        "optional_loaded": [
+          "numpy",
+          "pandas"
+        ]
+      },
+      "etl.notify": {
+        "seconds": 0.46557483400101773,
+        "peak_rss_mib": 150.671875,
+        "optional_loaded": [
+          "numpy",
+          "pandas",
+          "streamlit"
+        ]
+      },
+      "scripts.weekly_forsta": {
+        "seconds": 0.6232772080002178,
+        "peak_rss_mib": 166.5,
+        "optional_loaded": [
+          "fastapi",
+          "numpy",
+          "pandas",
+          "streamlit"
+        ]
+      }
+    },
+    "cold_import_after": {
+      "etl.forsta_etl": {
+        "seconds": 0.13253233300201828,
+        "peak_rss_mib": 52.796875,
+        "optional_loaded": []
+      },
+      "etl.notify": {
+        "seconds": 0.12302633299987065,
+        "peak_rss_mib": 50.96875,
+        "optional_loaded": []
+      },
+      "scripts.weekly_forsta": {
+        "seconds": 0.13581175000217627,
+        "peak_rss_mib": 53.265625,
+        "optional_loaded": []
+      }
+    }
+  },
+  "limits": [
+    "A few MiB for the entire Python process is not achieved; cold imports alone need about53MiB",
+    "Synthetic process RSS includes test-framework imports and SQLite; allocations differ from total RSS",
+    "No production reload, DDL, data deletion, email, publication, scheduler change or API restart",
+    "Live timing is a small number of sequential network-dependent samples, not a statistically established speedup",
+    "Full reporting-enabled pipeline runtime and RAM not remeasured",
+    "The original loader baseline uses current shared helpers/client; cold import changes measured separately",
+    "Public tunnel URL unavailable; local live health remained200"
+  ],
+  "python": "3.13.12",
+  "os": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "revision": "40053703565d3f92471ebe7adfdc3abc6f9ab55f",
+  "module_sha256": {
+    "etl/forsta_client.py": "f52cc0ce9343cc23742011228d56c60cdd47d736069f8d9c4df76427da406b8d",
+    "etl/forsta_etl.py": "b31fc44088185effe8cd344b11cf277711de6ec22c9e9b96b7842929a33b170c",
+    "etl/record_stream.py": "45ebdff0e5c2c1e070f3be44839b7605abebf2247681047765d6de9d71ac8fc9",
+    "etl/notify.py": "22d90679f1b377241d799f1e0e4441ad66f95f576fc52a83fa1f37bf2b88eeae",
+    "etl/tracker_line.py": "925c3bbeba0e4eb9c65e30bf87e1cd6fbe8d0a53ce0728afc2af998c076a6c8a",
+    "etl/run_pipeline.py": "3e94def4f799d9fe0a26bc6ef7b5b30463ab1e52cc262496f78c5d806e306809",
+    "scripts/weekly_forsta.py": "ccc7856a37e79e22514062438b1bb078d45209f4a03885de9d79569794d79cfb"
+  }
+}

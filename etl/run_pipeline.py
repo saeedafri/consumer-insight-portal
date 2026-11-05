@@ -404,14 +404,14 @@ def drop_derived_labels(conn, survey_id: int) -> int:
 def wave_from_records(records: list[dict]) -> str:
     """A weekly wave is labelled by the Monday of its first fielding day
     (the Excel exports: 2026-09-21, 2026-09-28)."""
-    days = []
+    first = None
     for rec in records:
         stamp = _dt(rec.get("date"))
         if stamp:
-            days.append(stamp.date())
-    if not days:
+            day = stamp.date()
+            first = day if first is None else min(first, day)
+    if first is None:
         raise ValueError("no record carries a date — pass --wave explicitly")
-    first = min(days)
     return (first - timedelta(days=first.weekday())).isoformat()
 
 

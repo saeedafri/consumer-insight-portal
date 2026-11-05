@@ -28,7 +28,6 @@ CIP is a research-grade analytical desk—not a generic SaaS metrics dashboard. 
 - Analysts pull insights, cross-tabulations, and chart exports directly into Coresight weekly reports, PowerPoint decks, and client briefings.
 - Dual-surface architecture:
   - **Client & Analyst Web Portal** (`web/`): A high-performance React 19 + Vite application providing instant exploration of Overview, Questions, Cross-tabs, Trends, Changes, Survey Simulation, and Library.
-  - **Internal Operations & Data Health** (`app/pages/`): Streamlit administrative interface for wave loading, harmonization mapping review, and publication drift cross-checking.
 
 ## Capabilities and Constraints
 

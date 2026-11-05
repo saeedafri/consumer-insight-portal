@@ -2,7 +2,7 @@
 // for the Content-Security-Policy in deploy/cip_headers.conf. One list per page, not one list for the whole site:
 // nginx refuses a single parameter over 4 KB, which the whole site's list passed (Nov 2026), and each page then
 // allows only its own scripts.
-//   node deploy/csp_map.mjs web-next/out > cip_csp_map.conf
+//   node deploy/csp_map.mjs frontend/out > cip_csp_map.conf
 import { createHash } from "crypto";
 import { readdirSync, readFileSync } from "fs";
 

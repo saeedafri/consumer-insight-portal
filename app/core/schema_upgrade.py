@@ -4,7 +4,7 @@
 under v1 already has its tables, so CREATE TABLE IF NOT EXISTS skips them and
 their new columns never arrive. This module adds exactly what is missing,
 after checking the live catalogue, and nothing else: no v1 object is dropped
-or renamed. See docs/superpowers/specs/2026-09-29-survey-platform-design.md §5.
+or renamed. See docs/design/2026-09-29-survey-platform-design.md §5.
 """
 from __future__ import annotations
 

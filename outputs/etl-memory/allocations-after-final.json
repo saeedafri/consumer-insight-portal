@@ -1,0 +1,41 @@
+{
+  "environment": "offline synthetic SQLite; no warehouse/source/SMTP calls",
+  "baseline_ref": null,
+  "people": 2200,
+  "extra_fields": 300,
+  "trace_allocations": true,
+  "load_seconds": 28.60324083299929,
+  "load_python_peak_mib": 6.53447151184082,
+  "reconcile_seconds": 5.817478917000699,
+  "reconcile_python_peak_mib": 0.4110679626464844,
+  "checked_answers": 686400,
+  "problems": [],
+  "tables": {
+    "cip_respondent": {
+      "rows": 2200,
+      "sha256": "a8b91d5659e67fdc4d34e0b2886fe870f57110b37784240cfd2482434483dbae"
+    },
+    "cip_answer": {
+      "rows": 686400,
+      "sha256": "ba7657ff130b5288f606da39582c08dc3b8e06d24bf403cdfa5bd26126a6c2c8"
+    },
+    "cip_agg_cell": {
+      "rows": 4235,
+      "sha256": "bb499c5e66eb5e22fa36a7315aec7a49474825ddd99d295996bd7c669b122a9c"
+    },
+    "cip_tracker_line": {
+      "rows": 2200,
+      "sha256": "f4b5c769f76e34ba2111e2545c1035bac24e800b57824947937716b8003cb1a4"
+    },
+    "srv_result": {
+      "rows": 1210,
+      "sha256": "ce8fac099fd71d3b0ba0c257d4cbf7dbf3db73ba2f077856e59b3d70a0301dbb"
+    },
+    "srv_answer": {
+      "rows": 671000,
+      "sha256": "ec83b74f081fa378dda5d794e710eb21b0e0364468195faea597b95f0c8d5297"
+    }
+  },
+  "process_peak_mib": 190.703125,
+  "limits": "RSS includes test-fixture imports and SQLite; excludes email, publication, remote DB and live network. Baseline replaces loader only; cold-import results are separate."
+}

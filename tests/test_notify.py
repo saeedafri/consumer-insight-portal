@@ -53,7 +53,7 @@ def test_failure_emails_only_the_private_list_once(monkeypatch, tmp_path):
     monkeypatch.setattr(notify, "teams", posted.append)
     assert notify.failure("survey X did not load", "boom")
     assert notify.failure("survey X did not load", "boom") is False          # same failure inside the window
-    assert sent == [("CIP pipeline FAILED: survey X did not load", ["mohammadsaeedafri@coursera.com"], False)]
+    assert sent == [("CIP pipeline FAILED: survey X did not load", ["mohdsaeedafri@coresight.com"], False)]
     assert posted == []
 
 

@@ -46,6 +46,7 @@ const router = createBrowserRouter([{
     { path: "/boards/:id?", element: page("Page:Boards", () => import("./screens/Boards")) },
     { path: "/whats-new", element: page("Page:WhatsNew", () => import("./screens/WhatsNew")) },
     { path: "/methodology", element: page("Page:Methodology", () => import("./screens/Methodology")) },
+    { path: "/logs", element: page("Page:Logs", () => import("./screens/Logs")) },
     { path: "/w/:id/changes", element: page("Page:Changes", () => import("./screens/Changes")) },
     { path: "/w/:id/survey/:q?", element: page("Page:Survey", () => import("./screens/Survey")) },
     {

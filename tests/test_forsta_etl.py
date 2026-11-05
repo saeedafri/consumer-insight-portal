@@ -1,7 +1,7 @@
 """The Forsta ETL build (Oct 2026): schema, API adapter, pipeline, search.
 
 See docs/superpowers/plans/2026-10-07-forsta-etl-build.md and the design in
-docs/superpowers/specs/2026-10-07-cip-forsta-etl-and-ui-design.md.
+docs/design/2026-10-07-cip-forsta-etl-and-ui-design.md.
 """
 from __future__ import annotations
 
@@ -351,8 +351,8 @@ def test_the_weekly_run_fails_when_a_wave_fails(csi_db):
 
 def test_a_wave_that_does_not_match_its_payload_is_failed_and_hidden(csi_db, monkeypatch):
     from app.data import repository
-    real = forsta_etl._answer
-    monkeypatch.setattr(forsta_etl, "_answer", lambda field, value: None if value == "note 3" else real(field, value))
+    real = forsta_etl._answer_values
+    monkeypatch.setattr(forsta_etl, "_answer_values", lambda field, value: None if value == "note 3" else real(field, value))
     with pytest.raises(RuntimeError, match="does not match"):
         forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
     assert loaded(csi_db, "SELECT load_status FROM cip_survey WHERE source_ref = 'selfserve/58f/260907'")[0][0] == "failed"
@@ -360,7 +360,6 @@ def test_a_wave_that_does_not_match_its_payload_is_failed_and_hidden(csi_db, mon
 
 
 # ── the report UI: search and auto-charting ────────────────────────────────
-from app.components import charts
 from app.data import repository
 
 
@@ -403,28 +402,10 @@ def test_the_catalog_leaves_out_virtual_questions(csi_db):
     assert "HX6_norm" not in set(unwrapped(repository.question_catalog)(sid).qcode)
 
 
-@pytest.mark.parametrize("shape, kind", [
-    (("numeric", False, 0, 1, False), "distribution"),
-    (("text", False, 0, 1, False), "verbatims"),
-    (("multi", True, 0, 12, False), "ranked_bar"),
-    (("single", False, 4, 1, False), "donut"),
-    (("single", False, 9, 1, False), "bar"),
-    (("grid_single", False, 2, 5, True), "butterfly"),
-    (("grid_single", False, 5, 6, False), "diverging_stack"),
-    (("grid_single", False, 11, 6, False), "heatmap"),
-    (("grid_single", False, 5, 1, False), "donut"),             # a one-row grid is a single choice
-])
-def test_each_question_shape_gets_its_chart(shape, kind):
-    assert charts.chart_kind(*shape) == kind
 
 
-def test_the_new_charts_draw():
-    import pandas as pd
-    grid = pd.DataFrame({"item_label": ["Early", "Early", "Budget", "Budget"], "left_label": ["Early", "Early", "Budget", "Budget"],
-                         "right_label": ["Late", "Late", "Spend", "Spend"], "option_order": [1, 2, 1, 2], "pct": [.6, .4, .3, .7]})
-    fig = charts.butterfly(grid)
-    assert len(fig.data) == 2 and min(fig.data[0].x) < 0 < max(fig.data[1].x)
-    assert len(charts.distribution(pd.Series([1, 2, 2, 3, 40])).data) == 1
+
+
 
 
 def test_virtual_questions_are_not_harmonised(csi_db):
@@ -601,11 +582,7 @@ def test_a_failed_reload_leaves_the_verified_wave_visible(csi_db, monkeypatch):
     assert loaded(csi_db, "SELECT load_status FROM cip_survey WHERE survey_id = :s", s=sid)[0][0] == "verified"
 
 
-def test_the_butterfly_keeps_rows_with_the_same_left_statement_apart():
-    import pandas as pd
-    grid = pd.DataFrame({"item_label": ["a", "a", "b", "b"], "left_label": ["Same"] * 4, "right_label": ["X", "X", "Y", "Y"],
-                         "item_order": [1, 1, 2, 2], "option_order": [1, 2, 1, 2], "pct": [.6, .4, .3, .7]})
-    assert len(set(charts.butterfly(grid).data[0].y)) == 2
+
 
 
 def test_a_wave_loaded_another_way_on_the_same_path_is_never_reused(csi_db):

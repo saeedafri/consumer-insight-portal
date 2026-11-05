@@ -1,6 +1,6 @@
 """Schema v2, Phase 1: the additive migration.
 
-See docs/superpowers/specs/2026-09-29-survey-platform-design.md §5.
+See docs/design/2026-09-29-survey-platform-design.md §5.
 """
 from __future__ import annotations
 

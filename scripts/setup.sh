@@ -46,4 +46,4 @@ else
 fi
 
 echo
-echo "── done. Start the portal with:  streamlit run app/main.py"
+echo "── done. Start the API with:  gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000"

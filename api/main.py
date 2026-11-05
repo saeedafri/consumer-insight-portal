@@ -49,7 +49,7 @@ from app.core import access, audit
 from app.core.database import get_engine
 from app.core.session import issue   # noqa: F401 — tests and tools sign sessions through the API module
 from app.data import payloads
-from api import assistant, exports, mcp, signin, team
+from api import assistant, exports, logs, mcp, signin, team
 from api.search import SearchIndex
 from api.signin import COOKIE, admin, user
 from etl import launch_schedule
@@ -214,10 +214,21 @@ async def _refresh_forever() -> None:
             log.exception("Dashboard refresh failed; still serving the previous payloads")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def check_settings() -> None:
+    """Refuse to start rather than run unsafely: no signing key, a guessable one on a server, or the demo sign-in
+    (anyone as anyone) in production."""
     if not SECRET:
         raise RuntimeError("CIP_SESSION_SECRET is not set")
+    env = os.environ.get("APP_ENV", "").lower()
+    if env in ("production", "staging") and len(SECRET) < 32:
+        raise RuntimeError("CIP_SESSION_SECRET must be at least 32 random characters on a server")
+    if env == "production" and signin.demo():
+        raise RuntimeError("CIP_DEMO_LOGIN=1 lets anyone sign in as any email: never in production")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    check_settings()
     await run_in_threadpool(_load)
     await run_in_threadpool(_changed)
     await run_in_threadpool(_load_schedule)
@@ -464,7 +475,12 @@ async def question(family: str, study_type: str, qcode: str, request: Request, w
     need(who, "trends")
     scope = access.scope(who)
     def build() -> Payload:
-        found = _published("questions", family, study_type, qcode) or _json(payloads.question(family, study_type, qcode))
+        found = _published("questions", family, study_type, qcode)
+        if found is None and not family.startswith(".") and (PUBLISHED / "api" / "v1" / "questions" / family / study_type).is_dir():
+            # publish writes every question of a published family that has figures; one missing (an "other, please
+            # specify" text) has none: the same empty file the database gave after 1-5 s, now without the round trip
+            found = _json(payloads.question_from(qcode, [], [], {}))
+        found = found or _json(payloads.question(family, study_type, qcode))
         if scope == access.EVERYTHING:
             return found
         shown = {w["survey_id"] for w in all_waves() if access.sees(who, w)}
@@ -486,6 +502,7 @@ def only_waves(doc: dict, shown: set) -> dict:
 app.include_router(team.router, dependencies=[Depends(user)])   # saved views, alerts, audiences (api/team.py)
 app.include_router(signin.router)                                 # /auth/* and the admin's session revocation
 app.include_router(mcp.router)                                    # /mcp: the MCP connector, by API key (api/mcp.py)
+app.include_router(logs.router)                                   # /api/v1/admin/logs: operational logs (api/logs.py)
 
 def _book_data(survey_id: int) -> Optional[dict]:
     return _parsed_book(survey_id, PUBLISHED_VERSION)

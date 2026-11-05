@@ -3,7 +3,7 @@ import { NAME, SITE } from "../site";
 import { siteFacts } from "./pipeline";
 
 export const metadata = {
-  title: { absolute: "Weekly US Consumer Survey Data & Retail Trends | Coresight Consumer Insight Portal" },
+  title: { absolute: "Weekly US Consumer Survey Data & Retail Trends | CIP-test" },
   alternates: { canonical: "/" },
 };
 

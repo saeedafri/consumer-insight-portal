@@ -102,6 +102,7 @@ export default function Shell() {
         {allowed(me, "ask") && <NavLink to="/ask"><Icon d="M4 4h16v12H8l-4 4zm4 5v2h2V9zm4 0v2h2V9zm4 0v2h2V9z" />Ask CIP</NavLink>}
         {allowed(me, "boards") && <NavLink to="/boards"><Icon d="M16 3l5 5-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z" />Boards</NavLink>}
         <NavLink to="/methodology"><Icon d="M12 2a10 10 0 110 20 10 10 0 010-20zm-1 15h2v-6h-2zm0-8h2V7h-2z" />Methodology</NavLink>
+        {me?.role === "admin" && <NavLink to="/logs"><Icon d="M4 4h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm0 5h16v2H4z" />Logs</NavLink>}
         <NavLink to="/whats-new"><Icon d="M12 2l2.4 6.9H22l-6 4.4 2.3 7-6.3-4.5L5.7 20.3 8 13.3 2 8.9h7.6z" />What's new</NavLink>
       </nav>
       {wave && <nav aria-label="This wave">
@@ -137,7 +138,7 @@ function SiteFooter() {
     <div className="site-foot-cols">
       <section>
         <img src="/coresight-logo-reversed.png" alt="Coresight Research" width="120" height="60" />
-        <h2>Consumer Insight Portal</h2>
+        <h2>CIP-test</h2>
         <ul>
           <li><a href={SITE + "/"}>Back to coresight.com</a></li>
           <li><Link to="/methodology">Methodology</Link></li>
@@ -186,9 +187,9 @@ function SiteHeader({ theme, onTheme, menuOpen, onToggleMenu }: { theme: Theme; 
         <path d={menuOpen ? "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" : "M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"} fill="currentColor" />
       </svg>
     </button>
-    <Link to="/" className="site-brand" aria-label="Consumer Insight Portal home">
+    <Link to="/" className="site-brand" aria-label="CIP-test home">
       <img src={theme === "dark" ? "/coresight-logo-reversed.png" : "/coresight-logo.png"} alt="" width="76" height="38" />
-      <span>Consumer Insight Portal</span>
+      <span>CIP-test</span>
     </Link>
     <nav className="site-links" aria-label="Coresight.com">
       {SITE_LINKS.map(([path, label]) => <a key={path} href={SITE + path}>{label}</a>)}

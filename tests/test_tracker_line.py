@@ -125,13 +125,25 @@ def test_the_scheduled_run_waits_out_a_database_blip(csi_db, monkeypatch):
     import importlib
     weekly = importlib.import_module("scripts.weekly_forsta")
     answers = iter([(False, "timed out"), (False, "timed out"), (True, "connected")])
-    monkeypatch.setattr(weekly, "healthcheck", lambda role: next(answers))
+    checks = []
+
+    def healthcheck(role):
+        checks.append(role)
+        return next(answers)
+
+    monkeypatch.setattr(weekly, "healthcheck", healthcheck)
     monkeypatch.setattr(weekly, "DB_PAUSE_SECONDS", 0)
+    # This fixture contains one wave, not the production release calendar.
+    monkeypatch.setattr(weekly.integrity, "planned_weeks_missing", lambda: [])
 
     class Ok(Forsta):
         def whoami(self):
             return {}
     assert weekly.run(Ok(RECORDS)) == 0
+    assert checks == ["etl", "etl", "etl"]
+    with csi_db.connect() as conn:
+        assert conn.exec_driver_sql("SELECT COUNT(*) FROM cip_respondent").scalar() == len(RECORDS)
+        assert conn.exec_driver_sql("SELECT load_status FROM cip_survey").scalar() == "verified"
 
 
 def test_the_scheduled_run_reports_an_unreachable_database(csi_db, monkeypatch):

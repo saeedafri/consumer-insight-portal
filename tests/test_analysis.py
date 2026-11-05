@@ -37,7 +37,7 @@ def analysis_db(tmp_path_factory):
 @pytest.fixture(scope="module")
 def repo(analysis_db):
     import app.data.repository as _repo
-    # strip Streamlit's cache decorator so the functions are callable off-runtime
+    # functions that still carry a cache wrapper are called unwrapped
     for name in dir(_repo):
         fn = getattr(_repo, name)
         if hasattr(fn, "__wrapped__"):

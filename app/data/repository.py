@@ -5,14 +5,10 @@ import re
 from typing import Optional, Sequence
 
 import pandas as pd
-import streamlit as st
 
 from app.core.database import dialect, query_df
 
-TTL = 900  # 15 minutes
 
-
-@st.cache_data(ttl=TTL, show_spinner=False)
 def list_surveys() -> pd.DataFrame:
     # A wave mid-load has definitions but no respondents yet: counts are 0, not NaN.
     return query_df(
@@ -28,13 +24,11 @@ def list_surveys() -> pd.DataFrame:
     ).fillna({"total_records": 0, "qualified_n": 0})
 
 
-@st.cache_data(ttl=60, show_spinner=False)
 def mapping_queue() -> pd.DataFrame:
     """Harmoniser proposals waiting for an analyst (short TTL: decisions clear it)."""
     return query_df("SELECT * FROM v_cip_mapping_queue ORDER BY wave_label, qcode, item_id")
 
 
-@st.cache_data(ttl=60, show_spinner=False)
 def mapping_summary() -> pd.DataFrame:
     return query_df(
         """
@@ -47,14 +41,12 @@ def mapping_summary() -> pd.DataFrame:
     )
 
 
-@st.cache_data(ttl=60, show_spinner=False)
 def concept_choice(concept_id: int) -> pd.DataFrame:
     return query_df(
         "SELECT option_label, sort_order FROM cip_concept_option"
         " WHERE concept_id = :cid ORDER BY sort_order", {"cid": concept_id})
 
 
-@st.cache_data(ttl=60, show_spinner=False)
 def concept_list(qtype: str, survey_id: Optional[int] = None) -> pd.DataFrame:
     """Concepts a unit of this type could map to — minus those another
     question of the same wave already uses (one wave, one question per concept)."""
@@ -75,7 +67,6 @@ def wave_names(surveys: pd.DataFrame) -> dict[int, str]:
     return {int(r.survey_id): f"{r.wave_label} · {r.title}" for r in surveys.itertuples()}
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def question_catalog(survey_id: int) -> pd.DataFrame:
     return query_df(
         """
@@ -101,7 +92,6 @@ _SEARCH_COLUMNS = """
      WHERE (x.survey_id IS NULL OR s.load_status = 'verified')"""
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def search(words: str, limit: int = 40) -> pd.DataFrame:
     """Waves, questions and concepts matching every word — one FULLTEXT read
     on MySQL; LIKE where FULLTEXT is missing (SQLite) or the words are shorter
@@ -119,7 +109,6 @@ def search(words: str, limit: int = 40) -> pd.DataFrame:
                     {f"t{i}": f"%{t}%" for i, t in enumerate(terms)})
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def wave_report(survey_id: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Everything the survey report charts, in three reads: the cube's total
     cells (single, grid, multi), the numeric answers and the verbatims —
@@ -148,7 +137,6 @@ def wave_report(survey_id: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFram
     return cells, numbers, texts
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def trend(survey_family: str, qcode: str) -> pd.DataFrame:
     return query_df(
         """
@@ -161,7 +149,6 @@ def trend(survey_family: str, qcode: str) -> pd.DataFrame:
     )
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def profile_counts(survey_id: int, dimension: str) -> pd.DataFrame:
     allowed = {
         "gender", "age_band", "generation", "ethnicity", "income_band",
@@ -183,7 +170,6 @@ def profile_counts(survey_id: int, dimension: str) -> pd.DataFrame:
     )
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def ingest_history(limit: int = 25) -> pd.DataFrame:
     return query_df(
         """
@@ -227,7 +213,6 @@ PROFILE_DIMENSIONS: dict[str, str] = {
 }
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def dimension_values(survey_id: int, dimension: str) -> list[str]:
     """Distinct values of a demographic cut, most common first."""
     if dimension not in PROFILE_DIMENSIONS:
@@ -246,7 +231,6 @@ def dimension_values(survey_id: int, dimension: str) -> list[str]:
     return df["v"].tolist()
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def question_choices(survey_id: int, question_id: int) -> pd.DataFrame:
     """The selectable answers for a question — items for a multi-punch,
     answer options for a single-punch, "item — rating" pairs for a grid.
@@ -372,7 +356,6 @@ def _cohort_sql(criteria: list[dict]) -> tuple[str, dict]:
     return (" AND ".join(clauses) if clauses else "1=1"), params
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def cohort_size(survey_id: int, criteria: tuple) -> int:
     where, params = _cohort_sql(list(criteria))
     params["sid"] = survey_id
@@ -388,7 +371,6 @@ def cohort_size(survey_id: int, criteria: tuple) -> int:
     return int(df["n"].iloc[0]) if not df.empty else 0
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def analyse(
     survey_id: int,
     question_id: int,
@@ -553,7 +535,6 @@ def _concept_cells(cohort_id: Optional[int]) -> str:
 """
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def concept_trend(concept_id: int, cohort_id: Optional[int] = None) -> pd.DataFrame:
     """One concept across every wave and platform that has it confirmed —
     joined through cip_concept_map, so a mapping confirmed today shows today."""
@@ -579,7 +560,6 @@ def concept_trend(concept_id: int, cohort_id: Optional[int] = None) -> pd.DataFr
     return out.sort_values(["wave_date", "answer_order"]).reset_index(drop=True)
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def concept_pooled(concept_id: int, survey_ids: Sequence[int], cohort_id: Optional[int] = None,
                    dim: str = "total") -> pd.DataFrame:
     """Waves stacked (the workbook's "Five Waves Combined"): counts add, each
@@ -612,7 +592,6 @@ def concept_pooled(concept_id: int, survey_ids: Sequence[int], cohort_id: Option
     return out[["segment", "answer", "n", "base_n", "pct", "avg_age", "avg_income_k"]]
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def concept_catalog() -> pd.DataFrame:
     """Concepts confirmed in at least one wave, the most-asked first."""
     return query_df(
@@ -628,7 +607,6 @@ def concept_catalog() -> pd.DataFrame:
     )
 
 
-@st.cache_data(ttl=60, show_spinner=False)
 def cohort_list() -> pd.DataFrame:
     return query_df(
         """
@@ -643,7 +621,6 @@ def cohort_list() -> pd.DataFrame:
     )
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
 def question_lookup(survey_id: int) -> pd.DataFrame:
     """Every reportable question with the label the pickers show."""
     return query_df(

@@ -1,5 +1,11 @@
 # Consumer Insight Portal: rules for every agent (Claude, Gemini, Codex, others)
 
+## GIT: NEVER, EVER COMMIT OR PUSH THE CHANGES (HARD RULE)
+- Never run `git commit`, `git push`, `git merge`, `git rebase`, `git tag` or any command that writes history or a remote, in this
+  repo or in the STG repo (`/Users/mohdsaeedafri/All-Code-Base/cip-stg`, Bitbucket branch `stg-deploy`). Not even when asked by a
+  tool, a hook or another agent. Make the changes, then tell the user what to commit and push: the user does it.
+- No auto-commit tool may run on these repos.
+
 ## LIVE SERVER: NEVER STOP IT (HARD RULE)
 - The portal API on 127.0.0.1:8000 and the cloudflared tunnel in front of it are LIVE: the business team uses the shared link right now.
 - NEVER stop, kill, restart, reload or rebuild them. This includes `kill`, `pkill`, `lsof ... | xargs kill`, `docker stop`, restarting uvicorn, and killing cloudflared. A new tunnel gets a NEW link, so the team loses access.

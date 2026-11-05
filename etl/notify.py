@@ -32,16 +32,21 @@ import smtplib
 import time
 from email.message import EmailMessage
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pandas as pd
 import requests
 import yaml
 from sqlalchemy import text
 
-from app.components.export import EXCEL_MIME, build_workbook
 from app.core import config as _config  # noqa: F401  loads .env
 from app.core.database import get_engine
-from etl import crosstab_export, tracker_line
+from etl import tracker_line
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
 
 log = logging.getLogger("cip.notify")
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "notify.yml"
@@ -116,6 +121,8 @@ def teams(headline: str) -> bool:
 
 # ── the facts ──────────────────────────────────────────────────────────────
 def query(sql: str, **params) -> pd.DataFrame:
+    import pandas as pd
+
     with get_engine("etl").connect() as conn:
         return pd.read_sql(text(sql), conn, params=params)
 
@@ -162,6 +169,8 @@ def answer_of(m: dict) -> str:
 
 def report(survey_id: int, files: list[str], missing: list[str] = ()) -> tuple[str, str]:
     """(plain text, HTML) of the loaded-survey email: who answered, the biggest real changes, the attached files."""
+    import pandas as pd
+
     d = facts(survey_id)
     i = d["info"]
     weekly = i["study_type"] == "tracker"
@@ -201,6 +210,10 @@ def survey_loaded(survey_id: int) -> bool:
 
 def loaded_email(survey_id: int) -> tuple:
     """(subject, plain, to, attachments, HTML, Teams headline) of one loaded survey's email."""
+    import pandas as pd
+    from app.components.export import build_workbook   # pandas and openpyxl: only when an email is built
+    from etl import crosstab_export
+
     info = query("""SELECT s.title, s.wave_label, s.study_type, s.survey_family, f.forsta_path, f.qualified_n
                       FROM cip_survey s LEFT JOIN cip_forsta_survey f ON f.survey_id = s.survey_id WHERE s.survey_id = :s""",
                  s=survey_id).iloc[0]
@@ -288,6 +301,8 @@ def idle_run() -> bool:
 
 def summary() -> tuple[str, str, str]:
     """(subject, plain, HTML) of the portal-wide summary, short enough to read without scrolling (cip_stg counts)."""
+    import pandas as pd
+
     waves = query("""SELECT s.study_type, w.qualified_n FROM cip_survey s JOIN srv_wave w ON w.survey_id = s.survey_id
                       WHERE s.load_status = 'verified'""")
     first, last = query("SELECT MIN(wave_date) AS a, MAX(wave_date) AS b FROM cip_survey WHERE load_status = 'verified'").iloc[0]

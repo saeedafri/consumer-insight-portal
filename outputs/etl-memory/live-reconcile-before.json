@@ -1,0 +1,10 @@
+{
+  "scope": "one existing closed tracker wave; STG READ ONLY + Forsta GET; no email/reload/publication",
+  "version": "HEAD loader",
+  "survey_id": 530,
+  "wave": "2026-10-26",
+  "checked_answers": 158021,
+  "problem_count": 0,
+  "seconds": 7.472027084000729,
+  "process_peak_mib": 145.265625
+}

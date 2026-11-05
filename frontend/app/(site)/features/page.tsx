@@ -9,7 +9,7 @@ export const metadata = {
 };
 
 const FEATURES_FAQ: [string, string][] = [
-  ["What can I do with the Consumer Insight Portal?", "Explore any survey question by demographic cut, build cross-tabs, track trends across waves, compare waves, index audiences, search in plain English and ask the data questions — then export to CSV, Excel or PowerPoint."],
+  ["What can I do with CIP-test?", "Explore any survey question by demographic cut, build cross-tabs, track trends across waves, compare waves, index audiences, search in plain English and ask the data questions — then export to CSV, Excel or PowerPoint."],
   ["Can I access the data through an API?", "Yes. API keys give programmatic access to the same figures, and an MCP connector lets AI assistants query the portal directly, with the same entitlements and audit log."],
   ["Which demographic cuts are available?", "Every question can be read for all respondents or cut by generation, gender, income band and US Census region, with significance tested against the previous wave."],
 ];

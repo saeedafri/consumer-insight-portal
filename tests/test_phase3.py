@@ -464,14 +464,6 @@ def test_qualtrics_options_follow_the_concept_order_not_first_appearance(legacy,
     assert labels == ["18 - 29", "over 60"]
 
 
-def test_mapping_lookups_are_cached_so_a_page_of_25_rows_is_not_50_round_trips():
-    # read the source: test_analysis strips the cache wrappers module-wide
-    from app.data import repository
-    source = Path(repository.__file__).read_text()
-    for name in ("concept_choice", "concept_list"):
-        assert re.search(rf"@st\.cache_data\([^)]*\)\ndef {name}\(", source), name
-
-
 def test_waves_without_sort_columns_take_order_and_codes_from_the_qualtrics_qid(legacy):
     """The three Aug 2022 waves have srt1/srt2 NULL; ids sort QID1, QID11, QID2."""
     with legacy.begin() as conn:

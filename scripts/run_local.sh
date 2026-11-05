@@ -26,7 +26,7 @@ if [ -n "${1:-}" ]; then
   python -m etl.forsta_etl --survey "$1"
 fi
 
-PORT="${PORT:-8611}"                 # 8501/8503 belong to the Market Data Portal
+PORT="${PORT:-8000}"
 echo
-echo "── starting the portal on http://127.0.0.1:$PORT"
-streamlit run app/main.py --server.port "$PORT"
+echo "── starting the API on http://127.0.0.1:$PORT (the site: cd frontend && npm run dev)"
+exec gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w 1 -b "127.0.0.1:$PORT"

@@ -37,7 +37,6 @@ from sqlalchemy import inspect, text  # noqa: E402
 
 from app.core.config import config  # noqa: E402
 from app.core.database import get_engine, healthcheck  # noqa: E402
-from api import dashboards, team  # noqa: E402
 from etl import forsta_etl, integrity, launch_schedule, notify, open_ends, publish  # noqa: E402
 from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
 from etl.loaders import Locked, etl_lock  # noqa: E402
@@ -72,8 +71,6 @@ def tell(action, *args) -> None:
 
 
 def run(client=None) -> int:
-    from app.data import publications
-
     if client is None:
         fc = config.forsta
         if not fc.is_configured:
@@ -123,10 +120,14 @@ def run(client=None) -> int:
                           if checked else f"survey {path}: no answer could be compared with Forsta")
     if result["loaded"]:                            # the topic dashboards (config/dashboards.yml) of the new waves
         try:
+            from api import dashboards
+
             dashboards.build_for([forsta_etl.survey_id_of(path) for path in result["loaded"]])
         except Exception as exc:                    # last week's dashboards stay live; say so
             tell(notify.failure, "building the topic dashboards", str(exc))
         try:                                        # the team's metric alerts (api/team.py), judged once per new wave
+            from api import team
+
             for message, email in team.due_alerts([forsta_etl.survey_id_of(path) for path in result["loaded"]]):
                 tell(notify.teams, message)
                 if email:                           # and the person who set it, by email
@@ -151,6 +152,8 @@ def run(client=None) -> int:
     if result["failed"]:
         log.error("Failed %d: %s", len(result["failed"]), result["failed"])
         return 1
+    from app.data import publications
+
     drift = publications.drift_summary()
     moved = drift[(drift[["moved", "missing", "new", "error"]].sum(axis=1)) > 0] if not drift.empty else drift
     for row in moved.itertuples():
@@ -225,9 +228,6 @@ def setup_logging() -> None:
     errors.setLevel(logging.WARNING)
     errors.setFormatter(JsonLines("%(message)s"))
     logging.basicConfig(level=logging.INFO, handlers=[screen, errors], force=True)   # app.core sets one up on import
-    # app.data's @st.cache_data warns once per function outside Streamlit: ~40 lines of noise per run
-    from streamlit import logger as streamlit_logger
-    streamlit_logger.set_log_level("ERROR")
 
 
 def watchdog() -> int:

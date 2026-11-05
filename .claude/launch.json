@@ -2,32 +2,6 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "cip-dwh",
-      "runtimeExecutable": ".venv/bin/streamlit",
-      "runtimeArgs": [
-        "run",
-        "app/main.py",
-        "--server.port",
-        "8502"
-      ],
-      "port": 8502
-    },
-    {
-      "name": "cip-local",
-      "runtimeExecutable": "env",
-      "runtimeArgs": [
-        "APP_ENV=LOCAL",
-        "LOCAL_SQLITE_PATH=data/csi_local.db",
-        "AUTH_PROVIDER=off",
-        ".venv/bin/streamlit",
-        "run",
-        "app/main.py",
-        "--server.port",
-        "8503"
-      ],
-      "port": 8503
-    },
-    {
       "name": "cip-api",
       "runtimeExecutable": "env",
       "runtimeArgs": [
@@ -84,15 +58,14 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "web",
+        "frontend",
         "run",
         "dev",
         "--",
         "--port",
-        "5173",
-        "--strictPort"
+        "3000"
       ],
-      "port": 5173
+      "port": 3000
     }
   ]
 }

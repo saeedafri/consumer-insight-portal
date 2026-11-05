@@ -1,0 +1,29 @@
+{
+  "etl.forsta_etl": {
+    "seconds": 0.363369208000222,
+    "peak_rss_mib": 119.9375,
+    "optional_loaded": [
+      "numpy",
+      "pandas"
+    ]
+  },
+  "etl.notify": {
+    "seconds": 0.46557483400101773,
+    "peak_rss_mib": 150.671875,
+    "optional_loaded": [
+      "numpy",
+      "pandas",
+      "streamlit"
+    ]
+  },
+  "scripts.weekly_forsta": {
+    "seconds": 0.6232772080002178,
+    "peak_rss_mib": 166.5,
+    "optional_loaded": [
+      "fastapi",
+      "numpy",
+      "pandas",
+      "streamlit"
+    ]
+  }
+}

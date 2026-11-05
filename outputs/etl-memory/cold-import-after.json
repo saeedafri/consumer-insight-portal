@@ -1,0 +1,17 @@
+{
+  "etl.forsta_etl": {
+    "seconds": 0.13253233300201828,
+    "peak_rss_mib": 52.796875,
+    "optional_loaded": []
+  },
+  "etl.notify": {
+    "seconds": 0.12302633299987065,
+    "peak_rss_mib": 50.96875,
+    "optional_loaded": []
+  },
+  "scripts.weekly_forsta": {
+    "seconds": 0.13581175000217627,
+    "peak_rss_mib": 53.265625,
+    "optional_loaded": []
+  }
+}

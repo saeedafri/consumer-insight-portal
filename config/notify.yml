@@ -8,5 +8,5 @@ default: [RisthaVilinaDsa@coresight.com, PreranaKotian@coresight.com, PhilipMoor
 tracker: []
 annual: []
 adhoc: []
-failure: [mohammadsaeedafri@coursera.com]
+failure: [mohdsaeedafri@coresight.com]   # Coresight addresses only: failure emails carry internal error details
 cc: [dataautomation@coresight.com]

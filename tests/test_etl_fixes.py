@@ -279,6 +279,8 @@ def test_past_the_workbook_every_monday_is_a_launch_except_the_skipped(monkeypat
     assert days[-1] <= date(2027, 1, 12) + timedelta(weeks=launch_schedule.RULE_WEEKS)
     assert launch_schedule.planned_today(date(2027, 2, 1))["names"] == ["Weekly tracker"]
     assert launch_schedule.planned_today(date(2027, 1, 25)) is None
+    if not launch_schedule.LAUNCHD.exists():   # the Mac's launchd job: not in the server repo, where deploy/etl-loop.sh runs the ETL
+        return
     import plistlib
     target = tmp_path / "etl.plist"
     target.write_bytes(launch_schedule.LAUNCHD.read_bytes())

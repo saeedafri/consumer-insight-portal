@@ -43,7 +43,6 @@ services:
       CIP_PUBLISH_DIR: /srv/cip/published
       CIP_NGINX_CACHE: /srv/cip/nginx-cache
       CIP_NGINX_URL: http://nginx:8080   # publish warms the cross-tab cache through nginx (etl/publish.warm_nginx)
-      CIP_ETL_RUNS: ${CIP_ETL_RUNS:-Mon@12:00 Fri@03:30}
     volumes:
       - "${CIP_PUBLISH_DIR:-/srv/cip/published}:/srv/cip/published"
       - "${CIP_NGINX_CACHE:-/srv/cip/nginx-cache}:/srv/cip/nginx-cache"

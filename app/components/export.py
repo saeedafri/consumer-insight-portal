@@ -13,7 +13,6 @@ from datetime import datetime
 from typing import Callable, Iterable, Optional, Sequence
 
 import pandas as pd
-import streamlit as st
 
 EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -135,29 +134,3 @@ def build_workbook(
     data = buf.getvalue()
     buf.close()
     return data
-
-
-def download_button(
-    label: str,
-    filename: str,
-    builder: Callable[[], bytes],
-    key_seed: str = "",
-) -> None:
-    """Excel download.
-
-    `builder` is passed to Streamlit as a callable so the workbook is only
-    assembled when someone actually clicks — building it on every rerun makes
-    the page crawl for a file most people never open. `on_click="ignore"`
-    keeps the download from triggering a rerun and losing the filter state.
-    """
-    key = "xl-" + hashlib.md5(f"{filename}|{label}|{key_seed}".encode()).hexdigest()[:12]
-    st.download_button(
-        label=label,
-        data=builder,
-        file_name=filename,
-        mime=EXCEL_MIME,
-        key=key,
-        icon=":material/table:",
-        on_click="ignore",
-        width="content",
-    )
