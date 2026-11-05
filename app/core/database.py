@@ -30,7 +30,7 @@ STATEMENT_TIMEOUT = {"app": 180, "api_write": 180, "etl": 600}
 SOCKET_TIMEOUT = {role: seconds + 5 for role, seconds in STATEMENT_TIMEOUT.items()}
 LOCK_WAIT_TIMEOUT = {"app": 5, "api_write": 5, "etl": 10}
 ROW_LOCK_WAIT_TIMEOUT = {"app": 10, "api_write": 10, "etl": 30}
-POOL_CAPACITY = {"app": (4, 0), "api_write": (2, 2), "etl": (4, 0)}
+POOL_CAPACITY = {"app": (8, 0), "api_write": (2, 2), "etl": (4, 0)}   # app: one API worker, 8 build slots (api/main.BUILD_SLOTS)
 
 # Per-session writer buffers.  These are upper limits, not preallocated memory,
 # and apply only to the small number of ETL connections.

@@ -43,20 +43,21 @@ sync)
     sed -i "s|server api:8000|server 127.0.0.1:8000|; s|^worker_processes 1;|pid /tmp/nginx.pid;\nworker_processes 1;|" /etc/nginx/nginx.conf
     mkdir -p published state && ln -sfn /tmp/cip-keep/logs logs
     chown -R cip /srv/cip/published /srv/cip/state /var/cache/nginx /var/log/nginx /home/cip && chmod -R a+rX /srv/cip /etc/nginx
-    rm -f /tmp/nginx.pid
-    sudo -u cip nginx -t 2>&1 | head -1; rm -f /tmp/nginx.pid' ;;
+    sudo -u cip nginx -t -g "pid /tmp/nginx-test.pid;" 2>&1 | head -1'
+  # a running nginx keeps the old files open: start again, as a deploy starts a new container
+  if limactl shell "$VM" -- systemctl is-active --quiet cip; then "$0" start; fi ;;
 start)
   limactl copy "$ENV_FILE" "$VM":/tmp/cip.env
   in_vm 'install -o cip -m 600 /tmp/cip.env /srv/cip/state/cip.env && rm -f /tmp/cip.env /tmp/nginx.pid
     systemctl stop cip 2>/dev/null; systemctl reset-failed cip 2>/dev/null
-    # the database is on a private address (10.x) reached through the Mac's VPN: that traffic goes via Lima's own network,
+    # the database is on a private address (10.x) reached through the VPN on the Mac: that traffic goes via the Lima network,
     # which the Mac sends on; the direct vzNAT network (load tests from the Mac) does not pass the VPN
     ip route replace 10.0.0.0/8 via 192.168.5.2 dev eth0 2>/dev/null; true'
   # a transient service: detached, and in its own cgroup as a container is, so machine-log.sh reports the stack, not the VM
   limactl shell "$VM" -- sudo systemd-run --quiet --unit=cip --uid=cip --working-directory=/srv/cip \
     -p MemoryAccounting=yes -p CPUAccounting=yes \
     bash -c 'set -a && . <(grep -E "^[A-Z_]+=" state/cip.env | sed "s/=\(.*\)/=\x27\1\x27/") && set +a
-    export PATH=/opt/venv/bin:$PATH APP_ENV=staging CIP_ETL=off WEB_CONCURRENCY='"${WEB_CONCURRENCY:-2}"' CIP_CACHE_MB=32 CIP_BUILD=local-vm \
+    export PATH=/opt/venv/bin:$PATH APP_ENV=staging CIP_ETL=off WEB_CONCURRENCY='"${WEB_CONCURRENCY:-1}"' CIP_CACHE_MB=32 CIP_BUILD=local-vm \
       CIP_WEB_DIR=/srv/cip/web CIP_PUBLISH_DIR=/srv/cip/published CIP_REVOKED_FILE=/srv/cip/state/revoked.txt \
       CIP_TEAM_STAMP=/srv/cip/state/team.stamp CIP_NGINX_CACHE=/var/cache/nginx/data CIP_NGINX_URL=http://127.0.0.1:8080 \
       CIP_CODED_DIR=/tmp/cip-keep/coded CIP_LOG_DIR=/srv/cip/logs STG_DB_SSL_CA=/srv/cip/DigiCertGlobalRootG2.crt.pem PYTHONDONTWRITEBYTECODE=1

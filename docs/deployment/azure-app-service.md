@@ -25,7 +25,7 @@ docker push <acr>.azurecr.io/cip-portal:$BITBUCKET_COMMIT
 | Setting | Value |
 |---|---|
 | Publish | Docker container, Linux |
-| Plan | P0v3 (1 vCPU, 4 GB) is enough (tested: 10,000 users, p99 7 ms, 690 MB). P1v3 if 20,000 people may use it at once |
+| Plan | P0v3 (1 vCPU, 4 GB) is enough. Measured on a P0v3-sized VM (`deploy/local-vm.sh`, 6 Nov 2026): 400 requests/s at 6 % CPU, 36,000 requests/s at the limit, ~190 MB of memory for the whole container. P1v3 if 20,000 people may use it at once |
 | Instances | **1**, no autoscale (the ETL and the published files belong to one instance) |
 | Always On | **On** (the ETL scheduler must keep running) |
 | HTTPS Only | On; minimum TLS 1.2 |
@@ -37,7 +37,7 @@ Application settings (environment variables):
 | Name | Value |
 |---|---|
 | `WEBSITES_PORT` | `8080` |
-| `WEBSITES_ENABLE_APP_SERVICE_STORAGE` | `true` (keeps `/home`: logs, the ETL heartbeat, the open-ended coding) |
+| `WEBSITES_ENABLE_APP_SERVICE_STORAGE` | `true` (keeps `/home`: logs, the ETL heartbeat, the open-ended coding, the published-files copy) |
 | `WEBSITES_CONTAINER_START_TIME_LIMIT` | `300` |
 | `APP_ENV` | `staging` (until SSO is on; then `production`) |
 | `CIP_SESSION_SECRET` | 64 random characters (`openssl rand -hex 32`). The API refuses to start with fewer than 32 |
@@ -49,7 +49,7 @@ Application settings (environment variables):
 | `EMAIL_SMTP`, `EMAIL_PORT`, `EMAIL_FROM`, `EMAIL_PASSWORD` | the mailbox that sends the load and failure emails |
 | `TEAMS_WEBHOOK_URL` | optional: the Teams heads-up on launch Mondays |
 | `ANTHROPIC_API_KEY` | optional: Ask CIP answers in words and open-ended answers are coded into themes by Claude |
-| `CIP_PUBLISH_BACKUP_URL` | recommended: a Blob container SAS URL. After a deploy the published files come back in seconds; without it the first start rebuilds them (about 16 minutes, the site works meanwhile) |
+| `CIP_PUBLISH_BACKUP_URL` | optional. Without it every publish keeps a copy in `/home/cip/published-backup` (kept across deploys) and a new container restores it in about 6 seconds instead of rebuilding every wave (6 minutes at 100 % CPU). Set it to a Blob container SAS URL only to keep that copy outside the web app |
 
 Store the secrets in Key Vault and reference them from these settings.
 
@@ -88,6 +88,11 @@ announced by email; a failure is emailed to `config/notify.yml` `failure`.
 
 Admins open **`/app/logs`** (the Logs entry in the menu). While SSO is off the page asks for `CIP_ADMIN_TOKEN`.
 
+The top of the page is a live dashboard (every 15 s, last 15 minutes to 24 hours): requests per minute by status, server time
+p50/p95/p99, errors, CPU and memory (as Azure counts it, and the processes' own), bandwidth, how requests were answered
+(nginx cache, published file or the API), memory per process, the busiest pages and visitors, recent errors, restarts and ETL runs.
+It reads `/api/v1/admin/metrics`; the raw logs follow below it.
+
 | Log | What it holds |
 |---|---|
 | nginx: every request | one JSON line per request: time, visitor, path, status, size, time taken, cache |
@@ -96,6 +101,7 @@ Admins open **`/app/logs`** (the Logs entry in the menu). While SSO is off the p
 | ETL runs, ETL errors | each scheduled run, every failure |
 | Publish at start | the restore or rebuild of the published files after a deploy |
 | Container supervisor | when the container started and which process stopped |
+| Machine | every 15 s: CPU %, memory (working set, own, file cache), bandwidth in and out, memory per process, disk (`deploy/machine-log.sh`) |
 | Azure App Service (docker) | the platform's own log: image pulls, starts, restarts (needs App Service logs: File System) |
 | Security events | sign-ins, sign-outs, denied and revoked access, every 401/403/429 |
 
@@ -108,3 +114,9 @@ curl -s https://<app>.azurewebsites.net/healthz        # {"ok":true,"build":"<co
 ```
 
 Then sign in, open a wave, and open `/app/logs` → Container supervisor: one "started" line with the new build.
+
+## 8. Test locally first (no Docker)
+
+`deploy/local-vm.sh` builds a Lima VM the size of P0v3 (1 CPU, 4 GB, Debian 13) and runs this image's files and
+`deploy/start.sh` in it, so CPU and memory match the web app's. `create` and `provision` once, then `sync` after every
+change; the site is at http://127.0.0.1:18080 and the dashboard at /app/logs. The ETL scheduler is off there.

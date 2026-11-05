@@ -48,7 +48,7 @@ def test_mysql_app_reads_have_finite_query_and_lock_budgets(monkeypatch):
     assert "max_execution_time=180000" in session
     assert "lock_wait_timeout=5" in session
     assert "innodb_lock_wait_timeout=10" in session
-    assert configured["pool_size"] == 4
+    assert configured["pool_size"] == 8   # one API worker (deploy/start.sh) keeps the two workers' 2 x 4 connections
     assert configured["max_overflow"] == 0
     assert configured["pool_timeout"] == 10
 

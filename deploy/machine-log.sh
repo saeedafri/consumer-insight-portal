@@ -39,9 +39,10 @@ while true; do
       FILENAME ~ /memory.stat/ && $1 == "file" {file = $2 / 1048576}
       FILENAME ~ /memory.stat/ && $1 == "inactive_file" {inactive = $2 / 1048576}
       END {
+        pct = cpu_us / (span * 1e6 * cpus) * 100; if (pct > 100) pct = 100   # whole-second clock: never over 100
         if (!cg || used == 0) {anon = host_anon; file = host_file; inactive = host_inactive; mem = total - unused} else mem = used / 1048576
         printf "{\"time\":\"%s\",\"cpu_pct\":%.1f,\"working_set_mb\":%d,\"anon_mb\":%d,\"file_mb\":%d,\"limit_mb\":%s,", time,
-          cpu_us / (span * 1e6 * cpus) * 100, mem - inactive, anon, file, (limit == "max" || limit > 2^50) ? int(total) : int(limit / 1048576)
+          pct, mem - inactive, anon, file, (limit == "max" || limit > 2^50) ? int(total) : int(limit / 1048576)
         printf "\"machine_used_mb\":%d,\"machine_total_mb\":%d,\"net_in_kbs\":%.1f,\"net_out_kbs\":%.1f,", total - free, total, rx / span / 1024, tx / span / 1024
         printf "\"load_1m\":%s,\"load_5m\":%s,\"cpus\":%d,\"disk_used\":\"%s\",\"processes_mb\":{%s}}\n", l1, l5, cpus, disk, procs
       }' /proc/meminfo $stat >> logs/machine.log

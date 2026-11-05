@@ -29,8 +29,9 @@ fi
 ulimit -n "$(ulimit -Hn)"   # the default 1,024 open files caps a worker near a thousand connections
 nginx -g 'daemon off;' &
 nginx_pid=$!
-# the API's output goes both to App Service's log stream and to logs/api.log (the admins' Logs page)
-gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w "${WEB_CONCURRENCY:-2}" -b 127.0.0.1:8000 \
+# the API's output goes both to App Service's log stream and to logs/api.log (the admins' Logs page). One worker: on one
+# CPU a second adds no capacity (first-time cross-tabs 912/s with one, 990/s with two) and costs ~110 MB (6 Nov 2026)
+gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w "${WEB_CONCURRENCY:-1}" -b 127.0.0.1:8000 \
   --timeout 30 --graceful-timeout 20 --forwarded-allow-ips 127.0.0.1 --no-control-socket 2>&1 | tee -a logs/api.log &
 api_pid=$!
 watched="$nginx_pid $api_pid"

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Card } from "../components/bits";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
-import { blues, C, LIGHT, useTheme } from "../theme";
+import { C, LIGHT, useTheme } from "../theme";
 
 interface Source { id: string; label: string; bytes: number | null }
 interface Answer { sources: Source[]; source: string; lines: string[] }
@@ -146,7 +146,7 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
   const t = m.totals;
   const last = m.machine.at(-1);
   const errorPct = t.requests ? (100 * t["5xx"]) / t.requests : 0;
-  const peakCpu = Math.max(0, ...m.machine.map(s => s.cpu_pct));
+  const peakCpu = Math.max(0, ...m.machine.map(s => s.cpu_pct).filter(Number.isFinite));   // older samples carry no CPU
   const range: [number, number] = [Date.parse(`${m.since}Z`), Date.parse(m.now)];
   const pale = { background: "var(--tag)", borderColor: "transparent" };
 
@@ -187,7 +187,7 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
         line("In", C.s3, machine(s => s.net_in_kbs)), line("Out", C.s1, machine(s => s.net_out_kbs))] },
       answered: {
         tooltip: { ...tooltip(), valueFormatter: (v: number) => num(v) }, legend: { orient: "vertical", right: 0, top: "middle" },
-        series: [{ type: "pie", radius: ["52%", "78%"], center: ["32%", "50%"], label: { show: false }, color: blues(3),
+        series: [{ type: "pie", radius: ["52%", "78%"], center: ["32%", "50%"], label: { show: false }, color: [C.s1, C.sky, C.red],   // Python, the costly path, in red
           itemStyle: { borderColor: C.surface, borderWidth: 2 },
           data: [{ name: "nginx cache", value: t.hit }, { name: "Published file", value: t.file }, { name: "API (Python)", value: t.api }] }] },
       histogram: bars(m.histogram.map(histLabel).reverse(), m.histogram.map(b => b.requests).reverse(),

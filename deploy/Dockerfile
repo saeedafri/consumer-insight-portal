@@ -94,7 +94,7 @@ RUN sed -i 's|server api:8000|server 127.0.0.1:8000|; s|^worker_processes 1;|pid
  && chown -R cip /srv/cip/published /srv/cip/state /var/cache/nginx /home/cip \
  && chmod -R a+rX /srv/cip /etc/nginx
 ARG CIP_BUILD=unknown
-ENV PATH=/opt/venv/bin:$PATH CIP_BUILD=$CIP_BUILD APP_ENV=production WEB_CONCURRENCY=2 CIP_CACHE_MB=32 \
+ENV PATH=/opt/venv/bin:$PATH CIP_BUILD=$CIP_BUILD APP_ENV=production WEB_CONCURRENCY=1 CIP_CACHE_MB=32 \
     CIP_WEB_DIR=/srv/cip/web CIP_PUBLISH_DIR=/srv/cip/published CIP_REVOKED_FILE=/srv/cip/state/revoked.txt \
     CIP_TEAM_STAMP=/srv/cip/state/team.stamp CIP_NGINX_CACHE=/var/cache/nginx/data CIP_NGINX_URL=http://127.0.0.1:8080 \
     CIP_CODED_DIR=/tmp/cip-keep/coded CIP_LOG_DIR=/srv/cip/logs \
