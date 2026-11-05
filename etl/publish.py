@@ -167,7 +167,9 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
         members.setdefault((family, study), []).append(int(sid))
     gone = bool(set(before) - set(waves))   # a wave removed: every trend of its family loses a point
     changed = {waves[str(sid)][1:] for sid in fresh}
-    multi = [f for f, m in members.items() if len(m) > 1]
+    # every family, one-wave ones too: Compare and Audience read the question file of any wave (web-next/src/screens),
+    # and an unpublished one was built from the database on the click (1-5 s, holding a build slot others queued on)
+    multi = list(members)
     full = [f for f in multi if gone or rules_changed or not reuse(f"api/v1/questions/{f[0]}/{f[1]}")]
     # a new or reloaded wave changes only the files of the questions it asked (a question file lists the waves that
     # asked it): the family's other files stay linked to the live version, so a 268-wave tracker rebuilds ~60 questions

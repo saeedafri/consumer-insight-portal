@@ -110,8 +110,14 @@ def test_mcp_crosstab_reuses_published_cut_files_without_database(client):
     assert result["by"] == ["gender", "generation"]
 
 
-def test_crosstab_falls_back_when_published_counts_are_missing(client, monkeypatch):
+def test_crosstab_falls_back_for_a_wave_loaded_after_the_last_publish(client, monkeypatch):
     expected = {"qcode": "XM1A", "by": ["gender", "generation"], "columns": [], "rows": []}
     monkeypatch.setattr(api.payloads, "crosstab", lambda *args: expected)
-    item = api._crosstab_payload(415, "missing", ("gender", "generation"), 1)
+    item = api._crosstab_payload(999, "XM1A", ("gender", "generation"), 1)   # no cuts folder published yet
     assert json.loads(item.body) == expected
+
+
+def test_a_question_missing_from_a_published_wave_is_404_without_the_database(client):
+    # the wave's cuts folder is its complete question list (etl/publish.py cut_inventory); the fixture fails on any
+    # database call, which under load took 1-5 s per "other, please specify" question and starved the build slots
+    assert client.get("/api/v1/waves/415/crosstab?q=Q9r3oe&by=gender,generation").status_code == 404
