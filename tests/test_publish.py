@@ -160,6 +160,22 @@ def test_a_lost_disk_comes_back_from_the_blob_backup(tmp_path, monkeypatch):
     assert restored.name == version.name
 
 
+def test_a_new_container_restores_from_a_folder_backup_instead_of_rebuilding(tmp_path, monkeypatch):
+    from etl import publish
+
+    keep = tmp_path / "home" / "published-backup"   # App Service's /home: kept across deploys, no Blob account needed
+    monkeypatch.setattr(publish, "BACKUP", str(keep))
+    for stamp, body in (("20261021T000000Z", b"old"), ("20261022T000000Z", b"new")):
+        version = tmp_path / "disk" / f".build-{stamp}"
+        (version / "api" / "v1").mkdir(parents=True)
+        (version / "api" / "v1" / "waves.json.gz").write_bytes(body)
+        publish.backup(version)
+    assert sorted(p.name for p in keep.iterdir()) == [".build-20261022T000000Z.tar", "latest"]   # only the newest kept
+    restored = publish.restore(tmp_path / "new-container")
+    assert (tmp_path / "new-container" / "current" / "api" / "v1" / "waves.json.gz").read_bytes() == b"new"
+    assert restored.name == ".build-20261022T000000Z"
+
+
 def test_a_reload_that_drops_a_question_leaves_no_stale_question_file(csi_db, tmp_path):
     import sqlalchemy as sa
     with csi_db.begin() as conn:
@@ -195,3 +211,33 @@ def test_a_publish_empties_the_nginx_answer_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("CIP_NGINX_CACHE", str(cache))
     publish.empty_nginx_cache()
     assert cache.is_dir() and list(cache.iterdir()) == []                 # the folder stays, its answers go
+
+
+def test_the_warm_up_asks_only_the_newest_wave_one_at_a_time(tmp_path, monkeypatch):
+    import gzip, json, threading
+    from etl import publish
+    out = tmp_path / "v"
+    (out / "api/v1/waves/2").mkdir(parents=True)
+    (out / "api/v1/waves.json.gz").write_bytes(gzip.compress(json.dumps(
+        [{"survey_id": 1, "wave_date": "2026-10-26"}, {"survey_id": 2, "wave_date": "2026-11-02"}]).encode()))
+    (out / "api/v1/waves/2/book.json.gz").write_bytes(gzip.compress(json.dumps({"questions": [{"id": "q1"}]}).encode()))
+    asked, at_once, busy = [], [0], [0]
+    lock = threading.Lock()
+
+    class Reply:
+        status = 200
+        def __enter__(self):
+            with lock:
+                busy[0] += 1; at_once[0] = max(at_once[0], busy[0])
+            return self
+        def __exit__(self, *a):
+            with lock:
+                busy[0] -= 1
+        def read(self): return b""
+
+    monkeypatch.setenv("CIP_NGINX_URL", "http://nginx")
+    monkeypatch.setattr(publish.time, "sleep", lambda s: None)
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout: (asked.append(req.full_url), Reply())[1])
+    publish.warm_nginx(out)
+    assert asked and all("/waves/2/" in u and u.endswith("weeks=1") for u in asked)   # newest wave, this week only
+    assert len(asked) == 6 * 5 and at_once[0] == 1                                    # every ordered pair of 6 cuts, serially

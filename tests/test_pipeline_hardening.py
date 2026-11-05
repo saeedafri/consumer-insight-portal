@@ -102,6 +102,19 @@ def test_the_watchdog_tells_when_a_run_goes_silent(tmp_path, monkeypatch):
     assert weekly.watchdog() == 0 and told == []                      # a finished run owes nothing until next week
 
 
+def test_a_new_server_starts_the_week_instead_of_alarming_every_hour(tmp_path, monkeypatch):
+    weekly = importlib.import_module("scripts.weekly_forsta")
+    told = []
+    monkeypatch.setattr(weekly, "HEARTBEAT", tmp_path / "beat.json")
+    monkeypatch.setattr(weekly, "tell", lambda action, *args: told.append(args[0]))
+    monkeypatch.setattr(weekly.launch_schedule, "planned_today", lambda: None)
+    assert weekly.watchdog() == 0 and weekly.watchdog() == 0 and told == []   # no heartbeat yet: the week starts now
+    beat = json.loads((tmp_path / "beat.json").read_text())
+    beat["at"] = "2020-01-01T00:00:00"
+    (tmp_path / "beat.json").write_text(json.dumps(beat))
+    assert weekly.watchdog() == 1 and told == ["no ETL run for over a week"]  # and still alarms a week later
+
+
 def test_a_salted_respondent_key_matches_a_rekeyed_old_one(monkeypatch):
     import hashlib
     import hmac

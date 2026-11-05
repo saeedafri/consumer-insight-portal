@@ -127,8 +127,14 @@ def get_engine(role: str = "app") -> Engine:
         pool_cap, overflow_cap = POOL_CAPACITY[role]
         pool_size = min(db.pool_size, pool_cap)
         max_overflow = min(db.max_overflow, overflow_cap)
+        url = db.url
+        if role != "etl" and c_driver():   # reads: rows decoded in C, 4.5x less CPU than pure-Python PyMySQL (5 Nov 2026)
+            url = url.replace("mysql+pymysql://", "mysql+mysqldb://", 1)
+            if connect_args.get("ssl") == {}:
+                connect_args["ssl_mode"] = "REQUIRED"   # mysqlclient reads an empty ssl dict as "no TLS"; Azure requires it
+                del connect_args["ssl"]
         _engines[role] = create_engine(
-            db.url,
+            url,
             poolclass=QueuePool,
             pool_size=pool_size,
             max_overflow=max_overflow,
@@ -139,8 +145,19 @@ def get_engine(role: str = "app") -> Engine:
             future=True,
             **({"isolation_level": "AUTOCOMMIT", "skip_autocommit_rollback": True} if fast_reads else {}),
         )
-        logger.info("Created engine role=%s host=%s db=%s", role, db.host, db.database)
+        logger.info("Created engine role=%s host=%s db=%s driver=%s", role, db.host, db.database, url.split(":")[0])
     return _engines[role]
+
+
+@lru_cache(maxsize=1)
+def c_driver() -> bool:
+    """mysqlclient (C) is installed: the image has it; a laptop without the MySQL client library keeps PyMySQL. The ETL's
+    writes (LOAD DATA LOCAL INFILE) always use PyMySQL, the driver they were proven on."""
+    try:
+        import MySQLdb  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 def query_df(sql: str, params: Optional[dict] = None, role: str = "app") -> pd.DataFrame:

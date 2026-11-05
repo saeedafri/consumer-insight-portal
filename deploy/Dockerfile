@@ -67,6 +67,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 python3
  && useradd --system --create-home --uid 10001 cip
 COPY requirements.txt /tmp/requirements.txt
 RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt
+# mysqlclient: the API's and publish's reads decode rows in C (4.5x less CPU than PyMySQL, app/core/database.c_driver);
+# compiled here, then the compiler removed in the same layer: only the 1 MB client library stays
+RUN apt-get update && apt-get install -y --no-install-recommends gcc pkg-config libmariadb-dev python3-dev \
+ && /opt/venv/bin/pip install --no-cache-dir mysqlclient==2.3.0 \
+ && apt-get purge -y gcc pkg-config libmariadb-dev python3-dev && apt-get autoremove -y \
+ && apt-get install -y --no-install-recommends libmariadb3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /srv/cip
 COPY api/ api/
 COPY app/ app/
@@ -74,7 +80,7 @@ COPY etl/ etl/
 COPY config/ config/
 COPY scripts/ scripts/
 COPY sql/ sql/
-COPY deploy/etl-loop.sh deploy/start.sh deploy/
+COPY deploy/etl-loop.sh deploy/start.sh deploy/machine-log.sh deploy/
 COPY DigiCertGlobalRootG2.crt.pem ./
 COPY data/coded/ data/coded/
 COPY --from=web /w/out web/

@@ -235,7 +235,8 @@ def watchdog() -> int:
     try:
         last = json.loads(HEARTBEAT.read_text())
     except (OSError, ValueError):
-        last = None
+        beat("finished", 0, note="new server: the week starts here")   # not an alarm every hour until the first run
+        return 0
     now = datetime.now()
     if last and last["state"] != "finished" and now > datetime.fromisoformat(last["next"]) + timedelta(minutes=LATE_MINUTES):
         tell(notify.failure, "the ETL run stopped without finishing",

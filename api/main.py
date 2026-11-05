@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -100,6 +101,7 @@ CATALOGUE: SearchIndex | None = None     # every reportable question of every bu
 CATALOGUE_ROWS: tuple = ()               # what CATALOGUE was built from, to build a filtered one per scope
 SCOPED: dict[str, SearchIndex] = {}      # scope (app/core/access.scope) → the catalogue of the waves it may see
 WAVES: tuple = ((), [])                  # (data version, every built wave described): the visibility rule's input
+WAVES_LOCK = threading.Lock()            # one thread rebuilds the list; a burst after a deploy waits for it, not the pool
 CACHE_RESULTS = os.environ.get("CIP_RESULT_CACHE", "1") != "0"   # 0 only to measure the database path
 PUBLISHED = PUBLISH_ROOT / "current"     # the ETL's prebuilt responses (etl/publish.py): no database work on a view
 PUBLISHED_VERSION = ""
@@ -281,10 +283,13 @@ def all_waves() -> list[dict]:
     """Every built wave, described (payloads.describe), from the published list or the database: once per data version."""
     global WAVES
     version = (SERVING, PUBLISHED_VERSION, os.path.realpath(PUBLISHED))
-    if WAVES[0] != version:
-        listed = _published("waves")
-        WAVES = (version, [payloads.describe(w) for w in (json.loads(listed.body) if listed else payloads.waves(_boards()))])
-    return WAVES[1]
+    if WAVES[0] == version:
+        return WAVES[1]
+    with WAVES_LOCK:
+        if WAVES[0] != version:
+            listed = _published("waves")
+            WAVES = (version, [payloads.describe(w) for w in (json.loads(listed.body) if listed else payloads.waves(_boards()))])
+        return WAVES[1]
 
 
 async def visible(who: dict, survey_id: int) -> dict:
@@ -663,12 +668,9 @@ async def every_request(request: Request, call_next):
     headers = response.headers
     headers["Server-Timing"] = f"total;dur={duration_ms:.2f}"
     path = request.url.path
-    if path.startswith("/api/"):
-        status = response.status_code
-        if duration_ms > 200:
-            log.warning("[PERF-SLOW] %s %s took %.1f ms (status %d)", request.method, path, duration_ms, status)
-        else:
-            log.info("[PERF] %s %s took %.1f ms (status %d)", request.method, path, duration_ms, status)
+    if path.startswith("/api/") and duration_ms > 200:   # every request's time is in nginx's log (the dashboard reads it):
+        # a line per fast request too cost 2.5 % of the API's CPU and an unbuffered write each to /home (5 Nov 2026)
+        log.warning("[PERF-SLOW] %s %s took %.1f ms (status %d)", request.method, path, duration_ms, response.status_code)
     html = headers.get("content-type", "").startswith("text/html")
     # only a page runs scripts: everything else gets the short API policy, not the pages' ~4 KB list of script hashes
     headers.setdefault("Content-Security-Policy", policy() if html else "default-src 'none'; frame-ancestors 'none'")

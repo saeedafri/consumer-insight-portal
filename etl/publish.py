@@ -50,7 +50,7 @@ from app.data import payloads
 
 log = logging.getLogger("cip.publish")
 ROOT = Path(os.environ.get("CIP_PUBLISH_DIR") or Path(__file__).resolve().parents[1] / "data/published")
-WARM_WAVES = 3   # the newest waves people open first after a publish
+WARM_WAVES = 1   # the newest wave, the one people open first after a publish (3 kept one core at 100 % for 97 s)
 KEEP = 3
 MAX_JOBS = 4     # app-role database reads per publish; shared MySQL must not get an unbounded pool
 BACKUP = os.environ.get("CIP_PUBLISH_BACKUP_URL", "").strip()   # https://<account>.blob.core.windows.net/<container>?<sas>
@@ -277,7 +277,22 @@ def blob(name: str) -> str:
 
 
 def backup(version: Path) -> None:
-    """The version as one tar in Azure Blob storage, then `latest` pointing at it (block blob, one PUT each)."""
+    """The version as one tar in Azure Blob storage, then `latest` pointing at it (block blob, one PUT each); or, when
+    CIP_PUBLISH_BACKUP_URL is a folder (App Service's /home, kept across deploys), the tar there, the older ones removed."""
+    if BACKUP.startswith("/"):
+        keep = Path(BACKUP)
+        keep.mkdir(parents=True, exist_ok=True)
+        part = keep / f"{version.name}.tar.part"
+        with tarfile.open(part, mode="w") as tar:   # the payloads are gzip already
+            tar.add(version, arcname=version.name)
+        part.replace(keep / f"{version.name}.tar")
+        (keep / "latest.part").write_text(version.name)
+        (keep / "latest.part").replace(keep / "latest")
+        for old in keep.glob("*.tar"):
+            if old.name != f"{version.name}.tar":
+                old.unlink(missing_ok=True)
+        log.info("Backed up %s to %s", version.name, keep)
+        return
     import requests   # only backups use it; the API imports this module and its image has no requests
 
     with tempfile.TemporaryFile() as tar_file:
@@ -294,8 +309,14 @@ def restore(root: Path = ROOT) -> Path:
     import requests   # only backups use it; the API imports this module and its image has no requests
     if not BACKUP:
         raise RuntimeError("CIP_PUBLISH_BACKUP_URL is not set: rebuild with `python -m etl.publish` instead")
-    name = requests.get(blob("latest"), timeout=60).text.strip()
     root.mkdir(parents=True, exist_ok=True)
+    if BACKUP.startswith("/"):
+        name = (Path(BACKUP) / "latest").read_text().strip()
+        with tarfile.open(Path(BACKUP) / f"{name}.tar") as tar:
+            tar.extractall(root, filter="data")
+        swap(root, root / name)
+        return root / name
+    name = requests.get(blob("latest"), timeout=60).text.strip()
     with requests.get(blob(f"{name}.tar"), stream=True, timeout=600) as r, tempfile.TemporaryFile() as tar_file:
         r.raise_for_status()
         shutil.copyfileobj(r.raw, tar_file)
@@ -323,9 +344,10 @@ def publish(root: Path = ROOT, jobs: int | None = None) -> Path:
 
 
 def warm_nginx(out: Path, waves: int = WARM_WAVES) -> int:
-    """Ask nginx (CIP_NGINX_URL) for every cross-tab of the newest waves, as the screen asks for them (each question,
-    both orders of every pair of cuts, 1, 2 and 4 weeks), so the first people to open a new wave find every answer
-    already cached instead of a few thousand of them queueing on the API at once."""
+    """Ask nginx (CIP_NGINX_URL) for every this-week cross-tab of the newest wave, as the screen asks for them (each
+    question, both orders of every pair of cuts), so the first people to open a new wave find them already cached.
+    One at a time, resting as long as each took: at most half the one core, people's requests always go first. Other
+    weeks and waves are built on their first click (tens of ms) and cached from then on."""
     base = os.environ.get("CIP_NGINX_URL", "").rstrip("/")
     if not base:
         return 0
@@ -337,20 +359,22 @@ def warm_nginx(out: Path, waves: int = WARM_WAVES) -> int:
                     key=lambda w: (w["wave_date"], w["survey_id"]), reverse=True)[:waves]
     urls = [f"{base}/api/v1/waves/{w['survey_id']}/crosstab?q={quote(q['id'], safe='')}&by={a},{b}&weeks={weeks}"
             for w in newest for q in json.loads(gzip.decompress((out / f"api/v1/waves/{w['survey_id']}/book.json.gz").read_bytes()))["questions"]
-            for a in CUTS for b in CUTS if a != b for weeks in (1, 2, 4)]
+            for a in CUTS for b in CUTS if a != b for weeks in (1,)]
     cookie = f'cip_session="{issue("publish@cip", hours=1)}"'
     time.sleep(2)   # nginx looks at the swapped "current" once a second (open_file_cache_valid): warm the new version's keys
 
     def get(url: str) -> bool:
+        took = time.perf_counter()
         try:
             with urlopen(Request(url, headers={"Cookie": cookie, "Accept-Encoding": "gzip"}), timeout=60) as r:
                 r.read()
                 return r.status == 200
         except OSError:
             return False
+        finally:
+            time.sleep(time.perf_counter() - took)   # rest as long as it took: half the core at most
     start = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=4) as pool:   # 4 at a time: the API keeps answering people meanwhile
-        ok = sum(pool.map(get, urls))
+    ok = sum(map(get, urls))
     log.info("Warmed nginx: %d of %d cross-tabs of %d waves in %.0f s", ok, len(urls), len(newest), time.perf_counter() - start)
     return ok
 
