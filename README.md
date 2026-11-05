@@ -1,4 +1,4 @@
-# CIP-test: Coresight Consumer Insight Portal
+# Coresight Consumer Insight Portal (CIP)
 
 Coresight Research's US consumer-survey portal. Every survey comes from **Forsta** (read only). A scheduled pipeline loads
 each wave when its fieldwork ends, checks it against Forsta, and publishes the portal's screens; analysts and clients read

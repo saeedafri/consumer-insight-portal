@@ -4,7 +4,7 @@ import { Jsonld, Breadcrumbs } from "../seo";
 import { siteFacts, featuredFindings, type Featured } from "../pipeline";
 
 export const metadata = {
-  title: { absolute: "This Week in US Consumer Data | CIP-test" },
+  title: { absolute: "This Week in US Consumer Data | Coresight Consumer Insight Portal" },
   description: "This week in US consumer data: spending intentions, category spend, online share and generational shifts from Coresight's weekly US consumer survey. Updated every week from the latest wave.",
   alternates: { canonical: "/this-week/" },
 };
@@ -52,7 +52,7 @@ export default function ThisWeek() {
     datePublished: f.latestDate, dateModified: f.latestDate,
     author: { "@id": SITE + "/#org" }, publisher: { "@id": SITE + "/#org" },
     about: ["US consumer spending", "Retail consumer trends", "Consumer sentiment"],
-    isPartOf: { "@type": "DataCatalog", name: "CIP-test", url: SITE + "/data/" },
+    isPartOf: { "@type": "DataCatalog", name: "Coresight Consumer Insight Portal", url: SITE + "/data/" },
     url: SITE + "/this-week/", image: SITE + "/og.png",
   };
   return <article className="wrap prose data-page">
@@ -70,14 +70,14 @@ export default function ThisWeek() {
             <h2>{r.head}</h2>
             <p className="week-big"><b>{r.val}%</b> answered &ldquo;{r.row}&rdquo;</p>
             {r.delta != null && <p className={`week-delta ${r.delta > 0 ? "sig" : ""}`}>{r.delta > 0 ? "▲ " : r.delta < 0 ? "▼ " : ""}{Math.abs(r.delta)} pts vs prior wave</p>}
-            <p className="week-src">Source: CIP-test · {f.latestLabel}</p>
+            <p className="week-src">Source: Coresight Consumer Insight Portal · {f.latestLabel}</p>
           </section>)
         : SAMPLE.map((s) => <section className="week-card reveal" key={s.cat}>
             <p className="week-cat">{s.cat}</p>
             <h2>{s.head}</h2>
             <p className={`week-delta ${s.sig ? "sig" : ""}`}>{s.delta}{s.sig ? " · significant" : ""}</p>
             <Chart f={s} />
-            <p className="week-src">Illustrative · Source: CIP-test</p>
+            <p className="week-src">Illustrative · Source: Coresight Consumer Insight Portal</p>
           </section>)}
     </div>
 

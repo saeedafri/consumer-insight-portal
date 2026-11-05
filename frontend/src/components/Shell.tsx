@@ -138,7 +138,7 @@ function SiteFooter() {
     <div className="site-foot-cols">
       <section>
         <img src="/coresight-logo-reversed.png" alt="Coresight Research" width="120" height="60" />
-        <h2>CIP-test</h2>
+        <h2>Consumer Insight Portal</h2>
         <ul>
           <li><a href={SITE + "/"}>Back to coresight.com</a></li>
           <li><Link to="/methodology">Methodology</Link></li>
@@ -187,9 +187,9 @@ function SiteHeader({ theme, onTheme, menuOpen, onToggleMenu }: { theme: Theme; 
         <path d={menuOpen ? "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" : "M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"} fill="currentColor" />
       </svg>
     </button>
-    <Link to="/" className="site-brand" aria-label="CIP-test home">
+    <Link to="/" className="site-brand" aria-label="Consumer Insight Portal home">
       <img src={theme === "dark" ? "/coresight-logo-reversed.png" : "/coresight-logo.png"} alt="" width="76" height="38" />
-      <span>CIP-test</span>
+      <span>Consumer Insight Portal</span>
     </Link>
     <nav className="site-links" aria-label="Coresight.com">
       {SITE_LINKS.map(([path, label]) => <a key={path} href={SITE + path}>{label}</a>)}

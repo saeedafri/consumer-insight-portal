@@ -4,7 +4,7 @@ import { Jsonld, Breadcrumbs, Faq } from "../seo";
 import { siteFacts } from "../pipeline";
 
 export const metadata = {
-  title: { absolute: "US Weekly Consumer Survey Data — 370+ Waves Since 2020 | CIP-test" },
+  title: { absolute: "US Weekly Consumer Survey Data — 370+ Waves Since 2020 | Coresight Consumer Insight Portal" },
   description: "Coresight's weekly US consumer survey data: 370+ waves and 190,000+ responses since December 2020, tracking spending, shopping behavior and sentiment across retail categories. Explore trends by generation, income and region.",
   alternates: { canonical: "/data/" },
 };
@@ -15,7 +15,7 @@ const FAQ: [string, string][] = [
   ["Is the survey data weighted?", "Figures are unweighted by default — each percentage is the share of qualified respondents who gave that answer. A Census-weighting option rakes each wave to US adult shares by gender, age and region. Significance is always tested on unweighted counts."],
   ["What does the consumer tracker cover?", "Consumer spending intentions, category spend, shopping channels, brand consideration and sentiment across US retail and consumer categories, cut by generation, gender, income and Census region."],
   ["How is a change tested for significance?", "A two-sided two-proportion z-test against the previous wave, or the same week last year, with a Benjamini-Hochberg false-discovery correction and p < 0.05, requiring at least 30 respondents on each side and an unchanged question base."],
-  ["How do I access the full dataset?", "The full CIP-test is available to subscribers. Sign in with a work account, or request access, to explore every question, cross-tab, trend and audience."],
+  ["How do I access the full dataset?", "The full Consumer Insight Portal is available to subscribers. Sign in with a work account, or request access, to explore every question, cross-tab, trend and audience."],
 ];
 
 export default function DataPage() {
@@ -35,13 +35,13 @@ export default function DataPage() {
     variableMeasured: ["Consumer spending intentions", "Category spend", "Shopping channel", "Brand consideration", "Consumer sentiment"],
     isAccessibleForFree: false,
     license: "https://coresight.com/terms-of-service/",
-    includedInDataCatalog: { "@type": "DataCatalog", name: "CIP-test", url: SITE + "/" },
+    includedInDataCatalog: { "@type": "DataCatalog", name: "Coresight Consumer Insight Portal", url: SITE + "/" },
   };
   return <article className="wrap prose data-page">
     <Breadcrumbs items={[["Home", "/"], ["Consumer data", "/data/"]]} />
     <p className="eyebrow">US weekly consumer tracker</p>
     <h1>US weekly consumer survey data, every week since 2020</h1>
-    <p className="lede">The CIP-test is a continuous survey of US consumers. Every week a fresh wave measures what people are buying, where they shop and how they feel about spending — so retail, CPG and investment teams see what changed this week, not last quarter.</p>
+    <p className="lede">The Coresight Consumer Insight Portal is a continuous survey of US consumers. Every week a fresh wave measures what people are buying, where they shop and how they feel about spending — so retail, CPG and investment teams see what changed this week, not last quarter.</p>
 
     <ul className="stats inline-stats">
       <li><b>{f.waves}</b> survey waves</li>

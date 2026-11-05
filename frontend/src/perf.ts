@@ -510,7 +510,7 @@ class CIPTelemetry {
       .sort((a, b) => b.durationMs - a.durationMs)
       .slice(0, 5);
 
-    let md = `# CIP-test - Performance Diagnostics\n\n`;
+    let md = `# Consumer Insight Portal - Performance Diagnostics\n\n`;
     md += `- **Generated at:** ${new Date().toISOString()}\n`;
     md += `- **Browser Memory (Heap):** ${mem ? `${mem} MB` : "N/A"}\n\n`;
 

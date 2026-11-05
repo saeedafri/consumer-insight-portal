@@ -29,10 +29,10 @@ const siteUrl = (path: string) => path.startsWith("http") ? path : CORESIGHT + p
 export default function Site({ children }: { children: React.ReactNode }) {
   return <div className={fonts}>
     <header className="site-head">
-      <Link href="/" className="site-brand" aria-label="CIP-test home">
+      <Link href="/" className="site-brand" aria-label="Consumer Insight Portal home">
         <img className="logo-light" src="/coresight-logo.png" alt="Coresight Research" width="76" height="38" />
         <img className="logo-dark" src="/coresight-logo-reversed.png" alt="Coresight Research" width="76" height="38" />
-        <span>CIP-test</span>
+        <span>Consumer Insight Portal</span>
       </Link>
       <nav className="site-links" aria-label="Coresight.com">
         {SITE_LINKS.map(([path, label]) => <a key={path} href={CORESIGHT + path}>{label}</a>)}
@@ -57,7 +57,7 @@ export default function Site({ children }: { children: React.ReactNode }) {
       <div className="site-foot-cols">
         <section>
           <img src="/coresight-logo-reversed.png" alt="Coresight Research" width="120" height="60" />
-          <h2>CIP-test</h2>
+          <h2>Consumer Insight Portal</h2>
           <ul>
             <li><a href={CORESIGHT + "/"}>Back to coresight.com</a></li>
             <li><Link href="/methodology/">Methodology</Link></li>
