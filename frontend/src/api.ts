@@ -151,12 +151,14 @@ export const useWaves = () => useQuery({ queryKey: ["waves"], queryFn: () => get
  *  read as it is by the Report screen (screens/Report.tsx). Figures are % of respondents, four-week rolling averages. */
 export interface ReportRow { label: string; values: (number | null)[]; week_change: number | null; quarter_change: number | null;
   week_significant: boolean; quarter_significant: boolean }
-export interface ReportTable { dates: (string | null)[]; rows: ReportRow[] }
+export interface ReportTable { dates: (string | null)[]; rows: ReportRow[]; trend: { dates: (string | null)[]; lines: Record<string, (number | null)[]> } }
+export interface AppendixRow { label: string; values: (number | null)[]; week_change: number | null; four_week_change: number | null }
 export interface SentimentLine { weekly: (number | null)[]; four_week: (number | null)[]; year_change: number | null }
 export interface WeeklyReport {
   survey_id: number; wave_date: string;
   three_points: { section: string; label: string; change: number; from: number; to: number; from_date: string; to_date: string }[];
   sentiment: Record<string, { dates: (string | null)[]; lines: Record<string, SentimentLine> }>;
+  appendix: Record<string, { dates: (string | null)[]; four_week: Record<string, AppendixRow[]>; weekly: AppendixRow[] }>;
   tables: (ReportTable & { part: string; name: string; title: string; question: string })[];
   profiles: { title: string; rows: { label: string; shoppers: number; age: number; income_k: number }[] }[];
   methodology: { weeks: { date: string; respondents: number }[]; weekly_margin: number; four_week_margin: number };
@@ -164,6 +166,10 @@ export interface WeeklyReport {
 }
 export const useReport = (id: number) =>
   useQuery({ queryKey: ["report", id], queryFn: () => get<WeeklyReport>(`/api/v1/waves/${id}/report`), ...forever, enabled: id > 0, retry: false });
+
+/** The waves with a weekly report (etl/weekly_report.py): the left menu shows the link only for them. */
+export const useReportWaves = () =>
+  useQuery({ queryKey: ["report-waves"], queryFn: () => get<number[]>("/api/v1/reports"), ...forever, retry: false });
 
 /** The Databank's sector tables (etl/sectors.py): one column per wave the sector ran. */
 export interface Sector {
@@ -188,7 +194,9 @@ export interface EventComparison {
 }
 export const useExpectations = () =>
   useQuery({ queryKey: ["expectations"], ...forever, retry: false,
-    queryFn: () => get<{ us_adults_millions: number; events: { name: string; comparisons: EventComparison[] }[] }>("/api/v1/expectations") });
+    queryFn: () => get<{ us_adults_millions: number; events: { name: string; comparisons: EventComparison[] }[]; outlooks: Outlook[] }>("/api/v1/expectations") });
+/** An outlook question asked survey after survey (holiday spending, finances): each survey's answers and net score. */
+export interface Outlook { title: string; question: string; dates: string[]; bases: number[]; net: (number | null)[]; rows: { label: string; values: (number | null)[] }[] }
 
 export const useBook = (id: number) => {
   const weighted = useWeighted();

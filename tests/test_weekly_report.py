@@ -111,12 +111,15 @@ def test_news_events_are_dated_text():
     assert events and all(isinstance(e["date"], str) and e["kind"] in ("economy", "retail") for e in events)
 
 
-def test_publish_writes_one_report_file_per_recent_tracker_wave(tmp_path, monkeypatch):
-    """etl/publish.py calls weekly_report.publish after writing the question files: each recent tracker wave gets
-    api/v1/waves/<id>/report.json.gz, read back exactly as the portal will read it."""
+def test_publish_writes_a_report_for_each_wave_that_asks_todays_questions(tmp_path, monkeypatch):
+    """etl/publish.py calls weekly_report.publish after writing the question files: each tracker wave that asked the
+    report's questions as worded today gets api/v1/waves/<id>/report.json.gz, read back as the portal reads it. The
+    first week here is made to ask another question under the same code, as the tracker did before Jul 2025."""
     import gzip
     from etl import publish
     fixture = json.loads(FIXTURE.read_text())
+    fixture["versions"] = ["Which, if any, of these categories have you purchased?", *fixture["versions"]]
+    fixture["waves"] = [[w[0], w[1], 1 if k == 0 else w[2] + 1] for k, w in enumerate(fixture["waves"])]
     folder = tmp_path / "api/v1/questions/CSI-US/tracker"
     folder.mkdir(parents=True)
     for code in (section["question"] for section in report.settings()["sections"]):   # all read the food data here
@@ -133,9 +136,15 @@ def test_publish_writes_one_report_file_per_recent_tracker_wave(tmp_path, monkey
     assert report.publish(tmp_path, publish.write) > 0
     newest = waves[-1]["survey_id"]
     written = json.loads(gzip.decompress((tmp_path / f"api/v1/waves/{newest}/report.json.gz").read_bytes()))
-    assert written["wave_date"] == "2026-10-26" and len(written["three_points"]) == 3   # at most one per table, three in all
+    assert written["wave_date"] == "2026-10-26"
+    assert written["three_points"] == []   # the first table week lacks its four weeks: no three-month change to rank
     assert written["profiles"] == [{"title": "Food shoppers", "rows": [{"label": "Walmart", "shoppers": 250, "age": 47, "income_k": 95}]}]
-    assert not (tmp_path / f"api/v1/waves/{waves[0]['survey_id']}/report.json.gz").exists()   # not among the recent 13
+    assert not (tmp_path / f"api/v1/waves/{waves[0]['survey_id']}/report.json.gz").exists()   # asked another question
+    listed = json.loads(gzip.decompress((tmp_path / "api/v1/reports.json.gz").read_bytes()))
+    assert listed == [w["survey_id"] for w in waves[1:]]                                      # the menu link's list
+    walmart = written["tables"][0]["trend"]["lines"]["Walmart"]                                # Figure 5's line
+    assert len(walmart) == 53 and walmart[-1] == written["tables"][0]["rows"][0]["values"][-1]
+    assert walmart[:3] == [None, None, None]   # the other question's week is never averaged in
 
 
 
@@ -164,3 +173,14 @@ def test_a_report_file_of_a_wave_no_longer_recent_is_removed(tmp_path, monkeypat
     monkeypatch.setattr(report, "profile_cells", lambda ids: [])
     report.publish(tmp_path, lambda *a: 0)
     assert not old.exists()
+
+
+def test_the_appendix_gives_worse_better_and_net_with_their_changes():
+    labels = ("Much worse", "Somewhat worse", "About the same", "Somewhat better", "Much better")
+    weeks = [[(10, 100), (10, 100), (40, 100), (20, 100), (20, 100)]] * 31   # 20 % worse, 40 % better every week
+    question = report.Question(tiny_file(weeks, labels))
+    data = report.appendix(question, 30)
+    rows = {row["label"]: row for row in data["four_week"]["All respondents"]}
+    assert len(data["dates"]) == 28 and rows["Total worse"]["values"][-1] == 20.0 and rows["Total better"]["values"][-1] == 40.0
+    assert rows["Net better"]["values"][-1] == 20.0 and rows["Net better"]["week_change"] == 0.0
+    assert data["weekly"][2]["four_week_change"] == 0.0

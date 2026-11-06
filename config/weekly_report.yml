@@ -38,8 +38,6 @@ net_words:
 # answers left out of the 13-week tables (lower case, how the answer starts)
 leave_out_answers: ["none of", "other", "don't know", "prefer not"]
 
-# the recent weekly waves that get a report (each built from the published question files: milliseconds each)
-recent_waves: 13
 
 # the retailer questions whose shoppers get an age and income profile (the cube's midpoints, over the 13 weeks)
 profile_questions:

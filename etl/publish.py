@@ -210,9 +210,7 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         done = list(pool.map(question, questions))
     size += sum(done)
-    size += weekly_report.publish(out, write)   # the weekly report of the recent tracker waves, from the files above
-    size += sectors.publish(out, write)         # the Databank's sector tables, from the same files
-    size += expectations.publish(out, write)    # retail events: expected vs actual, plus the spend answers
+    size += write_views(out)
     manifest = {"version": version, "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "serving_version": serving, "waves": len(ids), "books": len(ids), "dashboards": len(boards),
                 "rebuilt_waves": len(fresh), "rebuilt_families": len(redo), "questions_written": len(done),
@@ -303,6 +301,24 @@ def backup(version: Path) -> None:
     log.info("Backed up %s to Azure Blob storage", version.name)
 
 
+def write_views(out: Path) -> int:
+    """The views built from a version's files (the weekly reports, the sector tables, expected vs actual): by every
+    publish, and again after a restore, so a new image's views appear at deploy without waiting for new data.
+    Returns the bytes written."""
+    size = weekly_report.publish(out, write)   # the weekly report of the recent tracker waves, from the question files
+    size += sectors.publish(out, write)        # the Databank's sector tables, from the books and question files
+    return size + expectations.publish(out, write)   # retail events: expected vs actual, plus the spend answers
+
+
+def restore_views(version: Path) -> None:
+    """After a restore: the views rebuilt by this image's code (seconds). A failure (the database out of reach) keeps the
+    restored version's own views; the next publish writes them anyway."""
+    try:
+        write_views(version)
+    except Exception as exc:
+        log.warning("Rebuilding the views of the restored version failed: %s", exc)
+
+
 def restore(root: Path = ROOT) -> Path:
     import requests   # only backups use it; the API imports this module and its image has no requests
     if not BACKUP:
@@ -312,6 +328,7 @@ def restore(root: Path = ROOT) -> Path:
         name = (Path(BACKUP) / "latest").read_text().strip()
         with tarfile.open(Path(BACKUP) / f"{name}.tar") as tar:
             tar.extractall(root, filter="data")
+        restore_views(root / name)
         swap(root, root / name)
         return root / name
     name = requests.get(blob("latest"), timeout=60).text.strip()
@@ -321,6 +338,7 @@ def restore(root: Path = ROOT) -> Path:
         tar_file.seek(0)
         with tarfile.open(fileobj=tar_file) as tar:
             tar.extractall(root, filter="data")
+    restore_views(root / name)
     swap(root, root / name)
     return root / name
 

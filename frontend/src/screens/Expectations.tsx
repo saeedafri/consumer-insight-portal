@@ -3,11 +3,13 @@
 // Survey Insights Extra" report shows it; with the median spend and the market size where the survey asks how much.
 // Every number is built by the ETL when data is published (etl/expectations.py → api/v1/expectations.json.gz); which
 // events and questions: config/expectations.yml. This screen only draws.
+// Below the events: the holiday outlook questions across every survey that asked them, with their net score.
 // Opened from the left menu ("Expected vs actual"); the event and comparison are kept in the address.
 import { useSearchParams } from "react-router";
 import { useExpectations } from "../api";
-import type { EventComparison, SpendSide } from "../api";
-import { Card, Empty, Failure, SkeletonScreen } from "../components/bits";
+import type { EventComparison, Outlook, SpendSide } from "../api";
+import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
+import { downloadTable } from "../csv";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtDate } from "../stats";
 
@@ -46,7 +48,13 @@ export default function Expectations() {
     {shown.spend && <Spend spend={shown.spend} adults={data.us_adults_millions} comparison={shown} />}
     {shown.questions.map(q => <Card key={q.expected_code} title={q.expected_text}
         sub={`Afterwards: "${q.actual_text}" Base: ${q.expected_base.toLocaleString("en-US")} before, ${q.actual_base.toLocaleString("en-US")} after.`}
-        aside={q.net && <span className="chip flat" title="% more minus % less">Net more: {points(q.net.expected)} expected, {points(q.net.actual)} actual</span>}>
+        aside={<div className="toolbar one-row">
+          {q.net && <span className="chip flat" title="% more minus % less">Net more: {points(q.net.expected)} expected, {points(q.net.actual)} actual</span>}
+          <ExportButtons onExport={format => downloadTable(format, `${event.name} - ${q.expected_code}`,
+            ["Answer", `Expected ${shown.expected.date}`, `Actual ${shown.actual.date}`, "Difference (PPTs)", "Significant"],
+            q.rows.map(r => [r.label, r.expected, r.actual, r.difference, r.significant ? "yes" : ""]),
+            [q.expected_text, `Afterwards: ${q.actual_text}`, `Base: ${q.expected_base} before, ${q.actual_base} after`, "Source: Coresight Research US Consumer Survey"])} />
+        </div>}>
       <div className="table-wrap"><table className="data report-table">
         <thead><tr><th>Answer</th><th className="num">Expected<br /><small>{fmtDate(shown.expected.date)}</small></th>
           <th className="num">Actual<br /><small>{fmtDate(shown.actual.date)}</small></th><th className="num" title="Expected minus actual, percentage points">Difference</th></tr></thead>
@@ -58,7 +66,28 @@ export default function Expectations() {
         </tr>)}</tbody>
       </table></div>
     </Card>)}
+    {data.outlooks?.length > 0 && <h2 className="report-section">Holiday outlook across surveys</h2>}
+    {data.outlooks?.map(o => <OutlookTable key={o.question} outlook={o} />)}
   </div>;
+}
+
+/** One outlook question in every survey that asked it, newest on the right, with its net score and base. */
+function OutlookTable({ outlook }: { outlook: Outlook }) {
+  const pct = (v: number | null) => v == null ? "–" : `${v.toFixed(1)}%`;
+  const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, outlook.title,
+    ["Answer", ...outlook.dates], [...outlook.rows.map(r => [r.label, ...r.values]), ["Net", ...outlook.net], ["Respondents asked", ...outlook.bases]],
+    [outlook.title, "% of holiday shoppers. Net = more (or better) minus less (or worse).", "Source: Coresight Research US Consumer Survey"]);
+  return <Card title={outlook.title} sub="% of respondents who celebrate the holiday season. Net = a lot or slightly more (better) minus a lot or slightly less (worse)."
+               aside={<ExportButtons onExport={exportTable} />}>
+    <div className="table-wrap" ref={el => { if (el) el.scrollLeft = el.scrollWidth; }}><table className="data report-table">
+      <thead><tr><th>Answer</th>{outlook.dates.map(d => <th key={d} className="num">{fmtDate(d)}</th>)}</tr></thead>
+      <tbody>
+        {outlook.rows.map(r => <tr key={r.label}><th scope="row">{r.label}</th>{r.values.map((v, i) => <td key={i} className="num">{pct(v)}</td>)}</tr>)}
+        <tr className="purchase-row"><th scope="row">Net</th>{outlook.net.map((v, i) => <td key={i} className="num">{v == null ? "–" : points(v)}</td>)}</tr>
+      </tbody>
+      <tfoot><tr><th scope="row">Respondents asked</th>{outlook.bases.map((b, i) => <td key={i} className="num">{b}</td>)}</tr></tfoot>
+    </table></div>
+  </Card>;
 }
 
 /** Median spend and the market size it implies (share who spend x US adults x median), before and after. */

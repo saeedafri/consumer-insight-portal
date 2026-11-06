@@ -470,6 +470,12 @@ async def sectors(request: Request, who: dict = Depends(user)) -> Response:
     return await tracker_view(request, who, "sectors")
 
 
+@app.get("/api/v1/reports")
+async def report_waves(request: Request, who: dict = Depends(user)) -> Response:
+    """The survey ids of the waves with a weekly report (etl/weekly_report.py), for the left menu's link."""
+    return await tracker_view(request, who, "reports")
+
+
 @app.get("/api/v1/expectations")
 async def expectations(request: Request, who: dict = Depends(user)) -> Response:
     """Retail events, expected vs actual (etl/expectations.py): answers before and after, median spend, market size."""

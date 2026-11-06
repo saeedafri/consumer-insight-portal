@@ -9,7 +9,8 @@ For each event of config/expectations.yml, every survey fielded before the event
 against the survey after it the same year (did they) and the one the year before (the seasonal report's
 "Expectations 2026 vs Actual 2025"). Per question: each answer's % on both sides, the difference and whether it is
 significant, and for a more/less question the net score. For an event with a spend question: the median spend and the
-market size (share who spend x US adults x median). Checked against the 7 Oct 2026 seasonal report's Halloween page
+market size (share who spend x US adults x median). Also the outlook questions asked again and again (holiday
+spending and finances): each survey's answers and net score. Checked against the 7 Oct 2026 seasonal report
 (tests/test_expectations.py).
 """
 from __future__ import annotations
@@ -94,19 +95,47 @@ def compare(expected: Question, e_at: int, actual: Question, a_at: int, with_net
             "rows": rows, "net": net}
 
 
-def spending(event: dict, question: Question | None, survey_id: int, numbers: dict) -> dict | None:
-    """One side's median spend and market size: the spenders' share (from `question`, the spenders question asked on
-    this side) x US adults x the median of the open spend answers. None for an event without a spend question."""
-    values = numbers.get((survey_id, event.get("spend")))
-    at = question.position(survey_id) if question else None
-    if not values or at is None:
+def spending(event: dict, question: Question | None, survey_id: int, code: str, numbers: dict) -> dict | None:
+    """One side's median spend (of `code`, this side's open spend question) and the market size: the spenders' share
+    (from `question`, this side's spenders question; None: no market size) x US adults x the median. None when that
+    survey has no spend answers."""
+    values = numbers.get((survey_id, code))
+    if not values:
         return None
-    spenders = share(question, at, question.total,
-                     [a for a in question.offered(at) if question.codes[a] in event["spenders"]["codes"]])
+    at = question.position(survey_id) if question else None
+    spenders = None if at is None else share(question, at, question.total,
+                                             [a for a in question.offered(at) if question.codes[a] in event["spenders"]["codes"]])
     median = statistics.median(values)
     market = None if spenders is None else round(spenders / 100 * settings()["us_adults_millions"] * median / 1000, 1)
     return {"median": median, "answers": len(values), "spenders": None if spenders is None else round(spenders, 1),
             "market_billions": market}
+
+
+def outlook(question: Question, title: str) -> dict:
+    """One outlook question across every survey that asked it (the seasonal report's "2026 vs 2025" holiday spending
+    and finances, Figures 11-12): per answer code its % in each survey, the base, and the net score (more minus less,
+    or better minus worse). Labels as the newest survey words them."""
+    words = weekly_report.settings()["net_words"]
+    labels: dict[int, str] = {}
+    for a in range(len(question.labels)):
+        labels.setdefault(question.codes[a], question.labels[a])   # first seen; overwritten below by newer wording
+    surveys = list(range(len(question.ids)))
+    rows: dict[int, list[float | None]] = {}
+    nets, bases = [], []
+    for k, at in enumerate(surveys):
+        base = question.counts(at, question.total, [])[1]
+        bases.append(base)
+        up = down = 0.0
+        for a in question.offered(at):
+            code, label = question.codes[a], question.labels[a].lower()
+            labels[code] = question.labels[a]
+            value = share(question, at, question.total, [a])
+            rows.setdefault(code, [None] * len(surveys))[k] = None if value is None else round(value, 1)
+            up += value if value is not None and any(w in label for w in words["positive"]) else 0
+            down += value if value is not None and any(w in label for w in words["negative"]) else 0
+        nets.append(round(up - down, 1) if base else None)
+    return {"title": title, "question": question.qcode, "dates": question.dates, "bases": bases, "net": nets,
+            "rows": [{"label": labels[code], "values": values} for code, values in sorted(rows.items())]}
 
 
 def build(questions: dict[str, Question], numbers: dict[tuple[int, str], list[float]]) -> dict:
@@ -119,10 +148,11 @@ def build(questions: dict[str, Question], numbers: dict[tuple[int, str], list[fl
         if first_expected not in questions or first_actual not in questions:
             continue
         before, after = questions[first_expected], questions[first_actual]
+        mention = event["mentions"].lower()   # a code reused for another question (M1: mass merchants) never mentions it
         comparisons = []
-        for e_at in waves_around(before, event["day"], before=True):
+        for e_at in [at for at in waves_around(before, event["day"], before=True) if mention in before.wordings[at].lower()]:
             e_id, e_day = before.ids[e_at], before.days[e_at]
-            for a_at in waves_around(after, event["day"], before=False):
+            for a_at in [at for at in waves_around(after, event["day"], before=False) if mention in after.wordings[at].lower()]:
                 a_id, a_day = after.ids[a_at], after.days[a_at]
                 if a_day.year not in (e_day.year, e_day.year - 1):
                     continue
@@ -131,15 +161,17 @@ def build(questions: dict[str, Question], numbers: dict[tuple[int, str], list[fl
                             if eq.position(e_id) is not None and aq.position(a_id) is not None]
                 spend = None
                 if "spend" in event:
-                    rule = event["spenders"]["question"]
-                    spend = {"expected": spending(event, questions.get(rule), e_id, numbers),
-                             "actual": spending(event, questions.get(event["questions"][rule]), a_id, numbers)}
+                    (e_spend, a_spend), = event["spend"].items()
+                    rule = event.get("spenders", {}).get("question")
+                    spend = {"expected": spending(event, questions.get(rule), e_id, e_spend, numbers),
+                             "actual": spending(event, questions.get(event["questions"].get(rule)), a_id, a_spend, numbers)}
                 comparisons.append({"expected": {"survey_id": e_id, "date": before.dates[e_at]},
                                     "actual": {"survey_id": a_id, "date": after.dates[a_at]},
                                     "same_season": a_day.year == e_day.year, "questions": compared, "spend": spend})
         if comparisons:
             events.append({"name": event["name"], "comparisons": comparisons})
-    return {"us_adults_millions": settings()["us_adults_millions"], "events": events}
+    outlooks = [outlook(questions[o["question"]], o["title"]) for o in settings().get("outlooks", []) if o["question"] in questions]
+    return {"us_adults_millions": settings()["us_adults_millions"], "events": events, "outlooks": outlooks}
 
 
 _SPEND_ANSWERS = """
@@ -171,9 +203,9 @@ def publish(out: Path, write) -> int:
     family, study = weekly_report.settings()["family"], weekly_report.settings()["study_type"]
     events = settings()["events"]
     questions = read_questions(out / "api/v1/questions" / family / study,
-                               {code for e in events for pair in e["questions"].items() for code in pair})
-    asked = {survey_id for e in events if "spend" in e   # the waves of the spenders question, before and after
-             for code in (e["spenders"]["question"], e["questions"][e["spenders"]["question"]])
-             if code in questions for survey_id in questions[code].ids}
-    numbers = spend_answers(sorted(asked), sorted({e["spend"] for e in events if "spend" in e}))
+                               {code for e in events for pair in e["questions"].items() for code in pair}
+                               | {o["question"] for o in settings().get("outlooks", [])})
+    asked = {survey_id for e in events if "spend" in e   # the waves of the event's first question, before and after
+             for code in next(iter(e["questions"].items())) if code in questions for survey_id in questions[code].ids}
+    numbers = spend_answers(sorted(asked), sorted({code for e in events for pair in e.get("spend", {}).items() for code in pair}))
     return write(out / "api/v1/expectations", build(questions, numbers))

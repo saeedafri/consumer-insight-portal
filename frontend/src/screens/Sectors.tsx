@@ -6,7 +6,8 @@
 import { useSearchParams } from "react-router";
 import { useSectors } from "../api";
 import type { Sector } from "../api";
-import { Card, Empty, Failure, SkeletonScreen } from "../components/bits";
+import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
+import { downloadTable } from "../csv";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtDate } from "../stats";
 
@@ -41,11 +42,16 @@ export default function Sectors() {
 function SectorTable({ sector, tab, onTab }: { sector: Sector; tab: string | null; onTab: (title: string) => void }) {
   const table = sector.tables.find(t => t.title === tab) ?? sector.tables[0];
   const first = sector.waves[0], last = sector.waves.at(-1)!;
+  const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, `${sector.name} - ${table.title}`,
+    [table.title, ...sector.waves.map(w => w.date)],
+    [...(sector.purchase ? [[sector.purchase.label, ...sector.purchase.values]] : []), ...table.rows.map(r => [r.label, ...r.values]),
+     ["Respondents asked", ...table.bases]],
+    [`${sector.name}: ${table.title}`, "% of respondents; retailers, brands and categories are % of the sector's buyers.", "Source: Coresight Research US Consumer Survey"]);
   return <Card title={sector.name}
                sub={`${sector.waves.length} surveys, ${fmtDate(first.date)} to ${fmtDate(last.date)}. About 400 US adults each: margin of error up to ±${sector.margin}% at 95% confidence, wider for the smaller buyer bases.`}
-               aside={<Tabs value={table.title} onValueChange={onTab}><TabsList>
+               aside={<div className="toolbar one-row"><Tabs value={table.title} onValueChange={onTab}><TabsList>
                  {sector.tables.map(t => <TabsTrigger key={t.title} value={t.title}>{t.title}</TabsTrigger>)}
-               </TabsList></Tabs>}>
+               </TabsList></Tabs><ExportButtons onExport={exportTable} /></div>}>
     {/* opens on the newest surveys (right); the history is a scroll to the left */}
     <div className="table-wrap" ref={el => { if (el) el.scrollLeft = el.scrollWidth; }}><table className="data report-table">
       <thead><tr><th>{table.title}</th>{sector.waves.map(w => <th key={w.survey_id} className="num">{fmtDate(w.date)}</th>)}</tr></thead>

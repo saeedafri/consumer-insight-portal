@@ -29,7 +29,7 @@ from pathlib import Path
 import yaml
 
 from etl import survey_calendar, weekly_report
-from etl.weekly_report import Question, margin_of_error, read_questions, read_waves, share
+from etl.weekly_report import Question, first_sentence, margin_of_error, read_questions, read_waves, share
 
 CONFIG = Path(__file__).resolve().parents[1] / "config"
 
@@ -40,12 +40,6 @@ def settings() -> dict:
     (config/survey_calendar.yml sectors: title), as {module name: regex}."""
     rules = yaml.safe_load((CONFIG / "sectors.yml").read_text(encoding="utf-8"))
     return {**rules, "titles": {s["name"]: s["title"] for s in survey_calendar.load_config()["sectors"]}}
-
-
-def first_sentence(text: str | None) -> str:
-    """A question's wording up to its question mark, in plain lower-case words: "Select all that apply" and such
-    endings changed over the years, the question did not."""
-    return re.sub(r"[^a-z0-9]+", " ", (text or "").lower().split("?")[0]).strip()
 
 
 def sector_waves(waves: list[dict], sector: dict) -> list[dict]:

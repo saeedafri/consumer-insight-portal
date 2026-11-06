@@ -10,6 +10,8 @@
 
 Provider settings: CIP_OIDC_ISSUER (e.g. https://login.microsoftonline.com/<tenant>/v2.0), CIP_OIDC_CLIENT_ID,
 CIP_OIDC_CLIENT_SECRET, and optionally CIP_OIDC_REDIRECT_URI (default: this host's /auth/callback).
+Coresight's own identity provider (coresight.com/csr-idp, the one SIP signs in with) publishes no discovery document:
+for it also set CIP_OIDC_AUTHORIZE_URL and CIP_OIDC_TOKEN_URL, and CIP_OIDC_PKCE=plain (what it is proven with).
 """
 from __future__ import annotations
 
@@ -50,6 +52,15 @@ def provider() -> dict | None:
     issuer, client_id = os.environ.get("CIP_OIDC_ISSUER", "").rstrip("/"), os.environ.get("CIP_OIDC_CLIENT_ID", "")
     return {"issuer": issuer, "client_id": client_id, "secret": os.environ.get("CIP_OIDC_CLIENT_SECRET", "")} \
         if issuer and client_id else None
+
+
+def endpoints(issuer: str) -> dict:
+    """The provider's sign-in and token addresses: set by hand (CIP_OIDC_AUTHORIZE_URL, CIP_OIDC_TOKEN_URL) for a
+    provider without a discovery document, else read from its discovery document. Called by /auth/login and /auth/callback."""
+    if os.environ.get("CIP_OIDC_AUTHORIZE_URL"):
+        return {"issuer": issuer, "authorization_endpoint": os.environ["CIP_OIDC_AUTHORIZE_URL"],
+                "token_endpoint": os.environ.get("CIP_OIDC_TOKEN_URL", "")}
+    return discovery(issuer)
 
 
 @lru_cache(maxsize=4)
@@ -148,14 +159,15 @@ async def login(request: Request, next: str = "/") -> Response:
             return RedirectResponse(f"/auth/dev-login?{urlencode({'next': same_site(next)})}", status_code=303)
         return page(503, "Sign-in is not set up", "This portal has no identity provider configured yet "
                     "(CIP_OIDC_ISSUER, CIP_OIDC_CLIENT_ID). Ask the Coresight data team for access.")
-    meta = await run_in_threadpool(discovery, found["issuer"])
+    meta = await run_in_threadpool(endpoints, found["issuer"])
     state, nonce, verifier = secrets.token_urlsafe(24), secrets.token_urlsafe(24), secrets.token_urlsafe(48)
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    plain = os.environ.get("CIP_OIDC_PKCE") == "plain"   # csr-idp; every other provider: S256
+    challenge = verifier if plain else base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     value = "|".join([state, nonce, verifier, same_site(next), str(int(time.time()) + 600)])
     response = RedirectResponse(meta["authorization_endpoint"] + "?" + urlencode({
         "response_type": "code", "client_id": found["client_id"], "redirect_uri": callback_url(request),
         "scope": "openid email profile", "state": state, "nonce": nonce,
-        "code_challenge": challenge, "code_challenge_method": "S256"}), status_code=303)
+        "code_challenge": challenge, "code_challenge_method": "plain" if plain else "S256"}), status_code=303)
     response.set_cookie(LOGIN, f"{base64.urlsafe_b64encode(value.encode()).decode()}.{sign(value)}", path="/auth",
                         httponly=True, samesite="lax", secure=https(request), max_age=600)
     return response
@@ -184,7 +196,7 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
             or not secrets.compare_digest(state, mine) or int(expires) < time.time():
         return page(400, "Sign-in failed", f"{html.escape(error or 'The sign-in could not be checked.')} "
                     "Please <a href='/auth/login'>try again</a>.")
-    meta = await run_in_threadpool(discovery, found["issuer"])
+    meta = await run_in_threadpool(endpoints, found["issuer"])
 
     def exchange() -> dict:
         import requests
@@ -201,10 +213,15 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
         log.warning("OIDC token exchange failed: %s", type(exc).__name__)
         return page(502, "Sign-in failed", "The identity provider did not answer. Please <a href='/auth/login'>try again</a>.")
     audience = said.get("aud") if isinstance(said.get("aud"), list) else [said.get("aud")]
+    # a provider that does not echo the nonce (csr-idp) is still held by the state and the PKCE verifier
     if said.get("iss") != meta.get("issuer") or found["client_id"] not in audience or float(said.get("exp", 0)) < time.time() \
-            or not secrets.compare_digest(str(said.get("nonce", "")), nonce):
+            or ("nonce" in said and not secrets.compare_digest(str(said["nonce"]), nonce)):
+        log.warning("OIDC token refused: iss %s, aud %s", said.get("iss"), said.get("aud"))   # names, never the token
         return page(400, "Sign-in failed", "The identity token did not check out. Please <a href='/auth/login'>try again</a>.")
-    email = str(said.get("email") or said.get("preferred_username") or said.get("upn") or "").lower()
+    wordpress = (said.get("data") or {}).get("wp_user") if isinstance(said.get("data"), dict) else None   # csr-idp's
+    wordpress = wordpress if isinstance(wordpress, dict) else {}
+    email = str(said.get("email") or said.get("user_email") or wordpress.get("user_email") or wordpress.get("email")
+                or said.get("preferred_username") or said.get("upn") or "").lower()
     who = access.profile(email) if "@" in email else None
     if not who:
         return refused(email or "This account")

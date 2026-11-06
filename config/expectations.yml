@@ -5,28 +5,67 @@
 #   day        the event's day (month-day). A wave fielded before it asks the expectations, a wave fielded after it
 #              asks what people did. Black Friday moves (23-29 Nov) and Prime Big Deal Days too (early Oct): the
 #              surveys around them are weeks away, so one day is close enough.
-#   questions  expectation question: the question asking the same thing afterwards (often the same code, reworded)
+#   mentions   words the event's questions contain: a wave whose first question does not mention them is left out (a
+#              code reused for another question: Memorial Day's plans were asked as M1-M2, the mass-merchant codes)
+#   questions  expectation question: the question asking the same thing afterwards (often the same code, reworded).
+#              Only answers that mean the same on both sides: Prime Day's "Expect to purchase / to browse" against a
+#              plain "Yes / No" afterwards is not a pair, so only its categories are compared
 #   net        the more/less questions that get a net score (% more minus % less), as the report gives
-#   spenders   who spend: the question and answer codes, for the market size
-#   spend      how much they spend, an open number in dollars: its median, and the market size
+#   spenders   who spend: the expectation question and answer codes, for the market size. Left out where the answer
+#              mixes spending and celebrating (July 4th: "spend on or celebrate"), so no market size there
+#   spend      how much they spend, an open number in dollars, before: after; its median, and the market size
 #              (share who spend x US adults x median spend)
 
 us_adults_millions: 270   # US adults 18+. Reproduces the 4Q26 report's Halloween estimate ($14.7 billion at 54.4 % and
                           # a $100 median); replace with the research team's census figure if theirs differs
 
+# In the calendar's order. Days that move each year: the earliest one (the surveys around them are weeks away)
 events:
+  - name: Memorial Day
+    day: "05-25"              # last Monday of May (25-31)
+    mentions: memorial day
+    questions: {M1: C4, M2: C5}
+    net: [M2]
+    spenders: {question: M1, codes: [1]}
+    spend: {M4: C7}
+  - name: Prime Day
+    day: "06-23"              # Jun 23-26 in 2026, Jul 8-11 in 2025: the surveys are in May and after it
+    mentions: prime day
+    questions: {PD3: PDR4}
+  - name: July 4th
+    day: "07-04"
+    mentions: july 4th
+    questions: {ID1: IDR1, ID2: IDR2, ID4: IDR4, ID7: IDR7, ID8: IDR8}
+    net: [ID2]
+    spend: {ID5: IDR5}
+  - name: Labor Day
+    day: "09-01"              # first Monday of September (1-7)
+    mentions: labor day
+    questions: {LD1: LDR1, LD2: LDR2, LD4: LDR4}
+    net: [LD2]
+    spenders: {question: LD1, codes: [2]}
+    spend: {LD5: LDR5}
+  - name: Prime Big Deal Days
+    day: "10-08"
+    mentions: big deal days
+    questions: {BD2: BD2, BD3: BD3, BD4: BD4}
   - name: Halloween
     day: "10-31"
+    mentions: halloween
     questions: {HW1: HW1, HW2: HW2, HW5: HW5}
     net: [HW2]                  # spend more or less than last year
     spenders: {question: HW1, codes: [2]}
-    spend: HW4
-  - name: Prime Big Deal Days
-    day: "10-08"
-    questions: {BD2: BD2, BD3: BD3, BD4: BD4}
+    spend: {HW4: HW4}
   - name: Singles' Day
     day: "11-11"
+    mentions: single
     questions: {SD2: SD2, SD3: SD3, SD4: SD4}
   - name: Black Friday
     day: "11-27"
+    mentions: black friday
     questions: {BF1: BFR1, BF2: BFR2, BF3: BFR3, BF4: BFR4, BF5: BFR5}
+
+# outlook questions asked survey after survey: each survey's answers and net score (the seasonal report's Figures 11-12)
+outlooks:
+  - {question: HX2, title: "Holiday shoppers: how they expect their holiday spending to compare with the previous year"}
+  - {question: HX5, title: "Holiday shoppers: how they expect their financial situation this holiday to compare with last"}

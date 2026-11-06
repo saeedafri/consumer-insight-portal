@@ -5,7 +5,7 @@ import { setTheme, useTheme } from "../theme";
 import { setWeighted, useWeighted } from "../weight";
 import type { Theme } from "../theme";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from "react-router";
-import { allowed, useMe, useWaves } from "../api";
+import { allowed, useMe, useReportWaves, useWaves } from "../api";
 import PinDialog from "./PinDialog";
 import { Menu, UndoBar } from "./bits";
 import type { Me, Wave } from "../api";
@@ -63,10 +63,8 @@ export default function Shell() {
   const waves = useWaves();
   const me = useMe().data;
   const wave = waves.data?.find(w => String(w.survey_id) === id);
-  // the weekly report exists for the newest weekly tracker waves of a family (config/weekly_report.yml recent_waves: 13)
-  const hasReport = !!wave && wave.study_type === "tracker" && (waves.data ?? [])
-    .filter(w => w.survey_family === wave.survey_family && w.study_type === "tracker")
-    .sort((a, b) => b.wave_date.localeCompare(a.wave_date)).slice(0, 13).some(w => w.survey_id === wave.survey_id);
+  const reportWaves = useReportWaves().data;   // the waves with a weekly report (since Jul 2025: etl/weekly_report.py)
+  const hasReport = !!wave && !!reportWaves?.includes(wave.survey_id);
   const rail = useRef<HTMLElement>(null);
   const howArrived = useNavigationType();
 

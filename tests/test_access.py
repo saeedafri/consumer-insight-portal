@@ -233,3 +233,31 @@ def test_the_tracker_views_refuse_someone_who_may_not_open_every_tracker_wave(po
     assert call("/api/v1/sectors", signed("pat@acme.com"))[0] == 200
     status, _, body = call("/api/v1/sectors", signed("zed@zeta.com"))
     assert status == 403 and "subscription" in json.loads(body)["detail"]
+
+
+def test_sign_in_through_coresights_own_identity_provider(portal, monkeypatch):
+    """csr-idp (coresight.com, SIP's sign-in) has no discovery document, proves PKCE "plain", may not echo the nonce
+    and puts the email under data.wp_user: the whole round trip with a stand-in for its token endpoint."""
+    import base64
+    import time
+    from urllib.parse import parse_qs
+    import requests
+    for key, value in {"CIP_OIDC_ISSUER": "https://coresight.com", "CIP_OIDC_CLIENT_ID": "sip-app",
+                       "CIP_OIDC_AUTHORIZE_URL": "https://coresight.com/csr-idp/authorize",
+                       "CIP_OIDC_TOKEN_URL": "https://coresight.com/csr-idp/token", "CIP_OIDC_PKCE": "plain"}.items():
+        monkeypatch.setenv(key, value)
+    status, head, _ = call("/auth/login?next=/app/sectors")
+    sent = parse_qs(urlsplit(head["location"][0]).query)
+    assert status == 303 and head["location"][0].startswith("https://coresight.com/csr-idp/authorize?")
+    assert sent["code_challenge_method"] == ["plain"] and sent["client_id"] == ["sip-app"]
+    login = head["set-cookie"][0].split(";")[0]                                  # cip_login=<signed state>
+    token = {"iss": "https://coresight.com", "aud": "sip-app", "exp": time.time() + 60,
+             "data": {"wp_user": {"user_email": "Ana@Coresight.com"}}}
+    body = "x." + base64.urlsafe_b64encode(json.dumps(token).encode()).decode().rstrip("=") + ".x"
+
+    class Answer:
+        def raise_for_status(self): pass
+        def json(self): return {"id_token": body, "access_token": "a"}
+    monkeypatch.setattr(requests, "post", lambda url, **kw: Answer() if url.endswith("/csr-idp/token") else None)
+    status, head, _ = call(f"/auth/callback?code=c&state={sent['state'][0]}", headers={"cookie": login})
+    assert status in (302, 303) and any(c.startswith(signin.COOKIE + "=") for c in head["set-cookie"])

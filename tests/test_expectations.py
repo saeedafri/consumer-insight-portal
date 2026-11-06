@@ -87,3 +87,31 @@ def test_a_reordered_multi_choice_list_pairs_by_label():
         file["answers"] = [[label, None, label] for _, _, label in file["answers"]]   # multi-choice: no codes
     pairs = expectations.pair_answers(Question(before), 0, Question(after), 0)
     assert pairs == [(0, 1), (1, 0)]
+
+
+def test_a_code_reused_for_another_question_is_left_out():
+    """M1 asked about mass merchants in Dec 2025 and about Memorial Day plans in Mar 2026: only the second is an
+    expectation of Memorial Day (config/expectations.yml mentions: memorial day)."""
+    from tests.test_weekly_report import tiny_file
+    before = tiny_file([[(40, 100), (60, 100)]] * 2)
+    before["waves"] = [[1, "2025-12-08", 1], [2, "2026-03-09", 2]]
+    before["versions"] = ["Have you purchased from any of these mass merchandisers?", "Do you expect to spend money on Memorial Day 2026?"]
+    before["qcode"] = "M1"
+    after = tiny_file([[(30, 100), (70, 100)]])
+    after["waves"] = [[3, "2026-06-01", 1]]
+    after["versions"] = ["Did you spend money on Memorial Day 2026?"]
+    after["qcode"] = "C4"
+    numbers = {}
+    memorial = next(e for e in expectations.build({"M1": Question(before), "C4": Question(after)}, numbers)["events"]
+                    if e["name"] == "Memorial Day")
+    assert [(c["expected"]["survey_id"], c["actual"]["survey_id"]) for c in memorial["comparisons"]] == [(2, 3)]
+
+
+def test_an_outlook_question_gives_each_surveys_answers_and_net_more():
+    """HX2 on 28 Sep 2026 as the report prints it: 12.5 + 19.0 ... "Net More: 4.6%" (made-up counts, same shares)."""
+    from tests.test_weekly_report import tiny_file
+    labels = ("Spend a lot less", "Spend slightly less", "Spend around the same", "Spend slightly more", "Spend a lot more", "Don't know")
+    file = tiny_file([[(125, 1000), (125, 1000), (382, 1000), (190, 1000), (106, 1000), (72, 1000)]], labels)
+    file["answers"] = [[label, code + 1, label] for code, (_, _, label) in enumerate(file["answers"])]
+    found = expectations.outlook(Question(file), "Holiday spending")
+    assert found["net"] == [4.6] and found["rows"][2]["values"] == [38.2] and found["bases"] == [1000]

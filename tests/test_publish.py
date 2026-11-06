@@ -171,9 +171,12 @@ def test_a_new_container_restores_from_a_folder_backup_instead_of_rebuilding(tmp
         (version / "api" / "v1" / "waves.json.gz").write_bytes(body)
         publish.backup(version)
     assert sorted(p.name for p in keep.iterdir()) == [".build-20261022T000000Z.tar", "latest"]   # only the newest kept
+    rebuilt = []
+    monkeypatch.setattr(publish, "write_views", lambda out: rebuilt.append(out.name) or 0)
     restored = publish.restore(tmp_path / "new-container")
     assert (tmp_path / "new-container" / "current" / "api" / "v1" / "waves.json.gz").read_bytes() == b"new"
     assert restored.name == ".build-20261022T000000Z"
+    assert rebuilt == [restored.name]   # this image's reports, sector tables and expected vs actual: at deploy, not next week
 
 
 def test_a_reload_that_drops_a_question_leaves_no_stale_question_file(csi_db, tmp_path):
