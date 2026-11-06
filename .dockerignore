@@ -1,7 +1,7 @@
 # Nothing secret or bulky reaches an image: only the sources the Dockerfile copies.
 **
 !api/**
-!app/**
+!shared/**
 !etl/**
 !config/**
 !sql/**
