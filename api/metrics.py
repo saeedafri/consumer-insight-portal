@@ -224,14 +224,15 @@ def machine_series(since: str) -> list[dict]:
 # ---- Storage: which disk, which folders, how big --------------------------------------------------------------------
 # Measured at most every 5 minutes, from the API's minute loop (api/main.py), so the dashboard never waits on `du`.
 STORAGE_EVERY = 300
-STORAGE = {"measured": None, "disks": [], "folders": [], "database": None}
+STORAGE = {"measured": None, "disks": [], "folders": [], "database": None, "home": [], "home_measured": None}
+HOME_EVERY = 3600   # /home is network storage (Azure Files): its folders are measured hourly, not every 5 minutes
 STORAGE_LOCK = threading.Lock()
 SRV = Path(os.environ.get("CIP_SRV_DIR", "/srv/cip"))
 FOLDERS = (   # (what it is, where, why it exists)
     ("Published files", SRV / "published", "Every answer prepared ahead (books, results, cross-tabs): nginx sends them as they are."),
     ("nginx cache", Path(os.environ.get("CIP_NGINX_CACHE", "/var/cache/nginx/data")), "Answers the API computed, kept 60 s to 7 days so the next asker gets them without Python."),
     ("Published-files backup", Path(os.environ.get("CIP_PUBLISH_BACKUP_URL", "/home/cip/published-backup")), "A copy on Azure's permanent storage (/home): a restart restores it in about 1 s instead of rebuilding."),
-    ("Logs", logs.LOGS, "These logs. Each file is rotated at 20 MB, one old copy kept (deploy/etl-loop.sh)."),
+    ("Logs", logs.LOGS, "These logs, kept for good: each file that reaches 20 MB is packed into logs/archive/ as a .zip (deploy/archive-log.py)."),
     ("Location file", GEO_FILE.parent, "DB-IP Lite: the city of a visitor's address, looked up here (Top visitors)."),
 )
 
@@ -240,6 +241,7 @@ def folder_mb(path: Path) -> float | None:
     """A folder's size on disk in MB (du), or None when it is not there (e.g. on a laptop)."""
     if not path.exists():
         return None
+    path = path.resolve()   # logs/ is a link to /home/cip/logs: du would measure the link, not the folder
     try:
         done = subprocess.run(["du", "-sk", str(path)], capture_output=True, text=True, timeout=60)
         return round(int(done.stdout.split()[0]) / 1024, 1)
@@ -272,8 +274,15 @@ def measure_storage(force: bool = False) -> None:
             disks.append({"name": label, "path": str(path), "meaning": meaning, "used_mb": round(usage.used / 2**20),
                           "total_mb": round(usage.total / 2**20), "used_pct": round(100 * usage.used / max(1, usage.total), 1)})
     folders = [{"name": name, "path": str(path), "meaning": meaning, "mb": folder_mb(path)} for name, path, meaning in FOLDERS]
+    home, home_measured = STORAGE["home"], STORAGE["home_measured"]
+    now = datetime.now(timezone.utc)
+    if Path("/home").is_dir() and (not home_measured or (now - home_measured).total_seconds() >= HOME_EVERY):
+        # what /home holds, folder by folder: ours (cip), Azure's own (LogFiles, site, data…), so its use is explained
+        home = sorted(({"path": str(p), "mb": folder_mb(p)} for p in Path("/home").iterdir() if p.is_dir()),
+                      key=lambda f: -(f["mb"] or 0))
+        home_measured = now
     with STORAGE_LOCK:
-        STORAGE.update(measured=datetime.now(timezone.utc), disks=disks, folders=folders, database=database_size())
+        STORAGE.update(measured=now, disks=disks, folders=folders, database=database_size(), home=home, home_measured=home_measured)
 
 
 # ---- Visitors: who and where ----------------------------------------------------------------------------------------
@@ -404,11 +413,15 @@ def metrics(minutes: int = Query(60, ge=5, le=KEEP_MINUTES), who: dict = Depends
         {"name": "Published files", "where": "Container disk", "meaning": "Answers prepared ahead by the publish step, sent by nginx as files.",
          "answered": totals["file"], "share_pct": round(100 * totals["file"] / max(1, asked), 1)},
     ]
+    caches.append({"name": "API (Python), computed", "where": "API process",
+                   "meaning": "Neither a cache nor a published file had it: Python built the answer (or checked the sign-in). nginx cache + published files + this row = 100 % of requests. The browser-cache row is not a fourth share: those \"not modified\" answers are counted inside the other three.",
+                   "answered": totals["api"], "share_pct": round(100 * totals["api"] / max(1, asked), 1)})
     for report in CACHE_REPORTERS:   # the API's memory caches (api/main.py)
         caches += report()
     with STORAGE_LOCK:
         storage = {"measured": STORAGE["measured"].isoformat(timespec="seconds") if STORAGE["measured"] else None,
-                   "disks": STORAGE["disks"], "folders": STORAGE["folders"], "database": STORAGE["database"]}
+                   "disks": STORAGE["disks"], "folders": STORAGE["folders"], "database": STORAGE["database"],
+                   "home": STORAGE["home"]}
     return {
         "since": since, "now": now.isoformat(timespec="seconds"), "machine": machine_series(since),
         "traffic": traffic, "totals": totals, "caches": caches, "storage": storage,

@@ -28,7 +28,8 @@ interface Folder { name: string; path: string; meaning: string; mb: number | nul
 interface Metrics {
   since: string; now: string; machine: Sample[]; traffic: (Counts & { minute: string })[];
   totals: Counts & { under_1ms: number; slowest_ms: number }; caches: CacheLayer[];
-  storage: { measured: string | null; disks: Disk[]; folders: Folder[]; database: { name: string; mb: number; tables: number } | null };
+  storage: { measured: string | null; disks: Disk[]; folders: Folder[]; database: { name: string; mb: number; tables: number } | null;
+    home?: { path: string; mb: number | null }[] };
   histogram: { up_to_ms: number | null; requests: number }[];
   pages: { page: string; name: string; requests: number; share_pct: number; average_ms: number; slowest_ms: number; without_python_pct: number }[];
   clients: { client: string; user: string; place: string; requests: number }[];
@@ -129,6 +130,7 @@ export default function Logs() {
           : denied}</p></Card>}
       {metrics && <Dashboard m={metrics} minutes={minutes} />}
       <RawLogs headers={headers} token={token} />
+      <Archives headers={headers} token={token} />
     </div>
   );
 }
@@ -277,6 +279,16 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
             <td className="num">{mb(m.storage.database.mb)}</td></tr>}
         </tbody>
       </table></div>
+      {!!m.storage.home?.length && <>
+        <h3 className="eyebrow" style={{ margin: "16px 0 6px" }}>What is on Azure permanent storage (/home), folder by folder (measured hourly)</h3>
+        <div className="table-wrap"><table className="data">
+          <thead><tr><th>Folder</th><th>Whose</th><th className="num">Size</th></tr></thead>
+          <tbody>{m.storage.home.map(f => <tr key={f.path}><th scope="row" style={mono}>{f.path}</th>
+            <td style={small}>{f.path === "/home/cip" ? "Ours: logs, the published-files backup, open-ended coding" : "Azure App Service's own"}</td>
+            <td className="num">{mb(f.mb)}</td></tr>)}</tbody>
+        </table></div>
+        <p className="muted" style={{ fontSize: 12 }}>Anything the disk counts as used beyond these folders is not visible to the app: the storage is Azure's, possibly shared.</p>
+      </>}
       {!m.storage.disks.length && <p className="muted">Measured a minute after the server starts.</p>}
     </Card>
 
@@ -403,5 +415,25 @@ function RawLogs({ headers, token }: { headers: Record<string, string>; token: s
       {answer?.lines.length ? answer.lines.join("\n") : answer ? "Nothing logged here yet." : "Loading…"}
     </pre>
     <div style={{ marginTop: 10 }}>{pager}</div>
+  </Card>;
+}
+
+// ---- Older logs, packed: every log that passed 20 MB, as a .zip kept for good (deploy/archive-log.py) ------------------
+function Archives({ headers, token }: { headers: Record<string, string>; token: string }) {
+  const [list, setList] = useState<{ name: string; bytes: number; time: string }[] | null>(null);
+  useEffect(() => {
+    fetch("/api/v1/admin/logs/archives", { credentials: "same-origin", headers })
+      .then(r => r.ok ? r.json() : []).then(setList).catch(() => setList([]));
+  }, [token]);
+  const save = (name: string) => void fetch(`/api/v1/admin/logs/archive?name=${encodeURIComponent(name)}`, { credentials: "same-origin", headers })
+    .then(r => r.ok ? r.blob() : Promise.reject(new Error(`${r.status}`)))
+    .then(blob => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href); })
+    .catch(() => { /* the list is refreshed on the next visit */ });
+  return <Card title="Older logs (packed)" sub="Every log that reached 20 MB, packed as a .zip and kept for good, newest first. Any laptop or phone opens a .zip.">
+    {list?.length ? <div className="table-wrap"><table className="data">
+      <thead><tr><th>File</th><th>Packed (UTC)</th><th className="num">Size</th><th /></tr></thead>
+      <tbody>{list.map(a => <tr key={a.name}><th scope="row" style={mono}>{a.name}</th><td>{a.time.replace("T", " ").slice(0, 16)}</td>
+        <td className="num">{bytes(a.bytes)}</td><td className="num"><button className="btn" onClick={() => save(a.name)}>Download</button></td></tr>)}</tbody>
+    </table></div> : <p className="muted">{list ? "None yet: a log is packed when it reaches 20 MB." : "Loading…"}</p>}
   </Card>;
 }

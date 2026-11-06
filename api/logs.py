@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -95,6 +97,25 @@ def logs(source: str = "api", q: str = Query("", max_length=200), lines: int = Q
         found = tail(path, wanted, needle) if path and path.exists() else []
     return {"sources": sources, "source": source, "page": page, "per_page": lines,
             "lines": found[(page - 1) * lines:page * lines], "more": len(found) > page * lines}
+
+
+@router.get("/logs/archives")
+def archives(who: dict = Depends(admin)) -> list[dict]:
+    """Every packed log (deploy/archive-log.py writes one .zip each time a log passes 20 MB; none is ever deleted),
+    newest first: [{name, bytes, time}]."""
+    folder = LOGS / "archive"
+    found = sorted(folder.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True) if folder.is_dir() else []
+    return [{"name": p.name, "bytes": p.stat().st_size,
+             "time": datetime.fromtimestamp(p.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")} for p in found]
+
+
+@router.get("/logs/archive")
+def archive(name: str = Query(..., max_length=120), who: dict = Depends(admin)) -> FileResponse:
+    """One packed log, by its exact name from archives(): never a path from the request."""
+    path = LOGS / "archive" / name
+    if not re.fullmatch(r"[\w.-]+\.zip", name) or not path.is_file():
+        raise HTTPException(404, "No such archive")
+    return FileResponse(path, media_type="application/zip", filename=name)
 
 
 @router.get("/logs/download")

@@ -111,6 +111,8 @@ def test_the_dashboard_names_visitors_and_explains_problems(tmp_path, monkeypatc
     who = {c["client"]: c["user"] for c in m["clients"]}
     assert who == {"1.2.3.4": "ana@coresight.com", "5.6.7.8": ""}   # a refused (401) cookie never names anyone
     assert m["totals"]["browser"] == 1 and m["totals"]["p99_ms"] == 7500.0   # over 5 s: the real slowest, not a made-up 10 s
+    shares = {c["name"]: c.get("share_pct") for c in m["caches"]}   # nginx + files + Python = every request
+    assert shares["nginx cache"] + shares["Published files"] + shares["API (Python), computed"] == 100.0
     assert m["problems"][0]["meaning"].startswith("The API stopped while answering")
     assert [r["build"] for r in m["restarts"]] == ["abc123"]   # the sampler's own line is not a restart
 
@@ -123,3 +125,16 @@ def test_the_dashboard_lists_who_signed_in_and_from_where(tmp_path, monkeypatch)
                                       f"{stamp},202 INFO    cip.signin | sign-in: ana@coresight.com role=analyst via demo from 10.1.2.3\n")
     assert metrics.metrics(60, ADMIN)["sign_ins"] == [{"time": stamp, "email": "ana@coresight.com", "role": "analyst",
                                                        "method": "demo", "address": "10.1.2.3", "place": ""}]
+
+
+def test_packed_logs_are_listed_and_only_they_can_be_downloaded(tmp_path, monkeypatch):
+    monkeypatch.setattr(logs, "LOGS", tmp_path)
+    (tmp_path / "archive").mkdir()
+    (tmp_path / "archive" / "api-20261106-0910.zip").write_bytes(b"PK")
+    (tmp_path / "secret.txt").write_text("no")
+    assert [a["name"] for a in logs.archives(ADMIN)] == ["api-20261106-0910.zip"]
+    assert str(logs.archive("api-20261106-0910.zip", ADMIN).path).endswith("api-20261106-0910.zip")
+    for name in ("../secret.txt", "secret.txt", "../../etc/passwd.zip", "missing.zip"):
+        with pytest.raises(HTTPException) as refused:
+            logs.archive(name, ADMIN)
+        assert refused.value.status_code == 404

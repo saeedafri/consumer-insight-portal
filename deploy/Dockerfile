@@ -40,7 +40,7 @@ COPY etl/ etl/
 COPY config/ config/
 COPY scripts/ scripts/
 COPY sql/ sql/
-COPY deploy/etl-loop.sh deploy/start.sh deploy/machine-log.sh deploy/
+COPY deploy/etl-loop.sh deploy/start.sh deploy/machine-log.sh deploy/archive-log.py deploy/
 COPY DigiCertGlobalRootG2.crt.pem ./
 COPY data/coded/ data/coded/
 COPY --from=web /w/out web/

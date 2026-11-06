@@ -204,15 +204,6 @@ def test_a_new_small_cell_rule_rebuilds_every_wave(csi_db, tmp_path, monkeypatch
     assert json.loads((publish.build(tmp_path, jobs=1) / "manifest.json").read_text())["rebuilt_waves"] == 2
 
 
-def test_a_publish_empties_the_nginx_answer_cache(tmp_path, monkeypatch):
-    cache = tmp_path / "nginx-cache"
-    (cache / "a" / "bc").mkdir(parents=True)
-    (cache / "a" / "bc" / "f00").write_text("old cross-tab")
-    monkeypatch.setenv("CIP_NGINX_CACHE", str(cache))
-    publish.empty_nginx_cache()
-    assert cache.is_dir() and list(cache.iterdir()) == []                 # the folder stays, its answers go
-
-
 def test_the_warm_up_asks_only_the_newest_wave_one_at_a_time(tmp_path, monkeypatch):
     import gzip, json, threading
     from etl import publish
@@ -241,3 +232,19 @@ def test_the_warm_up_asks_only_the_newest_wave_one_at_a_time(tmp_path, monkeypat
     publish.warm_nginx(out)
     assert asked and all("/waves/2/" in u and u.endswith("weeks=1") for u in asked)   # newest wave, this week only
     assert len(asked) == 6 * 5 and at_once[0] == 1                                    # every ordered pair of 6 cuts, serially
+
+
+def test_after_a_deploy_the_most_asked_cached_answers_are_put_back(tmp_path, monkeypatch):
+    """A new container's nginx cache is empty though the data did not change: the request log (on /home) says what
+    people asked for most, and only cached, successful API answers are worth asking for again."""
+    def line(path, status=200, cache="MISS", method="GET"):
+        return json.dumps({"method": method, "path": path, "status": status, "cache": cache}) + "\n"
+    (tmp_path / "nginx-access.log.1").write_text(line("/api/v1/waves/2/crosstab?q=a&by=gender,age_band") * 3)
+    (tmp_path / "nginx-access.log").write_text(
+        line("/api/v1/waves/2/crosstab?q=a&by=gender,age_band", cache="HIT") * 2 + line("/api/v1/search?q=gift") * 4
+        + line("/api/v1/boards", cache="") * 9            # the team's own data: never cached, never warmed
+        + line("/api/v1/search?q=broken", status=503)       # a failed answer: not worth asking again
+        + line("/app/") * 9 + "not json\n")                 # pages are files, already fast
+    monkeypatch.setenv("CIP_LOG_DIR", str(tmp_path))
+    assert publish.popular_urls() == ["/api/v1/waves/2/crosstab?q=a&by=gender,age_band", "/api/v1/search?q=gift"]
+    assert publish.popular_urls(limit=1) == ["/api/v1/waves/2/crosstab?q=a&by=gender,age_band"]

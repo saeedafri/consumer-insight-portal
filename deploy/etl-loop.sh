@@ -5,7 +5,7 @@
 #    fieldwork ends; and 03:30 (09:00 IST) every day, a short run that loads any other survey that closed (annual, ad hoc)
 #    within a day; Friday's also runs the integrity check. Each run takes the ETL lock, so runs never overlap.
 #  - scripts/weekly_forsta.py --watchdog every hour at minute 05: a stuck or missing run is reported (etl/notify.py).
-#  - logs/*.log and *.jsonl rotated past 20 MB, one old copy kept (OPS-07).
+#  - logs/*.log and *.jsonl past 20 MB are packed into logs/archive/ as .zip and kept for good (deploy/archive-log.py).
 set -u
 RUNS=${CIP_ETL_RUNS:-"Mon@12:00 Mon@03:30 Tue@03:30 Wed@03:30 Thu@03:30 Fri@03:30 Sat@03:30 Sun@03:30"}
 cd /srv/cip
@@ -15,8 +15,8 @@ while :; do
     [ "$slot" = "$now" ] && python scripts/weekly_forsta.py >> logs/etl-loop.log 2>&1 &
   done
   [ "$(date -u +%M)" = "05" ] && python scripts/weekly_forsta.py --watchdog >> logs/etl-loop.log 2>&1 &
-  for f in logs/*.log logs/*.jsonl; do   # copy, then empty: nginx and the API keep writing to the same open file
-    [ -f "$f" ] && [ "$(wc -c < "$f")" -gt 20971520 ] && cp "$f" "$f.1" && : > "$f"
+  for f in logs/*.log logs/*.jsonl; do   # past 20 MB: packed into logs/archive/*.zip for good, the live file emptied
+    [ -f "$f" ] && [ "$(wc -c < "$f")" -gt 20971520 ] && python deploy/archive-log.py "$f" >> logs/container.log 2>&1
   done
   sleep $((60 - $(date -u +%-S)))
 done

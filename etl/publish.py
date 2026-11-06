@@ -39,6 +39,7 @@ import sys
 import tarfile
 import tempfile
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,6 +51,7 @@ from shared.data import payloads
 
 log = logging.getLogger("cip.publish")
 ROOT = Path(os.environ.get("CIP_PUBLISH_DIR") or Path(__file__).resolve().parents[1] / "data/published")
+POPULAR = 300   # after a deploy: the most-asked answers put back in nginx's cache (popular_urls)
 WARM_WAVES = 1   # the newest wave, the one people open first after a publish (3 kept one core at 100 % for 97 s)
 KEEP = 3
 MAX_JOBS = 4     # app-role database reads per publish; shared MySQL must not get an unbounded pool
@@ -258,17 +260,9 @@ def swap(root: Path, target: Path) -> None:
     versions = sorted(p for p in root.glob(".build-*") if p.is_dir())
     for old in versions[:-KEEP]:
         shutil.rmtree(old, ignore_errors=True)
-    empty_nginx_cache()
-
-
-def empty_nginx_cache() -> None:
-    """nginx keeps every cross-tab, trend and search answer until new data is published (deploy/nginx.conf): drop them
-    now, so the next request of each is computed from the new version. nginx treats a missing cache file as a miss."""
-    cache = os.environ.get("CIP_NGINX_CACHE")
-    if not cache:
-        return
-    for entry in Path(cache).iterdir():
-        shutil.rmtree(entry, ignore_errors=True) if entry.is_dir() else entry.unlink(missing_ok=True)
+    # nginx's cached answers need no emptying: their key holds the published version (deploy/cip_locations.conf,
+    # $realpath_root), so the new version starts new keys at once; the old ones are never asked for again and nginx
+    # drops them itself (deploy/nginx.conf proxy_cache_path: unused for 7 days, or past 512 MB)
 
 
 def blob(name: str) -> str:
@@ -352,21 +346,53 @@ def warm_nginx(out: Path, waves: int = WARM_WAVES) -> int:
     if not base:
         return 0
     from urllib.parse import quote
-    from urllib.request import Request, urlopen
-    from shared.core.session import issue
     from etl.serving import CUTS
     newest = sorted(json.loads(gzip.decompress((out / "api/v1/waves.json.gz").read_bytes())),
                     key=lambda w: (w["wave_date"], w["survey_id"]), reverse=True)[:waves]
     urls = [f"{base}/api/v1/waves/{w['survey_id']}/crosstab?q={quote(q['id'], safe='')}&by={a},{b}&weeks={weeks}"
             for w in newest for q in json.loads(gzip.decompress((out / f"api/v1/waves/{w['survey_id']}/book.json.gz").read_bytes()))["questions"]
             for a in CUTS for b in CUTS if a != b for weeks in (1,)]
-    cookie = f'cip_session="{issue("publish@cip", hours=1)}"'
     time.sleep(2)   # nginx looks at the swapped "current" once a second (open_file_cache_valid): warm the new version's keys
+    return ask_nginx(urls, f"cross-tabs of {len(newest)} waves")
+
+
+def popular_urls(limit: int = POPULAR) -> list[str]:
+    """The cached answers people asked for most (cross-tabs, results, trends, search), from nginx's request log, which
+    lives on /home and so survives a deploy (deploy/start.sh links logs/ there): what to put back in a new container's
+    empty nginx cache. Only answers nginx caches (its log names a cache status) that came back 200."""
+    logs = Path(os.environ.get("CIP_LOG_DIR") or ROOT.parent / "logs")
+    asked: Counter = Counter()
+    for name in ("nginx-access.log.1", "nginx-access.log"):   # the rotated copy first, then the current file
+        path = logs / name
+        if not path.exists():
+            continue
+        with path.open("rb") as f:
+            for raw in f:
+                try:
+                    entry = json.loads(raw)
+                except ValueError:
+                    continue
+                if (entry.get("method") == "GET" and entry.get("status") == 200 and entry.get("cache")
+                        and str(entry.get("path", "")).startswith("/api/")):
+                    asked[entry["path"]] += 1
+    return [path for path, _ in asked.most_common(limit)]
+
+
+def ask_nginx(urls: list[str], what: str) -> int:
+    """Ask nginx (CIP_NGINX_URL) for each URL as a signed-in reader would, so its answer is cached. One at a time,
+    resting as long as each took: at most half the core, people's requests always go first."""
+    base = os.environ.get("CIP_NGINX_URL", "").rstrip("/")
+    if not base or not urls:
+        return 0
+    from urllib.request import Request, urlopen
+    from shared.core.session import issue
+    cookie = f'cip_session="{issue("publish@cip", hours=1)}"'
 
     def get(url: str) -> bool:
         took = time.perf_counter()
         try:
-            with urlopen(Request(url, headers={"Cookie": cookie, "Accept-Encoding": "gzip"}), timeout=60) as r:
+            with urlopen(Request(url if url.startswith("http") else base + url,
+                                 headers={"Cookie": cookie, "Accept-Encoding": "gzip"}), timeout=60) as r:
                 r.read()
                 return r.status == 200
         except OSError:
@@ -375,8 +401,29 @@ def warm_nginx(out: Path, waves: int = WARM_WAVES) -> int:
             time.sleep(time.perf_counter() - took)   # rest as long as it took: half the core at most
     start = time.perf_counter()
     ok = sum(map(get, urls))
-    log.info("Warmed nginx: %d of %d cross-tabs of %d waves in %.0f s", ok, len(urls), len(newest), time.perf_counter() - start)
+    log.info("Warmed nginx: %d of %d %s in %.0f s", ok, len(urls), what, time.perf_counter() - start)
     return ok
+
+
+def warm_after_restore(out: Path) -> None:
+    """A deploy starts a new container, whose nginx cache is empty although the data has not changed: once nginx and
+    the API answer, put back this week's cross-tabs and the answers people asked for most (popular_urls)."""
+    base = os.environ.get("CIP_NGINX_URL", "").rstrip("/")
+    if not base:
+        return
+    from urllib.request import urlopen
+    for _ in range(90):   # the API takes a few seconds to start beside us (deploy/start.sh)
+        try:
+            with urlopen(base + "/healthz", timeout=5) as r:
+                if r.status == 200:
+                    break
+        except OSError:
+            time.sleep(2)
+    try:
+        warm_nginx(out)
+        ask_nginx(popular_urls(), "most-asked answers from the request log")
+    except Exception as exc:   # people still get every answer; the first asker of each waits a little
+        log.warning("Warming the nginx cache after a restore failed: %s", exc)
 
 
 def rollback(root: Path = ROOT) -> Path:
@@ -400,7 +447,10 @@ def main() -> int:
     a = p.parse_args()
     from etl.loaders import etl_lock   # one writer of the published files at a time (the scheduled run publishes too)
     with etl_lock():
-        print(rollback(a.root) if a.rollback else restore(a.root) if a.restore else publish(a.root, a.jobs))
+        out = rollback(a.root) if a.rollback else restore(a.root) if a.restore else publish(a.root, a.jobs)
+    print(out)
+    if a.restore:   # outside the lock: refilling the cache must not hold up a scheduled ETL run
+        warm_after_restore(out)
     return 0
 
 
