@@ -51,7 +51,7 @@ export default function Ask() {
           <thead><tr><th>Source</th><th>Question</th><th>Wave</th><th className="num">Base</th><th>Top answers</th></tr></thead>
           <tbody>{answer.sources.map(s => <tr key={s.id}>
             <td><b>{s.id}</b></td>
-            <td><Link to={s.link}><code style={{ color: "var(--ink)", fontWeight: 700 }}>{s.qcode}</code> {s.question}</Link><br /><small className="muted">{s.title}</small></td>
+            <td><Link to={s.link}><code style={{ color: "var(--ink)", fontWeight: 700 }} title={`Survey code ${s.qcode}`}>{s.number ?? s.qcode}</code> {s.question}</Link><br /><small className="muted">{s.title}</small></td>
             <td className="nowrap">{fmtDate(s.wave_date)}</td>
             <td className="num">{s.base.toLocaleString("en-US")}</td>
             <td>{s.answers.slice(0, 3).map(([label, value]) => <div key={label}>{label}: <b>{value}%</b></div>)}</td>

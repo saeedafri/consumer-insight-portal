@@ -95,6 +95,7 @@ SERVING: tuple = ()                      # (count, newest built_at) of srv_wave:
 RESULTS: OrderedDict[tuple, Payload] = OrderedDict()   # (version, kind, args) → finished response, least recent first
 CACHE_BYTES = int(os.environ.get("CIP_CACHE_MB", "256")) * 2**20   # per worker: the cache never grows past this
 CACHED_BYTES = 0
+CACHE_COUNTS = {"hits": 0, "misses": 0}   # RESULTS answered from memory vs built, since this process started (Logs page)
 BUILD_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_BUILD_SLOTS", "8")))   # concurrent database builds per worker
 BUILD_WAIT = float(os.environ.get("CIP_BUILD_WAIT", "3"))   # seconds a request may queue for a slot before "busy, retry"
 CATALOGUE: SearchIndex | None = None     # every reportable question of every built wave (api/search.py)
@@ -212,8 +213,34 @@ async def _refresh_forever() -> None:
                 await run_in_threadpool(_load)
             await run_in_threadpool(_load_schedule)
             await run_in_threadpool(signin.load_revoked)
+            await run_in_threadpool(logs.read_traffic)   # every minute, so a busy log is counted before it rotates
+            await run_in_threadpool(logs.measure_storage)   # folder and database sizes, at most every 5 minutes
         except Exception:   # keep serving the last good payloads; the next poll retries
             log.exception("Dashboard refresh failed; still serving the previous payloads")
+
+
+def report_caches() -> list[dict]:
+    """The API's memory caches for the Logs page (api/logs.py CACHE_REPORTERS): what each holds, its size, its hits."""
+    asked = CACHE_COUNTS["hits"] + CACHE_COUNTS["misses"]
+    search_mb = 0.0
+    if CATALOGUE is not None:   # the search index is an in-memory SQLite database
+        pages, size = (CATALOGUE.db.execute(f"PRAGMA {p}").fetchone()[0] for p in ("page_count", "page_size"))
+        search_mb = round(pages * size / 2**20, 1)
+    return [
+        {"name": "API answer cache (Python)", "where": "API memory",
+         "meaning": f"Answers the API built once (cross-tabs, results, search), kept until the data changes; at most {CACHE_BYTES // 2**20} MB.",
+         "answered": CACHE_COUNTS["hits"], "share_pct": round(100 * CACHE_COUNTS["hits"] / max(1, asked), 1),
+         "size_mb": round(CACHED_BYTES / 2**20, 1), "entries": len(RESULTS),
+         "detail": {"answered from memory": CACHE_COUNTS["hits"], "built (first asker)": CACHE_COUNTS["misses"]}},
+        {"name": "Dashboard and wave store (Python)", "where": "API memory",
+         "meaning": "Every published dashboard and the wave list, loaded at start and refreshed when the data changes.",
+         "size_mb": round(sum(len(x.body) + len(x.gz) for x in STORE.values()) / 2**20, 1), "entries": len(STORE)},
+        {"name": "Search index", "where": "API memory",
+         "meaning": "Every question of every wave, for Search and Ask.", "size_mb": search_mb},
+    ]
+
+
+logs.CACHE_REPORTERS.append(report_caches)
 
 
 def check_settings() -> None:
@@ -236,6 +263,7 @@ async def lifespan(app: FastAPI):
     await run_in_threadpool(_load_schedule)
     audit.start()
     task = asyncio.get_running_loop().create_task(_refresh_forever())
+    asyncio.get_running_loop().run_in_executor(None, logs.measure_storage)   # the Logs page's storage table, at start
     try:
         yield
     finally:
@@ -342,7 +370,9 @@ async def _cached(key: tuple, build, *args) -> Payload:
     item = RESULTS.get(key) if CACHE_RESULTS else None
     if item is not None:
         RESULTS.move_to_end(key)
+        CACHE_COUNTS["hits"] += 1
         return item
+    CACHE_COUNTS["misses"] += 1
     # admission control: a burst of cache misses queues briefly for a slot, then gets a fast 503 the screen
     # turns into "busy, retry" — never a pile-up that slows every request on the one core
     try:

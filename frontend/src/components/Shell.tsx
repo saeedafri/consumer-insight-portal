@@ -1,10 +1,10 @@
 // App frame: the coresight.com header (logo, site links, search, theme, sign-in), a dark rail with the wave's screens,
 // a wave bar with the wave switcher, and the coresight.com footer.
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { setTheme, useTheme } from "../theme";
 import { setWeighted, useWeighted } from "../weight";
 import type { Theme } from "../theme";
-import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router";
+import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from "react-router";
 import { allowed, useMe, useWaves } from "../api";
 import PinDialog from "./PinDialog";
 import { UndoBar } from "./bits";
@@ -64,6 +64,23 @@ export default function Shell() {
   const me = useMe().data;
   const wave = waves.data?.find(w => String(w.survey_id) === id);
   const rail = useRef<HTMLElement>(null);
+  const howArrived = useNavigationType();
+
+  // Where the reader is on each page, so that a link opens a new page at its top (not at the scroll position of the
+  // page it was clicked on: the library is long) and Back/Forward ("POP") return to the same place. A filter that only
+  // changes ?query= stays on the same page and keeps its place.
+  const places = useRef(new Map<string, number>());
+  const here = useRef(location.pathname);
+  useEffect(() => {
+    history.scrollRestoration = "manual";   // the browser would restore before the page is drawn; we do it after
+    const remember = () => places.current.set(here.current, window.scrollY);
+    addEventListener("scroll", remember, { passive: true });
+    return () => removeEventListener("scroll", remember);
+  }, []);
+  useLayoutEffect(() => {
+    here.current = location.pathname;
+    window.scrollTo(0, howArrived === "POP" ? places.current.get(location.pathname) ?? 0 : 0);
+  }, [location.pathname]);
 
   // Track page transitions end-to-end and close mobile drawer
   useEffect(() => {

@@ -1,5 +1,6 @@
 // The question list every analysis screen shares: grouped by section, filterable by text or code. On a phone it is
 // a "Question ▾" button that opens the same list as a sheet, so the chart is the first thing on the screen.
+import { QuestionCode } from "./bits";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Question } from "../api";
 import { SMALL_BASE } from "../stats";
@@ -13,7 +14,7 @@ export default function QuestionNav({ questions, current, onPick }:
     const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
     const out = new Map<string, Question[]>();
     for (const q of questions) {
-      const hay = `${q.id} ${q.text}`.toLowerCase();
+      const hay = `${q.number} ${q.id} ${q.text}`.toLowerCase();   // Q3, the survey code or words
       if (words.every(w => hay.includes(w))) out.set(q.section, [...(out.get(q.section) ?? []), q]);
     }
     return [...out].sort(([a], [b]) => a.localeCompare(b));
@@ -65,7 +66,7 @@ export default function QuestionNav({ questions, current, onPick }:
         {sections.map(([section, qs]) => <div key={section}>
           <h4>{section}</h4>
           {qs.map(q => <button key={q.id} className={q.id === current ? "on" : ""} aria-current={q.id === current} onClick={() => pick(q)}>
-            <code>{q.id}</code><span>{q.short || q.text}</span>
+            <QuestionCode q={q} /><span>{q.short || q.text}</span>
             <small className={q.groups[0].base < SMALL_BASE ? "small" : ""} title="Respondents who answered">n={q.groups[0].base}</small>
           </button>)}
         </div>)}
@@ -74,7 +75,7 @@ export default function QuestionNav({ questions, current, onPick }:
     </nav>;
   return <Profiled id="QuestionNav">
     <button className="qnav-open" onClick={() => setSheet(true)} aria-haspopup="dialog">
-      {here && <code>{here.id}</code>}<span>{here ? here.short || here.text : "Questions"}</span><small>{at + 1} of {questions.length}</small><span aria-hidden className="caret">▾</span>
+      {here && <QuestionCode q={here} />}<span>{here ? here.short || here.text : "Questions"}</span><small>{at + 1} of {questions.length}</small><span aria-hidden className="caret">▾</span>
     </button>
     {list("side")}
     <dialog ref={dialog} className="qsheet" aria-label="Questions" onClose={() => setSheet(false)}

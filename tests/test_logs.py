@@ -15,16 +15,19 @@ class Asking:   # the request's headers are all admin() reads
 def test_a_log_reads_newest_first_and_filters(tmp_path, monkeypatch):
     monkeypatch.setattr(logs, "LOGS", tmp_path)
     (tmp_path / "api.log").write_text("first ok\nsecond ERROR boom\nthird ok\n")
-    assert logs.logs("api", "", 10, ADMIN)["lines"] == ["third ok", "second ERROR boom", "first ok"]
-    assert logs.logs("api", "error", 10, ADMIN)["lines"] == ["second ERROR boom"]
-    assert logs.logs("etl", "", 10, ADMIN)["lines"] == []          # not written yet: empty, not an error
+    assert logs.logs("api", "", 10, 1, ADMIN)["lines"] == ["third ok", "second ERROR boom", "first ok"]
+    assert logs.logs("api", "error", 10, 1, ADMIN)["lines"] == ["second ERROR boom"]
+    assert logs.logs("etl", "", 10, 1, ADMIN)["lines"] == []          # not written yet: empty, not an error
+    first, second = logs.logs("api", "", 2, 1, ADMIN), logs.logs("api", "", 2, 2, ADMIN)   # pages of 2, newest first
+    assert (first["lines"], first["more"]) == (["third ok", "second ERROR boom"], True)
+    assert (second["lines"], second["more"]) == (["first ok"], False)
 
 
 def test_only_the_listed_logs_can_be_read(tmp_path, monkeypatch):
     monkeypatch.setattr(logs, "LOGS", tmp_path)
     for name in ("../.env", "/etc/passwd", "api.log"):
         with pytest.raises(HTTPException) as refused:
-            logs.logs(name, "", 10, ADMIN)
+            logs.logs(name, "", 10, 1, ADMIN)
         assert refused.value.status_code == 404
 
 
@@ -61,7 +64,8 @@ def test_the_dashboard_counts_traffic_per_minute_and_reads_each_line_once(tmp_pa
     t = first["totals"]
     assert (t["requests"], t["2xx"], t["5xx"], t["hit"], t["file"], t["api"]) == (10, 9, 1, 1, 8, 1)   # the probe is left out
     assert t["p50_ms"] == 0.5 and t["p99_ms"] == 500 and t["under_1ms"] == 80.0
-    assert first["pages"][0] == {"page": "/api/v1/waves/:id/book", "requests": 9, "slowest_ms": 300.0}
+    assert first["pages"][0] == {"page": "/api/v1/waves/:id/book", "name": "A wave's full question book", "requests": 9,
+                                 "share_pct": 90.0, "average_ms": 33.3, "slowest_ms": 300.0, "without_python_pct": 88.9}
     with access.open("a") as f:   # the half-written line finishes, one more arrives: read once each, nothing twice
         f.write('"}\n' + line(404, 0.001))
     assert logs.metrics(60, ADMIN)["totals"]["requests"] == 11
@@ -72,11 +76,40 @@ def test_the_dashboard_counts_traffic_per_minute_and_reads_each_line_once(tmp_pa
     access.unlink()   # rotated: the new file is read from its start
     access.write_text(line(200, 0.0))
     assert logs.metrics(60, ADMIN)["totals"]["requests"] == 13
+    with access.open("a") as f:   # busy: 3 lines arrive unread, then deploy/etl-loop.sh copies the log to .1 and empties it
+        f.write(line(200, 0.0) * 3)
+    (tmp_path / "nginx-access.log.1").write_bytes(access.read_bytes())
+    access.write_text(line(200, 0.0, path="/"))   # the emptied log starts again, shorter than what was read
+    assert logs.metrics(60, ADMIN)["totals"]["requests"] == 17   # the 3 from the copy, the 1 from the new file
 
 
 def test_the_dashboard_reads_the_machine_samples(tmp_path, monkeypatch):
     monkeypatch.setattr(logs, "LOGS", tmp_path)
     now = logs.datetime.now(logs.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     (tmp_path / "machine.log").write_text('{"time":"2020-01-01T00:00:00Z","cpu_pct":1}\nnot json\n'
-                                          f'{{"time":"{now}","cpu_pct":42.5,"working_set_mb":300}}\n')
-    assert [s["cpu_pct"] for s in logs.metrics(60, ADMIN)["machine"]] == [42.5]   # old and broken lines skipped
+                                          f'{{"time":"{now}","cpu_pct":99,"working_set_mb":3800}}\n'   # before 5 Nov 2026: the whole host, no source
+                                          f'{{"time":"{now}","source":"cgroup1","cpu_pct":42.5,"working_set_mb":300}}\n')
+    assert [s["cpu_pct"] for s in logs.metrics(60, ADMIN)["machine"]] == [42.5]   # old, broken and host-wide lines skipped
+
+
+def test_the_dashboard_names_visitors_and_explains_problems(tmp_path, monkeypatch):
+    import json as js
+    monkeypatch.setattr(logs, "LOGS", tmp_path)
+    monkeypatch.setattr(logs, "TRAFFIC", logs.Traffic())
+    now = logs.datetime.now(logs.timezone.utc)
+    minute = now.strftime("%Y-%m-%dT%H:%M")
+    def line(status, user="", client="1.2.3.4", seconds=0.001):
+        return js.dumps({"time": f"{minute}:01+00:00", "client": client, "path": "/api/v1/me", "status": status, "bytes": 1,
+                         "seconds": seconds, "api_seconds": "0.001", "cache": "", "user": user}) + "\n"
+    (tmp_path / "nginx-access.log").write_text(line(200, "ana@coresight.com") + line(401, "forged@x.com", "5.6.7.8")
+                                              + line(304) + line(200, seconds=7.5))
+    stamp = now.strftime("%Y-%m-%d %H:%M:%S")
+    (tmp_path / "nginx-error.log").write_text(f"{stamp.replace('-', '/')} [error] 20#20: *1 upstream prematurely closed connection\n")
+    (tmp_path / "container.log").write_text(f"{now.strftime('%Y-%m-%dT%H:%M:%SZ')} start.sh: started nginx and the API, ETL scheduler on (build abc123)\n"
+                                            f"{now.strftime('%Y-%m-%dT%H:%M:%SZ')} machine-log.sh: numbers from cgroup1\n")
+    m = logs.metrics(60, ADMIN)
+    who = {c["client"]: c["user"] for c in m["clients"]}
+    assert who == {"1.2.3.4": "ana@coresight.com", "5.6.7.8": ""}   # a refused (401) cookie never names anyone
+    assert m["totals"]["browser"] == 1 and m["totals"]["p99_ms"] == 7500.0   # over 5 s: the real slowest, not a made-up 10 s
+    assert m["problems"][0]["meaning"].startswith("The API stopped while answering")
+    assert [r["build"] for r in m["restarts"]] == ["abc123"]   # the sampler's own line is not a restart

@@ -9,6 +9,12 @@ import type { Move } from "../moves";
 import { pts, SMALL_BASE } from "../stats";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
+/** A question as people read it: "Q3", its place in the survey. The survey's own code (BD1, LX5RA8OE), which the data
+ *  team matches against Forsta, shows on hover. Used wherever a screen names a question. */
+export function QuestionCode({ q }: { q: { id: string; number?: string } }) {
+  return <code title={`Survey code ${q.id}`}>{q.number ?? q.id}</code>;
+}
+
 export function BaseNote({ base, label = "base" }: { base: number; label?: string }) {
   const content = (
     <span className={`base ${base < SMALL_BASE ? "small" : ""}`}>

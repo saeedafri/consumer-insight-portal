@@ -132,8 +132,10 @@ CHECKS = [
           "SELECT COUNT(*) FROM cip_forsta_survey WHERE load_state IN ('due', 'failed') AND closed_at < :three_days_ago"),
     Check("closed Forsta survey hibernated before it was loaded — reactivate it in Forsta, the next run loads it",
           "watch", "SELECT COUNT(*) FROM cip_forsta_survey WHERE load_state = 'hibernated' AND survey_id IS NULL"),
+    # a survey that was only ever in testing (never launched) and then deleted in Forsta is not missing data: left out
     Check("Forsta survey no longer listed by Forsta and never loaded — ask Forsta to restore it", "watch",
-          "SELECT COUNT(*) FROM cip_forsta_survey WHERE last_seen < :week_ago AND survey_id IS NULL"),
+          "SELECT COUNT(*) FROM cip_forsta_survey WHERE last_seen < :week_ago AND survey_id IS NULL"
+          " AND load_state <> 'testing'"),
     Check("profile filed under another wave", "base",
           "SELECT COUNT(*) FROM cip_profile p JOIN cip_respondent r ON r.respondent_id = p.respondent_id"
           " WHERE r.survey_id <> p.survey_id"),

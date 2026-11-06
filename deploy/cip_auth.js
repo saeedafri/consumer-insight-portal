@@ -57,15 +57,31 @@ function check(r) {
         return r.return(403);   // an API key (app/core/api_keys.py): the API checks it
     }
     const raw = (r.variables.cookie_cip_session || '').replace(/^"|"$/g, '');   // the API may set it quoted
+    return r.return(remembered(raw));
+}
+
+// The cookie's answer from the 60 s memory, else checked now and remembered
+function remembered(raw) {
     const known = ngx.shared.sessions.get(raw);
     if (known) {
-        return r.return(Number(known));
+        return Number(known);
     }
     const answer = status(raw);
     if (raw) {
         ngx.shared.sessions.set(raw, String(answer));
     }
-    return r.return(answer);
+    return answer;
 }
 
-export default { check };
+// The signed-in email for the request log ($cip_user, deploy/cip_logs.conf), so the Logs page's "Top visitors" can
+// name people instead of only addresses. Only a valid, signed cookie names anyone; the cookie itself is never logged
+// (it would let whoever reads the logs sign in as that person).
+function user(r) {
+    const raw = (r.variables.cookie_cip_session || '').replace(/^"|"$/g, '');
+    if (!raw || remembered(raw) === 401) {
+        return '';
+    }
+    return Buffer.from(raw.slice(0, raw.lastIndexOf('.')), 'base64url').toString().split('|')[0];
+}
+
+export default { check, user };

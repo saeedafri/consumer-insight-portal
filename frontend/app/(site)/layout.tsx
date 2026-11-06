@@ -5,11 +5,12 @@ import ThemeToggle from "./ThemeToggle";
 import Motion from "./Motion";
 import { SiteSchema } from "./seo";
 
-// next/font self-hosts each face and generates a metric-matched fallback, so text does not reflow when the
-// webfont arrives (zero font-swap layout shift) — the fonts also preload, so this is faster, not just steadier.
-const serif = Playfair_Display({ subsets: ["latin"], variable: "--f-serif", display: "swap" });
-const sans = Inter({ subsets: ["latin"], variable: "--f-sans", display: "swap" });
-const head = Montserrat({ subsets: ["latin"], variable: "--f-head", display: "swap" });
+// next/font self-hosts each face and generates a metric-matched fallback, so text shows at once and does not reflow
+// when the webfont arrives. No preload: Next.js would put these three preloads (120 KB) on every page, the portal's
+// /app included, where they compete with the JavaScript the first screen waits for.
+const serif = Playfair_Display({ subsets: ["latin"], variable: "--f-serif", display: "swap", preload: false });
+const sans = Inter({ subsets: ["latin"], variable: "--f-sans", display: "swap", preload: false });
+const head = Montserrat({ subsets: ["latin"], variable: "--f-head", display: "swap", preload: false });
 const fonts = `${serif.variable} ${sans.variable} ${head.variable}`;
 
 // The coresight.com chrome, identical to the portal (web/src/components/Shell.tsx): logo + name, the site's top menus,

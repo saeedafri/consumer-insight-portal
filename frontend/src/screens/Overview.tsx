@@ -6,7 +6,7 @@ import { useQueries } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router";
 import { dashboardQuery, useBook, useWaves } from "../api";
 import type { Question } from "../api";
-import { BaseNote, Card, Change, compared, Failure, SkeletonScreen, SourceLine, SIG_RULE } from "../components/bits";
+import { BaseNote, Card, Change, compared, Failure, SkeletonScreen, SourceLine, SIG_RULE, QuestionCode } from "../components/bits";
 import Glance from "../components/Glance";
 import QuestionChart from "../components/QuestionChart";
 import Profiled from "../components/Profiled";
@@ -94,7 +94,7 @@ export default function Overview() {
 
     <div className="grid g2">
       {sections.map(q => <Card key={q.id} title={<Link to={`/w/${id}/questions/${encodeURIComponent(q.id)}`} style={{ color: "inherit", textDecoration: "none" }}>{q.short || q.text}</Link>}
-                              sub={<>{q.section} · {q.id} · {q.type.replace("_", " ")}</>} aside={<BaseNote base={q.groups[0].base} />}>
+                              sub={<>{q.section} · <QuestionCode q={q} /> · {q.type.replace("_", " ")}</>} aside={<BaseNote base={q.groups[0].base} />}>
         <QuestionChart question={{ ...q, groups: q.groups.map(g => ({ ...g, rows: g.rows.slice(0, 10) })) }} view={firstOf(q)} columns={["Total"]} sort wave={fmtDate(w.wave_date)} vs={vs.prior} />
         <SourceLine wave={fmtDate(w.wave_date)} base={`base n=${q.groups[0].base}`} asked={q.base_desc} from={w} />
       </Card>)}

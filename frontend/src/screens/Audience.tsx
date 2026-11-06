@@ -25,7 +25,7 @@ const writeAudience = (d: AudienceDef) => JSON.stringify({ cuts: d.cuts, answers
 /** What an answer condition stores: the row as srv_result names it (a multi item, or a single/grid option). */
 const condition = (q: Question, groupLabel: string, row: { label: string; code: number | null }) => ({
   qcode: q.id, qtext: q.text, item_label: q.type.endsWith("multi") ? row.label : groupLabel, option_code: q.type.endsWith("multi") ? null : row.code,
-  label: `${q.id}: ${groupLabel ? `${groupLabel} · ` : ""}${row.label}` });
+  label: `${q.number}: ${groupLabel ? `${groupLabel} · ` : ""}${row.label}` });
 
 export default function Audience() {
   const { id: raw, q: code } = useParams();
@@ -115,7 +115,7 @@ export default function Audience() {
         {def.answers.length > 0 && <ul className="saved-views" style={{ marginTop: 8 }}>{def.answers.map((a, i) =>
           <li key={i}><span>{a.label}</span><button className="btn-chip" onClick={() => setDef(d => ({ ...d, answers: d.answers.filter((_, k) => k !== i) }))}>Remove</button></li>)}</ul>}
         <div className="toolbar" style={{ marginTop: 12, marginBottom: 0 }}>
-          <button className="btn primary" disabled={empty || busy} onClick={() => void run()}>{busy ? "Counting…" : `Show ${question.id} for this audience`}</button>
+          <button className="btn primary" disabled={empty || busy} onClick={() => void run()}>{busy ? "Counting…" : `Show ${question.number} for this audience`}</button>
           <label className="sr-only" htmlFor="aud-name">Audience name</label>
           <input id="aud-name" className="field" placeholder="Name it to save, e.g. Gen Z GenAI shoppers" value={name} onChange={e => setName(e.target.value)} style={{ minWidth: 220 }} />
           <button className="btn" disabled={empty} onClick={() => void save()}>Save for the team</button>
@@ -123,7 +123,7 @@ export default function Audience() {
         </div>
         {note && <p className="muted" style={{ margin: "8px 0 0" }}>{note}</p>}
       </Card>
-      {result && <Card title={`${question.id}: ${question.text}`} sub={`The audience against everyone else who answered. ▲▼ = different in a single 95 % comparison (not corrected for the many answers shown). Groups under ${HIDDEN_BASE} show no figure.${result.skipped.length ? ` Not applied in this wave (not asked, or the code means another question here): ${result.skipped.join(", ")}.` : ""}`}>
+      {result && <Card title={`${question.number}: ${question.text}`} sub={`The audience against everyone else who answered. ▲▼ = different in a single 95 % comparison (not corrected for the many answers shown). Groups under ${HIDDEN_BASE} show no figure.${result.skipped.length ? ` Not applied in this wave (not asked, or the code means another question here): ${result.skipped.join(", ")}.` : ""}`}>
         <div className="table-wrap"><table className="data">
           <thead><tr><th>Answer</th><th className="num">Audience</th><th className="num">Everyone else</th><th className="num">Difference</th><th className="num" title="100 × the audience's share ÷ everyone's: 120 = 20 % more likely than all respondents">Index</th></tr></thead>
           <tbody>{result.rows.map(([label, , base, share, rest, restBase, sig, index]) => <tr key={label}>

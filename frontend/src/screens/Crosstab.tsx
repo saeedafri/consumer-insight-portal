@@ -5,7 +5,7 @@ import type { MouseEvent, ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { CUT_NAMES, CUT_OF, present, useBook, useCrosstab } from "../api";
 import type { Column, Group, Question, Wave } from "../api";
-import { BaseNote, Card, Empty, Failure, Loading, SkeletonScreen, SourceLine, sourceText, ExportButtons } from "../components/bits";
+import { BaseNote, Card, Empty, Failure, Loading, SkeletonScreen, SourceLine, sourceText, ExportButtons , QuestionCode } from "../components/bits";
 import QuestionNav from "../components/QuestionNav";
 import QuestionTabs from "../components/QuestionTabs";
 import { downloadTable } from "../csv";
@@ -80,7 +80,7 @@ export default function Crosstab() {
             <span className="sep">›</span>
             <span>{question.section}</span>
             <span className="sep">›</span>
-            <code>{question.id}</code>
+            <QuestionCode q={question} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Tooltip>
@@ -122,7 +122,7 @@ export default function Crosstab() {
             </Tooltip>
           </div>
         </div>
-        <div className="qhead"><code>{question.id}</code><span>{question.section}</span><BaseNote base={question.groups[0].base} /></div>
+        <div className="qhead"><QuestionCode q={question} /><span>{question.section}</span><BaseNote base={question.groups[0].base} /></div>
         <h1 className="qtext">{question.text}</h1>
         <div style={{ marginTop: 10 }}>
           <Tabs value={mode} onValueChange={m => set("mode", m)}>
@@ -161,10 +161,10 @@ function Banner({ question, n, wave, cols, from }: { question: Question; n: Reco
     setParams(p, { replace: true });
   };
   const { on, view } = useHover();
-  const exportAs = (format: Format) => downloadTable(format, `${question.id}-crosstab`, ["Group", "Answer", ...cols],
+  const exportAs = (format: Format) => downloadTable(format, `${question.number}-crosstab`, ["Group", "Answer", ...cols],
     // a grid's rows have their own bases: each group carries its base row, never the first group's
     question.groups.flatMap(g => [[g.label, "Base (answered)", ...cols.map(c => g.bases[c] ?? 0)], ...g.rows.map(r => [g.label, r.label, ...cols.map(c => r[c])])]),
-    [`${question.id}: ${question.text}`, `Wave of ${wave}`, "Each group's base is its first row",
+    [`${question.number}: ${question.text}`, `Wave of ${wave}`, "Each group's base is its first row",
      "Letters and arrows: single 95 % comparisons between groups, not corrected for multiple tests", sourceText(from, wave, `Total n=${question.groups[0].base}`)]);
   return <Card title="Column percentages" sub={marks === "letters"
       ? "A letter means the figure is higher than that column's in a single 95 % comparison, tested within the same cut only (Male vs Female, generation vs generation): groups that share people are never tested against each other. Not corrected for the many cells compared."
@@ -225,7 +225,7 @@ function Matrix({ g, q, n, cols, refCol, marks, hover, onRef }: { g: Group; q: Q
                        {m && <div style={{ marginTop: 4 }}>{marks === "letters" ? `Significantly higher than ${m.split("").map(l => cols[LETTERS.indexOf(l)]).join(", ")}`
                          : `Significantly ${m === "▲" ? "higher" : "lower"} than ${refCol === "Total" ? "everyone else" : refCol}`} (95 %)</div>}
                        {base(c) < SMALL_BASE && <div style={{ color: "var(--warn)" }}>Small base: read with caution</div>}
-                       <div className="muted" style={{ marginTop: 4 }}>{q.id}</div></>)}>
+                       <div className="muted" style={{ marginTop: 4 }}><QuestionCode q={q} /></div></>)}>
             {v.toFixed(0)}{m && <sup>{m}</sup>}</td>;
         })}</tr>)}
       </tbody>

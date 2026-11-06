@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { COLUMNS, CUT_OF, present, useBook, useQuestion, useWaves } from "../api";
 import { cellsOf, toTrend } from "../question";
 import type { Column, Trend, Wave } from "../api";
-import { Card, copyLink, Empty, Failure, IconLink, Menu, Skeleton, SkeletonScreen, SourceLine, sourceText, ExportButtons } from "../components/bits";
+import { Card, copyLink, Empty, Failure, IconLink, Menu, Skeleton, SkeletonScreen, SourceLine, sourceText, ExportButtons , QuestionCode } from "../components/bits";
 import EChart, { downloadPng, tooltip, valueText } from "../components/EChart";
 import type { Chart } from "../components/EChart";
 import QuestionNav from "../components/QuestionNav";
@@ -79,7 +79,7 @@ export default function Trends() {
             <span className="sep">›</span>
             <span>{question.section}</span>
             <span className="sep">›</span>
-            <code>{question.id}</code>
+            <QuestionCode q={question} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Tooltip>
@@ -121,7 +121,7 @@ export default function Trends() {
             </Tooltip>
           </div>
         </div>
-        <div className="qhead"><code>{question.id}</code><span>{question.section}</span></div>
+        <div className="qhead"><QuestionCode q={question} /><span>{question.section}</span></div>
         <h1 className="qtext">{question.text}</h1>
         <div className="toolbar" style={{ margin: 0, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <label className="sr-only" htmlFor="col">Respondents</label>

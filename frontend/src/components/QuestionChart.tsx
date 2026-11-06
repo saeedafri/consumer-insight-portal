@@ -15,12 +15,9 @@ export const VIEWS: { key: View; label: string }[] = [
   { key: "bars", label: "Bars" }, { key: "columns", label: "Columns" }, { key: "stacked", label: "Stacked" },
   { key: "donut", label: "Donut" }, { key: "table", label: "Table" }];
 
-export function viewsFor(q: Question): View[] {
-  const grid = q.groups.length > 1;
-  const single = q.type === "single" && q.groups[0].rows.length <= 7;
-  return (["bars", "columns", "stacked", "donut", "table"] as View[]).filter(v =>
-    v === "stacked" ? grid || q.type === "single" : v === "donut" ? single : true);
-}
+/** Answers that can add up to more than 100% (a person could pick several): the donut and stacked views then show
+ *  each answer's share of all mentions, and Explorer says so under the chart. */
+export const sharesOfMentions = (q: Question) => q.type !== "single" && q.groups.length === 1;
 
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]!));
 
@@ -69,7 +66,7 @@ export default function QuestionChart({ question, group = 0, view, columns, sort
     : view === "stacked" ? Math.max(160, (question.groups.length > 1 ? question.groups.length : 1) * 46 + 80) : 340);
   return (
     <Profiled id={`Chart:${question.id}`}>
-      <EChart option={option} build={make} height={h} label={`${question.id}: ${question.text}`} onReady={onReady} />
+      <EChart option={option} build={make} height={h} label={`${question.number}: ${question.text}`} onReady={onReady} />
     </Profiled>
   );
 }
@@ -108,7 +105,7 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
       tooltip: { ...tooltip(), formatter: (p: { data: { row: Row; group: Group } }) => tip(p.data.row, "Total", p.data.group, q, wave, vs) },
       legend: { bottom: 0, textStyle: axisText(), itemWidth: 12, itemHeight: 12, icon: "roundRect" },
       grid: { left: 8, right: 16, top: 8, bottom: 56, containLabel: true },
-      xAxis: { type: "value", max: 100, axisLabel: { ...valueText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.line, type: [2, 3] } } },
+      xAxis: { type: "value", max: sharesOfMentions(q) ? undefined : 100, axisLabel: { ...valueText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.line, type: [2, 3] } } },
       yAxis: { type: "category", inverse: true, data: groups.map(x => x.label || "Total"),
                axisLabel: { ...axisText(), width: 200, overflow: "break" }, axisTick: { show: false } },
       series: answers.map((a, i) => ({

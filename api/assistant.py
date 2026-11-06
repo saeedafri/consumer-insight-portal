@@ -58,6 +58,7 @@ def sources(question: str, search: Callable[[str, int], dict], book: Callable[[i
             continue
         out.append({"id": f"S{len(out) + 1}", "survey_id": hit["survey_id"], "wave_date": data["wave"]["wave_date"],
                     "title": data["wave"]["title"], "qcode": q["id"], "question": q["text"], "base": group["base"],
+                    "number": f"Q{data['questions'].index(q) + 1}",   # its place in that wave's survey, as every screen shows it
                     "group": group["label"], "waves": hit["waves"], "answers": answers[:8],
                     "link": f"/w/{hit['survey_id']}/questions/{q['id']}"})
         if len(out) == SOURCES:

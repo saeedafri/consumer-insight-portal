@@ -51,9 +51,10 @@ while true; do
       *) used=0; limit=max; stat="" ;;
     esac
     statuses=$(mine | sed 's|$|/status|')
-    procs=$(awk '/^Name:/ {name = $2} /^VmRSS:/ {mb[name] += $2 / 1024}
-      END {for (n in mb) if (mb[n] >= 5) printf "%s\"%s\":%d", (c++ ? "," : ""), n, mb[n]}' $statuses /dev/null 2>/dev/null)
-    rss=$(awk '/^RssAnon:/ {a += $2} END {printf "%d", a / 1024}' $statuses /dev/null 2>/dev/null)
+    # cat, not awk, opens the files: awk stops at the first process that has exited since the list was made
+    procs=$(cat $statuses 2>/dev/null | awk '/^Name:/ {name = $2} /^VmRSS:/ {mb[name] += $2 / 1024}
+      END {for (n in mb) if (mb[n] >= 5) printf "%s\"%s\":%d", (c++ ? "," : ""), n, mb[n]}')
+    rss=$(cat $statuses 2>/dev/null | awk '/^RssAnon:/ {a += $2} END {printf "%d", a / 1024}')
     read -r load1 load5 _ < /proc/loadavg
     awk -v used="$used" -v limit="$limit" -v cpu_us=$((cpu - prev_cpu)) -v span="$span" -v cpus="$cpus" -v rss="$rss" \
         -v rx=$((rx - prev_rx)) -v tx=$((tx - prev_tx)) -v l1="$load1" -v l5="$load5" -v procs="$procs" -v source="$source" \

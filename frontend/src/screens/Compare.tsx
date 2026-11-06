@@ -9,7 +9,7 @@ import type { Cell, Cells } from "../question";
 
 type Shown = Cell & { pct: number };
 const shown = (c: Cell | undefined): c is Shown => c?.pct != null;   // has a figure (HIDDEN_BASE or more people)
-import { Card, copyLink, Empty, Failure, IconLink, Menu, Skeleton, SkeletonScreen, SourceLine, sourceText, ExportButtons } from "../components/bits";
+import { Card, copyLink, Empty, Failure, IconLink, Menu, Skeleton, SkeletonScreen, SourceLine, sourceText, ExportButtons , QuestionCode } from "../components/bits";
 import type { Wave } from "../api";
 import QuestionNav from "../components/QuestionNav";
 import QuestionTabs from "../components/QuestionTabs";
@@ -45,7 +45,7 @@ export default function Compare() {
     <QuestionNav questions={book.questions} current={question.id} onPick={q => navigate(`/w/${id}/compare/${encodeURIComponent(q.id)}?${params}`)} />
     <div className="stack">
       <Card>
-        <div className="breadcrumb qcrumbs"><Link to={`/w/${id}`}>Overview</Link><span className="sep">›</span><span>Compare waves</span><span className="sep">›</span><code>{question.id}</code></div>
+        <div className="breadcrumb qcrumbs"><Link to={`/w/${id}`}>Overview</Link><span className="sep">›</span><span>Compare waves</span><span className="sep">›</span><QuestionCode q={question} /></div>
         <h1 className="qtext">{question.text}</h1>
         <div className="toolbar" style={{ marginBottom: 0, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <Tabs value={PICKS.includes(params.get("pick") ?? "") ? params.get("pick")! : "4"} onValueChange={v => set("pick", v)}>

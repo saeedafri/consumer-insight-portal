@@ -1,39 +1,66 @@
-// Operational logs for admins (api/logs.py): a monitoring dashboard (machine, traffic, server time, errors) over the
-// raw logs: nginx, the API, the ETL, the container, Azure App Service and security events, newest first, filterable,
-// downloadable. While sign-in is the demo, the server also asks for the admin token.
+// The Logs page (/app/logs), admins only: a monitoring dashboard on top, the raw logs below.
+//
+// Where the numbers come from (all from GET /api/v1/admin/metrics, api/logs.py; every 15 s while "Live" is on):
+//   CPU, memory, bandwidth, memory per process   deploy/machine-log.sh, one sample every 15 s
+//   requests, server time, pages, visitors       nginx's request log, counted per minute
+//   caches, storage, database size               api/logs.py (storage every 5 min) and api/main.py (the API's caches)
+// The raw logs come from GET /api/v1/admin/logs, one page of 200 lines at a time, newest first.
+// While sign-in is the demo, the server also asks for the admin token (typed below, kept for this tab only).
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Card } from "../components/bits";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import { C, LIGHT, useTheme } from "../theme";
 
+// ---- What the server sends (api/logs.py metrics and logs) ----------------------------------------------------------
 interface Source { id: string; label: string; bytes: number | null }
-interface Answer { sources: Source[]; source: string; lines: string[] }
-interface Sample { time: string; cpu_pct: number; working_set_mb: number; anon_mb: number; file_mb: number; limit_mb: number;
-  net_in_kbs: number; net_out_kbs: number; load_1m: number; cpus: number; disk_used: string; processes_mb: Record<string, number> }
-interface Counts { requests: number; "2xx": number; "3xx": number; "4xx": number; "5xx": number; bytes: number; hit: number; file: number; api: number;
-  p50_ms: number; p95_ms: number; p99_ms: number }
-interface Metrics { since: string; now: string; machine: Sample[]; traffic: (Counts & { minute: string })[]; totals: Counts & { under_1ms: number };
-  histogram: { up_to_ms: number | null; requests: number }[]; pages: { page: string; requests: number; slowest_ms: number }[];
-  clients: { client: string; requests: number }[]; problems: { source: string; line: string }[]; restarts: string[]; etl: string[] }
+interface LogPage { sources: Source[]; source: string; page: number; per_page: number; lines: string[]; more: boolean }
+interface Sample { time: string; cpu_pct: number; cores_used: number; working_set_mb: number; anon_mb: number; file_mb: number;
+  limit_mb: number; machine_used_mb: number; machine_total_mb: number; net_in_kbs: number; net_out_kbs: number; load_1m: number;
+  cpus: number; processes_mb: Record<string, number>; source: string }
+interface Counts { requests: number; "2xx": number; "3xx": number; "4xx": number; "5xx": number; bytes: number; hit: number;
+  file: number; api: number; browser: number; p50_ms: number; p95_ms: number; p99_ms: number }
+interface CacheLayer { name: string; where: string; meaning: string; answered?: number; share_pct?: number; size_mb?: number | null;
+  size?: string; entries?: number; detail?: Record<string, number> }
+interface Disk { name: string; path: string; meaning: string; used_mb: number; total_mb: number; used_pct: number }
+interface Folder { name: string; path: string; meaning: string; mb: number | null }
+interface Metrics {
+  since: string; now: string; machine: Sample[]; traffic: (Counts & { minute: string })[];
+  totals: Counts & { under_1ms: number; slowest_ms: number }; caches: CacheLayer[];
+  storage: { measured: string | null; disks: Disk[]; folders: Folder[]; database: { name: string; mb: number; tables: number } | null };
+  histogram: { up_to_ms: number | null; requests: number }[];
+  pages: { page: string; name: string; requests: number; share_pct: number; average_ms: number; slowest_ms: number; without_python_pct: number }[];
+  clients: { client: string; user: string; place: string; requests: number }[];
+  problems: { source: string; minute: string; line: string; meaning: string }[];
+  restarts: { time: string; build: string; what: string }[];
+  etl: { time: string; level: string; message: string; meaning: string }[];
+}
 interface Health { build?: string }
 
+// ---- Small helpers --------------------------------------------------------------------------------------------------
 const TOKEN = "cip_admin_token";   // this tab only (sessionStorage): gone when the tab closes
 const readToken = () => { try { return sessionStorage.getItem(TOKEN) ?? ""; } catch { return ""; } };
-const size = (n: number | null) => n == null ? "not written yet" : n < 1024 ? `${n} B` : n < 2 ** 20 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 2 ** 20).toFixed(1)} MB`;
-const bytes = (n: number) => n < 2 ** 20 ? `${(n / 1024).toFixed(0)} KB` : n < 2 ** 30 ? `${(n / 2 ** 20).toFixed(1)} MB` : `${(n / 2 ** 30).toFixed(2)} GB`;
 const num = (n: number, digits = 0) => n.toLocaleString("en-US", { maximumFractionDigits: digits });
-const ms = (n: number) => n >= 1000 ? `${num(n / 1000, 1)} s` : `${num(n, 1)} ms`;
+const mb = (n: number | null | undefined) => n == null ? "not measured" : n >= 1024 ? `${num(n / 1024, 2)} GB` : `${num(n, 1)} MB`;
+const bytes = (n: number) => n < 2 ** 20 ? `${num(n / 1024)} KB` : n < 2 ** 30 ? `${num(n / 2 ** 20, 1)} MB` : `${num(n / 2 ** 30, 2)} GB`;
+const fileSize = (n: number | null) => n == null ? "not written yet" : bytes(n);
+const ms = (n: number) => n >= 1000 ? `${num(n / 1000, 1)} s` : n < 0.5 ? "under 1 ms" : `${num(n, 1)} ms`;
+const rate = (n: number) => num(n, n < 1 ? 2 : 1);
+// nginx's own words for its cache (the request log's "cache" field), in plain words
+const CACHE_STATES: Record<string, string> = { HIT: "sent from the cache", MISS: "not in the cache yet (the API answered, then it was kept)",
+  EXPIRED: "kept too long, asked the API again", STALE: "an older copy sent while the API was busy", UPDATING: "an older copy sent while it was refreshed",
+  REVALIDATED: "checked with the API, still current", BYPASS: "not cacheable, the API answered" };
+const when = (iso: string) => new Date(iso.endsWith("Z") || iso.includes("+") ? iso : `${iso.replace(" ", "T")}Z`)
+  .toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const RANGES = [{ minutes: 15, label: "15 min" }, { minutes: 60, label: "1 h" }, { minutes: 360, label: "6 h" }, { minutes: 1440, label: "24 h" }];
 const NO_SAMPLES = "Machine samples start a minute after the server starts (deploy/machine-log.sh).";
+const PER_PAGE = 200;
+const grid = (min: number): CSSProperties => ({ display: "grid", gap: 16, gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${min}px), 1fr))` });
+const mono: CSSProperties = { fontFamily: "monospace", fontSize: 12, lineHeight: 1.5, wordBreak: "break-word" };
+const small: CSSProperties = { fontSize: 12, color: "var(--ink-2)" };
 
 export default function Logs() {
-  const [source, setSource] = useState("api");
-  const [q, setQ] = useState("");
   const [token, setToken] = useState(readToken);
-  const [answer, setAnswer] = useState<Answer | null>(null);
-  const [problem, setProblem] = useState("");
-  const [tick, setTick] = useState(0);
   const [minutes, setMinutes] = useState(60);
   const [live, setLive] = useState(true);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
@@ -43,20 +70,7 @@ export default function Logs() {
   const [beat, setBeat] = useState(0);
   const headers: Record<string, string> = token ? { "X-CIP-Admin-Token": token } : {};
 
-  useEffect(() => {
-    const ask = new AbortController();
-    const query = new URLSearchParams({ source, q, lines: "500" });
-    fetch(`/api/v1/admin/logs?${query}`, { credentials: "same-origin", signal: ask.signal, headers })
-      .then(async r => {
-        if (r.ok) { setAnswer(await r.json()); setProblem(""); return; }
-        setProblem((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`);
-      })
-      .catch(e => { if (e.name !== "AbortError") setProblem(String(e)); });
-    return () => ask.abort();
-  }, [source, q, token, tick]);
-
-  useEffect(() => { const every = setInterval(() => setTick(t => t + 1), 10000); return () => clearInterval(every); }, []);
-
+  // the dashboard's numbers: on open, on a new range or token, and every 15 s while live
   useEffect(() => {
     const ask = new AbortController();
     const get = { credentials: "same-origin" as const, signal: ask.signal, headers };
@@ -78,12 +92,6 @@ export default function Logs() {
   }, [live]);
 
   const keepToken = (value: string) => { setToken(value); try { sessionStorage.setItem(TOKEN, value); } catch { /* private window */ } };
-  const download = () => {
-    void fetch(`/api/v1/admin/logs/download?source=${source}`, { credentials: "same-origin", headers })
-      .then(r => r.ok ? r.blob() : Promise.reject(new Error(`${r.status}`)))
-      .then(blob => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `cip-${source}.log`; a.click(); URL.revokeObjectURL(a.href); })
-      .catch(() => setProblem("This log has no file to download yet"));
-  };
 
   return (
     <div className="stack">
@@ -91,7 +99,7 @@ export default function Logs() {
         <div>
           <p className="eyebrow">Admin</p>
           <h1 style={{ margin: "6px 0 4px", fontSize: 26 }}>Operational monitoring</h1>
-          <p className="lede">The machine, traffic and server time, then everything the server writes: requests, errors, ETL runs, restarts and security events.</p>
+          <p className="lede">The machine, traffic, caches and storage, then everything the server writes: requests, errors, ETL runs, restarts and security events.</p>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end" }}>
           <div className="seg" role="group" aria-label="Time range">
@@ -109,27 +117,12 @@ export default function Logs() {
 
       {denied && <Card><p role="alert" style={{ color: "var(--red-text)", margin: 0 }}>{denied}</p></Card>}
       {metrics && <Dashboard m={metrics} minutes={minutes} />}
-
-      <Card title="Raw logs" sub="Newest first, refreshed every 10 seconds.">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end" }}>
-          <label>Log<br />
-            <select value={source} onChange={e => setSource(e.target.value)}>
-              {(answer?.sources ?? [{ id: source, label: source, bytes: null }]).map(s => <option key={s.id} value={s.id}>{s.label}{s.id === "security" ? "" : ` (${size(s.bytes)})`}</option>)}
-            </select>
-          </label>
-          <label>Contains<br /><input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="error, 503, an email…" /></label>
-          <button className="btn" onClick={() => setTick(t => t + 1)}>Refresh</button>
-          {source !== "security" && <button className="btn" onClick={download}>Download</button>}
-        </div>
-        {problem && <p role="alert" style={{ color: "var(--red)", marginTop: 12 }}>{problem}</p>}
-        <pre style={{ marginTop: 14, maxHeight: "65vh", overflow: "auto", fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-          {answer?.lines.length ? answer.lines.join("\n") : answer ? "Nothing logged here yet." : "Loading…"}
-        </pre>
-      </Card>
+      <RawLogs headers={headers} token={token} />
     </div>
   );
 }
 
+// ---- The dashboard --------------------------------------------------------------------------------------------------
 function Tile({ label, value, note, style }: { label: string; value: ReactNode; note: ReactNode; style?: CSSProperties }) {
   return <div className="card kpi" style={style}>
     <div className="k-label" style={{ minHeight: 0, color: "inherit", opacity: .85 }}>{label}</div>
@@ -138,53 +131,51 @@ function Tile({ label, value, note, style }: { label: string; value: ReactNode; 
   </div>;
 }
 
-const grid = (min: number): CSSProperties => ({ display: "grid", gap: 16, gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${min}px), 1fr))` });
-const mono: CSSProperties = { fontFamily: "monospace", fontSize: 12, lineHeight: 1.5, wordBreak: "break-word" };
-
 function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
   const theme = useTheme();
   const t = m.totals;
   const last = m.machine.at(-1);
   const errorPct = t.requests ? (100 * t["5xx"]) / t.requests : 0;
   const peakCpu = Math.max(0, ...m.machine.map(s => s.cpu_pct).filter(Number.isFinite));   // older samples carry no CPU
+  const peakMemory = Math.max(0, ...m.machine.map(s => s.working_set_mb).filter(Number.isFinite));
   const range: [number, number] = [Date.parse(`${m.since}Z`), Date.parse(m.now)];
   const pale = { background: "var(--tag)", borderColor: "transparent" };
+  const processes = Object.entries(last?.processes_mb ?? {}).sort((a, b) => a[1] - b[1]);
 
   const charts = useMemo(() => {
     const at = (minute: string) => Date.parse(`${minute}Z`);
     const timeAxis = { type: "time", min: range[0], max: range[1], axisLabel: valueText() };
-    const valueAxis = (name: string, extra = {}) => ({ type: "value", name, nameTextStyle: valueText(), axisLabel: valueText(), ...extra });
-    const base = { tooltip: { ...tooltip(), trigger: "axis" }, legend: { top: 0, left: 0 }, grid: { left: 8, right: 8, top: 40, bottom: 4, containLabel: true }, xAxis: timeAxis };
+    // the unit is in each card's subtitle and in the axis labels: an axis title would sit under the legend
+    const valueAxis = (unit: string, extra = {}) => ({ type: "value", axisLabel: { ...valueText(), formatter: `{value}${unit}` }, ...extra });
+    const base = { tooltip: { ...tooltip(), trigger: "axis" }, legend: { top: 0, left: 0 }, grid: { left: 8, right: 8, top: 52, bottom: 4, containLabel: true }, xAxis: timeAxis };
     const line = (name: string, color: string, data: [number, number | null][], extra = {}) =>
       ({ name, type: "line", showSymbol: false, color, data, ...extra });
     const machine = (pick: (s: Sample) => number) => m.machine.map(s => [Date.parse(s.time), pick(s)] as [number, number]);
-    const limit = last?.limit_mb ?? 0;
     const histLabel = (b: { up_to_ms: number | null }, i: number) =>
-      b.up_to_ms == null ? `> ${ms(m.histogram[i - 1]?.up_to_ms ?? 5000)}` : `≤${ms(b.up_to_ms)}`;
-    const processes = Object.entries(last?.processes_mb ?? {}).sort((a, b) => a[1] - b[1]);
+      b.up_to_ms == null ? `over ${ms(m.histogram[i - 1]?.up_to_ms ?? 5000)}` : `up to ${ms(b.up_to_ms)}`;
     const bars = (labels: string[], values: number[], colors: string[] | string, unit: string) => ({
       tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "shadow" } },
-      grid: { left: 8, right: 48, top: 4, bottom: 4, containLabel: true },
+      grid: { left: 8, right: 56, top: 4, bottom: 4, containLabel: true },
       xAxis: { type: "value", axisLabel: { show: false }, splitLine: { show: false } },
       yAxis: { type: "category", data: labels, axisLabel: axisText() },
       series: [{ type: "bar", barMaxWidth: 16, data: values.map((v, i) => ({ value: v, itemStyle: { color: Array.isArray(colors) ? colors[i] : colors, borderRadius: [0, 4, 4, 0] } })),
         label: { show: true, position: "right", color: C.ink, formatter: (p: { value: number }) => `${num(p.value)}${unit}` } }],
     });
     return {
-      requests: { ...base, yAxis: valueAxis("requests"), series: (["2xx", "3xx", "4xx", "5xx"] as const).map(k => ({
-        name: k, type: "bar", stack: "all", barMaxWidth: 14,
-        color: { "2xx": C.s1, "3xx": C.sky, "4xx": C.rose, "5xx": C.red }[k],
+      requests: { ...base, yAxis: valueAxis(""), series: (["2xx", "3xx", "4xx", "5xx"] as const).map(k => ({
+        name: { "2xx": "OK (2xx)", "3xx": "Redirect / not modified (3xx)", "4xx": "Refused or not found (4xx)", "5xx": "Server error (5xx)" }[k],
+        type: "bar", stack: "all", barMaxWidth: 14, color: { "2xx": C.s1, "3xx": C.sky, "4xx": C.rose, "5xx": C.red }[k],
         data: m.traffic.map(x => [at(x.minute), x[k]]) })) },
-      times: { ...base, yAxis: valueAxis("ms", { type: "log", min: 0.1 }), series: [
-        line("p50", C.s3, m.traffic.map(x => [at(x.minute), x.p50_ms || null])),
-        line("p95", C.s1, m.traffic.map(x => [at(x.minute), x.p95_ms || null])),
-        line("p99", C.red, m.traffic.map(x => [at(x.minute), x.p99_ms || null]))] },
-      machine: { ...base, yAxis: [valueAxis("CPU %", { min: 0, max: 100 }), valueAxis(`MB of ${num(limit)}`, { min: 0, max: limit || null, splitLine: { show: false } })], series: [
-        line("CPU %", C.red, machine(s => s.cpu_pct)),
-        line("Working set MB", C.s1, machine(s => s.working_set_mb), { yAxisIndex: 1 }),
-        line("Own memory MB", C.s3, machine(s => s.anon_mb), { yAxisIndex: 1 })] },
-      network: { ...base, yAxis: valueAxis("KB/s"), series: [
-        line("In", C.s3, machine(s => s.net_in_kbs)), line("Out", C.s1, machine(s => s.net_out_kbs))] },
+      times: { ...base, yAxis: valueAxis(" ms", { type: "log", min: 0.1 }), series: [
+        line("Half of requests faster than (p50)", C.s3, m.traffic.map(x => [at(x.minute), x.p50_ms || null])),
+        line("95 % faster than (p95)", C.s1, m.traffic.map(x => [at(x.minute), x.p95_ms || null])),
+        line("99 % faster than (p99)", C.red, m.traffic.map(x => [at(x.minute), x.p99_ms || null]))] },
+      cpu: { ...base, yAxis: valueAxis(" %", { min: 0, max: 100 }), series: [line("CPU used", C.red, machine(s => s.cpu_pct))] },
+      memory: { ...base, yAxis: valueAxis(" MB", { min: 0 }), series: [
+        line("Our container (as Azure counts it)", C.s1, machine(s => s.working_set_mb)),
+        line("Our processes' own memory", C.s3, machine(s => s.anon_mb))] },
+      network: { ...base, yAxis: valueAxis(" KB/s"), series: [
+        line("Received", C.s3, machine(s => s.net_in_kbs)), line("Sent", C.s1, machine(s => s.net_out_kbs))] },
       answered: {
         tooltip: { ...tooltip(), valueFormatter: (v: number) => num(v) }, legend: { orient: "vertical", right: 0, top: "middle" },
         series: [{ type: "pie", radius: ["52%", "78%"], center: ["32%", "50%"], label: { show: false }, color: [C.s1, C.sky, C.red],   // Python, the costly path, in red
@@ -197,79 +188,200 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
   }, [m, theme]);
 
   return <>
+    {/* ---- the six numbers that matter most ---- */}
     <div style={grid(170)}>
-      <Tile label="Requests" value={num(t.requests)} note={`${num(t.requests / (minutes * 60), 1)} per second on average`}
+      <Tile label="Requests" value={num(t.requests)} note={`${rate(t.requests / (minutes * 60))} per second on average`}
             style={{ background: LIGHT.blue, borderColor: LIGHT.blue, color: "#FFFFFF" }} />
-      <Tile label="Server time p95" value={ms(t.p95_ms)} note={`${num(t.under_1ms, 1)}% under 1 ms · p99 ${ms(t.p99_ms)}`} style={pale} />
-      <Tile label="Errors (5xx)" value={`${num(t["5xx"])} errors`} note={`${num(errorPct, 2)}% of requests · ${num(t["4xx"])} 4xx`}
+      <Tile label="Server time" value={ms(t.p95_ms)} note={`95 % of requests answered faster · ${num(t.under_1ms, 1)} % under 1 ms · slowest ${ms(t.slowest_ms)}`} style={pale} />
+      <Tile label="Server errors (5xx)" value={num(t["5xx"])} note={`${num(errorPct, 2)} % of requests · ${num(t["4xx"])} refused or not found (4xx)`}
             style={t["5xx"] ? { background: C.red, borderColor: C.red, color: "#FFFFFF" } : { background: "var(--fill)", borderColor: "transparent" }} />
-      <Tile label="CPU now" value={last ? `${num(last.cpu_pct, 1)}%` : "–"} note={last ? `peak ${num(peakCpu, 1)}% · ${last.cpus} CPU, load ${last.load_1m}` : "no samples yet"} style={pale} />
-      <Tile label="Memory now" value={last ? `${num(last.working_set_mb)} MB` : "–"} note={last ? `of ${num(last.limit_mb)} MB · own memory ${num(last.anon_mb)} MB` : "no samples yet"}
-            style={{ background: "var(--fill)", borderColor: "transparent" }} />
-      <Tile label="Bandwidth out" value={bytes(t.bytes)} note={last ? `now ${num(last.net_out_kbs, 1)} KB/s · disk ${last.disk_used} used` : "in this range"} style={pale} />
+      <Tile label="CPU now" value={last ? `${num(last.cpu_pct, 1)} %` : "–"} style={pale}
+            note={last ? <>of {last.cpus} CPUs ({last.cores_used.toFixed(2)} in use) · peak {num(peakCpu, 1)} %<br /><span style={{ opacity: .85 }}>Azure's P0v3 plan is 1 vCPU = 2 threads; the container sees both</span></> : "no samples yet"} />
+      <Tile label="Our memory now" value={last ? `${num(last.working_set_mb)} MB` : "–"} style={{ background: "var(--fill)", borderColor: "transparent" }}
+            note={last ? <>{num(last.anon_mb)} MB our processes + {num(last.file_mb)} MB file cache (freed when needed) · peak {num(peakMemory)} MB<br />
+              <span style={{ opacity: .85 }}>The machine has {num(last.machine_total_mb)} MB; {num(last.machine_used_mb)} MB in use by everything on it, Azure's own agents included</span></> : "no samples yet"} />
+      <Tile label="Data sent" value={bytes(t.bytes)} note={last ? `in this range · now ${num(last.net_out_kbs, 1)} KB/s out, ${num(last.net_in_kbs, 1)} KB/s in` : "in this range"} style={pale} />
     </div>
 
+    {/* ---- over time ---- */}
     <div style={grid(440)}>
-      <Card title="Requests per minute" sub="By status class; 5xx are server errors.">
-        {m.traffic.length ? <EChart option={charts.requests} height={260} label="Requests per minute by status class" /> : <p className="muted">No requests in this range.</p>}
+      <Card title="Requests per minute" sub="By answer type. Server errors (5xx) are the ones to worry about.">
+        {m.traffic.length ? <EChart option={charts.requests} height={260} label="Requests per minute by answer type" /> : <p className="muted">No requests in this range.</p>}
       </Card>
-      <Card title="Server time" sub="p50, p95 and p99 per minute, log scale. Excludes the time on the internet.">
+      <Card title="Server time per minute" sub="Time inside our server, from the request arriving to the answer leaving: the internet's travel time is not included. Log scale.">
         {m.traffic.length ? <EChart option={charts.times} height={260} label="Server time percentiles per minute in milliseconds" /> : <p className="muted">No requests in this range.</p>}
       </Card>
-      <Card title="CPU and memory" sub="CPU as % of all CPUs; memory against the container limit.">
-        {m.machine.length ? <EChart option={charts.machine} height={260} label="CPU percent and memory in megabytes over time" /> : <p className="muted">{NO_SAMPLES}</p>}
+      <Card title="CPU" sub="Share of the 2 CPUs the container may use (100 % = both fully busy).">
+        {m.machine.length ? <EChart option={charts.cpu} height={240} label="CPU percent over time" /> : <p className="muted">{NO_SAMPLES}</p>}
       </Card>
-      <Card title="Bandwidth" sub="Network in and out, KB per second.">
-        {m.machine.length ? <EChart option={charts.network} height={260} label="Network bandwidth in and out over time" /> : <p className="muted">{NO_SAMPLES}</p>}
+      <Card title="Memory" sub="Our container as Azure's memory metric counts it, and the part that is our processes' own (the rest is file cache).">
+        {m.machine.length ? <EChart option={charts.memory} height={240} label="Memory in megabytes over time" /> : <p className="muted">{NO_SAMPLES}</p>}
+      </Card>
+      <Card title="Bandwidth" sub="Network received and sent by the container, KB per second.">
+        {m.machine.length ? <EChart option={charts.network} height={240} label="Network bandwidth over time" /> : <p className="muted">{NO_SAMPLES}</p>}
+      </Card>
+      <Card title="Response times" sub="How many requests took how long (server time); over 1 s in red.">
+        <EChart option={charts.histogram} height={300} label="Response time histogram" />
       </Card>
     </div>
 
+    {/* ---- caches and storage ---- */}
     <div style={grid(300)}>
-      <Card title="How requests were answered" sub="nginx cache and published files never reach Python.">
+      <Card title="How requests were answered" sub="nginx cache and published files never reach Python, the costly path.">
         {t.requests ? <EChart option={charts.answered} height={200} label="How requests were answered: nginx cache, published file or API" /> : <p className="muted">No requests in this range.</p>}
       </Card>
-      <Card title="Response times" sub="Requests per server-time bucket; over 1 s in red.">
-        <EChart option={charts.histogram} height={320} label="Response time histogram" />
-      </Card>
-      <Card title="Memory per process" sub={last ? `Latest sample, ${new Date(last.time).toLocaleTimeString("en-GB")}` : undefined}>
-        {last ? <EChart option={charts.processes} height={Math.max(120, Object.keys(last.processes_mb).length * 32 + 20)} label="Memory per process in megabytes" />
-          : <p className="muted">{NO_SAMPLES}</p>}
+      <Card title="Memory per process" sub={last ? `Our processes, latest sample at ${new Date(last.time).toLocaleTimeString("en-GB")}` : undefined}>
+        {!last ? <p className="muted">{NO_SAMPLES}</p>
+          : processes.length ? <EChart option={charts.processes} height={Math.max(120, processes.length * 32 + 20)} label="Memory per process in megabytes" />
+          : <p className="muted">The latest sample lists no processes (deploy/machine-log.sh reads them from /proc every 15 s).</p>}
       </Card>
     </div>
+    <Card title="Caches" sub="Every layer that answers before the slow path, what it holds and how often it answered in this range.">
+      <div className="table-wrap"><table className="data">
+        <thead><tr><th>Cache</th><th>Where</th><th>What it does</th><th className="num">Answered</th><th className="num">Share</th><th className="num">Size</th></tr></thead>
+        <tbody>{m.caches.map(c => <tr key={c.name}>
+          <th scope="row">{c.name}</th><td style={small}>{c.where}</td>
+          <td style={small}>{c.meaning}{c.detail && <div style={{ marginTop: 4 }}>{Object.entries(c.detail).map(([k, v]) => `${CACHE_STATES[k] ?? k}: ${num(v)}`).join(" · ")}</div>}</td>
+          <td className="num">{c.answered == null ? "–" : num(c.answered)}</td>
+          <td className="num">{c.share_pct == null ? "–" : `${num(c.share_pct, 1)} %`}</td>
+          <td className="num">{c.size ?? (c.size_mb == null ? "–" : `${mb(c.size_mb)}${c.entries != null ? ` · ${num(c.entries)} ${c.entries === 1 ? "item" : "items"}` : ""}`)}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </Card>
+    <Card title="Storage" sub={`Which disk is which, what each folder holds and its size${m.storage.measured ? `; measured ${when(m.storage.measured)} (every 5 minutes)` : ""}.`}>
+      <div className="table-wrap"><table className="data">
+        <thead><tr><th>Disk</th><th>What lives there</th><th className="num">Used</th><th className="num">Size</th><th className="num">Full</th></tr></thead>
+        <tbody>{m.storage.disks.map(d => <tr key={d.name}>
+          <th scope="row">{d.name}<div style={{ ...mono, ...small }}>{d.path}</div></th><td style={small}>{d.meaning}</td>
+          <td className="num">{mb(d.used_mb)}</td><td className="num">{mb(d.total_mb)}</td><td className="num">{num(d.used_pct, 1)} %</td>
+        </tr>)}</tbody>
+      </table></div>
+      <div className="table-wrap" style={{ marginTop: 14 }}><table className="data">
+        <thead><tr><th>Folder</th><th>What it holds</th><th className="num">Size</th></tr></thead>
+        <tbody>
+          {m.storage.folders.map(f => <tr key={f.name}><th scope="row">{f.name}<div style={{ ...mono, ...small }}>{f.path}</div></th>
+            <td style={small}>{f.meaning}</td><td className="num">{f.mb == null ? "not on this server" : mb(f.mb)}</td></tr>)}
+          {m.storage.database && <tr><th scope="row">MySQL database<div style={{ ...mono, ...small }}>{m.storage.database.name} (Azure Database for MySQL)</div></th>
+            <td style={small}>Every survey, answer and the portal's own tables, on Azure's database server (not this machine's disk). {num(m.storage.database.tables)} tables.</td>
+            <td className="num">{mb(m.storage.database.mb)}</td></tr>}
+        </tbody>
+      </table></div>
+      {!m.storage.disks.length && <p className="muted">Measured a minute after the server starts.</p>}
+    </Card>
 
-    <div style={grid(360)}>
-      <Card title="Busiest pages">
-        <div className="table-wrap"><table className="data">
-          <thead><tr><th>Page</th><th className="num">Requests</th><th className="num">Slowest</th></tr></thead>
-          <tbody>{m.pages.map(p => <tr key={p.page}><th scope="row" style={{ ...mono, fontWeight: 500 }}>{p.page}</th>
-            <td className="num">{num(p.requests)}</td><td className="num">{ms(p.slowest_ms)}</td></tr>)}</tbody>
-        </table></div>
-        {!m.pages.length && <p className="muted">No requests in this range.</p>}
-      </Card>
-      <Card title="Top visitors" sub="By client address; the server's own probes are left out.">
-        {m.clients.map(c => <div key={c.client} className="quota" style={{ margin: "8px 0" }}>
-          <span style={{ ...mono, width: 130, flex: "none" }}>{c.client}</span>
-          <span className="bar"><i style={{ width: `${(100 * c.requests) / m.clients[0].requests}%`, background: C.s1 }} /></span>
-          <span style={{ width: 70, textAlign: "right" }}>{num(c.requests)}</span>
-        </div>)}
-        {!m.clients.length && <p className="muted">No visitors in this range.</p>}
-      </Card>
-    </div>
+    {/* ---- who and what ---- */}
+    <Card title="Busiest pages" sub="This dashboard's own requests are left out. Average and slowest are server time.">
+      <div className="table-wrap"><table className="data">
+        <thead><tr><th>Page</th><th className="num">Requests</th><th className="num">Share</th><th className="num">Average</th><th className="num">Slowest</th><th className="num">Without Python</th></tr></thead>
+        <tbody>{m.pages.map(p => <tr key={p.page}>
+          <th scope="row">{p.name || "–"}<div style={{ ...mono, ...small }}>{p.page}</div></th>
+          <td className="num">{num(p.requests)}</td><td className="num">{num(p.share_pct, 1)} %</td>
+          <td className="num">{ms(p.average_ms)}</td><td className="num">{ms(p.slowest_ms)}</td><td className="num">{num(p.without_python_pct, 1)} %</td>
+        </tr>)}</tbody>
+      </table></div>
+      {!m.pages.length && <p className="muted">No requests in this range.</p>}
+    </Card>
+    <Card title="Top visitors" sub="Signed-in person (from their session), approximate place of their internet address, and how many requests. The server's own checks are left out.">
+      <div className="table-wrap"><table className="data">
+        <thead><tr><th>Who</th><th>Where (approximate)</th><th>Address</th><th className="num">Requests</th></tr></thead>
+        <tbody>{m.clients.map(c => <tr key={c.client}>
+          <th scope="row">{c.user || <span className="muted">not signed in</span>}</th>
+          <td>{c.place || <span className="muted">unknown</span>}</td><td style={mono}>{c.client}</td>
+          <td className="num"><span className="quota" style={{ justifyContent: "flex-end" }}>
+            <span className="bar" style={{ width: 80 }}><i style={{ width: `${(100 * c.requests) / m.clients[0].requests}%`, background: C.s1 }} /></span>
+            <span style={{ width: 70, textAlign: "right" }}>{num(c.requests)}</span></span></td>
+        </tr>)}</tbody>
+      </table></div>
+      {!m.clients.length && <p className="muted">No visitors in this range.</p>}
+      <p className="muted" style={{ fontSize: 11, marginTop: 8 }}>Places are city-level guesses from the address (an office or a phone network's location, not a person's). <a href="https://db-ip.com" target="_blank" rel="noreferrer">IP Geolocation by DB-IP</a>.</p>
+    </Card>
 
-    <div style={grid(360)}>
-      <Card title="Recent problems" sub="The latest error lines from the API, nginx and the ETL."
-            aside={<span className={`chip ${m.problems.length ? "sig" : "flat"}`}>{m.problems.length} problems</span>}>
-        {m.problems.length ? <ul style={{ listStyle: "none", margin: 0, padding: 0, maxHeight: 320, overflow: "auto" }}>
-          {m.problems.map((p, i) => <li key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", padding: "6px 0 6px 10px", borderLeft: `3px solid ${C.red}`, marginBottom: 6 }}>
-            <span className="chip sig" style={{ flex: "none" }}>{p.source}</span><span style={mono}>{p.line}</span></li>)}
-        </ul> : <p className="muted">No errors logged.</p>}
+    {/* ---- what went wrong ---- */}
+    <Card title="Problems in this range" sub="Error and warning lines from the API, nginx and the ETL, each with what it means."
+          aside={<span className={`chip ${m.problems.length ? "sig" : "flat"}`}>{m.problems.length} problems</span>}>
+      {m.problems.length ? <div className="table-wrap"><table className="data">
+        <thead><tr><th>When (UTC)</th><th>From</th><th>What it means</th><th>The line</th></tr></thead>
+        <tbody>{m.problems.map((p, i) => <tr key={i}>
+          <td style={{ whiteSpace: "nowrap" }}>{p.minute.replace("T", " ")}</td><td><span className="chip sig">{p.source}</span></td>
+          <td style={{ minWidth: 220 }}>{p.meaning || <span className="muted">See the line.</span>}</td>
+          <td><details><summary style={small}>show</summary><span style={mono}>{p.line}</span></details></td>
+        </tr>)}</tbody>
+      </table></div> : <p className="muted">No errors logged in this range.</p>}
+    </Card>
+    <div style={grid(420)}>
+      <Card title="Restarts" sub="Each time the container started (a deploy, or Azure restarting it), newest first.">
+        {m.restarts.length ? <div className="table-wrap"><table className="data">
+          <thead><tr><th>When (UTC)</th><th>What happened</th><th>Build</th></tr></thead>
+          <tbody>{m.restarts.map((r, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{r.time.replace("T", " ").replace("Z", "")}</td>
+            <td>{r.what}</td><td style={{ ...mono, whiteSpace: "nowrap" }}>{r.build || "–"}</td></tr>)}</tbody>
+        </table></div> : <p className="muted">No restarts in this range.</p>}
       </Card>
-      <Card title="Restarts and ETL" sub="Newest first.">
-        <h3 className="eyebrow" style={{ margin: "0 0 6px" }}>Restarts</h3>
-        <pre style={{ ...mono, whiteSpace: "pre-wrap", margin: "0 0 12px" }}>{m.restarts.join("\n") || "None logged."}</pre>
-        <h3 className="eyebrow" style={{ margin: "0 0 6px" }}>ETL</h3>
-        <pre style={{ ...mono, whiteSpace: "pre-wrap", margin: 0 }}>{m.etl.join("\n") || "None logged."}</pre>
+      <Card title="ETL (data loads)" sub="What the scheduled loads did, newest first. Warnings are things to look at, not outages.">
+        {m.etl.length ? <div className="table-wrap"><table className="data">
+          <thead><tr><th>When (UTC)</th><th>Level</th><th>What happened</th></tr></thead>
+          <tbody>{m.etl.map((e, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{e.time}</td>
+            <td><span className={`chip ${e.level === "INFO" ? "flat" : "sig"}`}>{e.level === "INFO" ? "ok" : e.level.toLowerCase()}</span></td>
+            <td><span style={mono}>{e.message}</span>{e.meaning && <div style={{ ...small, marginTop: 4 }}>{e.meaning}</div>}</td></tr>)}</tbody>
+        </table></div> : <p className="muted">No ETL runs in this range. The loads run daily at 03:30 UTC and Mondays at 12:00 UTC.</p>}
       </Card>
     </div>
   </>;
+}
+
+// ---- The raw logs, one page at a time -------------------------------------------------------------------------------
+function RawLogs({ headers, token }: { headers: Record<string, string>; token: string }) {
+  const [source, setSource] = useState("api");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [answer, setAnswer] = useState<LogPage | null>(null);
+  const [problem, setProblem] = useState("");
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => { setPage(1); }, [source, q]);   // a new log or filter starts at its newest page
+  useEffect(() => {
+    const ask = new AbortController();
+    const query = new URLSearchParams({ source, q, lines: String(PER_PAGE), page: String(page) });
+    fetch(`/api/v1/admin/logs?${query}`, { credentials: "same-origin", signal: ask.signal, headers })
+      .then(async r => {
+        if (r.ok) { setAnswer(await r.json()); setProblem(""); return; }
+        setProblem((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`);
+      })
+      .catch(e => { if (e.name !== "AbortError") setProblem(String(e)); });
+    return () => ask.abort();
+  }, [source, q, page, token, tick]);
+  // only the newest page refreshes itself: an older page stays still while it is being read
+  useEffect(() => { if (page !== 1) return; const every = setInterval(() => setTick(t => t + 1), 10000); return () => clearInterval(every); }, [page]);
+
+  const download = () => {
+    void fetch(`/api/v1/admin/logs/download?source=${source}`, { credentials: "same-origin", headers })
+      .then(r => r.ok ? r.blob() : Promise.reject(new Error(`${r.status}`)))
+      .then(blob => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `cip-${source}.log`; a.click(); URL.revokeObjectURL(a.href); })
+      .catch(() => setProblem("This log has no file to download yet"));
+  };
+  const from = (page - 1) * PER_PAGE + 1;
+  const pager = answer && <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+    <button className="btn" disabled={page === 1} onClick={() => setPage(1)}>Newest</button>
+    <button className="btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>‹ Newer</button>
+    <span className="muted" style={{ fontSize: 13 }}>Lines {num(from)}–{num(from + answer.lines.length - 1)}, page {page}</span>
+    <button className="btn" disabled={!answer.more} onClick={() => setPage(p => p + 1)}>Older ›</button>
+  </div>;
+
+  return <Card title="Raw logs" sub={`Newest first, ${PER_PAGE} lines a page; the newest page refreshes every 10 seconds.`}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end" }}>
+      <label>Log<br />
+        <select value={source} onChange={e => setSource(e.target.value)}>
+          {(answer?.sources ?? [{ id: source, label: source, bytes: null }]).map(s => <option key={s.id} value={s.id}>{s.label}{s.id === "security" ? "" : ` (${fileSize(s.bytes)})`}</option>)}
+        </select>
+      </label>
+      <label>Contains<br /><input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="error, 503, an email…" /></label>
+      <button className="btn" onClick={() => setTick(t => t + 1)}>Refresh</button>
+      {source !== "security" && <button className="btn" onClick={download}>Download</button>}
+    </div>
+    {problem && <p role="alert" style={{ color: "var(--red)", marginTop: 12 }}>{problem}</p>}
+    <div style={{ marginTop: 14 }}>{pager}</div>
+    <pre style={{ marginTop: 10, maxHeight: "65vh", overflow: "auto", fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      {answer?.lines.length ? answer.lines.join("\n") : answer ? "Nothing logged here yet." : "Loading…"}
+    </pre>
+    <div style={{ marginTop: 10 }}>{pager}</div>
+  </Card>;
 }

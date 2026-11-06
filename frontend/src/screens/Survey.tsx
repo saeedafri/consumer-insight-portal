@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useBook } from "../api";
-import { BaseNote, Card, Empty, Failure, Loading } from "../components/bits";
+import { BaseNote, Card, Empty, Failure, Loading, QuestionCode } from "../components/bits";
 import QuestionChart from "../components/QuestionChart";
 import { fmtDate, pct } from "../stats";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -51,7 +51,7 @@ export default function Survey() {
     <div className="grid g3" style={{ marginBottom: 18 }}>
       <div className="span2">
         <Card className="respondent">
-          <div className="qhead"><span style={{ color: "var(--ink)", fontWeight: 700 }}>{q.section}</span><span>· Question {at + 1} of {book.questions.length}</span><code>{q.id}</code></div>
+          <div className="qhead"><span style={{ color: "var(--ink)", fontWeight: 700 }}>{q.section}</span><span>· Question {at + 1} of {book.questions.length}</span><QuestionCode q={q} /></div>
           <h2>{q.text}</h2>
           <p className="muted">{multi ? "Select all that apply." : "Select one."}{q.base_desc ? ` Asked of: ${q.base_desc}.` : ""}</p>
           {q.groups.length > 1 ? <div className="table-wrap"><table className="data">
@@ -86,7 +86,7 @@ export default function Survey() {
       </Card>
     </div>
 
-    <Card title="How everyone answered" sub={`${q.id} · Total`} aside={<BaseNote base={q.groups[0].base} />}>
+    <Card title="How everyone answered" sub={`${q.number} · Total`} aside={<BaseNote base={q.groups[0].base} />}>
       <QuestionChart question={q} view={q.groups.length > 1 ? "stacked" : "bars"} columns={["Total"]} sort={false} wave={fmtDate(book.wave.wave_date)} />
     </Card>
   </>;

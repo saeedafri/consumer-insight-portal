@@ -48,6 +48,7 @@ export interface Group { label: string; base: number; bases: Partial<Record<Colu
 export interface Question {
   id: string; text: string; short: string | null; type: "single" | "multi" | "grid_single" | "grid_multi";
   section: string; base_desc: string | null; groups: Group[];
+  number: string;   // "Q1", "Q2"…: the question's place in this wave's survey, what people read (bookOf); id stays the survey code
   coded?: "claude" | "frequency";   // an open-ended question coded into themes (etl/open_ends.py)
 }
 export interface Book { wave: Wave; columns: Column[]; n: Record<Column, number>; questions: Question[] }
@@ -80,6 +81,15 @@ export function signIn(): never {
   throw new Error("Sign in required");
 }
 
+/** The answer the page asked for while it was still loading (app/app/layout.tsx), once: a body can be read only once. */
+async function takeEarly(url: string): Promise<Response | null> {
+  const early = (window as { __early?: Record<string, Promise<Response>> }).__early;
+  const asked = early?.[url];
+  if (!asked) return null;
+  delete early[url];
+  return asked.catch(() => null);   // the early ask failed (offline for a moment): ask again normally
+}
+
 async function get<T>(url: string): Promise<T> {
   const deregister = perf.registerPendingApi(url);
   const t0 = performance.now();
@@ -88,7 +98,7 @@ async function get<T>(url: string): Promise<T> {
   let size: number | null = null;
 
   try {
-    const r = await fetch(url, { credentials: "same-origin" });
+    const r = await takeEarly(url) ?? await fetch(url, { credentials: "same-origin" });
     status = r.status;
     const dur = performance.now() - t0;
 
@@ -142,7 +152,10 @@ export const useBook = (id: number) => {
 };
 /** A wave's book with every answer's significance verdict worked out once (moves.ts), as it loads; weighted on request. */
 export const bookOf = (id: number, weighted = false) =>
-  get<Book>(`/api/v1/waves/${id}/book`).then(book => { if (weighted) weigh(book); moves(book); return book; });
+  get<Book>(`/api/v1/waves/${id}/book`).then(book => {
+    book.questions.forEach((q, i) => { q.number = `Q${i + 1}`; });   // survey codes (BD1, LX5RA8OE) are hard to read
+    if (weighted) weigh(book); moves(book); return book;
+  });
 /** One "at a glance" block; Overview starts these with the book, not after it (the codes come from the cached /waves). */
 export const dashboardQuery = (code: string | undefined, id: number) =>
   ({ queryKey: ["dashboard", code, id], enabled: !!code && id > 0, ...forever, queryFn: () => get<Dashboard>(`/api/v1/dashboards/${code}/${id}`) });
@@ -202,7 +215,7 @@ export interface AudienceResult { qcode: string; multi: boolean; skipped: string
 export interface Distinctive { qcode: string; question: string; answer: string; pct: number; everyone: number; index: number; base: number }
 export interface AudienceProfile { size: number; skipped: string[]; over: Distinctive[]; under: Distinctive[] }
 export interface Answer { answer: string; no_source: boolean; mode: "claude" | "figures" | "none";
-                          sources: { id: string; survey_id: number; wave_date: string; title: string; qcode: string; question: string; base: number; answers: [string, number][]; link: string }[] }
+                          sources: { id: string; survey_id: number; wave_date: string; title: string; qcode: string; number?: string; question: string; base: number; answers: [string, number][]; link: string }[] }
 export interface BoardSummary { board_id: number; name: string; created_by: string; created_at: string; items: number }
 export interface BoardComment { comment_id: number; author: string; body: string; created_at: string }
 export interface BoardItem { item_id: number; title: string; url: string; data_version: string; added_by: string; added_at: string;
