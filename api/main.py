@@ -439,6 +439,18 @@ async def book(survey_id: int, request: Request, who: dict = Depends(user)) -> R
     return send_payload(request, await cached_payload((SERVING, "book", survey_id), build))
 
 
+@app.get("/api/v1/waves/{survey_id}/report")
+async def weekly_report(survey_id: int, request: Request, who: dict = Depends(user)) -> Response:
+    """The weekly US Consumer Survey Insights report of a recent tracker wave, as the ETL published it
+    (etl/weekly_report.py). nginx sends the file itself to most people (deploy/cip_locations.conf); this route serves a
+    filtered session and a laptop without nginx. Nothing is computed here."""
+    await visible(who, survey_id)
+    found = published_file("waves", str(survey_id), "report")
+    if found is None:
+        raise HTTPException(404, "This wave has no weekly report (only the recent weekly tracker waves have one)")
+    return send_payload(request, found)
+
+
 @app.get("/api/v1/search")
 async def search(request: Request, q: str = Query(..., min_length=2, max_length=100), limit: int = Query(40, ge=1, le=200),
                  offset: int = Query(0, ge=0, le=5000), who: dict = Depends(user)) -> Response:

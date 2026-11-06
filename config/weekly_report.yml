@@ -1,0 +1,47 @@
+# The weekly "US Consumer Survey Insights" report (etl/weekly_report.py): which tracker question feeds which section,
+# the three income groups, and how a net score is read. Change it here: no code changes needed.
+
+# the weekly US tracker: the survey family and study type whose waves get a report
+family: CSI-US
+study_type: tracker
+
+# the report's 13-week tables, in the order shown: the part of the report, the table's title, its short name (used in
+# "Three data points to watch") and the weekly tracker question (CSI-US) it reads
+sections:
+  - {part: "Where consumers are shopping", name: "Food retailers", question: q4,
+     title: "Food: retailers they bought food from in the past two weeks"}
+  - {part: "Where consumers are shopping", name: "Nonfood retailers", question: q5,
+     title: "Nonfood: retailers they bought nonfood products from in the past two weeks"}
+  - {part: "What consumers are buying", name: "Bought in store", question: q2,
+     title: "Product categories they bought in store in the past two weeks"}
+  - {part: "What consumers are buying", name: "Bought online", question: q3,
+     title: "Product categories they bought online in the past two weeks"}
+  - {part: "Consumer activities", name: "Activities", question: q1,
+     title: "Activities they have done in the past two weeks"}
+
+# the two sentiment questions: net better = % better minus % worse
+sentiment:
+  Personal finances: CS1    # household financial situation over the next 12 months
+  Economy: CS2              # the economy overall over the next 12 months
+
+# the report's three income groups, each the portal's finer bands added together (D5 answers)
+income_groups:
+  "<$50,000": ["under $25,000", "$25,000 - $49,999"]
+  "$50,000 to <$100,000": ["$50,000 - $99,999"]
+  "$100,000+": ["$100,000 - $149,999", "$150,000 - $199,999", "$200,000 or greater"]
+
+# a net score: answers containing a positive word minus answers containing a negative word
+net_words:
+  positive: [better, more]
+  negative: [worse, less]
+
+# answers left out of the 13-week tables (lower case, how the answer starts)
+leave_out_answers: ["none of", "other", "don't know", "prefer not"]
+
+# the recent weekly waves that get a report (each built from the published question files: milliseconds each)
+recent_waves: 13
+
+# the retailer questions whose shoppers get an age and income profile (the cube's midpoints, over the 13 weeks)
+profile_questions:
+  q4: Food shoppers
+  q5: Nonfood shoppers

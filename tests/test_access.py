@@ -206,3 +206,12 @@ def test_every_feature_the_portal_checks_is_one_the_config_knows():
     checked = {m for f in Path("frontend/src").rglob("*.tsx") for m in re.findall(r'allowed\(me, "([a-z_]+)"\)', f.read_text())}
     assert checked and checked <= set(access.rules()["features"])
     assert set(access.profile("analyst@coresight.com")["features"]) >= checked   # staff see every page
+
+
+def test_the_weekly_report_is_served_as_published_and_a_wave_without_one_says_so(portal):
+    put(portal, "waves/415/report", {"survey_id": 415, "wave_date": "2026-10-19", "three_points": []})
+    status, _, body = call("/api/v1/waves/415/report", signed("ana@coresight.com"))
+    assert status == 200 and json.loads(body)["wave_date"] == "2026-10-19"
+    status, _, body = call("/api/v1/waves/300/report", signed("ana@coresight.com"))
+    assert status == 404 and "no weekly report" in json.loads(body)["detail"]
+    assert call("/api/v1/waves/415/report")[0] == 401                       # signed out: nothing

@@ -34,6 +34,7 @@ const SCREENS = [
   ["compare", "Compare waves", "M3 5h4v14H3zm7 4h4v10h-4zm7-6h4v16h-4z"],
   ["audience", "Audiences", "M9 11a4 4 0 110-8 4 4 0 010 8zm7 1a3 3 0 110-6 3 3 0 010 6zM2 20c0-3.3 3.1-6 7-6s7 2.7 7 6zm15 0c0-2-.8-3.7-2-5 3 .1 5 2.2 5 5z"],
   ["changes", "What changed", "M12 2l4 8H8zm0 20l-4-8h8zM2 12l8-4v8zm20 0l-8 4V8z"],
+  ["report", "Weekly report", "M5 3h14v18H5zm3 4h8v2H8zm0 4h8v2H8zm0 4h5v2H8z"],   // weekly tracker waves only
   ["survey", "Survey preview", "M6 2h9l5 5v15H6zm8 1v5h5M9 13h8M9 17h8M9 9h3"],
 ] as const;
 
@@ -62,6 +63,10 @@ export default function Shell() {
   const waves = useWaves();
   const me = useMe().data;
   const wave = waves.data?.find(w => String(w.survey_id) === id);
+  // the weekly report exists for the newest weekly tracker waves of a family (config/weekly_report.yml recent_waves: 13)
+  const hasReport = !!wave && wave.study_type === "tracker" && (waves.data ?? [])
+    .filter(w => w.survey_family === wave.survey_family && w.study_type === "tracker")
+    .sort((a, b) => b.wave_date.localeCompare(a.wave_date)).slice(0, 13).some(w => w.survey_id === wave.survey_id);
   const rail = useRef<HTMLElement>(null);
   const howArrived = useNavigationType();
 
@@ -123,7 +128,7 @@ export default function Shell() {
       </nav>
       {wave && <nav aria-label="This wave">
         <p className="rail-label">{wave.survey_family === "CSI-US" ? "Weekly tracker" : "Survey"} · {fmtDate(wave.wave_date)}</p>
-        {SCREENS.filter(([path]) => !FEATURE[path] || allowed(me, FEATURE[path])).map(([path, label, d]) =>
+        {SCREENS.filter(([path]) => (!FEATURE[path] || allowed(me, FEATURE[path])) && (path !== "report" || hasReport)).map(([path, label, d]) =>
           <NavLink key={path} to={`/w/${wave.survey_id}${path ? "/" + path : ""}`} end={!path}><Icon d={d} />{label}</NavLink>)}
       </nav>}
       {wave && <div className="rail-foot">

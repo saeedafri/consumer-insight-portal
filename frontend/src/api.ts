@@ -123,7 +123,8 @@ async function get<T>(url: string): Promise<T> {
 
     if (r.status === 401) signIn();
     if (r.status === 503) throw new Busy();   // admission control: the query client waits and retries
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`);
+    // the status rides on the error, so a screen can tell "not there" (404) from a failure without reading the wording
+    if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`), { status: r.status });
     return r.json();
   } catch (err) {
     if (status === 0) {
@@ -146,6 +147,24 @@ async function get<T>(url: string): Promise<T> {
 
 const forever = { staleTime: 5 * 60_000, gcTime: 30 * 60_000 };
 export const useWaves = () => useQuery({ queryKey: ["waves"], queryFn: () => get<Wave[]>("/api/v1/waves"), ...forever });
+/** The weekly US Consumer Survey Insights report of a recent tracker wave, built by the ETL (etl/weekly_report.py) and
+ *  read as it is by the Report screen (screens/Report.tsx). Figures are % of respondents, four-week rolling averages. */
+export interface ReportRow { label: string; values: (number | null)[]; week_change: number | null; quarter_change: number | null;
+  week_significant: boolean; quarter_significant: boolean }
+export interface ReportTable { dates: (string | null)[]; rows: ReportRow[] }
+export interface SentimentLine { weekly: (number | null)[]; four_week: (number | null)[]; year_change: number | null }
+export interface WeeklyReport {
+  survey_id: number; wave_date: string;
+  three_points: { section: string; label: string; change: number; from: number; to: number; from_date: string; to_date: string }[];
+  sentiment: Record<string, { dates: (string | null)[]; lines: Record<string, SentimentLine> }>;
+  tables: (ReportTable & { part: string; name: string; title: string; question: string })[];
+  profiles: { title: string; rows: { label: string; shoppers: number; age: number; income_k: number }[] }[];
+  methodology: { weeks: { date: string; respondents: number }[]; weekly_margin: number; four_week_margin: number };
+  events: { date: string; label: string; kind: "economy" | "retail" }[];
+}
+export const useReport = (id: number) =>
+  useQuery({ queryKey: ["report", id], queryFn: () => get<WeeklyReport>(`/api/v1/waves/${id}/report`), ...forever, enabled: id > 0, retry: false });
+
 export const useBook = (id: number) => {
   const weighted = useWeighted();
   return useQuery({ queryKey: ["book", id, weighted], queryFn: () => bookOf(id, weighted), ...forever, enabled: id > 0 });

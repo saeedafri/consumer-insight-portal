@@ -1,0 +1,30 @@
+# News events marked on the weekly report's time charts (etl/weekly_report.py news_events → the Report screen).
+# Kept by the research team, as in the PDF report's Figure 1 (economy) and Figures 5 and 7 (retail).
+# One line per event: the day it happened, a short label, and the chart it belongs to (economy or retail).
+- {date: 2025-10-29, label: "Rates cut", kind: economy}
+- {date: 2025-10-30, label: "US-China talks end with tariff cuts announced", kind: economy}
+- {date: 2025-11-12, label: "End of federal government shutdown", kind: economy}
+- {date: 2025-11-28, label: "Black Friday", kind: retail}
+- {date: 2025-12-01, label: "Walmart Cyber Deals (Dec 1–7)", kind: retail}
+- {date: 2025-12-10, label: "Rates cut", kind: economy}
+- {date: 2026-01-17, label: "10% tariffs threatened on countries with troops in Greenland", kind: economy}
+- {date: 2026-01-21, label: "Greenland tariffs rescinded", kind: economy}
+- {date: 2026-02-20, label: "Supreme Court strikes down tariffs; US imposes 10% tariffs globally", kind: economy}
+- {date: 2026-02-21, label: "US proposes raising tariffs from 10% to 15%", kind: economy}
+- {date: 2026-02-28, label: "Iran conflict", kind: economy}
+- {date: 2026-03-09, label: "Oil price spike", kind: economy}
+- {date: 2026-03-23, label: "US claims peace talks; pause in Iran strikes", kind: economy}
+- {date: 2026-04-07, label: "US-Iran ceasefire", kind: economy}
+- {date: 2026-04-27, label: "Amazon Summer Beauty Event (Apr 27–May 10)", kind: retail}
+- {date: 2026-04-28, label: "Interest rate remains unchanged", kind: economy}
+- {date: 2026-05-29, label: "US stock market at all-time high", kind: economy}
+- {date: 2026-06-14, label: "The US and Iran announce an interim peace deal", kind: economy}
+- {date: 2026-06-19, label: "The US and Iran sign peace deal", kind: economy}
+- {date: 2026-06-22, label: "Walmart Deals (Jun 22–28)", kind: retail}
+- {date: 2026-06-23, label: "Amazon Prime Day (Jun 23–26)", kind: retail}
+- {date: 2026-07-08, label: "Middle East conflict resumes", kind: economy}
+- {date: 2026-07-29, label: "Sharp sell-off in US stock market", kind: economy}
+- {date: 2026-08-13, label: "US stock market reaches record high", kind: economy}
+- {date: 2026-09-16, label: "Interest rate rise", kind: economy}
+- {date: 2026-09-21, label: "Gas prices peak", kind: economy}
+- {date: 2026-10-05, label: "Deal events (Oct 5–11)", kind: retail}

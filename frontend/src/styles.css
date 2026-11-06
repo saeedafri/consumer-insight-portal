@@ -853,3 +853,26 @@ table.data tbody tr:nth-child(n+8), .xt tbody tr:nth-child(n+8), .wave-row:nth-c
 }
 .menu-list > label.check { background: transparent; }
 @media (min-width: 901px) { .card-head > .toolbar, .card-head > .toolbar .seg { flex-wrap: nowrap; } }
+
+/* ---- the weekly report (screens/Report.tsx) ---- */
+.report-section { font: var(--t-h2); margin: 18px 0 0; }
+.three-points { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.three-points li { display: flex; gap: 14px; align-items: flex-start; line-height: 1.5; font-size: 14px; }
+.three-points-value { font: var(--t-kpi); font-variant-numeric: tabular-nums; display: flex; flex-direction: column; min-width: 92px; color: var(--sig); }   /* always significant: that is how they are picked */
+.three-points-value small { font: 600 12px var(--font-body); color: var(--ink-2); }
+
+.event-list { columns: 3 220px; column-gap: 24px; margin: 12px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+.event-list li { break-inside: avoid; margin-bottom: 4px; }
+.event-list b { color: var(--ink); font-weight: 600; margin-right: 4px; }
+.year-changes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.report-table { font-size: 12.5px; }
+.report-table th, .report-table td { padding: 7px 6px; }
+.report-table td.num, .report-table th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.report-table tbody th { min-width: 160px; max-width: 220px; }   /* long retailer names wrap; the numbers never do */
+/* on narrower screens the table scrolls sideways: the answer column stays put so every number keeps its label */
+.report-table tbody th, .report-table thead th:first-child { position: sticky; left: 0; z-index: 1; }
+.report-table tbody th { background: var(--surface); }
+.report-table td.change-sig { color: var(--sig); font-weight: 700; }
+.method-weeks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px 20px; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); font-size: 13px; }
+.method-weeks li { display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 4px 0; }
+.method-weeks b { font-variant-numeric: tabular-nums; }

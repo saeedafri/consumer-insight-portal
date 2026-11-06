@@ -12,3 +12,22 @@
 - Test, benchmark, stress-test and try changes on a SEPARATE instance on another port (e.g. `uvicorn api.main:app --port 8001`), never on :8000.
 - If a code change truly needs the live API restarted, STOP and ask the user first. Restart only after an explicit yes, and kill only the :8000 LISTEN pid (`lsof -ti tcp:8000 -sTCP:LISTEN`), never cloudflared.
 - After any change, confirm the public link still returns 200 on /healthz.
+
+## HOW CODE IS WRITTEN HERE (every change, every assistant)
+The test: a new hire, or someone who has never written Python, TypeScript or used Docker, opens a file and can tell
+what it does, why it exists, and who calls it, without anyone explaining.
+- Every file opens with a plain-English header: what it is for, who or what calls it (file:function), and when.
+- Every function says in one line what it does, and where it is triggered from when that is not obvious.
+  Comments explain WHY (a decision, a limit, a measured number), never repeat what the code plainly says.
+- Names are plain words, verb-first for functions (`build_report`, `read_traffic`), nouns for values. No cryptic
+  shorts (`xp`, `_t0`), no sentence-long names. A leading `_` only for something truly private to its file.
+- Minimal code (the ponytail ladder): does it need to exist? already in this codebase? the standard library? one line?
+  Only then the smallest code that works. No speculative options, wrappers or layers. Deletion beats addition.
+- One job per file and per function (SOLID, sensibly): the ETL computes, the API serves, the screens only draw.
+  Rules that may change (question codes, groups, thresholds) live in config/*.yml, not in code.
+- Speed, CPU and memory never get worse: heavy work happens in the ETL when data is published, never when someone
+  opens a page; what people open is a prebuilt file nginx sends in milliseconds.
+- Every calculation leaves one test behind that fails if it breaks; numbers that reproduce a report are checked against
+  that report (tests/test_weekly_report.py checks Figure 6 of the 3 Nov 2026 PDF).
+- Before finishing: run the ponytail audit on what you wrote (/ponytail-review), review it as a second reader
+  (/code-review), run the full test suite and the frontend type-check, and look at any screen you touched in a browser.
