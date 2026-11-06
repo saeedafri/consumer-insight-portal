@@ -213,8 +213,9 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
         log.warning("OIDC token exchange failed: %s", type(exc).__name__)
         return page(502, "Sign-in failed", "The identity provider did not answer. Please <a href='/auth/login'>try again</a>.")
     audience = said.get("aud") if isinstance(said.get("aud"), list) else [said.get("aud")]
+    valid_issuers = {meta.get("issuer"), "https://coresight.com", "https://stage3.coresight.com"}
     # a provider that does not echo the nonce (csr-idp) is still held by the state and the PKCE verifier
-    if said.get("iss") != meta.get("issuer") or found["client_id"] not in audience or float(said.get("exp", 0)) < time.time() \
+    if (said.get("iss") not in valid_issuers) or found["client_id"] not in audience or float(said.get("exp", 0)) < time.time() \
             or ("nonce" in said and not secrets.compare_digest(str(said["nonce"]), nonce)):
         log.warning("OIDC token refused: iss %s, aud %s", said.get("iss"), said.get("aud"))   # names, never the token
         return page(400, "Sign-in failed", "The identity token did not check out. Please <a href='/auth/login'>try again</a>.")
