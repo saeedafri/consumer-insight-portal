@@ -352,6 +352,22 @@ def problems(since: str) -> list[dict]:
     return sorted(unique.values(), key=lambda p: p["minute"], reverse=True)[:30]
 
 
+def sign_ins(since: str) -> list[dict]:
+    """Who signed in, when, how and from where (api/signin.py writes one "sign-in:" line to the API log each time),
+    newest first: [{time, email, role, method, address, place}]."""
+    path = path_of("api")
+    if not path or not path.exists():
+        return []
+    out = []
+    for line in tail(path, 300, "sign-in:"):
+        found = re.search(r"sign-in: (\S+) role=(\S+) via (\S+) from (\S*)", line)
+        if found and minute_of(line) >= since:
+            email, role, method, address = found.groups()
+            out.append({"time": line[:19], "email": email, "role": role, "method": method, "address": address,
+                        "place": place_of(address) if address else ""})
+    return out[:50]
+
+
 @router.get("/metrics")
 def metrics(minutes: int = Query(60, ge=5, le=KEEP_MINUTES), who: dict = Depends(admin)) -> dict:
     """Everything the dashboard draws for the last `minutes` (see the block comment above for where each comes from)."""
@@ -402,5 +418,5 @@ def metrics(minutes: int = Query(60, ge=5, le=KEEP_MINUTES), who: dict = Depends
                    "without_python_pct": round(100 * page_hits[p] / n, 1)} for p, n in pages.most_common(15)],
         "clients": [{"client": c, "user": users.get(c, ""), "place": place_of(c), "requests": n}
                     for c, n in clients.most_common(10)],
-        "problems": problems(since), "restarts": restarts(since), "etl": etl_runs(since),
+        "problems": problems(since), "restarts": restarts(since), "etl": etl_runs(since), "sign_ins": sign_ins(since),
     }

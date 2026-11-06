@@ -1,19 +1,20 @@
 // The frame of the public site's pages (home, features, the data, this week, methodology, sign-in): the coresight.com
-// header (logo, the portal's name, and coresight.com's Research & Data, Events, Services) and footer, and its fonts.
-// Signing in starts from each page's own buttons (/sign-in/). The signed-in portal (/app) has its own frame.
+// header and footer (coresight.com's Research & Data, Events, Services, About; sign-in), the portal's sub-menu, its
+// fonts and the light/dark toggle. The signed-in portal (/app) has its own, simpler header (components/Shell.tsx).
 import Link from "next/link";
 // The same fonts as the signed-in portal (src/main.tsx), from the same packages, so both read alike and the browser
 // downloads them once: a visitor who signs in from here already has them. Roboto for text, Montserrat for headings.
 import "@fontsource-variable/montserrat";
 import "@fontsource-variable/roboto";
 import "./site.css";
+import ThemeToggle from "./ThemeToggle";
 import Motion from "./Motion";
 import { SiteSchema } from "./seo";
 
 // The coresight.com chrome, identical to the portal (src/components/Shell.tsx): logo + name, the site's top menus,
 // and the dark footer. Links go to coresight.com, in the same tab, like any site link.
 const CORESIGHT = "https://coresight.com";
-const SITE_LINKS: [string, string][] = [["/research/", "Research & Data"], ["/events/", "Events"], ["/memberships/", "Services"]];
+const SITE_LINKS: [string, string][] = [["/research/", "Research & Data"], ["/events/", "Events"], ["/memberships/", "Services"], ["/about-us/", "About"]];
 const FOOT_LINKS: [string, [string, string][]][] = [
   ["Services", [["/memberships/", "Research & Data Memberships"], ["/innovator-services/", "Innovator Market Development"],
                 ["/custom-research-advisory-services/", "Advisory & Custom Research"], ["/coresight-ai-council/", "AI Council"]]],
@@ -35,7 +36,19 @@ export default function Site({ children }: { children: React.ReactNode }) {
       <nav className="site-links" aria-label="Coresight.com">
         {SITE_LINKS.map(([path, label]) => <a key={path} href={CORESIGHT + path}>{label}</a>)}
       </nav>
+      <ThemeToggle />
+      <Link className="site-signin" href="/sign-in/">Sign in</Link>
+      <Link className="btn primary" href="/sign-in/">Request access</Link>
     </header>
+    <nav className="subnav" aria-label="Portal">
+      <div className="wrap inner">
+        <Link href="/features/">Features</Link>
+        <Link href="/this-week/">This week</Link>
+        <Link href="/data/">Consumer data</Link>
+        <Link href="/methodology/">Methodology</Link>
+        <Link href="/#api">API &amp; MCP</Link>
+      </div>
+    </nav>
     <SiteSchema />
     <Motion />
     <main>{children}</main>

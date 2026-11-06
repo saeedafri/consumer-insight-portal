@@ -39,7 +39,6 @@ const SCREENS = [
 
 // coresight.com links, as on its own header and footer (checked live 23 Oct 2026); same tab, like any site link
 const SITE = "https://coresight.com";
-const SITE_LINKS = [["/research/", "Research & Data"], ["/events/", "Events"], ["/memberships/", "Services"], ["/about-us/", "About"]] as const;
 const FOOT_LINKS = [
   ["Services", [["/memberships/", "Research & Data Memberships"], ["/innovator-services/", "Innovator Market Development"],
                 ["/custom-research-advisory-services/", "Advisory & Custom Research"], ["/coresight-ai-council/", "AI Council"]]],
@@ -177,8 +176,9 @@ function SiteFooter() {
   </footer>;
 }
 
-/** The coresight.com header on every screen: logo and portal name, the site's top menus, then the portal's own
- *  controls (question search, theme, who is signed in). On phones the site links move to the footer. */
+/** The portal's header on every screen: the Coresight logo and the portal's name, then the portal's own controls
+ *  (question search, weighting, theme, who is signed in, sign out). coresight.com's menus (Research & Data, Events,
+ *  Services) are on the public site's header only (app/(site)/layout.tsx); the footer below keeps its links. */
 function SiteHeader({ theme, onTheme, menuOpen, onToggleMenu }: { theme: Theme; onTheme: () => void; menuOpen: boolean; onToggleMenu: () => void }) {
   const navigate = useNavigate();
   const me = useMe().data;
@@ -208,9 +208,6 @@ function SiteHeader({ theme, onTheme, menuOpen, onToggleMenu }: { theme: Theme; 
       <img src={theme === "dark" ? "/coresight-logo-reversed.png" : "/coresight-logo.png"} alt="" width="76" height="38" />
       <span>Consumer Insight Portal</span>
     </Link>
-    <nav className="site-links" aria-label="Coresight.com">
-      {SITE_LINKS.map(([path, label]) => <a key={path} href={SITE + path}>{label}</a>)}
-    </nav>
     <button className="icon-btn search-toggle" onClick={() => { setSearchOpen(o => !o); setTimeout(() => search.current?.focus()); }}
             aria-label="Search every question" aria-expanded={searchOpen}>
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor" /></svg>

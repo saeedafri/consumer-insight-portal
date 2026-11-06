@@ -113,3 +113,13 @@ def test_the_dashboard_names_visitors_and_explains_problems(tmp_path, monkeypatc
     assert m["totals"]["browser"] == 1 and m["totals"]["p99_ms"] == 7500.0   # over 5 s: the real slowest, not a made-up 10 s
     assert m["problems"][0]["meaning"].startswith("The API stopped while answering")
     assert [r["build"] for r in m["restarts"]] == ["abc123"]   # the sampler's own line is not a restart
+
+
+def test_the_dashboard_lists_who_signed_in_and_from_where(tmp_path, monkeypatch):
+    monkeypatch.setattr(logs, "LOGS", tmp_path)
+    monkeypatch.setattr(metrics, "TRAFFIC", metrics.Traffic())
+    stamp = metrics.datetime.now(metrics.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    (tmp_path / "api.log").write_text(f"{stamp},101 INFO    cip.api | GET /api/v1/me\n"
+                                      f"{stamp},202 INFO    cip.signin | sign-in: ana@coresight.com role=analyst via demo from 10.1.2.3\n")
+    assert metrics.metrics(60, ADMIN)["sign_ins"] == [{"time": stamp, "email": "ana@coresight.com", "role": "analyst",
+                                                       "method": "demo", "address": "10.1.2.3", "place": ""}]

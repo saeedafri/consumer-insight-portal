@@ -25,13 +25,11 @@ definitions:
         caches: [docker]
         script:
           - export BUILD=${BITBUCKET_COMMIT:0:8}
-          - docker build -f deploy/Dockerfile --target api --build-arg CIP_BUILD=$BUILD -t cip-api:ci .
-          - docker build -f deploy/Dockerfile --target nginx -t cip-nginx:ci .
-          - docker build -f deploy/Dockerfile --target app --build-arg CIP_BUILD=$BUILD -t cip-app:ci .   # the Azure App Service image
+          - docker build -f deploy/Dockerfile --target app --build-arg CIP_BUILD=$BUILD -t cip-app:ci .   # the Azure App Service image, the only one
           - >-
             docker run --rm -v "$BITBUCKET_CLONE_DIR/sql:/srv/cip/sql:ro" -e APP_ENV=LOCAL -e LOCAL_SQLITE_PATH=/tmp/ci.db
-            -e CIP_SESSION_SECRET=ci-only -e WANT=$BUILD cip-api:ci sh -c '
-            python -c "from app.core import database, schema_upgrade; schema_upgrade.install(database.get_engine(\"etl\"))";
+            -e CIP_SESSION_SECRET=ci-only -e WANT=$BUILD cip-app:ci sh -c '
+            python -c "from shared.core import database, schema_upgrade; schema_upgrade.install(database.get_engine(\"etl\"))";
             gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000 &
             for i in $(seq 30); do
             python -c "import urllib.request; print(urllib.request.urlopen(\"http://127.0.0.1:8000/healthz\").read().decode())" 2>/dev/null | grep -q "\"build\":\"$WANT\"" && exit 0;

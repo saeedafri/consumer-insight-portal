@@ -8,6 +8,7 @@
 // While sign-in is the demo, the server also asks for the admin token (typed below, kept for this tab only).
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { useMe } from "../api";
 import { Card } from "../components/bits";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import { C, LIGHT, useTheme } from "../theme";
@@ -33,6 +34,7 @@ interface Metrics {
   clients: { client: string; user: string; place: string; requests: number }[];
   problems: { source: string; minute: string; line: string; meaning: string }[];
   restarts: { time: string; build: string; what: string }[];
+  sign_ins: { time: string; email: string; role: string; method: string; address: string; place: string }[];
   etl: { time: string; level: string; message: string; meaning: string }[];
 }
 interface Health { build?: string }
@@ -78,7 +80,10 @@ export default function Logs() {
       .then(async r => {
         if (r.ok) { setMetrics(await r.json()); setDenied(""); setUpdated(new Date()); return; }
         const detail = (await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`;
-        setDenied(r.status === 401 || r.status === 403 ? `${detail}. Enter the admin token above.` : detail);
+        // two different refusals: the account is not an admin (no token helps), or the token is missing or wrong
+        setDenied(detail === "Only an admin can do that"
+          ? "notAdmin"
+          : r.status === 401 || r.status === 403 ? `${detail}. Enter the admin token above (from staging.env, CIP_ADMIN_TOKEN).` : detail);
       })
       .catch(e => { if (e.name !== "AbortError") setDenied(String(e)); });
     fetch("/api/v1/admin/health", get).then(r => r.ok ? r.json() : null).then(h => h && setHealth(h)).catch(() => { /* the build id is a nicety */ });
@@ -91,7 +96,9 @@ export default function Logs() {
     return () => clearInterval(every);
   }, [live]);
 
-  const keepToken = (value: string) => { setToken(value); try { sessionStorage.setItem(TOKEN, value); } catch { /* private window */ } };
+  // trimmed: a token pasted with a space or line break around it would otherwise never match
+  const keepToken = (value: string) => { const clean = value.trim(); setToken(clean); try { sessionStorage.setItem(TOKEN, clean); } catch { /* private window */ } };
+  const me = useMe().data;
 
   return (
     <div className="stack">
@@ -115,7 +122,10 @@ export default function Logs() {
         {health?.build && ` · build ${health.build}`}
       </p>
 
-      {denied && <Card><p role="alert" style={{ color: "var(--red-text)", margin: 0 }}>{denied}</p></Card>}
+      {denied && <Card><p role="alert" style={{ color: "var(--red-text)", margin: 0 }}>
+        {denied === "notAdmin"
+          ? <>You are signed in as <b>{me?.email ?? "an account"}</b>, which is not an admin, so this page stays closed whatever the token. Sign out and sign in with an admin account (config/access.yml lists them: dataautomation@coresight.com).</>
+          : denied}</p></Card>}
       {metrics && <Dashboard m={metrics} minutes={minutes} />}
       <RawLogs headers={headers} token={token} />
     </div>
@@ -294,6 +304,15 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
       </table></div>
       {!m.clients.length && <p className="muted">No visitors in this range.</p>}
       <p className="muted" style={{ fontSize: 11, marginTop: 8 }}>Places are city-level guesses from the address (an office or a phone network's location, not a person's). <a href="https://db-ip.com" target="_blank" rel="noreferrer">IP Geolocation by DB-IP</a>.</p>
+    </Card>
+
+    <Card title="Sign-ins" sub="Who signed in, when (UTC), how, and from which address and approximate place. Newest first.">
+      {m.sign_ins?.length ? <div className="table-wrap"><table className="data">
+        <thead><tr><th>When (UTC)</th><th>Who</th><th>Role</th><th>How</th><th>Where (approximate)</th><th>Address</th></tr></thead>
+        <tbody>{m.sign_ins.map((x, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{x.time}</td><th scope="row">{x.email}</th>
+          <td>{x.role}</td><td>{x.method === "demo" ? "demo sign-in" : x.method}</td><td>{x.place || <span className="muted">unknown</span>}</td>
+          <td style={mono}>{x.address || "–"}</td></tr>)}</tbody>
+      </table></div> : <p className="muted">No sign-ins in this range. (Sign-ins are listed from this build on.)</p>}
     </Card>
 
     {/* ---- what went wrong ---- */}

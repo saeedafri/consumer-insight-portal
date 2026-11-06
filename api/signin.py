@@ -20,6 +20,7 @@ import json
 import logging
 import hmac
 import os
+import re
 import secrets
 import time
 from functools import lru_cache
@@ -123,6 +124,10 @@ async def signed_in(request: Request, who: dict, how: str, target: str) -> Respo
     sid = secrets.token_urlsafe(18)
     await run_in_threadpool(remember, sid, who, how)
     audit.record(request, "sign_in", who=who, detail={"provider": how})
+    # the database keeps only a hash of the address (shared/core/audit.py); the admins' Logs page lists sign-ins with the
+    # real address from this line (api/metrics.py sign_ins), as nginx's request log already holds it
+    where = re.sub(r"^(\d+\.\d+\.\d+\.\d+):\d+$", r"\1", audit.address(request))   # Azure adds ":port"
+    log.info("sign-in: %s role=%s via %s from %s", who["email"], who["role"], how, where)
     response = RedirectResponse(same_site(target), status_code=303)
     response.set_cookie(COOKIE, issue(who["email"], sid=sid, scope=access.scope(who)), httponly=True, samesite="lax",
                         secure=https(request), max_age=SESSION_HOURS * 3600)
