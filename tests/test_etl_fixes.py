@@ -6,7 +6,7 @@ from datetime import date, timedelta
 import pytest
 import sqlalchemy as sa
 
-from app.core.database import tsv
+from shared.core.database import tsv
 from etl import forsta_etl, integrity, launch_schedule, serving
 from tests.test_forsta_etl import SURVEYS, FakeForsta, record
 from tests.test_surveymonkey import monkey  # noqa: F401  (fixture)

@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from app.data.payloads import open_group
+from shared.data.payloads import open_group
 from etl.open_ends import NOTHING, OTHER, by_claude, by_frequency
 
 

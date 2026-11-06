@@ -2,7 +2,7 @@
 
 Each wave's open-ended questions (qtype 'text': "Other, please specify" boxes and free questions) are coded once and
 kept in data/coded/<survey_id>.json: per question, its themes and each respondent's theme. The book then shows the
-question as one more chart (app/data/payloads.book): the share of those who wrote something, by theme, for Total,
+question as one more chart (shared/data/payloads.book): the share of those who wrote something, by theme, for Total,
 gender and generation. Verbatims themselves never leave this file.
 
 Two coders:
@@ -29,7 +29,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from app.core.database import get_engine
+from shared.core.database import get_engine
 
 log = logging.getLogger("cip.open_ends")
 ROOT = Path(os.environ.get("CIP_CODED_DIR") or Path(__file__).resolve().parents[1] / "data/coded")

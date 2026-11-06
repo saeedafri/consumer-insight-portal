@@ -29,7 +29,7 @@ from typing import Optional
 import yaml
 from sqlalchemy import bindparam, text
 
-from app.core.database import get_engine
+from shared.core.database import get_engine
 
 log = logging.getLogger("cip.cohorts")
 

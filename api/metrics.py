@@ -19,7 +19,7 @@ from sqlalchemy import text
 from api import logs
 from api.logs import FILES, path_of, tail
 from api.signin import admin
-from app.core.database import get_engine
+from shared.core.database import get_engine
 
 router = APIRouter(prefix="/api/v1/admin")
 

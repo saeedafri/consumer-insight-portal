@@ -40,8 +40,8 @@ from typing import Any, Optional
 
 from sqlalchemy import bindparam, text
 
-from app.core.config import config
-from app.core.database import bulk_insert, get_engine
+from shared.core.config import config
+from shared.core.database import bulk_insert, get_engine
 from etl import cube, harmonise
 from etl.records import respondent_key
 from etl import forsta_api, launch_schedule, serving, survey_calendar, survey_map, tracker_line

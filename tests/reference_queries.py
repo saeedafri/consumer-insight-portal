@@ -12,7 +12,7 @@ from typing import Optional
 
 import pandas as pd
 
-from app.core.database import dialect, query_df
+from shared.core.database import dialect, query_df
 
 INNODB_STOPWORDS = set("a about an are as at be by com de en for from how i in is it la of on or that the this to"
                        " was what when where who will with und www".split())

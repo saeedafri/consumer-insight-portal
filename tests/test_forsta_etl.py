@@ -1,12 +1,12 @@
 """The Forsta ETL build (Oct 2026): schema, API adapter, pipeline, search.
 
-The design: docs/design/2026-10-07-cip-forsta-etl-and-ui-design.md.
+The design: docs/design/2026-10-07-cip-forsta-etl-and-ui-design.md (in the development repo).
 """
 from __future__ import annotations
 
 import sqlalchemy as sa
 
-from app.core import schema_upgrade
+from shared.core import schema_upgrade
 
 
 def columns(engine, table):
@@ -609,6 +609,6 @@ def test_a_wave_that_keeps_failing_stops_being_fetched_every_run(csi_db):
 
 
 def test_the_bulk_load_file_reads_back_exactly_what_respondents_wrote():
-    from app.core.database import tsv, untsv
+    from shared.core.database import tsv, untsv
     for said in ["a\tb", "C:\\temp\\new", "line1\r\nline2", "back\\tslash", "nul\0x", None]:
         assert untsv(tsv(said)) == said      # the fallback path re-reads the file: verbatims must not change

@@ -14,7 +14,7 @@
   /auth/...                    sign-in, sign-out and the session check (api/signin.py)
 
 Every /api route needs a signed-in session, sees only the waves the person's tier and client may see
-(app/core/access.py), and answers errors as {"detail": text, "status": code}.
+(shared/core/access.py), and answers errors as {"detail": text, "status": code}.
 
     gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:8000
 """
@@ -46,9 +46,9 @@ from sqlalchemy import text
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core import access, audit
-from app.core.database import get_engine
-from app.data import payloads
+from shared.core import access, audit
+from shared.core.database import get_engine
+from shared.data import payloads
 from api import assistant, exports, logs, mcp, metrics, signin, team
 from api.search import SearchIndex
 from api.signin import admin, user
@@ -99,7 +99,7 @@ BUILD_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_BUILD_SLOTS", "8")))   #
 BUILD_WAIT = float(os.environ.get("CIP_BUILD_WAIT", "3"))   # seconds a request may queue for a slot before "busy, retry"
 CATALOGUE: SearchIndex | None = None     # every reportable question of every built wave (api/search.py)
 CATALOGUE_ROWS: tuple = ()               # what CATALOGUE was built from, to build a filtered one per scope
-SCOPED: dict[str, SearchIndex] = {}      # scope (app/core/access.scope) → the catalogue of the waves it may see
+SCOPED: dict[str, SearchIndex] = {}      # scope (shared/core/access.scope) → the catalogue of the waves it may see
 WAVES: tuple = ((), [])                  # (data version, every built wave described): the visibility rule's input
 WAVES_LOCK = threading.Lock()            # one thread rebuilds the list; a burst after a deploy waits for it, not the pool
 CACHE_RESULTS = os.environ.get("CIP_RESULT_CACHE", "1") != "0"   # 0 only to measure the database path
@@ -392,7 +392,7 @@ async def cached_payload(key: tuple, build, *args) -> Payload:
 
 
 def to_payload(data) -> Payload:
-    """A finished response: compact JSON (app/data/payloads.encode), its ETag and its gzip."""
+    """A finished response: compact JSON (shared/data/payloads.encode), its ETag and its gzip."""
     body = payloads.encode(data)
     return Payload(f'"{hashlib.sha256(body).hexdigest()[:16]}"', body, gzip.compress(body, 6))
 

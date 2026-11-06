@@ -30,7 +30,7 @@ import pandas as pd
 import yaml
 from sqlalchemy import text
 
-from app.core.database import get_engine
+from shared.core.database import get_engine
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "crosstab_banners.yml"
 TOKEN = re.compile(r"^(?P<q>[A-Za-z0-9_]+)\.(?P<kind>r|ch)(?P<n>\d+)(?:\.c(?P<c>\d+))?$")

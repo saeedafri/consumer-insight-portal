@@ -1,6 +1,6 @@
 """Schema v2, Phase 1: the additive migration.
 
-See docs/design/2026-09-29-survey-platform-design.md §5.
+The design: docs/design/2026-09-29-survey-platform-design.md §5 (in the development repo).
 """
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 
-from app.core import database, schema_upgrade, sqlite_compat
-from app.core.database import apply_sql
+from shared.core import database, schema_upgrade, sqlite_compat
+from shared.core.database import apply_sql
 
 
 def test_fulltext_keys_are_dropped_for_sqlite():

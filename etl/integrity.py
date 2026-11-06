@@ -27,7 +27,7 @@ from typing import Callable, Optional
 
 from sqlalchemy import text
 
-from app.core.database import get_engine
+from shared.core.database import get_engine
 
 log = logging.getLogger("cip.integrity")
 

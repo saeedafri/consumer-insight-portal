@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 import sqlalchemy as sa
 
-from app.core import database, schema_upgrade
+from shared.core import database, schema_upgrade
 from tests.analysis_fixture import seed_analysis_data
 
 

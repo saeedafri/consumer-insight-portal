@@ -11,7 +11,7 @@ them in the browser.
 | [`frontend/`](frontend/) | **The website**: public pages and the portal (at `/app`). Built once into plain files | Next.js (TypeScript) |
 | [`api/`](api/) | **The backend**: answers the website's data requests, sign-in, search, exports, the admin logs page | Python, FastAPI |
 | [`etl/`](etl/) | **The data pipeline**: Forsta → database → checks → serving tables → published files | Python |
-| [`app/`](app/) | Shared code the backend and the pipeline both use: settings, database access, calculations | Python |
+| [`shared/`](shared/) | Shared code the backend and the pipeline both use: settings, database access, the answer payloads | Python |
 | [`scripts/`](scripts/) | Jobs to run: the scheduled pipeline run, backups, schema setup, checks | Python |
 | [`config/`](config/) | Settings in plain YAML: who may see what, survey rules, dashboards, the launch schedule, email lists | YAML |
 | [`sql/`](sql/) | Database tables and views (all named `cip_…`) | SQL |
@@ -81,8 +81,6 @@ pytest -q                             # the checks
 | [Business description](docs/business/Business-Description.md) | the business team: the surveys, what is collected, how the pipeline works, quality and privacy |
 | [Portal features](docs/business/portal-features.md) | what each screen does |
 | [Technical documentation](docs/technical/00-overview.md) | Forsta API, extract, transform, load, serving tables, data dictionary, survey patterns, operations runbook |
-| [ETL explained](docs/technical/ETL-Pipeline-Explained.html) | the pipeline as one illustrated page |
 | [Pipeline error handling](docs/technical/pipeline-resilience.yml) | every failure the scheduled run can meet and what it does about it |
-| [Design](docs/design/) | the approved designs the portal and pipeline were built from |
 | [Diagrams](docs/diagrams/) | every flow as Mermaid source and SVG |
 | [Deployment](docs/deployment/azure-app-service.md) | Azure App Service: build, settings, sign-in, logs, schedule |

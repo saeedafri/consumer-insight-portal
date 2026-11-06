@@ -1,5 +1,5 @@
 """Who gets in and what they see, over HTTP: sign-in, the cookie, revocation, roles, client scoping, limits, the error
-shape, security headers and the audit log (api/signin.py, app/core/access.py, app/core/audit.py)."""
+shape, security headers and the audit log (api/signin.py, shared/core/access.py, shared/core/audit.py)."""
 import asyncio
 import gzip
 import json
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 import api.main as api
 from api import signin, team
-from app.core import access, audit, session
+from shared.core import access, audit, session
 
 
 def call(path, cookie="", method="GET", body=b"", headers=None):

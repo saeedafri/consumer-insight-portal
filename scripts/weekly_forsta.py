@@ -35,8 +35,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import inspect, text  # noqa: E402
 
-from app.core.config import config  # noqa: E402
-from app.core.database import get_engine, healthcheck  # noqa: E402
+from shared.core.config import config  # noqa: E402
+from shared.core.database import get_engine, healthcheck  # noqa: E402
 from etl import forsta_etl, integrity, launch_schedule, notify, open_ends, publish  # noqa: E402
 from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
 from etl.loaders import Locked, etl_lock  # noqa: E402
@@ -227,7 +227,7 @@ def setup_logging() -> None:
     errors = logging.FileHandler(ERRORS, encoding="utf-8")
     errors.setLevel(logging.WARNING)
     errors.setFormatter(JsonLines("%(message)s"))
-    logging.basicConfig(level=logging.INFO, handlers=[screen, errors], force=True)   # app.core sets one up on import
+    logging.basicConfig(level=logging.INFO, handlers=[screen, errors], force=True)   # shared.core sets one up on import
 
 
 def watchdog() -> int:

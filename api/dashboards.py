@@ -29,8 +29,8 @@ from typing import Optional
 import yaml
 from sqlalchemy import bindparam, text
 
-from app.core.database import get_engine
-from app.data.payloads import HIDDEN_BASE, TEST_BASE
+from shared.core.database import get_engine
+from shared.data.payloads import HIDDEN_BASE, TEST_BASE
 from etl.loaders import etl_lock
 
 log = logging.getLogger("cip.api.dashboards")

@@ -6,7 +6,7 @@ import socket
 
 import pytest
 
-from app.core.config import config
+from shared.core.config import config
 
 
 def test_tests_use_only_local_sqlite_and_blank_live_integrations():

@@ -24,7 +24,7 @@ from typing import Optional
 
 from sqlalchemy import bindparam, text
 
-from app.core.database import get_engine
+from shared.core.database import get_engine
 
 # The highest-scoring unrelated pair between the 09/21 and 09/28 waves is 0.796.
 SIMILAR_THRESHOLD = 0.85

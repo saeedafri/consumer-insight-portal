@@ -36,7 +36,7 @@ from functools import lru_cache
 from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.exc import OperationalError
 
-from app.core.database import bulk_insert, get_engine
+from shared.core.database import bulk_insert, get_engine
 from etl.cube import ANSWER_CUTS, ANSWER_ROWS, CUBE_DIMS
 from etl.harmonise import normalise_text
 
@@ -45,7 +45,7 @@ SMALL_BASE = 50       # respondents: below this a percentage is flagged
 BASE_SHIFT = 10.0     # points: a question's base share of qualified respondents moving more than this is a routing change
 PRIOR_DAYS = 14       # a tracker's previous wave must be at most this old to count as "prior week"
 YEAR_DAYS = (300, 430)   # an annual or ad hoc study's "last year": its family's latest wave this many days earlier
-TEST_BASE = 30        # respondents on each side before a difference is tested (= app/data/payloads.TEST_BASE)
+TEST_BASE = 30        # respondents on each side before a difference is tested (= shared/data/payloads.TEST_BASE)
 FDR = 0.05            # Benjamini-Hochberg false-discovery rate for sig_prior / sig_ly
 FILLER = re.compile(r"^(none of (these|the above)|other\s*[-–(]|prefer not)", re.I)   # = frontend/src/api.ts isFiller
 CUTS = tuple(d for d in CUBE_DIMS if d != "total")

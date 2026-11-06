@@ -1,4 +1,4 @@
-# Who may use the portal and what they see (app/core/access.py). Read once per API process; restart to apply.
+# Who may use the portal and what they see (shared/core/access.py). Read once per API process; restart to apply.
 #
 #   tiers     a package: the features it includes and the study types it opens ("*" = all)
 #   roles     admin (everything, the audit log, others' team items), analyst (Coresight staff), client (external)

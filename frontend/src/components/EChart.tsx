@@ -99,7 +99,11 @@ export default function EChart({ option, build, height, onClick, label, onReady 
     const c = echarts.init(el.current!, themeName(), { renderer: "canvas" });
     chart.current = c;
     onReady?.(c);
-    const resize = new ResizeObserver(() => c.resize());
+    // only a real change of size redraws: ECharts' resize() jumps to the finished picture, so an extra one (the
+    // observer always reports once at the start) would cut short the animation that has just begun
+    const resize = new ResizeObserver(() => {
+      if (el.current && (el.current.clientWidth !== c.getWidth() || el.current.clientHeight !== c.getHeight())) c.resize();
+    });
     resize.observe(el.current!);
     return () => { resize.disconnect(); c.dispose(); };
   }, []);
@@ -125,6 +129,9 @@ export default function EChart({ option, build, height, onClick, label, onReady 
 
     // Bars grow from the axis when a question opens; a new cut or sort moves the same bars to their new values
     // instead of redrawing, so the change itself is visible. Parts a new chart type does not share are replaced.
+    // A new view can have a new height (Bars are as tall as their answers, a Donut 340 px): size the canvas first, so
+    // the animation below runs to the end instead of being cut short by the resize that would follow it.
+    if (el.current && (el.current.clientWidth !== c.getWidth() || el.current.clientHeight !== c.getHeight())) c.resize();
     c.setOption({ ...common(label), ...option }, { replaceMerge: ["series", "xAxis", "yAxis", "grid", "legend"] });   // only registered components: ECharts asserts on others
   }, [option, label]);
   useEffect(() => {

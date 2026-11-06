@@ -40,10 +40,9 @@ sync)
     cp deploy/nginx.conf /etc/nginx/nginx.conf
     cp deploy/cip_proxy.conf deploy/cip_headers.conf deploy/cip_locations.conf deploy/cip_auth.js cip_csp_map.conf /etc/nginx/
     mkdir -p /etc/nginx/logs.d && cp deploy/cip_logs.conf /etc/nginx/logs.d/
-    sed -i "s|server api:8000|server 127.0.0.1:8000|; s|^worker_processes 1;|pid /tmp/nginx.pid;\nworker_processes 1;|" /etc/nginx/nginx.conf
     mkdir -p published state && ln -sfn /tmp/cip-keep/logs logs
     chown -R cip /srv/cip/published /srv/cip/state /var/cache/nginx /var/log/nginx /home/cip && chmod -R a+rX /srv/cip /etc/nginx
-    sudo -u cip nginx -t -g "pid /tmp/nginx-test.pid;" 2>&1 | head -1'
+    sudo -u cip nginx -t 2>&1 | head -1'
   # a running nginx keeps the old files open: start again, as a deploy starts a new container
   if limactl shell "$VM" -- systemctl is-active --quiet cip; then bash "$0" start; fi ;;
 start)

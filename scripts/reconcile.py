@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.core.database import query_df  # noqa: E402
+from shared.core.database import query_df  # noqa: E402
 from etl.legacy_dwh import reconcile_legacy  # noqa: E402
 
 

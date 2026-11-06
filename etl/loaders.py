@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from sqlalchemy import bindparam, text
 
-from app.core.database import get_engine
+from shared.core.database import get_engine
 from etl import survey_map
 
 logger = logging.getLogger(__name__)

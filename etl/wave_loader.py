@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 from sqlalchemy import bindparam, text
 
-from app.core.database import bulk_insert, execute_many, get_engine
+from shared.core.database import bulk_insert, execute_many, get_engine
 from etl.records import normalise_label_cell
 from etl import survey_map
 

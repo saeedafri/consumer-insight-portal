@@ -1,5 +1,5 @@
 # How the portal's numbers are made, served as-is by GET /api/v1/methodology and shown on the methodology page.
-# `population` also labels every wave (app/data/payloads.describe): a survey_id entry beats a family, a family beats
+# `population` also labels every wave (shared/data/payloads.describe): a survey_id entry beats a family, a family beats
 # a study type, and anything unlisted is `default`.
 
 population:

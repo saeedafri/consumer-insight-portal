@@ -4,9 +4,9 @@ A key acts as the person it was issued to, with their access (config/access.yml)
 rate limits. Only a SHA-256 of each key is kept, in CIP_API_KEYS (default ~/.config/cip/api_keys.yml, outside the
 repository); the key itself is shown once, when it is made.
 
-    python -m app.core.api_keys new ana@coresight.com "Ana's Claude"
-    python -m app.core.api_keys list
-    python -m app.core.api_keys revoke cip_AbC1        # by the first characters shown in list
+    python -m shared.core.api_keys new ana@coresight.com "Ana's Claude"
+    python -m shared.core.api_keys list
+    python -m shared.core.api_keys revoke cip_AbC1        # by the first characters shown in list
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from pathlib import Path
 
 import yaml
 
-from app.core.session import digest   # the same SHA-256 the session ids are kept as
+from shared.core.session import digest   # the same SHA-256 the session ids are kept as
 
 FILE = Path(os.environ.get("CIP_API_KEYS") or Path.home() / ".config/cip/api_keys.yml")
 PREFIX = "cip_"

@@ -11,8 +11,8 @@ import time
 
 from sqlalchemy import text
 
-from app.core.database import get_engine
-from app.core.session import sign
+from shared.core.database import get_engine
+from shared.core.session import sign
 
 log = logging.getLogger("cip.audit")
 PENDING: queue.Queue = queue.Queue(maxsize=10_000)

@@ -27,7 +27,7 @@ from typing import Optional, Sequence
 
 from sqlalchemy import bindparam, text
 
-from app.core.database import get_engine
+from shared.core.database import get_engine
 from etl import cohorts
 
 log = logging.getLogger("cip.cube")

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 
-from app.data import payloads
+from shared.data import payloads
 from etl import publish, serving
 from tests.test_serving import seed
 

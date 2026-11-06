@@ -13,7 +13,7 @@ import pytest
 
 import api.main as api
 from api.signin import COOKIE
-from app.core.session import issue
+from shared.core.session import issue
 
 BUDGET_MS = 10        # per request, warm, in-process: anything slower than 10 ms that is not the database is a bug
 

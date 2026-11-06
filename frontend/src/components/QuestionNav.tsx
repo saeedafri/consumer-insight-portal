@@ -1,4 +1,4 @@
-// The question list every analysis screen shares: grouped by section, filterable by text or code. On a phone it is
+// The question list every analysis screen shares: in survey order under section headings, filterable by text or code. On a phone it is
 // a "Question ▾" button that opens the same list as a sheet, so the chart is the first thing on the screen.
 import { QuestionCode } from "./bits";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -10,14 +10,19 @@ import { X } from "lucide-react";
 export default function QuestionNav({ questions, current, onPick }:
   { questions: Question[]; current?: string; onPick: (q: Question) => void }) {
   const [filter, setFilter] = useState("");
+  // In survey order (Q1, Q2, Q3…), with a section heading wherever the section changes: sorting the sections by name
+  // made the numbers jump (Q43 before Q32). A section the survey comes back to gets its heading again.
   const sections = useMemo(() => {
     const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
-    const out = new Map<string, Question[]>();
+    const out: [string, Question[]][] = [];
     for (const q of questions) {
       const hay = `${q.number} ${q.id} ${q.text}`.toLowerCase();   // Q3, the survey code or words
-      if (words.every(w => hay.includes(w))) out.set(q.section, [...(out.get(q.section) ?? []), q]);
+      if (!words.every(w => hay.includes(w))) continue;
+      const last = out.at(-1);
+      if (last && last[0] === q.section) last[1].push(q);
+      else out.push([q.section, [q]]);
     }
-    return [...out].sort(([a], [b]) => a.localeCompare(b));
+    return out;
   }, [questions, filter]);
   const [sheet, setSheet] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -63,7 +68,7 @@ export default function QuestionNav({ questions, current, onPick }:
         )}
       </div>
       <div className="qnav-list">
-        {sections.map(([section, qs]) => <div key={section}>
+        {sections.map(([section, qs]) => <div key={`${section}-${qs[0].id}`}>
           <h4>{section}</h4>
           {qs.map(q => <button key={q.id} className={q.id === current ? "on" : ""} aria-current={q.id === current} onClick={() => pick(q)}>
             <QuestionCode q={q} /><span>{q.short || q.text}</span>

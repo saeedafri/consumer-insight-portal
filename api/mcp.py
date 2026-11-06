@@ -1,5 +1,5 @@
 """The portal as an MCP connector: Claude (or any MCP client) searches the question library and reads results,
-trends and cross-tabs, as the person whose API key it uses (app/core/api_keys.py), with that person's access.
+trends and cross-tabs, as the person whose API key it uses (shared/core/api_keys.py), with that person's access.
 
 Streamable HTTP, stateless: each POST /mcp carries one JSON-RPC message and gets one JSON answer. No vector
 database: the client's model does the reasoning and calls search_questions (api/search.py: words, synonyms,
@@ -16,7 +16,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
 from api.signin import user
-from app.data import payloads
+from shared.data import payloads
 from etl.serving import CUTS
 
 router = APIRouter()
@@ -110,7 +110,7 @@ async def search_questions(who: dict, query: str, limit: int = 10) -> dict:
 
 async def list_waves(who: dict, family: str = "", limit: int = 20) -> list[dict]:
     from api import main
-    from app.core import access
+    from shared.core import access
     waves = [w for w in await run_in_threadpool(main.all_waves) if access.sees(who, w) and (not family or w["survey_family"] == family)]
     waves.sort(key=lambda w: str(w["wave_date"]), reverse=True)
     return [{k: w.get(k) for k in ("survey_id", "title", "wave_date", "survey_family", "study_type", "qualified_n")}
@@ -148,7 +148,7 @@ async def question_trend(who: dict, survey_id: int, qcode: str, last: int = 12) 
         found = main.published_file("questions", wave["survey_family"], wave["study_type"], qcode)
         return json.loads(found.body) if found else payloads.question(wave["survey_family"], wave["study_type"], qcode)
     doc = await run_in_threadpool(build)
-    from app.core import access
+    from shared.core import access
     shown = {w["survey_id"] for w in await run_in_threadpool(main.all_waves) if access.sees(who, w)}
     total = doc["cuts"].index(["total", "Total"]) if ["total", "Total"] in doc["cuts"] else None
     mine = next((w[2] for w in doc["waves"] if w[0] == wave["survey_id"]), None)   # this wording only: a code can be reused

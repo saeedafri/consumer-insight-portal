@@ -27,8 +27,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from sqlalchemy import text  # noqa: E402
 
-from app.core.config import config  # noqa: E402
-from app.core.database import get_engine  # noqa: E402
+from shared.core.config import config  # noqa: E402
+from shared.core.database import get_engine  # noqa: E402
 
 log = logging.getLogger("cip.backup")
 BACKUPS = ROOT / "backups"

@@ -421,8 +421,8 @@ def test_a_standard_view_is_one_read(wave):
 def test_the_read_only_engine_costs_one_round_trip_per_query(monkeypatch):
     """Pre-ping (SELECT 1) and the rollback on return each cost ~250 ms from
     India; the read role needs neither (the MDP read engine, CLAUDE.md)."""
-    from app.core import database
-    from app.core.config import DatabaseConfig
+    from shared.core import database
+    from shared.core.config import DatabaseConfig
     monkeypatch.setattr(database.config, "database",
                         lambda role: DatabaseConfig(host="db.example", port=3306, database="x", user="u", password="p"))
     monkeypatch.setattr(database, "_engines", {})

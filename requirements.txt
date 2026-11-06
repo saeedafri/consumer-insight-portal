@@ -1,6 +1,6 @@
 # Python libraries for the API (api/), the shared code (app/), the data loads (etl/) and the scripts (scripts/).
 # Installed into the server image by deploy/Dockerfile. Two more are installed there only, because they need a compiler:
-#   mysqlclient  the fast C database driver for reads (app/core/database.py)
+#   mysqlclient  the fast C database driver for reads (shared/core/database.py)
 #   maxminddb    reads the visitor-location file for the Logs page (api/metrics.py place_of)
 
 # The web API

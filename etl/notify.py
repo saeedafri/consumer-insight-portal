@@ -38,8 +38,8 @@ import requests
 import yaml
 from sqlalchemy import text
 
-import app.core.config  # noqa: F401  imported for its side effect: it loads .env (SMTP and Teams settings)
-from app.core.database import get_engine
+import shared.core.config  # noqa: F401  imported for its side effect: it loads .env (SMTP and Teams settings)
+from shared.core.database import get_engine
 from etl import tracker_line
 
 if TYPE_CHECKING:

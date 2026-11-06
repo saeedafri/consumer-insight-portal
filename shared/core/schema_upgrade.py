@@ -4,7 +4,7 @@
 under v1 already has its tables, so CREATE TABLE IF NOT EXISTS skips them and
 their new columns never arrive. This module adds exactly what is missing,
 after checking the live catalogue, and nothing else: no v1 object is dropped
-or renamed. See docs/design/2026-09-29-survey-platform-design.md §5.
+or renamed. The design notes (§5) are in the development repo, docs/design/.
 """
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from pathlib import Path
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
-from app.core import sqlite_compat
-from app.core.database import apply_sql
+from shared.core import sqlite_compat
+from shared.core.database import apply_sql
 
 SQL_DIR = Path(__file__).resolve().parents[2] / "sql"
 SQL_FILES = [SQL_DIR / "001_schema.sql", SQL_DIR / "002_views.sql",

@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import text
 
 from api.signin import admin
-from app.core.database import get_engine
+from shared.core.database import get_engine
 
 LOGS = Path(os.environ.get("CIP_LOG_DIR") or Path(__file__).resolve().parents[1] / "logs")
 PLATFORM = Path("/home/LogFiles")   # App Service writes its docker log here when "App Service logs: File System" is on

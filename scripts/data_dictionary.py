@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import text  # noqa: E402
 
-from app.core.database import get_engine  # noqa: E402
+from shared.core.database import get_engine  # noqa: E402
 
 
 def main() -> int:

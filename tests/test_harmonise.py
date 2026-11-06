@@ -1,6 +1,6 @@
 """Phase 2: linking each wave's questions to canonical concepts.
 
-See docs/design/2026-09-29-survey-platform-design.md §5.2.
+The design: docs/design/2026-09-29-survey-platform-design.md §5.2 (in the development repo).
 """
 from __future__ import annotations
 

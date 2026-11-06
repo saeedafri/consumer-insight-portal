@@ -12,9 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.core import schema_upgrade              # noqa: E402
-from app.core.config import config               # noqa: E402
-from app.core.database import get_engine, healthcheck  # noqa: E402
+from shared.core import schema_upgrade              # noqa: E402
+from shared.core.config import config               # noqa: E402
+from shared.core.database import get_engine, healthcheck  # noqa: E402
 
 
 def main() -> int:

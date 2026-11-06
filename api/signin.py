@@ -3,7 +3,7 @@
   /auth/login       to the identity provider (OIDC authorization code + PKCE, state and nonce), or, when no provider
                     is configured and CIP_DEMO_LOGIN=1, the demo sign-in; else a page that says sign-in is not set up
   /auth/callback    the provider's answer: the code exchanged for an ID token, the token's issuer, audience, expiry
-                    and nonce checked, the email mapped to a role, client and tier (app/core/access.py)
+                    and nonce checked, the email mapped to a role, client and tier (shared/core/access.py)
   /auth/logout      the session revoked (sql/008_access.sql) and the cookie dropped
   /auth/dev-login   the demo sign-in as any email: only with CIP_DEMO_LOGIN=1, never implied by APP_ENV
   /auth/check       nginx's auth_request (deploy/nginx.conf)
@@ -31,9 +31,9 @@ from sqlalchemy import text
 from starlette.concurrency import run_in_threadpool
 
 from api.team import json_body
-from app.core import access, api_keys, audit
-from app.core.database import get_engine
-from app.core.session import REVOKED, SESSION_HOURS, digest, issue, read, sign
+from shared.core import access, api_keys, audit
+from shared.core.database import get_engine
+from shared.core.session import REVOKED, SESSION_HOURS, digest, issue, read, sign
 
 log = logging.getLogger("cip.signin")
 router = APIRouter()
@@ -76,7 +76,7 @@ def page(status: int, title: str, body: str) -> HTMLResponse:
 
 def user(request: Request) -> dict:
     """The signed-in person on every API route: {email, role, tier, client, features, study_types, products, sid}.
-    A program signs in with an API key instead (Authorization: Bearer cip_…, app/core/api_keys.py)."""
+    A program signs in with an API key instead (Authorization: Bearer cip_…, shared/core/api_keys.py)."""
     bearer = request.headers.get("authorization", "")
     if bearer.lower().startswith("bearer "):
         email = api_keys.owner(bearer[7:].strip())

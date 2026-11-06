@@ -9,7 +9,7 @@ from functools import lru_cache
 
 import yaml
 
-from app.core.config import REPO_ROOT
+from shared.core.config import REPO_ROOT
 
 CONFIG = REPO_ROOT / "config" / "access.yml"
 EVERYTHING = "*"     # the scope of a person who sees every survey and every feature

@@ -8,7 +8,7 @@ from datetime import date
 import pytest
 import sqlalchemy as sa
 
-from app.data import payloads
+from shared.data import payloads
 from etl import forsta_etl, serving
 
 served = lambda data: json.loads(payloads.encode(data))   # what the API sends

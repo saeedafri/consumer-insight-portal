@@ -70,5 +70,5 @@ graph TD
 | Line-by-line | `etl/tracker_line.py` + `config/tracker_line.yml` | the data team's weekly table |
 | Survey calendar | `etl/survey_calendar.py` + `config/survey_calendar.yml` | cadence, modules, season wave numbers |
 | History | `etl/legacy_dwh.py`, `etl/qualtrics_export.py` | Qualtrics and SurveyMonkey |
-| Schema | `sql/001_schema.sql`, `sql/002_views.sql`, `app/core/schema_upgrade.py`, `scripts/init_db.py` | DDL, views, upgrades |
+| Schema | `sql/001_schema.sql`, `sql/002_views.sql`, `shared/core/schema_upgrade.py`, `scripts/init_db.py` | DDL, views, upgrades |
 | Checks | `scripts/reconcile.py`, `scripts/perf_check.py`, `tests/` | correctness, speed, 227 tests |

@@ -1,7 +1,7 @@
 """The portal's session cookie: "email|products|expires|session id|scope", HMAC-SHA256 signed with CIP_SESSION_SECRET.
 The API issues and checks it (api/signin.py), nginx checks it before every data file (deploy/cip_auth.js), and the
 publish step signs one to warm nginx's answer cache (etl/publish.warm_nginx). The session id lets one sign-in be
-revoked (sql/008_access.sql stores only its hash); scope is "*" for someone who sees everything (app/core/access.py)."""
+revoked (sql/008_access.sql stores only its hash); scope is "*" for someone who sees everything (shared/core/access.py)."""
 from __future__ import annotations
 
 import base64

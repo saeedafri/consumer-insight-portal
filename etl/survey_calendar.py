@@ -23,7 +23,7 @@ from typing import Any, Iterable, Optional
 import yaml
 from sqlalchemy import text
 
-from app.core.database import get_engine
+from shared.core.database import get_engine
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "survey_calendar.yml"
 

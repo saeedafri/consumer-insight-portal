@@ -1,5 +1,5 @@
--- Who used the portal and how (app/core/audit.py, app/core/session.py). Written only by the portal (the API's account);
--- nothing here is survey data. Applied by scripts/init_db.py (app/core/schema_upgrade.py), safely re-runnable.
+-- Who used the portal and how (shared/core/audit.py, shared/core/session.py). Written only by the portal (the API's account);
+-- nothing here is survey data. Applied by scripts/init_db.py (shared/core/schema_upgrade.py), safely re-runnable.
 -- The DBA grants the portal's account its writes here (sql/004_grants.sql style):
 --   GRANT INSERT ON `cip_stg`.`cip_access_log` TO 'cip_app'@'%';
 --   GRANT INSERT, UPDATE ON `cip_stg`.`cip_access_session` TO 'cip_app'@'%';

@@ -82,7 +82,7 @@ SELECT survey_id, wave_label, load_status FROM cip_survey WHERE load_status <> '
 
 * Code: Python 3.13, SQLAlchemy 2, PyMySQL, tenacity, pandas; tests `pytest` (227 passing, SQLite).
 * Schema: `sql/001_schema.sql` is the single source (MySQL DDL, converted to SQLite for tests);
-  `app/core/schema_upgrade.py` adds new columns and indexes to an existing database.
+  `shared/core/schema_upgrade.py` adds new columns and indexes to an existing database.
 * Rules without code changes: `config/survey_map.yml` (topics, demographics, bands), `config/cohorts.yml`,
   `config/tracker_line.yml`, `config/survey_calendar.yml`.
 

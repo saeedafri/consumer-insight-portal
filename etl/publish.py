@@ -14,7 +14,7 @@ screens stay fast whatever the number of users. Only search and not-yet-publishe
                           manifest.json                             version, counts, each wave's built_at
   <root>/current → .build-<version>                                 swapped atomically after the gates pass
 
-The paths mirror the API's URLs and the bytes are the API's own (app/data/payloads.py), so nginx and the API
+The paths mirror the API's URLs and the bytes are the API's own (shared/data/payloads.py), so nginx and the API
 answer identically. A failed gate leaves the previous version live. The last KEEP versions stay for rollback:
 `python -m etl.publish --rollback` points current at the one before.
 
@@ -45,8 +45,8 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from app.core.database import get_engine
-from app.data import payloads
+from shared.core.database import get_engine
+from shared.data import payloads
 
 log = logging.getLogger("cip.publish")
 ROOT = Path(os.environ.get("CIP_PUBLISH_DIR") or Path(__file__).resolve().parents[1] / "data/published")
@@ -353,7 +353,7 @@ def warm_nginx(out: Path, waves: int = WARM_WAVES) -> int:
         return 0
     from urllib.parse import quote
     from urllib.request import Request, urlopen
-    from app.core.session import issue
+    from shared.core.session import issue
     from etl.serving import CUTS
     newest = sorted(json.loads(gzip.decompress((out / "api/v1/waves.json.gz").read_bytes())),
                     key=lambda w: (w["wave_date"], w["survey_id"]), reverse=True)[:waves]

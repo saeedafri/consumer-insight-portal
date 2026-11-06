@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import text  # noqa: E402
 
-from app.core.database import bulk_insert, get_engine  # noqa: E402
+from shared.core.database import bulk_insert, get_engine  # noqa: E402
 from etl.loaders import etl_lock  # noqa: E402
 
 MARKER = "respondent_key_salted"

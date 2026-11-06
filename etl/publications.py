@@ -24,7 +24,7 @@ from typing import Optional, Sequence
 import pandas as pd
 from sqlalchemy import bindparam, text
 
-from app.core.database import get_engine, query_df
+from shared.core.database import get_engine, query_df
 
 log = logging.getLogger("cip.publications")
 

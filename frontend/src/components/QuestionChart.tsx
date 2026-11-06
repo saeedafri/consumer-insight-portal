@@ -85,13 +85,20 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
 
   if (view === "donut") {
     const shades = blues(rows.length - 1);
+    // Labels only where they fit: the 8 biggest slices, each wide enough (minShowLabelAngle), and any label that would
+    // still overlap another is hidden (hideOverlap). Every slice shows its label when hovered, and the full figures
+    // (n, base, change) in the hover card, so nothing is lost: e.g. 50 US states no longer pile up on one side.
+    const labelled = new Set([...rows].sort((a, b) => (b.Total ?? 0) - (a.Total ?? 0)).slice(0, 8).map(r => r.label));
+    const text = (p: { name: string; value: number }) => `${p.name.length > 28 ? p.name.slice(0, 27) + "…" : p.name}\n{b|${p.value.toFixed(1)}%}`;
     return {
       tooltip: hover, legend: { show: false },
       series: [{
         type: "pie", radius: ["52%", "78%"], avoidLabelOverlap: true, padAngle: 1, itemStyle: { borderRadius: 3 },
-        label: { formatter: (p: { name: string; value: number }) => `${p.name.length > 28 ? p.name.slice(0, 27) + "…" : p.name}\n{b|${p.value.toFixed(1)}%}`,
-                 color: C.ink, fontSize: 12, rich: { b: { fontWeight: 700, fontSize: 13 } } },
+        minShowLabelAngle: 4, labelLayout: { hideOverlap: true },
+        label: { formatter: text, color: C.ink, fontSize: 12, rich: { b: { fontWeight: 700, fontSize: 13 } } },
+        emphasis: { label: { show: true, fontSize: 13 }, scaleSize: 4 },
         data: rows.map((r, i) => ({ name: r.label, value: r.Total ?? 0, row: r, group: g,
+                                    label: { show: labelled.has(r.label) }, labelLine: { show: labelled.has(r.label) },
                                     itemStyle: { color: i === 0 ? C.red : shades[i - 1] } })),
       }],
     };

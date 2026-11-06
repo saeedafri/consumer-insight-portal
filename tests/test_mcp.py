@@ -1,10 +1,10 @@
-"""The MCP connector (api/mcp.py) and API keys (app/core/api_keys.py)."""
+"""The MCP connector (api/mcp.py) and API keys (shared/core/api_keys.py)."""
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api import mcp
 from api.signin import user
-from app.core import api_keys
+from shared.core import api_keys
 
 
 def client(monkeypatch):

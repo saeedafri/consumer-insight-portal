@@ -21,11 +21,11 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import bindparam, text
 
 from api.dashboards import significant
-from app.core import access, audit
-from app.core.database import get_engine
-from app.data import payloads
+from shared.core import access, audit
+from shared.core.database import get_engine
+from shared.data import payloads
 from etl.harmonise import normalise_text
-from app.data.payloads import HIDDEN_BASE, TEST_BASE
+from shared.data.payloads import HIDDEN_BASE, TEST_BASE
 from etl.publish import ROOT as PUBLISH_ROOT
 from etl.serving import CUTS
 

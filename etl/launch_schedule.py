@@ -30,7 +30,7 @@ from typing import Optional
 import yaml
 from sqlalchemy import bindparam, text
 
-from app.core.database import get_engine
+from shared.core.database import get_engine
 from etl import survey_calendar
 
 PLAN = Path(__file__).resolve().parents[1] / "config" / "launch_schedule.yml"

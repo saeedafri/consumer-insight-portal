@@ -1,24 +1,19 @@
 // The frame of the public site's pages (home, features, the data, this week, methodology, sign-in): the coresight.com
-// header and footer, its fonts, and the light/dark toggle. The signed-in portal (/app) has its own frame.
+// header (logo, the portal's name, and coresight.com's Research & Data, Events, Services) and footer, and its fonts.
+// Signing in starts from each page's own buttons (/sign-in/). The signed-in portal (/app) has its own frame.
 import Link from "next/link";
-import { Playfair_Display, Inter, Montserrat } from "next/font/google";
+// The same fonts as the signed-in portal (src/main.tsx), from the same packages, so both read alike and the browser
+// downloads them once: a visitor who signs in from here already has them. Roboto for text, Montserrat for headings.
+import "@fontsource-variable/montserrat";
+import "@fontsource-variable/roboto";
 import "./site.css";
-import ThemeToggle from "./ThemeToggle";
 import Motion from "./Motion";
 import { SiteSchema } from "./seo";
 
-// next/font self-hosts each face and generates a metric-matched fallback, so text shows at once and does not reflow
-// when the webfont arrives. No preload: Next.js would put these three preloads (120 KB) on every page, the portal's
-// /app included, where they compete with the JavaScript the first screen waits for.
-const serif = Playfair_Display({ subsets: ["latin"], variable: "--f-serif", display: "swap", preload: false });
-const sans = Inter({ subsets: ["latin"], variable: "--f-sans", display: "swap", preload: false });
-const head = Montserrat({ subsets: ["latin"], variable: "--f-head", display: "swap", preload: false });
-const fonts = `${serif.variable} ${sans.variable} ${head.variable}`;
-
-// The coresight.com chrome, identical to the portal (web/src/components/Shell.tsx): logo + name, the site's top menus,
+// The coresight.com chrome, identical to the portal (src/components/Shell.tsx): logo + name, the site's top menus,
 // and the dark footer. Links go to coresight.com, in the same tab, like any site link.
 const CORESIGHT = "https://coresight.com";
-const SITE_LINKS: [string, string][] = [["/research/", "Research & Data"], ["/events/", "Events"], ["/memberships/", "Services"], ["/about-us/", "About"]];
+const SITE_LINKS: [string, string][] = [["/research/", "Research & Data"], ["/events/", "Events"], ["/memberships/", "Services"]];
 const FOOT_LINKS: [string, [string, string][]][] = [
   ["Services", [["/memberships/", "Research & Data Memberships"], ["/innovator-services/", "Innovator Market Development"],
                 ["/custom-research-advisory-services/", "Advisory & Custom Research"], ["/coresight-ai-council/", "AI Council"]]],
@@ -30,7 +25,7 @@ const LEGAL: [string, string][] = [["/terms-of-service/", "Terms of Use"], ["/pr
 const siteUrl = (path: string) => path.startsWith("http") ? path : CORESIGHT + path;
 
 export default function Site({ children }: { children: React.ReactNode }) {
-  return <div className={fonts}>
+  return <div>
     <header className="site-head">
       <Link href="/" className="site-brand" aria-label="Consumer Insight Portal home">
         <img className="logo-light" src="/coresight-logo.png" alt="Coresight Research" width="76" height="38" />
@@ -40,19 +35,7 @@ export default function Site({ children }: { children: React.ReactNode }) {
       <nav className="site-links" aria-label="Coresight.com">
         {SITE_LINKS.map(([path, label]) => <a key={path} href={CORESIGHT + path}>{label}</a>)}
       </nav>
-      <ThemeToggle />
-      <Link className="site-signin" href="/sign-in/">Sign in</Link>
-      <Link className="btn primary" href="/sign-in/">Request access</Link>
     </header>
-    <nav className="subnav" aria-label="Portal">
-      <div className="wrap inner">
-        <Link href="/features/">Features</Link>
-        <Link href="/this-week/">This week</Link>
-        <Link href="/data/">Consumer data</Link>
-        <Link href="/methodology/">Methodology</Link>
-        <Link href="/#api">API &amp; MCP</Link>
-      </div>
-    </nav>
     <SiteSchema />
     <Motion />
     <main>{children}</main>

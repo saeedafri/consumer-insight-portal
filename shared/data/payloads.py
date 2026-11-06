@@ -14,8 +14,8 @@ import yaml
 
 from sqlalchemy import bindparam, text
 
-from app.core import access
-from app.core.database import get_engine
+from shared.core import access
+from shared.core.database import get_engine
 from etl.harmonise import normalise_text
 from etl import open_ends, survey_calendar, weighting
 from etl.serving import CUTS, SMALL_BASE, TEST_BASE  # noqa: F401  TEST_BASE: one significance rule, read here by etl/publish.py

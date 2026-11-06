@@ -26,7 +26,7 @@ from typing import Optional
 
 from sqlalchemy import bindparam, text
 
-from app.core.database import get_engine
+from shared.core.database import get_engine
 from etl import cube, harmonise
 from etl import records, serving, survey_map
 from etl.loaders import (Locked, drop_unlisted_items, etl_lock, finish_run, index_survey, load_definitions, start_run,

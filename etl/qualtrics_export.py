@@ -26,7 +26,7 @@ from pathlib import Path
 import openpyxl
 from sqlalchemy import text
 
-from app.core.database import get_engine
+from shared.core.database import get_engine
 from etl import cube, harmonise
 from etl.records import NO_TO, ParsedQuestion, clean_text
 from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey

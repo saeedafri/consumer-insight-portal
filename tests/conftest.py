@@ -53,7 +53,7 @@ for _live_setting in (
 import pytest
 import sqlalchemy as sa
 
-from app.core import database, schema_upgrade
+from shared.core import database, schema_upgrade
 
 
 @pytest.fixture()

@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, Optional, Sequence
 import yaml
 from sqlalchemy import bindparam, text
 
-from app.core.database import bulk_insert, get_engine
+from shared.core.database import bulk_insert, get_engine
 
 if TYPE_CHECKING:
     import pandas as pd

@@ -7,7 +7,7 @@ import logging
 
 import sqlalchemy as sa
 
-from app.core import database
+from shared.core import database
 from etl import crosstab_export, forsta_etl, integrity
 from tests.test_forsta_etl import FakeForsta, record
 

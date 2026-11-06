@@ -4,8 +4,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from app.core import database
-from app.core.config import Config, DatabaseConfig
+from shared.core import database
+from shared.core.config import Config, DatabaseConfig
 from etl import serving
 
 

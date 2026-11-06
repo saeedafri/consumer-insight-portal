@@ -22,7 +22,7 @@
 --   PUBLICATIONS cip_publication · cip_publication_cell
 --   SUPPORT     cip_profile_map · cip_auth_session · cip_saved_view
 --
--- Design: docs/design/2026-09-29-survey-platform-design.md
+-- Design: docs/design/2026-09-29-survey-platform-design.md (in the development repo)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 SET NAMES utf8mb4;
