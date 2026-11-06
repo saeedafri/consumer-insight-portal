@@ -45,7 +45,7 @@ sync)
     chown -R cip /srv/cip/published /srv/cip/state /var/cache/nginx /var/log/nginx /home/cip && chmod -R a+rX /srv/cip /etc/nginx
     sudo -u cip nginx -t -g "pid /tmp/nginx-test.pid;" 2>&1 | head -1'
   # a running nginx keeps the old files open: start again, as a deploy starts a new container
-  if limactl shell "$VM" -- systemctl is-active --quiet cip; then "$0" start; fi ;;
+  if limactl shell "$VM" -- systemctl is-active --quiet cip; then bash "$0" start; fi ;;
 start)
   limactl copy "$ENV_FILE" "$VM":/tmp/cip.env
   in_vm 'install -o cip -m 600 /tmp/cip.env /srv/cip/state/cip.env && rm -f /tmp/cip.env /tmp/nginx.pid

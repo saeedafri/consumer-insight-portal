@@ -25,8 +25,11 @@ fi
 if [ "$quota" != max ]; then cpus=$(awk -v q="$quota" -v p="$period" 'BEGIN {printf "%.2f", q / p}'); else cpus=$(nproc); fi
 echo "$(date -u +%FT%TZ) machine-log.sh: numbers from $source, CPUs we may use: $cpus (nproc $(nproc), quota $quota)" >> logs/container.log
 
-mine() {   # the status files of the processes in our cgroup: in a container, all of them
-  for p in /proc/[0-9]*; do [ "$(cat $p/cgroup 2>/dev/null)" = "$own" ] && echo "$p"; done
+mine() {   # our processes: in a container (its own process list, PID 1 is ours) every one; on a VM, those in our cgroup
+  case "$(cat /proc/1/comm)" in
+    systemd|init) for p in /proc/[0-9]*; do [ "$(cat $p/cgroup 2>/dev/null)" = "$own" ] && echo "$p"; done ;;
+    *) ls -d /proc/[0-9]* ;;
+  esac
 }
 cpu_now() {   # CPU used so far, in µs
   case $source in
