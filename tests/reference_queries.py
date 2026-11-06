@@ -1,12 +1,40 @@
-"""Read-only query layer. Every page goes through here — no SQL in pages."""
+"""Independent ways to read the test database, for checking what the ETL loaded and what the cube counts.
+
+These are the queries of the portal's first version (its Streamlit pages). Production no longer uses them: the API
+reads published files and the serving tables. The tests keep them because each one counts straight from the raw
+tables, so it is a second, independent answer to compare the ETL's own results with (e.g. analyse vs analyse_cube:
+raw responses vs the cube the ETL built).
+"""
 from __future__ import annotations
 
 import re
-from typing import Optional, Sequence
+from typing import Optional
 
 import pandas as pd
 
 from app.core.database import dialect, query_df
+
+INNODB_STOPWORDS = set("a about an are as at be by com de en for from how i in is it la of on or that the this to"
+                       " was what when where who will with und www".split())
+_SEARCH_COLUMNS = """
+    SELECT x.kind, x.survey_id, x.question_id, x.concept_id, x.wave_label, x.waves, x.title, x.body
+      FROM cip_search x LEFT JOIN cip_survey s ON s.survey_id = x.survey_id
+     WHERE (x.survey_id IS NULL OR s.load_status = 'verified')"""
+PROFILE_DIMENSIONS: dict[str, str] = {
+    "generation": "Generation",
+    "age_band": "Age band",
+    "gender": "Gender",
+    "ethnicity": "Ethnicity",
+    "income_band": "Household income",
+    "urbanicity": "Urbanicity",
+    "census_region": "Census region",
+    "state_name": "State",
+    "political": "Political philosophy",
+    "relationship": "Relationship status",
+    "outlook_income": "Discretionary-income outlook",
+    "outlook_economy": "Economy outlook",
+}
+GRID_KEY = 1000
 
 
 def list_surveys() -> pd.DataFrame:
@@ -29,24 +57,6 @@ def mapping_queue() -> pd.DataFrame:
     return query_df("SELECT * FROM v_cip_mapping_queue ORDER BY wave_label, qcode, item_id")
 
 
-def mapping_summary() -> pd.DataFrame:
-    return query_df(
-        """
-        SELECT s.wave_label, m.status, COUNT(*) AS units
-          FROM cip_concept_map m JOIN cip_survey s ON s.survey_id = m.survey_id
-         WHERE m.concept_option_id IS NULL
-         GROUP BY s.wave_label, m.status
-         ORDER BY s.wave_label, m.status
-        """
-    )
-
-
-def concept_choice(concept_id: int) -> pd.DataFrame:
-    return query_df(
-        "SELECT option_label, sort_order FROM cip_concept_option"
-        " WHERE concept_id = :cid ORDER BY sort_order", {"cid": concept_id})
-
-
 def concept_list(qtype: str, survey_id: Optional[int] = None) -> pd.DataFrame:
     """Concepts a unit of this type could map to — minus those another
     question of the same wave already uses (one wave, one question per concept)."""
@@ -59,12 +69,6 @@ def concept_list(qtype: str, survey_id: Optional[int] = None) -> pd.DataFrame:
                               AND m.concept_option_id IS NULL AND m.status <> 'rejected')
          ORDER BY c.concept_code
         """, {"qtype": qtype, "sid": -1 if survey_id is None else survey_id})
-
-
-def wave_names(surveys: pd.DataFrame) -> dict[int, str]:
-    """'2026-09-28 · Shopping and Spending - inc Beauty + Holiday + …' — the
-    modules differ every week, so the week alone doesn't say what was asked."""
-    return {int(r.survey_id): f"{r.wave_label} · {r.title}" for r in surveys.itertuples()}
 
 
 def question_catalog(survey_id: int) -> pd.DataFrame:
@@ -81,15 +85,6 @@ def question_catalog(survey_id: int) -> pd.DataFrame:
         """,
         {"sid": survey_id},
     )
-
-
-# InnoDB's default FULLTEXT stopwords: required ("+from") they match nothing.
-INNODB_STOPWORDS = set("a about an are as at be by com de en for from how i in is it la of on or that the this to"
-                       " was what when where who will with und www".split())
-_SEARCH_COLUMNS = """
-    SELECT x.kind, x.survey_id, x.question_id, x.concept_id, x.wave_label, x.waves, x.title, x.body
-      FROM cip_search x LEFT JOIN cip_survey s ON s.survey_id = x.survey_id
-     WHERE (x.survey_id IS NULL OR s.load_status = 'verified')"""
 
 
 def search(words: str, limit: int = 40) -> pd.DataFrame:
@@ -147,131 +142,6 @@ def trend(survey_family: str, qcode: str) -> pd.DataFrame:
         """,
         {"fam": survey_family, "qcode": qcode},
     )
-
-
-def profile_counts(survey_id: int, dimension: str) -> pd.DataFrame:
-    allowed = {
-        "gender", "age_band", "generation", "ethnicity", "income_band",
-        "urbanicity", "census_region", "political",
-    }
-    if dimension not in allowed:
-        raise ValueError(f"Unsupported dimension: {dimension}")
-    return query_df(
-        f"""
-        SELECT {dimension} AS label, COUNT(*) AS n,
-               COUNT(*) * 1.0 / SUM(COUNT(*)) OVER () AS pct
-          FROM cip_profile p
-          JOIN cip_respondent r ON r.respondent_id = p.respondent_id
-         WHERE p.survey_id = :sid AND r.is_qualified = 1 AND {dimension} IS NOT NULL
-         GROUP BY {dimension}
-         ORDER BY n DESC
-        """,
-        {"sid": survey_id},
-    )
-
-
-def ingest_history(limit: int = 25) -> pd.DataFrame:
-    return query_df(
-        """
-        SELECT load_id, survey_id, source_type, object_type, source_ref,
-               rows_read, rows_loaded, rows_bad, status,
-               started_at, finished_at
-          FROM cip_load_log
-         ORDER BY started_at DESC
-         LIMIT :lim
-        """,
-        {"lim": limit},
-    )
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Analysis engine — arbitrary cohort, arbitrary question, arbitrary break
-#
-# The portal has to answer questions nobody wrote a page for: "among GenZ BNPL
-# users in the Midwest, which department stores did they buy from?" That is a
-# cohort (three criteria) crossed with a question, and it cannot be served from
-# the pre-computed cross-tab because Forsta never tabulated it.
-#
-# So the cohort is built as an intersection of EXISTS conditions over the long
-# fact table and the flattened profile, and the target question is aggregated
-# over whoever survives. Every result carries the base it was computed on.
-# ═══════════════════════════════════════════════════════════════════════════
-
-PROFILE_DIMENSIONS: dict[str, str] = {
-    "generation": "Generation",
-    "age_band": "Age band",
-    "gender": "Gender",
-    "ethnicity": "Ethnicity",
-    "income_band": "Household income",
-    "urbanicity": "Urbanicity",
-    "census_region": "Census region",
-    "state_name": "State",
-    "political": "Political philosophy",
-    "relationship": "Relationship status",
-    "outlook_income": "Discretionary-income outlook",
-    "outlook_economy": "Economy outlook",
-}
-
-
-def dimension_values(survey_id: int, dimension: str) -> list[str]:
-    """Distinct values of a demographic cut, most common first."""
-    if dimension not in PROFILE_DIMENSIONS:
-        raise ValueError(f"Unsupported dimension: {dimension}")
-    df = query_df(
-        f"""
-        SELECT {dimension} AS v, COUNT(*) AS n
-          FROM cip_profile p
-          JOIN cip_respondent r ON r.respondent_id = p.respondent_id
-         WHERE p.survey_id = :sid AND r.is_qualified = 1 AND {dimension} IS NOT NULL
-         GROUP BY {dimension}
-         ORDER BY n DESC
-        """,
-        {"sid": survey_id},
-    )
-    return df["v"].tolist()
-
-
-def question_choices(survey_id: int, question_id: int) -> pd.DataFrame:
-    """The selectable answers for a question — items for a multi-punch,
-    answer options for a single-punch, "item — rating" pairs for a grid.
-    Used to build filter criteria."""
-    meta = query_df("SELECT qtype, is_multi FROM cip_question WHERE question_id = :qid",
-                    {"qid": question_id})
-    if not meta.empty and str(meta.qtype.iloc[0]).startswith("grid") and not meta.is_multi.iloc[0]:
-        rows = query_df(
-            "SELECT item_id, item_label FROM cip_item WHERE question_id = :qid ORDER BY sort_order",
-            {"qid": question_id})
-        scale = query_df(
-            "SELECT value_code, value_label FROM cip_option WHERE question_id = :qid ORDER BY sort_order",
-            {"qid": question_id})
-        pairs = rows.merge(scale, how="cross")
-        # ponytail: item and code packed into one int; fine while scales stay under 1000 points
-        return pd.DataFrame({"id": pairs.item_id * GRID_KEY + pairs.value_code,
-                             "label": pairs.item_label + " — " + pairs.value_label,
-                             "kind": "grid"})
-    items = query_df(
-        """
-        SELECT i.item_id AS id, i.item_label AS label, 'item' AS kind
-          FROM cip_item i
-         WHERE i.question_id = :qid AND i.is_other = 0
-         ORDER BY i.sort_order
-        """,
-        {"qid": question_id},
-    )
-    if not items.empty:
-        return items
-    return query_df(
-        """
-        SELECT o.value_code AS id, o.value_label AS label, 'code' AS kind
-          FROM cip_option o
-         WHERE o.question_id = :qid
-         ORDER BY o.sort_order
-        """,
-        {"qid": question_id},
-    )
-
-
-GRID_KEY = 1000
 
 
 def _cohort_sql(criteria: list[dict]) -> tuple[str, dict]:
@@ -384,12 +254,12 @@ def analyse(
     their own denominator even after filtering.
     """
     # Cube first: everyone or one defined cohort, by a standard cut (or none).
-    from app.data.cube import CUBE_DIMS
+    from etl.cube import CUBE_DIMS
     kinds = [c.get("kind") for c in criteria]
     if kinds in ([], ["cohort"]) and (break_dimension or "total") in CUBE_DIMS:
         cohort_id = None
         if criteria:
-            from app.data.cohorts import current_id
+            from etl.cohorts import current_id
             code = criteria[0].get("cohort_code")
             cohort_id = current_id(code) if code else criteria[0].get("cohort_id")
         if not criteria or cohort_id:
@@ -523,104 +393,6 @@ def analyse_cube(survey_id: int, question_id: int, cohort_id: Optional[int] = No
     return df[["segment", "answer", "n", "base_n", "pct"]]
 
 
-def _concept_cells(cohort_id: Optional[int]) -> str:
-    cohort = "(c.cohort_id IS NULL OR c.cohort_id = 0)" if cohort_id is None else "c.cohort_id = :coh"
-    return f"""
-    FROM cip_concept_option co
-    JOIN cip_concept_map m ON m.concept_option_id = co.concept_option_id AND m.status = 'confirmed'
-    JOIN cip_agg_cell c ON c.survey_id = m.survey_id AND c.map_key = m.map_key
-         AND c.dim = :dim AND {cohort}
-    JOIN cip_survey s ON s.survey_id = m.survey_id AND s.load_status = 'verified'
-   WHERE co.concept_id = :cid
-"""
-
-
-def concept_trend(concept_id: int, cohort_id: Optional[int] = None) -> pd.DataFrame:
-    """One concept across every wave and platform that has it confirmed —
-    joined through cip_concept_map, so a mapping confirmed today shows today."""
-    df = query_df(
-        f"""
-        SELECT s.survey_id, s.wave_label, s.wave_date, s.platform, co.option_label AS answer,
-               co.sort_order AS answer_order, c.n, c.base_n
-        {_concept_cells(cohort_id)}
-        """,
-        {"cid": concept_id, "coh": cohort_id, "dim": "total"},
-    )
-    if df.empty:
-        return df
-    df[["n", "base_n"]] = df[["n", "base_n"]].apply(pd.to_numeric)
-    # One point per wave label: two panels fielded the same week (Dec 2023
-    # Last Mile + RIWI) add up, and each survey's base counts once.
-    base = (df.groupby(["survey_id", "wave_label"])["base_n"].max()
-              .groupby("wave_label").sum())
-    out = (df.groupby(["wave_label", "wave_date", "answer", "answer_order"], as_index=False)
-             .agg(n=("n", "sum"), platform=("platform", lambda p: ", ".join(sorted(set(p))))))
-    out["base_n"] = out["wave_label"].map(base)
-    out["pct"] = out["n"] / out["base_n"].replace(0, pd.NA)
-    return out.sort_values(["wave_date", "answer_order"]).reset_index(drop=True)
-
-
-def concept_pooled(concept_id: int, survey_ids: Sequence[int], cohort_id: Optional[int] = None,
-                   dim: str = "total") -> pd.DataFrame:
-    """Waves stacked (the workbook's "Five Waves Combined"): counts add, each
-    wave's base adds once, averages use range midpoints over those who gave one."""
-    ids = [int(x) for x in survey_ids]
-    if not ids:
-        return pd.DataFrame()
-    marks = ", ".join(f":w{i}" for i in range(len(ids)))
-    df = query_df(
-        f"""
-        SELECT c.survey_id, c.dim_value AS segment, co.option_label AS answer, co.sort_order AS answer_order,
-               c.n, c.base_n, c.sum_age_mid, c.n_age_mid, c.sum_income_mid_k, c.n_income_mid
-        {_concept_cells(cohort_id)} AND c.survey_id IN ({marks})
-        """,
-        {"cid": concept_id, "coh": cohort_id, "dim": dim, **{f"w{i}": v for i, v in enumerate(ids)}},
-    )
-    if df.empty:
-        return df
-    for col in ("n", "base_n", "sum_age_mid", "n_age_mid", "sum_income_mid_k", "n_income_mid"):
-        df[col] = pd.to_numeric(df[col])
-    base = df.groupby(["survey_id", "segment"])["base_n"].max().groupby("segment").sum()
-    out = (df.groupby(["segment", "answer", "answer_order"], as_index=False)
-             [["n", "sum_age_mid", "n_age_mid", "sum_income_mid_k", "n_income_mid"]].sum())
-    out["base_n"] = out["segment"].map(base)
-    out["pct"] = out["n"] / out["base_n"].replace(0, pd.NA)
-    out["avg_age"] = out["sum_age_mid"] / out["n_age_mid"].replace(0, pd.NA)
-    out["avg_income_k"] = out["sum_income_mid_k"] / out["n_income_mid"].replace(0, pd.NA)
-    out["segment"] = out["segment"].replace("", None)
-    out = out.sort_values(["segment", "answer_order"]).reset_index(drop=True)
-    return out[["segment", "answer", "n", "base_n", "pct", "avg_age", "avg_income_k"]]
-
-
-def concept_catalog() -> pd.DataFrame:
-    """Concepts confirmed in at least one wave, the most-asked first."""
-    return query_df(
-        """
-        SELECT c.concept_id, c.concept_code, c.concept_name, c.qtype,
-               COUNT(DISTINCT m.survey_id) AS waves
-          FROM cip_concept c
-          JOIN cip_concept_map m ON m.concept_id = c.concept_id AND m.status = 'confirmed'
-               AND m.concept_option_id IS NULL
-         GROUP BY c.concept_id, c.concept_code, c.concept_name, c.qtype
-         ORDER BY waves DESC, c.concept_name
-        """
-    )
-
-
-def cohort_list() -> pd.DataFrame:
-    return query_df(
-        """
-        SELECT d.cohort_id, d.cohort_code, d.cohort_name, d.version, d.base_note,
-               COUNT(rc.respondent_id) AS members
-          FROM cip_cohort_def d
-          LEFT JOIN cip_respondent_cohort rc ON rc.cohort_id = d.cohort_id
-         WHERE d.is_current = 1
-         GROUP BY d.cohort_id, d.cohort_code, d.cohort_name, d.version, d.base_note
-         ORDER BY d.cohort_name
-        """
-    )
-
-
 def question_lookup(survey_id: int) -> pd.DataFrame:
     """Every reportable question with the label the pickers show."""
     return query_df(
@@ -635,93 +407,3 @@ def question_lookup(survey_id: int) -> pd.DataFrame:
         """,
         {"sid": survey_id},
     )
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Saved views
-#
-# What is stored is the DEFINITION — filters, questions, break — not the
-# numbers. A saved view therefore re-runs against whatever is in the warehouse
-# today, which is the whole reason for saving it: "my GLP-1 cut" should follow
-# the data forward, not freeze last month's figures.
-# ═══════════════════════════════════════════════════════════════════════════
-import json as _json  # noqa: E402
-
-
-def list_views(survey_id: int, user_email: str) -> pd.DataFrame:
-    """A user's own views plus anything the team has shared.
-
-    Deliberately NOT cached: a view saved in one click must be in the list on
-    the next rerun, and the query is a handful of rows.
-    """
-    return query_df(
-        """
-        SELECT view_id, view_name, owner_email, is_shared, description,
-               definition, updated_at
-          FROM cip_saved_view
-         WHERE survey_id = :sid AND (owner_email = :email OR is_shared = 1)
-         ORDER BY is_shared, view_name
-        """,
-        {"sid": survey_id, "email": (user_email or "").lower()},
-    )
-
-
-def save_view(survey_id: int, name: str, owner_email: str, definition: dict,
-              description: str = "", shared: bool = False) -> None:
-    from app.core.database import execute
-
-    execute(
-        """
-        INSERT INTO cip_saved_view
-            (survey_id, view_name, owner_email, is_shared, definition, description)
-        VALUES (:sid, :name, :email, :shared, :definition, :description)
-        ON DUPLICATE KEY UPDATE
-            survey_id = VALUES(survey_id),
-            is_shared = VALUES(is_shared),
-            definition = VALUES(definition),
-            description = VALUES(description)
-        """,
-        {"sid": survey_id, "name": name.strip()[:160],
-         "email": (owner_email or "").lower(), "shared": 1 if shared else 0,
-         "definition": _json.dumps(definition), "description": description[:500]},
-    )
-
-
-def delete_view(view_id: int, owner_email: str) -> None:
-    from app.core.database import execute
-
-    execute(
-        "DELETE FROM cip_saved_view WHERE view_id = :vid AND owner_email = :email",
-        {"vid": view_id, "email": (owner_email or "").lower()},
-    )
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Multi-question report
-# ═══════════════════════════════════════════════════════════════════════════
-def report(
-    survey_id: int,
-    question_ids: Sequence[int],
-    criteria: tuple = (),
-    break_dimension: Optional[str] = None,
-) -> dict[str, pd.DataFrame]:
-    """Run several questions over one cohort.
-
-    Returns {qcode: tidy frame}. Each question keeps its own base — the whole
-    point of reporting them together is comparing findings, not denominators.
-    """
-    lookup = question_lookup(survey_id).set_index("question_id")
-    out: dict[str, pd.DataFrame] = {}
-    for qid in question_ids:
-        qid = int(qid)
-        if qid not in lookup.index:
-            continue
-        frame = analyse(survey_id, qid, criteria, break_dimension)
-        if frame.empty:
-            continue
-        row = lookup.loc[qid]
-        frame = frame.copy()
-        frame.insert(0, "qcode", row.qcode)
-        frame.insert(1, "question", row.qtext_short)
-        out[str(row.qcode)] = frame
-    return out

@@ -1,9 +1,9 @@
+// Build-time only: reads the published pipeline output so the public pages carry the latest real figures.
+// Every value falls back to a known constant, so a build with no data folder (e.g. CI) still succeeds.
 import fs from "node:fs";
 import zlib from "node:zlib";
 import path from "node:path";
 
-// Build-time only: reads the published pipeline output so the public pages carry the latest real figures.
-// Every value falls back to a known constant, so a build with no data folder (e.g. CI) still succeeds.
 const DIR = process.env.CIP_PUBLISH_DIR
   ? path.join(process.env.CIP_PUBLISH_DIR, "current")
   : path.resolve(process.cwd(), "../data/published/current");

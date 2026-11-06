@@ -16,7 +16,7 @@ Leaves:
 Only confirmed mappings count. The rule compiles to one SQL condition, and a
 wave's membership is written with one INSERT … SELECT inside MySQL.
 
-    python -m app.data.cohorts --sync      # define config/cohorts.yml, derive every wave
+    python -m etl.cohorts --sync      # define config/cohorts.yml, derive every wave
 """
 from __future__ import annotations
 
@@ -177,7 +177,7 @@ def sync(path: Path = CONFIG) -> list[int]:
     """Define every cohort in config/cohorts.yml and derive it on every wave."""
     ids = []
     for c in (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("cohorts", []):
-        from app.data import cube                      # cube imports this module
+        from etl import cube                      # cube imports this module
         cid = define_cohort(c["code"], c["name"], c["rule"], c.get("base_note"), c.get("owner"))
         log.info("%s (cohort_id %s): %d members", c["code"], cid, derive(cid))
         with get_engine("etl").connect() as conn:

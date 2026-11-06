@@ -1,7 +1,7 @@
 // A question across every wave of its tracker: real dates (missing weeks stay gaps, never joined), the focus
 // answer in red with circular markers, others in blue, optional ±margin of error band and 4-week average.
 import { useMemo, useRef } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { COLUMNS, CUT_OF, present, useBook, useQuestion, useWaves } from "../api";
 import { cellsOf, toTrend } from "../question";
 import type { Column, Trend, Wave } from "../api";
@@ -9,6 +9,7 @@ import { Card, copyLink, Empty, Failure, IconLink, Menu, Skeleton, SkeletonScree
 import EChart, { downloadPng, tooltip, valueText } from "../components/EChart";
 import type { Chart } from "../components/EChart";
 import QuestionNav from "../components/QuestionNav";
+import QuestionHeader from "../components/QuestionHeader";
 import QuestionTabs from "../components/QuestionTabs";
 import { downloadTable } from "../csv";
 import type { Format } from "../csv";
@@ -18,7 +19,6 @@ import { perf } from "../perf";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const RANGES = [["3m", 92], ["6m", 183], ["1y", 366], ["all", 1e5]] as const;
 /** ?range= from the link, or one year when it is missing or not one of ours (an old or hand-edited link never breaks). */
@@ -60,9 +60,6 @@ export default function Trends() {
   if (isLoading) return <SkeletonScreen kind="question" />;
   if (error || !book) return <Failure error={error} />;
   if (!question) return <Empty>This wave has no questions with percentages.</Empty>;
-  const qIndex = book.questions.findIndex(x => x.id === question.id);
-  const prevQ = qIndex > 0 ? book.questions[qIndex - 1] : null;
-  const nextQ = qIndex >= 0 && qIndex < book.questions.length - 1 ? book.questions[qIndex + 1] : null;
   const set = (k: string, v: string) => {
     perf.startFilterChange(k, v || "default");
     const p = new URLSearchParams(params);
@@ -73,54 +70,7 @@ export default function Trends() {
     <QuestionNav questions={book.questions} current={question.id} onPick={q => navigate(`/w/${id}/trends/${encodeURIComponent(q.id)}?${new URLSearchParams({ col: column })}`)} />
     <div className="stack">
       <Card>
-        <div className="qcrumbs" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-          <div className="breadcrumb">
-            <Link to={`/w/${id}`}>Overview</Link>
-            <span className="sep">›</span>
-            <span>{question.section}</span>
-            <span className="sep">›</span>
-            <QuestionCode q={question} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-xs"
-                    disabled={!prevQ}
-                    onClick={() => prevQ && navigate(`/w/${id}/trends/${encodeURIComponent(prevQ.id)}?${new URLSearchParams({ col: column })}`)}
-                    aria-label="Previous question"
-                  >
-                    <ChevronLeft size={14} />
-                  </Button>
-                }
-              />
-              <TooltipContent side="top">
-                {prevQ ? `Previous: ${prevQ.id} (${prevQ.short || prevQ.text})` : "First question"}
-              </TooltipContent>
-            </Tooltip>
-            <span style={{ fontSize: 11.5, color: "var(--ink-2)", fontWeight: 600 }}>{qIndex + 1} of {book.questions.length}</span>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-xs"
-                    disabled={!nextQ}
-                    onClick={() => nextQ && navigate(`/w/${id}/trends/${encodeURIComponent(nextQ.id)}?${new URLSearchParams({ col: column })}`)}
-                    aria-label="Next question"
-                  >
-                    <ChevronRight size={14} />
-                  </Button>
-                }
-              />
-              <TooltipContent side="top">
-                {nextQ ? `Next: ${nextQ.id} (${nextQ.short || nextQ.text})` : "Last question"}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
+        <QuestionHeader waveId={id} question={question} questions={book.questions} open={q => navigate(`/w/${id}/trends/${encodeURIComponent(q.id)}?${new URLSearchParams({ col: column })}`)} />
         <div className="qhead"><QuestionCode q={question} /><span>{question.section}</span></div>
         <h1 className="qtext">{question.text}</h1>
         <div className="toolbar" style={{ margin: 0, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>

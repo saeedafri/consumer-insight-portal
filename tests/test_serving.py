@@ -214,7 +214,7 @@ def test_the_result_cache_stays_under_its_byte_cap(monkeypatch):
     monkeypatch.setattr(main, "CACHED_BYTES", 0)
     monkeypatch.setattr(main, "CACHE_BYTES", 3_000)
     for i in range(10):
-        asyncio.run(main._cached(("k", i), lambda i: main._json({"pad": "x" * 500, "i": i}), i))
+        asyncio.run(main.cached_payload(("k", i), lambda i: main.to_payload({"pad": "x" * 500, "i": i}), i))
     assert main.CACHED_BYTES <= 3_000 and ("k", 9) in main.RESULTS and ("k", 0) not in main.RESULTS
 
 

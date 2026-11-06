@@ -36,7 +36,7 @@ def check_forsta() -> bool:
     print(f"  host        {fc.host}")
     print(f"  api key     {'set (' + str(len(fc.api_key)) + ' chars)' if fc.api_key else '(not set)'}")
     if not fc.is_configured:
-        print(f"  {CROSS} not configured — see docs/04-it-requirements-checklist.md")
+        print(f"  {CROSS} not configured — see .env.example for the settings it needs")
         return False
     if len(fc.api_key) != 64:
         print(f"  ! key is {len(fc.api_key)} characters; Forsta keys are 64")

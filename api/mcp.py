@@ -98,7 +98,7 @@ def error(ask, code: int, text: str) -> dict:
 
 async def search_questions(who: dict, query: str, limit: int = 10) -> dict:
     from api import main
-    main.need(who, "search")
+    main.require_feature(who, "search")
     index = main.catalogue(who)
     found = index.search(str(query)[:100], max(1, min(int(limit), 50))) if index else {"results": [], "total": 0}
     kind = {w["survey_id"]: w["study_type"] for w in await run_in_threadpool(main.all_waves)}
@@ -120,7 +120,7 @@ async def list_waves(who: dict, family: str = "", limit: int = 20) -> list[dict]
 async def question_results(who: dict, survey_id: int, qcode: str, weighted: bool = False) -> dict:
     from api import main
     wave = await main.visible(who, int(survey_id))
-    book = await run_in_threadpool(main._book_data, int(survey_id))
+    book = await run_in_threadpool(main.book_data, int(survey_id))
     question = next((q for q in (book or {}).get("questions", []) if q["id"].lower() == str(qcode).lower()), None)
     if question is None:
         raise LookupError(f"{qcode} is not a charted question in survey {survey_id}")
@@ -142,10 +142,10 @@ async def question_results(who: dict, survey_id: int, qcode: str, weighted: bool
 
 async def question_trend(who: dict, survey_id: int, qcode: str, last: int = 12) -> dict:
     from api import main
-    main.need(who, "trends")
+    main.require_feature(who, "trends")
     wave = await main.visible(who, int(survey_id))
     def build() -> dict:
-        found = main._published("questions", wave["survey_family"], wave["study_type"], qcode)
+        found = main.published_file("questions", wave["survey_family"], wave["study_type"], qcode)
         return json.loads(found.body) if found else payloads.question(wave["survey_family"], wave["study_type"], qcode)
     doc = await run_in_threadpool(build)
     from app.core import access
@@ -168,14 +168,14 @@ async def question_trend(who: dict, survey_id: int, qcode: str, last: int = 12) 
 
 async def crosstab(who: dict, survey_id: int, qcode: str, by: list) -> dict:
     from api import main
-    main.need(who, "crosstab")
+    main.require_feature(who, "crosstab")
     await main.visible(who, int(survey_id))
     if len(by) != 2 or len(set(by)) != 2 or not set(by) <= set(CUTS):
         raise ValueError(f"by takes two different cuts from: {', '.join(CUTS)}")
     cuts = tuple(by)
-    item = await main._cached(
+    item = await main.cached_payload(
         (main.SERVING, "crosstab", int(survey_id), str(qcode), cuts, 1),
-        main._crosstab_payload,
+        main.crosstab_payload,
         int(survey_id),
         str(qcode),
         cuts,

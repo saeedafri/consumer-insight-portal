@@ -16,9 +16,9 @@ from sqlalchemy import bindparam, text
 
 from app.core import access
 from app.core.database import get_engine
-from app.data.harmonise import normalise_text
+from etl.harmonise import normalise_text
 from etl import open_ends, survey_calendar, weighting
-from etl.serving import CUTS, SMALL_BASE, TEST_BASE   # TEST_BASE: one significance rule (etl/serving.py)
+from etl.serving import CUTS, SMALL_BASE, TEST_BASE  # noqa: F401  TEST_BASE: one significance rule, read here by etl/publish.py
 
 COLUMNS = ("qcode", "dim", "dim_value", "item_label", "option_code", "option_label", "n", "base_n",
            "pct", "prior_pct", "prior_base_n", "ly_pct", "ly_base_n", "flags")

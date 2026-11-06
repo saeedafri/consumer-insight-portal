@@ -2,7 +2,7 @@
 
 The ETL publishes the standard responses (etl/publish.py); the API only reads them. This test publishes a small
 set into a temporary folder, makes any database call fail, and times each endpoint the screens use. Live timings
-against a running server: scripts/api_timing.py."""
+against a running server: time the URLs with a load tool (e.g. oha) on a test port."""
 import asyncio
 import gzip
 import json
@@ -12,6 +12,8 @@ from urllib.parse import urlsplit
 import pytest
 
 import api.main as api
+from api.signin import COOKIE
+from app.core.session import issue
 
 BUDGET_MS = 10        # per request, warm, in-process: anything slower than 10 ms that is not the database is a bug
 
@@ -32,7 +34,7 @@ class Client:
 
     def get(self, url, headers=None, method="GET", body=b""):
         parts = urlsplit(url)
-        head = {"cookie": f"{api.COOKIE}={self.cookie}", **(headers or {})}
+        head = {"cookie": f"{COOKIE}={self.cookie}", **(headers or {})}
         scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": method, "scheme": "http",
                  "path": parts.path, "raw_path": parts.path.encode(), "query_string": parts.query.encode(), "root_path": "",
                  "headers": [(k.encode(), v.encode()) for k, v in head.items()], "client": ("test", 1), "server": ("test", 80)}
@@ -62,7 +64,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "RESULTS", type(api.RESULTS)())
     monkeypatch.setattr(api, "get_engine", lambda *a, **k: pytest.fail("a screen request reached the database"))
     monkeypatch.setattr(api.payloads, "get_engine", lambda *a, **k: pytest.fail("a screen request reached the database"))
-    return Client(api.issue("speed@test"))   # startup (the database loads) does not run
+    return Client(issue("speed@test"))   # startup (the database loads) does not run
 
 
 @pytest.mark.parametrize("url", [
@@ -113,7 +115,7 @@ def test_mcp_crosstab_reuses_published_cut_files_without_database(client):
 def test_crosstab_falls_back_for_a_wave_loaded_after_the_last_publish(client, monkeypatch):
     expected = {"qcode": "XM1A", "by": ["gender", "generation"], "columns": [], "rows": []}
     monkeypatch.setattr(api.payloads, "crosstab", lambda *args: expected)
-    item = api._crosstab_payload(999, "XM1A", ("gender", "generation"), 1)   # no cuts folder published yet
+    item = api.crosstab_payload(999, "XM1A", ("gender", "generation"), 1)   # no cuts folder published yet
     assert json.loads(item.body) == expected
 
 

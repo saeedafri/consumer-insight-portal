@@ -68,7 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 python3
 COPY requirements.txt /tmp/requirements.txt
 RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt
 # mysqlclient: the API's and publish's reads decode rows in C (4.5x less CPU than PyMySQL, app/core/database.c_driver);
-# maxminddb: reads the location file below (api/logs.py place_of). Both compiled here, then the compiler removed in the
+# maxminddb: reads the location file below (api/metrics.py place_of). Both compiled here, then the compiler removed in the
 # same layer: only the 1 MB client library stays
 RUN apt-get update && apt-get install -y --no-install-recommends gcc pkg-config libmariadb-dev python3-dev \
  && /opt/venv/bin/pip install --no-cache-dir mysqlclient==2.3.0 maxminddb==2.6.2 \

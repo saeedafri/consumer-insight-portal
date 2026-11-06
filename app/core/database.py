@@ -1,4 +1,12 @@
-"""Pooled SQLAlchemy access to the STG (DWH) MySQL database."""
+"""The one way any code talks to the portal's MySQL database (Azure Database for MySQL, database cip_stg).
+
+get_engine(role) gives a pooled connection set per role, each with its own database account and limits:
+  "app"        the API's reads and the publish step (account cip_app)
+  "api_write"  the API's few writes: boards, saved views, alerts, the access log
+  "etl"        the data loads (account cip_etl), the only role that writes survey data
+Reads use the fast C driver (mysqlclient) when it is installed (the server image); the loads use PyMySQL. In the tests
+the same calls run against a throwaway SQLite file (app/core/sqlite_compat.py translates the MySQL-only SQL).
+"""
 from __future__ import annotations
 
 import logging

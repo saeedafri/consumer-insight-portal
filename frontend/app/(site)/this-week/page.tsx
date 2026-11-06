@@ -1,3 +1,4 @@
+// Public page /this-week/: the latest weekly tracker wave's headline findings, read at build time (pipeline.ts).
 import Link from "next/link";
 import { SITE } from "../../site";
 import { Jsonld, Breadcrumbs } from "../seo";

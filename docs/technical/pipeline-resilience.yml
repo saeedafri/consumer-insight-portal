@@ -137,7 +137,7 @@ failures:
     notify: failure list when a backup is not proven
 
   - id: publication_drift
-    detect: a frozen publication no longer reproduces cell by cell (app/data/publications.py)
+    detect: a frozen publication no longer reproduces cell by cell (etl/publications.py)
     heal: none — a published number moving is a business decision
     then: exit 3
     notify: failure list with the moved cells

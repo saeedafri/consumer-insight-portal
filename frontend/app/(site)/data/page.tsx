@@ -1,3 +1,4 @@
+// Public page /data/: what data the portal holds (surveys, waves, respondents, years), with the latest real counts.
 import Link from "next/link";
 import { SITE } from "../../site";
 import { Jsonld, Breadcrumbs, Faq } from "../seo";

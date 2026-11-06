@@ -1,6 +1,5 @@
-"""Phase 7: the Forsta API adapter. The pipeline itself is tested in
-tests/test_forsta_etl.py.
-"""
+"""The Forsta API adapter (etl/forsta_api.py): Forsta's answers turned into the loader's records. The pipeline itself
+is tested in tests/test_forsta_etl.py."""
 from __future__ import annotations
 
 from etl import forsta_api
@@ -33,9 +32,9 @@ def test_the_datamap_is_read_per_question_not_per_variable():
     assert questions["d2"].qtype == "numeric" and questions["q9"].qtype == "text"
 
 
-from etl import run_pipeline
+from etl import wave_loader
 
 
 def test_the_wave_is_the_monday_of_the_first_fielding_day():
-    assert run_pipeline.wave_from_records([{"date": "09/23/2026 10:05"}, {"date": "09/22/2026 08:00"}]) == "2026-09-21"
-    assert run_pipeline.wave_from_records([{"date": "2026-09-28 07:00:00"}]) == "2026-09-28"
+    assert wave_loader.wave_from_records([{"date": "09/23/2026 10:05"}, {"date": "09/22/2026 08:00"}]) == "2026-09-21"
+    assert wave_loader.wave_from_records([{"date": "2026-09-28 07:00:00"}]) == "2026-09-28"

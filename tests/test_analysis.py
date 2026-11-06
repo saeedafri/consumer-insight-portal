@@ -36,7 +36,7 @@ def analysis_db(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def repo(analysis_db):
-    import app.data.repository as _repo
+    import tests.reference_queries as _repo
     # functions that still carry a cache wrapper are called unwrapped
     for name in dir(_repo):
         fn = getattr(_repo, name)
@@ -120,7 +120,7 @@ def test_break_by_splits_without_losing_the_total(repo, qid):
 def test_excel_export_is_a_readable_workbook_with_provenance(repo, qid):
     import io
     import openpyxl
-    from app.components import export
+    from etl import workbook as export
 
     df = repo.analyse(1, qid("BN1"), ())
     table = df.rename(columns={"answer": "Answer", "n": "Respondents",

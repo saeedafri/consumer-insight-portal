@@ -2,11 +2,12 @@
 // (Qualtrics style) or arrows against a reference column, and a second mode that crosses two cuts.
 import { useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { CUT_NAMES, CUT_OF, present, useBook, useCrosstab } from "../api";
 import type { Column, Group, Question, Wave } from "../api";
 import { BaseNote, Card, Empty, Failure, Loading, SkeletonScreen, SourceLine, sourceText, ExportButtons , QuestionCode } from "../components/bits";
 import QuestionNav from "../components/QuestionNav";
+import QuestionHeader from "../components/QuestionHeader";
 import QuestionTabs from "../components/QuestionTabs";
 import { downloadTable } from "../csv";
 import type { Format } from "../csv";
@@ -14,10 +15,7 @@ import { C, heatStep, useTheme } from "../theme";
 import { count, fmtDate, HIDDEN_BASE, HIDDEN_NOTE, moe, pct, significant, SMALL_BASE, versusRest } from "../stats";
 import { perf } from "../perf";
 import Profiled from "../components/Profiled";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const LETTERS = "ABCDEFG";
 const SORTED_CUTS = Object.entries(CUT_NAMES).sort(([, a], [, b]) => a.localeCompare(b));
@@ -61,9 +59,6 @@ export default function Crosstab() {
   const cols = present(book.n);
   const profiled = cols.length > 1;   // ad hoc and archive surveys without age/gender profiles have nothing to cut by
   const mode = params.get("mode") === "two" && profiled ? "two" : "banner";
-  const qIndex = book.questions.findIndex(x => x.id === question.id);
-  const prevQ = qIndex > 0 ? book.questions[qIndex - 1] : null;
-  const nextQ = qIndex >= 0 && qIndex < book.questions.length - 1 ? book.questions[qIndex + 1] : null;
   const set = (k: string, v: string) => {
     perf.startFilterChange(k, v);
     const p = new URLSearchParams(params);
@@ -74,54 +69,7 @@ export default function Crosstab() {
     <QuestionNav questions={book.questions} current={question.id} onPick={q => navigate(`/w/${id}/crosstab/${encodeURIComponent(q.id)}?${params}`)} />
     <div className="stack">
       <Card>
-        <div className="qcrumbs" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-          <div className="breadcrumb">
-            <Link to={`/w/${id}`}>Overview</Link>
-            <span className="sep">›</span>
-            <span>{question.section}</span>
-            <span className="sep">›</span>
-            <QuestionCode q={question} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-xs"
-                    disabled={!prevQ}
-                    onClick={() => prevQ && navigate(`/w/${id}/crosstab/${encodeURIComponent(prevQ.id)}?${params}`)}
-                    aria-label="Previous question"
-                  >
-                    <ChevronLeft size={14} />
-                  </Button>
-                }
-              />
-              <TooltipContent side="top">
-                {prevQ ? `Previous: ${prevQ.id} (${prevQ.short || prevQ.text})` : "First question"}
-              </TooltipContent>
-            </Tooltip>
-            <span style={{ fontSize: 11.5, color: "var(--ink-2)", fontWeight: 600 }}>{qIndex + 1} of {book.questions.length}</span>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-xs"
-                    disabled={!nextQ}
-                    onClick={() => nextQ && navigate(`/w/${id}/crosstab/${encodeURIComponent(nextQ.id)}?${params}`)}
-                    aria-label="Next question"
-                  >
-                    <ChevronRight size={14} />
-                  </Button>
-                }
-              />
-              <TooltipContent side="top">
-                {nextQ ? `Next: ${nextQ.id} (${nextQ.short || nextQ.text})` : "Last question"}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
+        <QuestionHeader waveId={id} question={question} questions={book.questions} open={q => navigate(`/w/${id}/crosstab/${encodeURIComponent(q.id)}?${params}`)} />
         <div className="qhead"><QuestionCode q={question} /><span>{question.section}</span><BaseNote base={question.groups[0].base} /></div>
         <h1 className="qtext">{question.text}</h1>
         <div style={{ marginTop: 10 }}>

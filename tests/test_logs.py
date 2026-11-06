@@ -2,7 +2,7 @@
 import pytest
 from fastapi import HTTPException
 
-from api import logs, signin
+from api import logs, metrics, signin
 
 ADMIN = {"role": "admin", "email": "dataautomation@coresight.com"}
 
@@ -52,15 +52,15 @@ def test_admin_pages_need_the_token_while_sign_in_is_the_demo(monkeypatch, demo,
 def test_the_dashboard_counts_traffic_per_minute_and_reads_each_line_once(tmp_path, monkeypatch):
     import json as js
     monkeypatch.setattr(logs, "LOGS", tmp_path)
-    monkeypatch.setattr(logs, "TRAFFIC", logs.Traffic())
+    monkeypatch.setattr(metrics, "TRAFFIC", metrics.Traffic())
     access = tmp_path / "nginx-access.log"
-    now = logs.datetime.now(logs.timezone.utc).strftime("%Y-%m-%dT%H:%M")
+    now = metrics.datetime.now(metrics.timezone.utc).strftime("%Y-%m-%dT%H:%M")
     def line(status, seconds, path="/api/v1/waves/532/book", cache="", api="", client="1.2.3.4"):
         return js.dumps({"time": f"{now}:01+00:00", "client": client, "path": path, "status": status, "bytes": 100,
                          "seconds": seconds, "api_seconds": api, "cache": cache}) + "\n"
     access.write_text(line(200, 0.0) * 8 + line(200, 0.004, cache="HIT", path="/api/v1/waves/7/crosstab?q=x")
                       + line(503, 0.3, api="0.3") + line(200, 0.0, client="127.0.0.1") + '{"time": "half-writ')
-    first = logs.metrics(60, ADMIN)
+    first = metrics.metrics(60, ADMIN)
     t = first["totals"]
     assert (t["requests"], t["2xx"], t["5xx"], t["hit"], t["file"], t["api"]) == (10, 9, 1, 1, 8, 1)   # the probe is left out
     assert t["p50_ms"] == 0.5 and t["p99_ms"] == 500 and t["under_1ms"] == 80.0
@@ -68,35 +68,35 @@ def test_the_dashboard_counts_traffic_per_minute_and_reads_each_line_once(tmp_pa
                                  "share_pct": 90.0, "average_ms": 33.3, "slowest_ms": 300.0, "without_python_pct": 88.9}
     with access.open("a") as f:   # the half-written line finishes, one more arrives: read once each, nothing twice
         f.write('"}\n' + line(404, 0.001))
-    assert logs.metrics(60, ADMIN)["totals"]["requests"] == 11
-    india = logs.datetime.now(logs.timezone(logs.timedelta(hours=5, minutes=30))).isoformat(timespec="seconds")
+    assert metrics.metrics(60, ADMIN)["totals"]["requests"] == 11
+    india = metrics.datetime.now(metrics.timezone(metrics.timedelta(hours=5, minutes=30))).isoformat(timespec="seconds")
     with access.open("a") as f:   # a server on local time (the VM: IST) lands in the same UTC minute
         f.write(line(200, 0.0).replace(f"{now}:01+00:00", india))
-    assert logs.metrics(60, ADMIN)["totals"]["requests"] == 12
+    assert metrics.metrics(60, ADMIN)["totals"]["requests"] == 12
     access.unlink()   # rotated: the new file is read from its start
     access.write_text(line(200, 0.0))
-    assert logs.metrics(60, ADMIN)["totals"]["requests"] == 13
+    assert metrics.metrics(60, ADMIN)["totals"]["requests"] == 13
     with access.open("a") as f:   # busy: 3 lines arrive unread, then deploy/etl-loop.sh copies the log to .1 and empties it
         f.write(line(200, 0.0) * 3)
     (tmp_path / "nginx-access.log.1").write_bytes(access.read_bytes())
     access.write_text(line(200, 0.0, path="/"))   # the emptied log starts again, shorter than what was read
-    assert logs.metrics(60, ADMIN)["totals"]["requests"] == 17   # the 3 from the copy, the 1 from the new file
+    assert metrics.metrics(60, ADMIN)["totals"]["requests"] == 17   # the 3 from the copy, the 1 from the new file
 
 
 def test_the_dashboard_reads_the_machine_samples(tmp_path, monkeypatch):
     monkeypatch.setattr(logs, "LOGS", tmp_path)
-    now = logs.datetime.now(logs.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = metrics.datetime.now(metrics.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     (tmp_path / "machine.log").write_text('{"time":"2020-01-01T00:00:00Z","cpu_pct":1}\nnot json\n'
                                           f'{{"time":"{now}","cpu_pct":99,"working_set_mb":3800}}\n'   # before 5 Nov 2026: the whole host, no source
                                           f'{{"time":"{now}","source":"cgroup1","cpu_pct":42.5,"working_set_mb":300}}\n')
-    assert [s["cpu_pct"] for s in logs.metrics(60, ADMIN)["machine"]] == [42.5]   # old, broken and host-wide lines skipped
+    assert [s["cpu_pct"] for s in metrics.metrics(60, ADMIN)["machine"]] == [42.5]   # old, broken and host-wide lines skipped
 
 
 def test_the_dashboard_names_visitors_and_explains_problems(tmp_path, monkeypatch):
     import json as js
     monkeypatch.setattr(logs, "LOGS", tmp_path)
-    monkeypatch.setattr(logs, "TRAFFIC", logs.Traffic())
-    now = logs.datetime.now(logs.timezone.utc)
+    monkeypatch.setattr(metrics, "TRAFFIC", metrics.Traffic())
+    now = metrics.datetime.now(metrics.timezone.utc)
     minute = now.strftime("%Y-%m-%dT%H:%M")
     def line(status, user="", client="1.2.3.4", seconds=0.001):
         return js.dumps({"time": f"{minute}:01+00:00", "client": client, "path": "/api/v1/me", "status": status, "bytes": 1,
@@ -107,7 +107,7 @@ def test_the_dashboard_names_visitors_and_explains_problems(tmp_path, monkeypatc
     (tmp_path / "nginx-error.log").write_text(f"{stamp.replace('-', '/')} [error] 20#20: *1 upstream prematurely closed connection\n")
     (tmp_path / "container.log").write_text(f"{now.strftime('%Y-%m-%dT%H:%M:%SZ')} start.sh: started nginx and the API, ETL scheduler on (build abc123)\n"
                                             f"{now.strftime('%Y-%m-%dT%H:%M:%SZ')} machine-log.sh: numbers from cgroup1\n")
-    m = logs.metrics(60, ADMIN)
+    m = metrics.metrics(60, ADMIN)
     who = {c["client"]: c["user"] for c in m["clients"]}
     assert who == {"1.2.3.4": "ana@coresight.com", "5.6.7.8": ""}   # a refused (401) cookie never names anyone
     assert m["totals"]["browser"] == 1 and m["totals"]["p99_ms"] == 7500.0   # over 5 s: the real slowest, not a made-up 10 s

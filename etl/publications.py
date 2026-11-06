@@ -10,7 +10,7 @@ replaces the analysts' manual Cross-Check tab.
     {"concept": "BT13_F00B90", "waves": ["2024-06-03", "2025-05-12"],
      "cohort": "BEAUTY_SHOPPER", "cut": "total", "pooled": true, "min_base": 30}
 
-    python -m app.data.publications --drift     # exit 1 when a published number moved
+    python -m etl.publications --drift     # exit 1 when a published number moved
 """
 from __future__ import annotations
 
@@ -19,21 +19,87 @@ import json
 import logging
 import unicodedata
 from datetime import date
-from typing import Optional
+from typing import Optional, Sequence
 
 import pandas as pd
 from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine, query_df
-from app.data import repository
 
 log = logging.getLogger("cip.publications")
 
 TOLERANCE = 0.0005          # proportions and averages (spec §6); counts are exact
 
 
-def _fresh(fn):
-    return getattr(fn, "__wrapped__", fn)      # a drift check must not read a cached answer
+# ---- Reading a concept from the cube: one wave at a time (trend) or waves added together (pooled) ----
+def concept_cells_sql(cohort_id: Optional[int]) -> str:
+    """The FROM/WHERE shared by the two queries below: the cube cells of every confirmed mapping of one concept."""
+    cohort = "(c.cohort_id IS NULL OR c.cohort_id = 0)" if cohort_id is None else "c.cohort_id = :coh"
+    return f"""
+    FROM cip_concept_option co
+    JOIN cip_concept_map m ON m.concept_option_id = co.concept_option_id AND m.status = 'confirmed'
+    JOIN cip_agg_cell c ON c.survey_id = m.survey_id AND c.map_key = m.map_key
+         AND c.dim = :dim AND {cohort}
+    JOIN cip_survey s ON s.survey_id = m.survey_id AND s.load_status = 'verified'
+   WHERE co.concept_id = :cid
+"""
+
+
+def concept_trend(concept_id: int, cohort_id: Optional[int] = None) -> pd.DataFrame:
+    """One concept across every wave and platform that has it confirmed —
+    joined through cip_concept_map, so a mapping confirmed today shows today."""
+    df = query_df(
+        f"""
+        SELECT s.survey_id, s.wave_label, s.wave_date, s.platform, co.option_label AS answer,
+               co.sort_order AS answer_order, c.n, c.base_n
+        {concept_cells_sql(cohort_id)}
+        """,
+        {"cid": concept_id, "coh": cohort_id, "dim": "total"},
+    )
+    if df.empty:
+        return df
+    df[["n", "base_n"]] = df[["n", "base_n"]].apply(pd.to_numeric)
+    # One point per wave label: two panels fielded the same week (Dec 2023
+    # Last Mile + RIWI) add up, and each survey's base counts once.
+    base = (df.groupby(["survey_id", "wave_label"])["base_n"].max()
+              .groupby("wave_label").sum())
+    out = (df.groupby(["wave_label", "wave_date", "answer", "answer_order"], as_index=False)
+             .agg(n=("n", "sum"), platform=("platform", lambda p: ", ".join(sorted(set(p))))))
+    out["base_n"] = out["wave_label"].map(base)
+    out["pct"] = out["n"] / out["base_n"].replace(0, pd.NA)
+    return out.sort_values(["wave_date", "answer_order"]).reset_index(drop=True)
+
+
+def concept_pooled(concept_id: int, survey_ids: Sequence[int], cohort_id: Optional[int] = None,
+                   dim: str = "total") -> pd.DataFrame:
+    """Waves stacked (the workbook's "Five Waves Combined"): counts add, each
+    wave's base adds once, averages use range midpoints over those who gave one."""
+    ids = [int(x) for x in survey_ids]
+    if not ids:
+        return pd.DataFrame()
+    marks = ", ".join(f":w{i}" for i in range(len(ids)))
+    df = query_df(
+        f"""
+        SELECT c.survey_id, c.dim_value AS segment, co.option_label AS answer, co.sort_order AS answer_order,
+               c.n, c.base_n, c.sum_age_mid, c.n_age_mid, c.sum_income_mid_k, c.n_income_mid
+        {concept_cells_sql(cohort_id)} AND c.survey_id IN ({marks})
+        """,
+        {"cid": concept_id, "coh": cohort_id, "dim": dim, **{f"w{i}": v for i, v in enumerate(ids)}},
+    )
+    if df.empty:
+        return df
+    for col in ("n", "base_n", "sum_age_mid", "n_age_mid", "sum_income_mid_k", "n_income_mid"):
+        df[col] = pd.to_numeric(df[col])
+    base = df.groupby(["survey_id", "segment"])["base_n"].max().groupby("segment").sum()
+    out = (df.groupby(["segment", "answer", "answer_order"], as_index=False)
+             [["n", "sum_age_mid", "n_age_mid", "sum_income_mid_k", "n_income_mid"]].sum())
+    out["base_n"] = out["segment"].map(base)
+    out["pct"] = out["n"] / out["base_n"].replace(0, pd.NA)
+    out["avg_age"] = out["sum_age_mid"] / out["n_age_mid"].replace(0, pd.NA)
+    out["avg_income_k"] = out["sum_income_mid_k"] / out["n_income_mid"].replace(0, pd.NA)
+    out["segment"] = out["segment"].replace("", None)
+    out = out.sort_values(["segment", "answer_order"]).reset_index(drop=True)
+    return out[["segment", "answer", "n", "base_n", "pct", "avg_age", "avg_income_k"]]
 
 
 def _resolve(definition: dict) -> tuple[int, dict[int, str], Optional[int], dict[int, date]]:
@@ -54,7 +120,7 @@ def _resolve(definition: dict) -> tuple[int, dict[int, str], Optional[int], dict
         raise ValueError(f"publication names waves that are not loaded: {', '.join(missing) or '(none given)'}")
     cohort_id = None
     if definition.get("cohort"):
-        from app.data.cohorts import current_id
+        from etl.cohorts import current_id
         cohort_id = current_id(definition["cohort"])
         if cohort_id is None:
             raise ValueError(f"publication names cohort {definition['cohort']!r}, which does not exist")
@@ -84,7 +150,7 @@ def compute(definition: dict) -> list[dict]:
 
     cells = []
     if definition.get("pooled", True):
-        frame = _fresh(repository.concept_pooled)(concept_id, sorted(waves), cohort_id,
+        frame = concept_pooled(concept_id, sorted(waves), cohort_id,
                                                   definition.get("cut", "total"))
         for row in frame.itertuples():
             segment, base = row.segment if row.segment is not None else "(none)", int(row.base_n)
@@ -95,7 +161,7 @@ def compute(definition: dict) -> list[dict]:
     else:
         if definition.get("cut", "total") != "total":
             raise ValueError("a wave-by-wave publication is by total only")
-        frame = _fresh(repository.concept_trend)(concept_id, cohort_id)
+        frame = concept_trend(concept_id, cohort_id)
         frame = frame[frame.wave_label.isin(set(waves.values()))] if not frame.empty else frame
         for row in frame.itertuples():
             cells.append(cell(row.answer, f"{row.wave_label}|pct", row.n, int(row.base_n), row.pct, int(row.base_n)))

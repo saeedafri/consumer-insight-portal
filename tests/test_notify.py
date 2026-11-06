@@ -1,3 +1,4 @@
+"""The ETL's messages (etl/notify.py): the email and Teams reports a run sends, built and sent without a real mail server."""
 import smtplib
 
 from etl import notify

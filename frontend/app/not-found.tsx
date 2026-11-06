@@ -1,3 +1,4 @@
+// The "page not found" page (404) for any address that matches nothing. Next.js shows it automatically.
 import Link from "next/link";
 import "./(site)/site.css";
 

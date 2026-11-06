@@ -1,5 +1,5 @@
 #!/bin/sh
-# The ETL on the portal's server (deploy/compose.yml, service etl): what the Mac's launchd jobs did (scripts/launchd).
+# The ETL on the portal's server (deploy/compose.yml, service etl): the jobs that used to run on a Mac on a timer.
 #  - scripts/weekly_forsta.py at each CIP_ETL_RUNS slot, "Day@HH:MM" in UTC. Default: Mon 12:00 (17:30 IST), the launch
 #    run, which on a Monday of config/launch_schedule.yml watches the new wave for up to 54 h and loads it when its
 #    fieldwork ends; and 03:30 (09:00 IST) every day, a short run that loads any other survey that closed (annual, ad hoc)

@@ -1,7 +1,7 @@
+// Same control and storage key ("cip-theme") as the portal, so the choice carries between the public pages and /app.
 "use client";
 import { useEffect, useState } from "react";
 
-// Same control and storage key ("cip-theme") as the portal, so the choice carries between the public pages and /app.
 export default function ThemeToggle() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   useEffect(() => { setTheme((document.documentElement.dataset.theme as "light" | "dark") || "light"); }, []);

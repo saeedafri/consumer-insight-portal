@@ -1,3 +1,4 @@
+// The public home page (/): what the portal is, this week's real figures (from pipeline.ts at build time) and a sign-in link.
 import Link from "next/link";
 import { NAME, SITE } from "../site";
 import { siteFacts } from "./pipeline";

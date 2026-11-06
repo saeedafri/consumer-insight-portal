@@ -1,3 +1,5 @@
+// Downloads a screen's table as CSV or Excel (the Export button, components/bits.tsx ExportButtons). Excel files are
+// built by the API (api/exports.py). A cell starting with = + - @ is kept as text so Excel never runs it as a formula.
 import { signIn } from "./api";
 
 /** Save a blob under a file name; the URL is released after the click is handled (Safari and Firefox cancel it otherwise). */

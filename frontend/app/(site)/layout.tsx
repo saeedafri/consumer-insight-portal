@@ -1,3 +1,5 @@
+// The frame of the public site's pages (home, features, the data, this week, methodology, sign-in): the coresight.com
+// header and footer, its fonts, and the light/dark toggle. The signed-in portal (/app) has its own frame.
 import Link from "next/link";
 import { Playfair_Display, Inter, Montserrat } from "next/font/google";
 import "./site.css";

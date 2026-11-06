@@ -1,6 +1,6 @@
 // One question at a time: wording, base, top answer, any chart type that suits it, by Total or a cut.
 import { useMemo, useRef } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { allowed as hasFeature, COLUMNS, isFiller, present, useBook, useMe } from "../api";
 import type { Column } from "../api";
 import { BaseNote, Card, Change, compared, copyLink, Empty, Failure, IconLink, Menu, SkeletonScreen, SourceLine, sourceText, ExportButtons , QuestionCode } from "../components/bits";
@@ -10,16 +10,14 @@ import type { Chart } from "../components/EChart";
 import QuestionChart, { sharesOfMentions, VIEWS } from "../components/QuestionChart";
 import type { View } from "../components/QuestionChart";
 import QuestionNav from "../components/QuestionNav";
+import QuestionHeader from "../components/QuestionHeader";
 import QuestionTabs from "../components/QuestionTabs";
 import AlertMe from "../components/AlertMe";
 import { downloadTable } from "../csv";
 import type { Format } from "../csv";
 import { fmtDate, HIDDEN_BASE, pct, SMALL_BASE } from "../stats";
 import { perf } from "../perf";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const CUTS: { key: string; label: string; cols: Column[] }[] = [
   { key: "total", label: "Total", cols: ["Total"] },
@@ -57,9 +55,6 @@ export default function Explorer() {
   const top = [...g.rows].filter(r => !isFiller(r.label) && r.Total != null).sort((a, b) => (b.Total ?? 0) - (a.Total ?? 0))[0];
   const small = cut.cols.filter(c => (g.bases[c] ?? 0) < SMALL_BASE);
   const wave = fmtDate(book.wave.wave_date);
-  const qIndex = book.questions.findIndex(x => x.id === question.id);
-  const prevQ = qIndex > 0 ? book.questions[qIndex - 1] : null;
-  const nextQ = qIndex >= 0 && qIndex < book.questions.length - 1 ? book.questions[qIndex + 1] : null;
   const vs = compared(book.wave);   // annual and ad hoc studies compare with their previous wave, not last week
   const bases = cut.cols.map(c => `${c} n=${g.bases[c] ?? 0}`).join(", ");
   const exportAs = (format: Format) => downloadTable(format, `${question.number}-${book.wave.wave_date}`, ["Answer", ...cut.cols.map(c => `${c} %`), `${vs.Prior} %`],
@@ -69,54 +64,7 @@ export default function Explorer() {
     <QuestionNav questions={book.questions} current={question.id} onPick={q => navigate(`/w/${id}/questions/${encodeURIComponent(q.id)}?${params}`)} />
     <div className="stack">
       <Card>
-        <div className="qcrumbs" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-          <div className="breadcrumb">
-            <Link to={`/w/${id}`}>Overview</Link>
-            <span className="sep">›</span>
-            <span>{question.section}</span>
-            <span className="sep">›</span>
-            <QuestionCode q={question} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-xs"
-                    disabled={!prevQ}
-                    onClick={() => prevQ && navigate(`/w/${id}/questions/${encodeURIComponent(prevQ.id)}?${params}`)}
-                    aria-label="Previous question"
-                  >
-                    <ChevronLeft size={14} />
-                  </Button>
-                }
-              />
-              <TooltipContent side="top">
-                {prevQ ? `Previous: ${prevQ.id} (${prevQ.short || prevQ.text})` : "First question"}
-              </TooltipContent>
-            </Tooltip>
-            <span style={{ fontSize: 11.5, color: "var(--ink-2)", fontWeight: 600 }}>{qIndex + 1} of {book.questions.length}</span>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-xs"
-                    disabled={!nextQ}
-                    onClick={() => nextQ && navigate(`/w/${id}/questions/${encodeURIComponent(nextQ.id)}?${params}`)}
-                    aria-label="Next question"
-                  >
-                    <ChevronRight size={14} />
-                  </Button>
-                }
-              />
-              <TooltipContent side="top">
-                {nextQ ? `Next: ${nextQ.id} (${nextQ.short || nextQ.text})` : "Last question"}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
+        <QuestionHeader waveId={id} question={question} questions={book.questions} open={q => navigate(`/w/${id}/questions/${encodeURIComponent(q.id)}?${params}`)} />
         <div className="qhead"><QuestionCode q={question} /><span>{question.section}</span><span>· {question.type.replace("_", " ")}</span><BaseNote base={g.base} /></div>
         <h1 className="qtext">{question.text}</h1>
         {question.base_desc ? <p className="muted" style={{ margin: "0 0 6px" }}>Asked of: {question.base_desc}</p>

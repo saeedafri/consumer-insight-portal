@@ -1,4 +1,4 @@
-"""The 23 Oct 2026 audit's ETL fixes (docs/REA Claude Opus 2026-10-23/80-fixes-etl.md), one test per gap."""
+"""The 23 Oct 2026 audit's ETL fixes , one test per gap found."""
 import importlib
 import re
 from datetime import date, timedelta
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from app.core.database import tsv
 from etl import forsta_etl, integrity, launch_schedule, serving
 from tests.test_forsta_etl import SURVEYS, FakeForsta, record
-from tests.test_phase6 import monkey  # noqa: F401  (fixture)
+from tests.test_surveymonkey import monkey  # noqa: F401  (fixture)
 
 DECIMAL_18_4 = re.compile(r"^-?\d{1,14}(\.\d{1,4})?$")   # what MySQL stores without a Note (1265) in cip_answer.value_number
 DECIMAL_6_3 = re.compile(r"^\d{1,3}(\.\d{1,3})?$")       # srv_result.pct, prior_pct, ly_pct
@@ -130,7 +130,7 @@ def test_a_confirmed_concept_fills_serving_and_links_a_reworded_question(csi_db)
 
 
 def test_same_wording_proposals_are_confirmed_only_when_asked_and_safe(csi_db):
-    from app.data import harmonise
+    from etl import harmonise
     with csi_db.begin() as conn:
         wave(conn, 1, date(2026, 10, 5), qualified=1)
         q = conn.execute(sa.text("INSERT INTO cip_question (survey_id, qcode, qtext, qtype) VALUES (1, 'Q1', 'Where?', 'single')")).lastrowid

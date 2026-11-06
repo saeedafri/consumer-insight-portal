@@ -1,3 +1,6 @@
+// The signed-in portal's front door: the list of screens and their addresses (/app/w/532/questions, /app/logs…).
+// Loaded by app/app/page.tsx in the browser. Each screen's code downloads only when it is first opened; the first
+// screen's starts at once, and the screens most often opened next download while the browser is idle.
 "use client";
 import { lazy, StrictMode, Suspense } from "react";
 import { createBrowserRouter, Link, Navigate, RouterProvider } from "react-router";

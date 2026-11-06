@@ -1,3 +1,4 @@
+// robots.txt for search engines: what they may index (the public site, not the portal). Built once, as a file.
 import type { MetadataRoute } from "next";
 import { SITE } from "./site";
 

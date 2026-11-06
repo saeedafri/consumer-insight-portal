@@ -1,15 +1,12 @@
-"""Phase 5: publications (frozen numbers) and the drift report.
-
-See docs/superpowers/plans/2026-10-01-publications-phase5.md.
-"""
+"""Publications (numbers that left Coresight, frozen with their definition, etl/publications.py) and the drift report."""
 from __future__ import annotations
 
 import pytest
 import sqlalchemy as sa
 
-from app.data import cube, publications
-from tests.test_phase3 import legacy  # noqa: F401  (pytest fixture)
-from tests.test_phase4 import wave  # noqa: F401  (pytest fixture: B1 = Q1, B10 = Q2)
+from etl import cube, publications
+from tests.test_legacy_history import legacy  # noqa: F401  (pytest fixture)
+from tests.test_cohorts_and_cube import wave  # noqa: F401  (pytest fixture: B1 = Q1, B10 = Q2)
 
 
 def definition(concept, **extra):
@@ -132,7 +129,7 @@ def test_the_summary_counts_moved_cells_per_publication(wave):  # noqa: F811
 
 
 def test_the_footnote_names_the_cohort_by_its_own_name(wave):  # noqa: F811
-    from app.data import cohorts
+    from etl import cohorts
     engine, sid, b1, _ = wave
     cohorts.define_cohort("BEAUTY_YES", "Beauty shoppers", {"concept": b1, "option": "yes"})
     cube.refresh_wave(sid)
@@ -180,7 +177,7 @@ def test_a_monthly_wave_label_still_gets_a_footnote(wave):  # noqa: F811
 
 
 def test_the_footnote_gives_the_table_base_not_only_the_sample(wave):  # noqa: F811
-    from app.data import cohorts
+    from etl import cohorts
     engine, sid, b1, _ = wave
     cohorts.define_cohort("BEAUTY_YES", "Beauty shoppers", {"concept": b1, "option": "yes"})
     cube.refresh_wave(sid)

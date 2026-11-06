@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 
-from app.data import harmonise
+from etl import harmonise
 
 
 def test_normalise_text_folds_formatting_and_instructions():
@@ -170,7 +170,7 @@ def test_text_question_confirms_on_wording_alone(csi_db):
 
 import pytest
 
-from app.data import repository
+from tests import reference_queries as queries
 
 
 def proposal(engine) -> tuple[int, int, int, int]:
@@ -210,32 +210,17 @@ def test_confirm_can_point_at_a_different_concept(csi_db):
     assert maps(csi_db, sid)[0][3] == maps(csi_db, other)[0][3] != maps(csi_db, first)[0][3]
 
 
-def test_keep_separate_creates_a_new_concept(csi_db):
-    sid, qid, cid, _ = proposal(csi_db)
-    new_cid = harmonise.keep_separate(sid, qid, None, "analyst@coresight.com")
-    assert new_cid != cid
-    assert maps(csi_db, sid)[0][:3] == ("q4", "confirmed", "manual")
-
-
-def test_reject_leaves_the_question_untrended(csi_db):
-    sid, qid, _, _ = proposal(csi_db)
-    harmonise.reject(sid, qid, None, "analyst@coresight.com")
-    assert maps(csi_db, sid)[0][1] == "rejected"
-    assert count(csi_db, f"SELECT COUNT(*) FROM cip_concept_map WHERE survey_id = {sid}"
-                         " AND concept_option_id IS NOT NULL") == 0
-
-
 def test_a_decision_cannot_be_made_twice(csi_db):
     sid, qid, cid, _ = proposal(csi_db)
     harmonise.confirm(sid, qid, None, cid, "a@coresight.com")
     with pytest.raises(ValueError, match="not awaiting review"):
-        harmonise.keep_separate(sid, qid, None, "b@coresight.com")
+        harmonise.confirm(sid, qid, None, cid, "b@coresight.com")
     assert count(csi_db, "SELECT COUNT(*) FROM cip_concept") == 1
 
 
 def test_queue_lists_only_open_proposals(csi_db):
     sid, qid, cid, _ = proposal(csi_db)
-    uncached = getattr(repository.mapping_queue, "__wrapped__", repository.mapping_queue)
+    uncached = getattr(queries.mapping_queue, "__wrapped__", queries.mapping_queue)
     queue = uncached()
     assert list(queue.qcode) == ["q4"] and "costco" in queue.evidence.iloc[0]
     harmonise.confirm(sid, qid, None, cid, "a@coresight.com")
@@ -244,7 +229,7 @@ def test_queue_lists_only_open_proposals(csi_db):
 
 import os
 
-from etl import run_pipeline
+from etl import wave_loader
 
 
 def test_harmonise_all_runs_oldest_wave_first(csi_db):
@@ -256,17 +241,6 @@ def test_harmonise_all_runs_oldest_wave_first(csi_db):
     assert list(result) == ["2026-09-21", "2026-09-28"]
     assert result["2026-09-28"]["changed"] == 1          # it adds Target + None of these
     assert maps(csi_db, early)[0][1] == "confirmed" and maps(csi_db, late)[0][1] == "proposed"
-
-
-def test_keep_separate_sticks_for_the_next_wave(csi_db):
-    sid, qid, _, _ = proposal(csi_db)                       # wave 2 adds Costco
-    kept = harmonise.keep_separate(sid, qid, None, "a@coresight.com")
-    wave3 = add_wave(csi_db, "2026-10-05", [dict(RETAILERS, answers=["Walmart", "Costco"])])
-    assert harmonise.harmonise_survey(wave3)["exact"] == 1
-    with csi_db.connect() as conn:
-        assert conn.execute(sa.text(
-            "SELECT concept_id FROM cip_concept_map WHERE survey_id = :s"
-            " AND concept_option_id IS NULL"), {"s": wave3}).scalar() == kept
 
 
 def test_instructions_are_removed_only_where_they_trail():
@@ -300,7 +274,7 @@ def test_a_concept_used_in_the_wave_cannot_take_a_second_question(csi_db):
             {"s": sid}).scalar()
     with pytest.raises(ValueError, match="already used"):
         harmonise.confirm(sid, q4, None, d1_cid, "a@coresight.com")
-    offered = getattr(repository.concept_list, "__wrapped__", repository.concept_list)("single", sid)
+    offered = getattr(queries.concept_list, "__wrapped__", queries.concept_list)("single", sid)
     assert d1_cid not in set(offered.concept_id)
 
 

@@ -4,7 +4,7 @@
 # question to one), so a cohort follows its question across Qualtrics and
 # Forsta. Editing a rule makes a new version; the old one stops being read.
 #
-#   python -m app.data.cohorts --sync      # apply this file to every wave
+#   python -m etl.cohorts --sync      # apply this file to every wave
 #
 # Concept codes: BT1_A88981 = "Have you purchased any beauty products (whether
 # for men or women) in the past three months?"; BT15_0F74BA = "How much did you

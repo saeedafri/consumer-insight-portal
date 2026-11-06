@@ -27,7 +27,6 @@ import argparse
 import json
 import logging
 import math
-import os
 import re
 import sqlite3
 import tempfile
@@ -40,17 +39,17 @@ from itertools import islice
 from typing import Any, Optional
 
 from sqlalchemy import bindparam, text
-from sqlalchemy.exc import OperationalError
 
 from app.core.config import config
 from app.core.database import bulk_insert, get_engine
-from app.data import cube, harmonise
-from etl import forsta_api, launch_schedule, records as xp, serving, survey_calendar, survey_map, tracker_line
+from etl import cube, harmonise
+from etl.records import respondent_key
+from etl import forsta_api, launch_schedule, serving, survey_calendar, survey_map, tracker_line
 from etl.forsta_client import ForstaError
 from etl.record_stream import source_records, survey_snapshot
 from etl.loaders import (Locked, drop_unlisted_items, etl_lock, finish_run, index_survey, load_definitions, start_run,
                          upsert_survey)
-from etl.run_pipeline import _dt, _rebuild_profiles, _rebuild_question_bases, wave_from_records
+from etl.wave_loader import parse_datetime, rebuild_profiles, rebuild_question_bases, wave_from_records
 
 log = logging.getLogger("cip.forsta")
 
@@ -295,11 +294,11 @@ def _respondent(survey_id: int, rec: dict, run: int) -> dict:
     seconds = _number(rec.get("qtime"))
     return {"sid": survey_id, "rec": forsta_api.whole(rec.get("record")) or 0, "uuid": str(rec.get("uuid") or "")[:64],
             "sc": status, "sl": forsta_api.STATUS.get(status), "qual": 1 if status == 3 else 0,
-            "done": _dt(rec.get("date")), "secs": int(seconds) if seconds is not None else None,
+            "done": parse_datetime(rec.get("date")), "secs": int(seconds) if seconds is not None else None,
             "markers": _cut(rec.get("markers"), 1000), "dev": _cut(rec.get("vmobiledevice"), 50),
             "os": _cut(rec.get("vos"), 50), "br": _cut(rec.get("vbrowser"), 50), "drop": _cut(rec.get("vdropout"), 50),
             "src": _cut(rec.get("vlist") or rec.get("list"), 100),
-            "key": xp.respondent_key(rec["RID"]) if rec.get("RID") else None, "run": run}
+            "key": respondent_key(rec["RID"]) if rec.get("RID") else None, "run": run}
 
 
 def load_survey(client, path: str, meta: Optional[dict] = None) -> int:
@@ -361,8 +360,8 @@ def _load_snapshot(client, path, meta, datamap, questions, records, lap, seconds
             raise RuntimeError(f"{path} does not match its payload: {problems[:5]}")
         drop_unlisted_items(survey_id, questions)
         lap("verify")
-        _rebuild_profiles(survey_id, None, fam)
-        _rebuild_question_bases(survey_id, drop_labels=False)
+        rebuild_profiles(survey_id, None, fam)
+        rebuild_question_bases(survey_id, drop_labels=False)
         lap("profiles")
         mapped = harmonise.harmonise_survey(survey_id)
         lap("harmonise")
@@ -473,7 +472,7 @@ def verify(survey_id: int, datamap: dict, records: list[dict]) -> list[str]:
 
 def reconcile_survey(survey_id: int, client=None) -> tuple[int, list[str]]:
     """Re-read the wave from Forsta (GET) and compare every stored answer."""
-    client = client or _client()
+    client = client or open_forsta()
     # The index is scratch space, not a replacement for the warehouse. Keep the
     # server cursor and local page cache bounded even for wide annual surveys.
     with tempfile.TemporaryDirectory(prefix='cip-reconcile-') as directory:
@@ -563,7 +562,7 @@ def last_error_of(path: str) -> str:
         return conn.execute(text("SELECT last_error FROM cip_forsta_survey WHERE forsta_path = :p"), {"p": path}).scalar() or "no error recorded"
 
 
-def _client():
+def open_forsta():
     from etl.forsta_client import ForstaClient
     fc = config.forsta
     return ForstaClient(fc.host, fc.api_key, fc.timeout, fc.max_retries)
@@ -580,7 +579,7 @@ def main() -> int:
     group.add_argument("--reindex", action="store_true")
     args = ap.parse_args()
     if args.reconcile:                 # reads only: no lock
-        return reconcile_all(_client())
+        return reconcile_all(open_forsta())
     try:
         with etl_lock():               # the same lock as scripts/weekly_forsta.py: never two writers at once
             return _run(args)
@@ -597,7 +596,7 @@ def _run(args) -> int:
             index_survey(sid, concepts=i == len(ids))      # concept rows once, at the end
         log.info("Indexed %d waves", len(ids))
         return 0
-    client = _client()
+    client = open_forsta()
     if args.discover:
         log.info("Register: %s", discover(client))
     elif args.survey:

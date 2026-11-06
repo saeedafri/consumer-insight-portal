@@ -63,10 +63,10 @@ graph TD
 | Datamap adapter | `etl/forsta_api.py` | Forsta JSON → questions (shapes, labels, bipolar, other-specify, flags, personal-field denylist) |
 | Pipeline | `etl/forsta_etl.py` | register, load, verify, reconcile, reindex |
 | Loaders | `etl/loaders.py` | survey and definition upserts, load log, search index |
-| Shared loader steps | `etl/run_pipeline.py` | profiles, question bases, wave label |
+| Shared loader steps | `etl/wave_loader.py` | profiles, question bases, wave label |
 | Demographics | `etl/survey_map.py` + `config/survey_map.yml` | topics, profile mapping, age/income bands, regions |
-| Harmoniser | `app/data/harmonise.py` | concepts across waves and platforms |
-| Cohorts and cube | `app/data/cohorts.py`, `app/data/cube.py` | segment membership, pre-computed cells |
+| Harmoniser | `etl/harmonise.py` | concepts across waves and platforms |
+| Cohorts and cube | `etl/cohorts.py`, `etl/cube.py` | segment membership, pre-computed cells |
 | Line-by-line | `etl/tracker_line.py` + `config/tracker_line.yml` | the data team's weekly table |
 | Survey calendar | `etl/survey_calendar.py` + `config/survey_calendar.yml` | cadence, modules, season wave numbers |
 | History | `etl/legacy_dwh.py`, `etl/qualtrics_export.py` | Qualtrics and SurveyMonkey |

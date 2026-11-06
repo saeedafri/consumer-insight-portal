@@ -5,6 +5,7 @@ so the files are real .xlsx (typed numbers, frozen header) and .pptx (a native, 
 from __future__ import annotations
 
 import io
+import os
 import re
 from pathlib import Path
 
@@ -29,7 +30,7 @@ def literal(value):
     return f"'{value}" if isinstance(value, str) and value[:1] in ("=", "+", "-", "@") else value
 
 
-def xlsx(spec: dict) -> bytes:
+def build_xlsx(spec: dict) -> bytes:
     from openpyxl import Workbook   # imported on use: openpyxl, python-pptx and numpy cost each API worker ~25 MB
     from openpyxl.styles import Font, PatternFill
     book = Workbook()
@@ -53,10 +54,15 @@ def xlsx(spec: dict) -> bytes:
     return out.getvalue()
 
 
-LOGO = Path(__file__).resolve().parents[1] / "web" / "public" / "coresight-logo.png"
+# The Coresight logo on a deck's cover: in the server image it sits with the built website (CIP_WEB_DIR), on a
+# developer's machine in the frontend's public folder. Was web/public/…, a folder that no longer exists, so decks
+# went out without it.
+LOGO = next((p for p in (Path(os.environ.get("CIP_WEB_DIR", "/srv/cip/web")) / "coresight-logo.png",
+                         Path(__file__).resolve().parents[1] / "frontend" / "public" / "coresight-logo.png") if p.exists()),
+            Path("coresight-logo.png"))
 
 
-def pptx(spec: dict) -> bytes:
+def build_pptx(spec: dict) -> bytes:
     """One 16:9 slide of one table (add_slide)."""
     deck = new_deck()
     add_slide(deck, spec)

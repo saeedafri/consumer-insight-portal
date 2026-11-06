@@ -1,3 +1,4 @@
+// Public page /methodology/: how the figures are made (panel, fielding, weighting, data checks, significance).
 import { Breadcrumbs, Faq } from "../seo";
 
 export const metadata = {

@@ -1,9 +1,9 @@
 // The Logs page (/app/logs), admins only: a monitoring dashboard on top, the raw logs below.
 //
-// Where the numbers come from (all from GET /api/v1/admin/metrics, api/logs.py; every 15 s while "Live" is on):
+// Where the numbers come from (all from GET /api/v1/admin/metrics, api/metrics.py; every 15 s while "Live" is on):
 //   CPU, memory, bandwidth, memory per process   deploy/machine-log.sh, one sample every 15 s
 //   requests, server time, pages, visitors       nginx's request log, counted per minute
-//   caches, storage, database size               api/logs.py (storage every 5 min) and api/main.py (the API's caches)
+//   caches, storage, database size               api/metrics.py (storage every 5 min) and api/main.py (the API's caches)
 // The raw logs come from GET /api/v1/admin/logs, one page of 200 lines at a time, newest first.
 // While sign-in is the demo, the server also asks for the admin token (typed below, kept for this tab only).
 import { useEffect, useMemo, useState } from "react";
@@ -12,7 +12,7 @@ import { Card } from "../components/bits";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import { C, LIGHT, useTheme } from "../theme";
 
-// ---- What the server sends (api/logs.py metrics and logs) ----------------------------------------------------------
+// ---- What the server sends (api/metrics.py and api/logs.py) ----------------------------------------------------------
 interface Source { id: string; label: string; bytes: number | null }
 interface LogPage { sources: Source[]; source: string; page: number; per_page: number; lines: string[]; more: boolean }
 interface Sample { time: string; cpu_pct: number; cores_used: number; working_set_mb: number; anon_mb: number; file_mb: number;

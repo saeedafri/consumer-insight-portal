@@ -16,7 +16,7 @@ from app.core import access, audit, session
 def call(path, cookie="", method="GET", body=b"", headers=None):
     """One request straight into the ASGI app: (status, headers as a dict of lists, body)."""
     parts = urlsplit(path)
-    head = {**({"cookie": f"{api.COOKIE}={cookie}"} if cookie else {}), **(headers or {})}
+    head = {**({"cookie": f"{signin.COOKIE}={cookie}"} if cookie else {}), **(headers or {})}
     if body:
         head.setdefault("content-type", "application/json")
         head.setdefault("content-length", str(len(body)))
@@ -195,7 +195,7 @@ def test_a_question_file_for_a_filtered_person_keeps_only_their_waves():
 
 
 def test_published_paths_never_climb_out():
-    assert api._published("waves", "1", "cuts", "x/../../book") is None and api._published("..", "waves") is None
+    assert api.published_file("waves", "1", "cuts", "x/../../book") is None and api.published_file("..", "waves") is None
 
 
 def test_every_feature_the_portal_checks_is_one_the_config_knows():

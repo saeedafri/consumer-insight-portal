@@ -1,3 +1,4 @@
+// Small building blocks for the public pages that search engines read: structured data (JSON-LD), breadcrumbs, FAQs.
 import Link from "next/link";
 import { NAME, SITE } from "../site";
 

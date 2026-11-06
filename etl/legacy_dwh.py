@@ -1,5 +1,7 @@
 """Load a legacy survey (dwh_sm* — the Qualtrics and SurveyMonkey years) into CSI.
 
+Historical reload only: not part of the weekly run (scripts/weekly_forsta.py), used when the old years are rebuilt.
+
 The legacy tables sit on the same MySQL server as csi_*, so answers are moved
 server-side (INSERT … SELECT): only the small question definitions travel to
 this process. That is what makes 142 waves loadable over the India–Azure link.
@@ -25,8 +27,8 @@ from typing import Optional
 from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
-from app.data import cube, harmonise
-from etl import records as xp, serving, survey_map
+from etl import cube, harmonise
+from etl import records, serving, survey_map
 from etl.loaders import (Locked, drop_unlisted_items, etl_lock, finish_run, index_survey, load_definitions, start_run,
                          upsert_survey)
 
@@ -97,7 +99,7 @@ def _definitions(conn, legacy_id: str):
     for aid, qid, title in conn.execute(text(
             "SELECT id, question_id, title FROM dwh_smanswer WHERE survey_id = :lid"
             " ORDER BY question_id, srt, id"), {"lid": legacy_id}):
-        answers.setdefault(qid, []).append((aid, xp.clean_text(title)))
+        answers.setdefault(qid, []).append((aid, records.clean_text(title)))
     # Selections whose answer id is missing from dwh_smanswer (2,167 rows in
     # dwh_stg — "Clubhouse", "None of these"): the label survives only in
     # answer_text. Choice questions only, so an open-text question stays text.
@@ -108,12 +110,12 @@ def _definitions(conn, legacy_id: str):
              GROUP BY x.question_id, x.answer_id ORDER BY x.question_id, x.answer_id"""),
             {"lid": legacy_id}):
         if qid in answers:
-            answers[qid].append((aid, xp.clean_text(label) or str(aid)))
+            answers[qid].append((aid, records.clean_text(label) or str(aid)))
     relabel(conn, legacy_id, answers)
 
     parsed, amap, skipped, seen = [], [], 0, set()
     for qid, family, title, srt1, srt2 in questions:
-        title = xp.clean_text(title)
+        title = records.clean_text(title)
         opts = answers.get(qid, [])
         qtype = legacy_qtype(family, title, most.get(qid), len(opts))
         if qtype is None:
@@ -139,18 +141,18 @@ def _definitions(conn, legacy_id: str):
             qtype, opts = "single", [(aid, label) for aid, label in opts if label]
         if qtype == "multi":
             rows = [(f"{qcode}r{i}", label) for i, (_, label) in enumerate(opts, start=1)]
-            parsed.append(xp.ParsedQuestion(qcode=qcode, qtext=title, qtype="multi",
+            parsed.append(records.ParsedQuestion(qcode=qcode, qtext=title, qtype="multi",
                                             value_min=0, value_max=1, rows=rows))
             amap += [{"aid": aid, "qid": qid, "qcode": qcode, "field": code, "code": 1, "label": label}
                      for (aid, _), (code, label) in zip(opts, rows)]
         elif qtype == "single":
             options = [(i, label) for i, (_, label) in enumerate(opts, start=1)]
-            parsed.append(xp.ParsedQuestion(qcode=qcode, qtext=title, qtype="single",
+            parsed.append(records.ParsedQuestion(qcode=qcode, qtext=title, qtype="single",
                                             value_min=1, value_max=len(options), options=options))
             amap += [{"aid": aid, "qid": qid, "qcode": qcode, "field": qcode, "code": code, "label": label}
                      for (aid, _), (code, label) in zip(opts, options)]
         else:
-            parsed.append(xp.ParsedQuestion(qcode=qcode, qtext=title, qtype="text"))
+            parsed.append(records.ParsedQuestion(qcode=qcode, qtext=title, qtype="text"))
     return parsed, amap, skipped
 
 
@@ -166,7 +168,7 @@ def relabel(conn, legacy_id: str, answers: dict[str, list]) -> None:
          WHERE survey_id = :lid AND answer_id IS NOT NULL AND answer_text IS NOT NULL AND answer_text NOT LIKE '%|%'
          GROUP BY answer_id"""), {"lid": legacy_id})}
     # SurveyMonkey keeps the answer's HTML in the response ("In-store<em> only</em>"): the same label, not another one
-    seen = {aid: xp.clean_text(html.unescape(re.sub(r"<[^>]+>", " ", label))) for aid, (label, n) in texts.items() if n == 1}
+    seen = {aid: records.clean_text(html.unescape(re.sub(r"<[^>]+>", " ", label))) for aid, (label, n) in texts.items() if n == 1}
     same = lambda a, b: re.sub(r"\W+", "", a.lower()) == re.sub(r"\W+", "", b.lower())   # noqa: E731  spacing, entities
     for qid, opts in answers.items():
         opts[:] = [(aid, seen[aid] if seen.get(aid) and not same(seen[aid], label) else label) for aid, label in opts]
@@ -182,7 +184,7 @@ def _matrix(conn, qid: str, qcode: str, title: str, opts: list):
     texts = conn.execute(text(
         "SELECT DISTINCT answer_id, answer_text FROM dwh_smresponseqa WHERE question_id = :q"
         " AND answer_text IS NOT NULL"), {"q": qid}).all()
-    row_of = {raw: xp.clean_text(raw.rsplit(" | ", 1)[0]) for _, raw in texts if " | " in raw}
+    row_of = {raw: records.clean_text(raw.rsplit(" | ", 1)[0]) for _, raw in texts if " | " in raw}
     labels = {label for _, label in opts}
     row_labels = [label for _, label in opts if label in set(row_of.values())]
     row_labels += sorted(set(row_of.values()) - labels)          # a row not listed in dwh_smanswer
@@ -193,7 +195,7 @@ def _matrix(conn, qid: str, qcode: str, title: str, opts: list):
     rows = [(f"{qcode}r{i}", label) for i, label in enumerate(row_labels, start=1)]
     field_of = {label: code for code, label in rows}
     code_of = {aid: n for n, (aid, _) in enumerate(scale, start=1)}
-    question = xp.ParsedQuestion(qcode=qcode, qtext=title, qtype="grid_single", value_min=1,
+    question = records.ParsedQuestion(qcode=qcode, qtext=title, qtype="grid_single", value_min=1,
                                  value_max=len(scale), rows=rows,
                                  options=[(n, label) for n, (_, label) in enumerate(scale, start=1)])
     cells = [{"aid": aid, "qid": qid, "qcode": qcode, "field": field_of[row_of[raw]], "code": code_of[aid],
@@ -324,7 +326,7 @@ def load_legacy(legacy_id: str) -> int:
     wave = str(first)[:10]
     family, study_type = study_for(title, completes, legacy_id)
     platform = "qualtrics" if str(legacy_id).startswith("SV_") else "surveymonkey"
-    survey_id = upsert_survey(host=platform, path=legacy_id, title=xp.clean_text(title)[:500],
+    survey_id = upsert_survey(host=platform, path=legacy_id, title=records.clean_text(title)[:500],
                               survey_family=family, wave_label=wave, wave_date=wave,
                               platform=platform, source_ref=legacy_id, study_type=study_type)
     _status(survey_id, "loading")   # invisible while it loads, as a Forsta wave is
@@ -346,7 +348,7 @@ def _status(survey_id: int, status: str) -> None:
 
 def _load(survey_id: int, legacy_id: str, platform: str, family: str, questions: list, amap: list, skipped: int,
           responses: list, completes: int, wave: str) -> None:
-    from etl.run_pipeline import _rebuild_profiles, _rebuild_question_bases
+    from etl.wave_loader import rebuild_profiles, rebuild_question_bases
 
     eng = get_engine("etl")
     run = start_run(survey_id, "manual", "data", f"dwh_stg.dwh_sm*:{legacy_id}")
@@ -359,7 +361,7 @@ def _load(survey_id: int, legacy_id: str, platform: str, family: str, questions:
             "sid": survey_id, "rec": n, "uuid": str(rid)[:64], "sc": code,
             "sl": (label or "")[:30] or None, "qual": 1 if status == "completed" else 0,
             "done": filled, "secs": secs,
-            "key": xp.respondent_key(rid), "run": run})
+            "key": records.respondent_key(rid), "run": run})
     with eng.begin() as conn:
         if respondents:
             conn.execute(text("""
@@ -378,10 +380,10 @@ def _load(survey_id: int, legacy_id: str, platform: str, family: str, questions:
 
     with eng.begin() as conn:                   # profiles are rebuilt, never patched
         conn.execute(text("DELETE FROM cip_profile WHERE survey_id = :sid"), {"sid": survey_id})
-    _rebuild_profiles(survey_id, None, family)
+    rebuild_profiles(survey_id, None, family)
     if platform == "surveymonkey":
         _panel_profiles(survey_id, legacy_id)
-    _rebuild_question_bases(survey_id)
+    rebuild_question_bases(survey_id)
     finish_run(run, len(responses), len(responses))
     log.info("%s -> survey_id=%s wave=%s: %d completes, %d answers, %d questions without answer "
              "rows skipped; harmonised %s", legacy_id, survey_id, wave, completes, loaded, skipped,

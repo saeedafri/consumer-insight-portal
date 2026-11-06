@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- 23 Oct 2026 (docs/REA Claude Opus 2026-10-23/80-fixes-etl.md). Additive only; safe to re-run.
+-- 23 Oct 2026 audit. Additive only; safe to re-run.
 --
 --   srv_result.flags  + sig_prior, sig_ly: the pipeline's significance verdict on a Total row
 --                       (etl/serving.mark_significant: z-test, Benjamini-Hochberg 5 % over testable rows)

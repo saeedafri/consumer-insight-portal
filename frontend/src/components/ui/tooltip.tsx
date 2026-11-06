@@ -1,11 +1,7 @@
 // Help that works by hover, keyboard and touch: a real tooltip element tied to its trigger (aria-describedby), shown
 // while the trigger is hovered or focused (a tap focuses it), hidden again with Escape. Styles: styles.css .tip.
-import { Children, cloneElement, Fragment, isValidElement, useId, useState } from "react";
+import { Children, cloneElement, isValidElement, useId, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
-
-export function TooltipProvider({ children }: { children: ReactNode }) {
-  return <Fragment>{children}</Fragment>;
-}
 
 export function TooltipTrigger(_: { render?: ReactElement; children?: ReactNode; className?: string }) {
   return null;   // read by Tooltip

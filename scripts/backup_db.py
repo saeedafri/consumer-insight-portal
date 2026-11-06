@@ -7,7 +7,7 @@ counts only once it is proven: gzip intact, the "Dump completed" trailer, every 
 and every table's row count equal to the live count just before or just after the dump. Keeps the newest
 KEEP backups. With CIP_BACKUP_COPY_DIR set (e.g. a OneDrive folder), the proven file is also copied
 there, so one copy lives off this Mac. Exit 0 = proven backup written; 1 = failed (and the failure list
-is emailed). Restore: see docs/14-pipeline-validation-report.md §7.
+is emailed). Restore: docs/technical/08-operations-runbook.md.
 """
 from __future__ import annotations
 

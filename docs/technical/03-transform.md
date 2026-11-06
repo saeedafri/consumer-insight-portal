@@ -92,13 +92,13 @@ shown, not chosen), which gives every multi-select question its "answered" base.
 
 | Output | Rule | Code |
 |---|---|---|
-| Profile per respondent (`cip_profile`) | Demographic questions found per wave from `config/survey_map.yml` (CSI-US: D1 gender, D2 age, D3 relationship, D4 ethnicity, D5 income, D6 urbanicity, D7 political, D8 state, CS1/CS2 outlook) or by wording; mapping recorded in `cip_profile_map` | `run_pipeline._rebuild_profiles` |
+| Profile per respondent (`cip_profile`) | Demographic questions found per wave from `config/survey_map.yml` (CSI-US: D1 gender, D2 age, D3 relationship, D4 ethnicity, D5 income, D6 urbanicity, D7 political, D8 state, CS1/CS2 outlook) or by wording; mapping recorded in `cip_profile_map` | `wave_loader._rebuild_profiles` |
 | Age band | 18-29 · 30-44 · 45-60 · Over 60 (from a single year, or a band that fits one band); "Under 18" unbanded | `survey_map.classify_age` |
 | Generation | GenZ 18-28 · Millennial 29-44 · GenX 45-60 · Boomer 61+ | same |
 | Age midpoint | the year itself; bands: the analysts' midpoints (over 60 = 67) | same |
 | Income midpoint ($000) | under $25k = 13 · $25-49.9k = 37.4995 · $50-99.9k = 74.9995 · $100-149.9k = 124.9995 · $150-199.9k = 174.9995 · $200k+ = 225 | `survey_map.income_mid_k` |
 | Census region | State → Northeast / Midwest / South / West (SurveyMonkey: Census division → region) | `survey_map.census_region` |
 | Question base | qualified respondents who reached the question | `_rebuild_question_bases` |
-| Concepts | exact (same normalised wording and options) → confirmed; changed options → proposed; wording ≥ 0.85 similar → proposed; else new concept | `app/data/harmonise.py` |
+| Concepts | exact (same normalised wording and options) → confirmed; changed options → proposed; wording ≥ 0.85 similar → proposed; else new concept | `etl/harmonise.py` |
 | Line-by-line row | the data team's format, see 5.4 | `etl/tracker_line.py` |
 | Calendar | lead sector, topics, seasonal tracker, events; season wave numbers | `etl/survey_calendar.py` |

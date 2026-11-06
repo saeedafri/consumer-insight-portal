@@ -1,34 +1,30 @@
-# ══════════════════════════════════════════════════════════════════════════
-# Consumer Insight Portal (CIP) — Python dependencies
-# Mirrors the market-data-stg / SIP-Prod stack so deployment is identical.
-# ══════════════════════════════════════════════════════════════════════════
+# Python libraries for the API (api/), the shared code (app/), the data loads (etl/) and the scripts (scripts/).
+# Installed into the server image by deploy/Dockerfile. Two more are installed there only, because they need a compiler:
+#   mysqlclient  the fast C database driver for reads (app/core/database.py)
+#   maxminddb    reads the visitor-location file for the Logs page (api/metrics.py place_of)
 
-# ── Core framework ────────────────────────────────────────────────────────
-fastapi==0.150.0                # client API (api/): serves published dashboards from memory
-uvicorn[standard]==0.54.0
-gunicorn==26.2.0
+# The web API
+fastapi==0.150.0                # serves the portal's data (api/)
+uvicorn[standard]==0.54.0       # runs the API
+gunicorn==26.2.0                # keeps the API process running and restarts it if it dies
 
-# ── Data processing ───────────────────────────────────────────────────────
+# Data processing (the ETL and the Excel/PowerPoint exports)
 pandas>=2.3.0
-numpy>=2.4.0
 
-# ── Visualization ─────────────────────────────────────────────────────────
-
-# ── Database (Azure MySQL / STG DWH) ──────────────────────────────────────
+# Database: Azure MySQL
 sqlalchemy>=2.0.46
 pymysql>=1.1.0
-cryptography>=46.0.0        # required for MySQL SSL connections
+cryptography>=46.0.0            # needed for MySQL's encrypted (SSL) connections
 
-# ── Forsta (Decipher) integration ─────────────────────────────────────────
+# Forsta, where the surveys run (etl/forsta_client.py)
 requests>=2.32.0
-decipher>=16.0.0            # official Forsta/Decipher "beacon" API client (optional)
+tenacity>=9.0.0                 # retries a failed Forsta call with growing waits
 
-# ── Excel fallback ingestion ──────────────────────────────────────────────
-openpyxl>=3.1.5
-python-pptx==1.0.2         # PowerPoint export (api/exports.py)
-anthropic==2.0.0           # Ask CIP (api/assistant.py); without credentials it answers with cited figures only
+# Exports and the assistant
+openpyxl>=3.1.5                 # Excel files
+python-pptx==1.0.2              # PowerPoint export (api/exports.py)
+anthropic==2.0.0                # Ask CIP (api/assistant.py); without credentials it answers with cited figures only
 
-# ── Config / ops ──────────────────────────────────────────────────────────
-python-dotenv>=1.0.0
-pyyaml>=6.0                 # config/survey_map.yml — the dynamic survey rules
-tenacity>=9.0.0             # retry/backoff on API pulls
+# Settings
+python-dotenv>=1.0.0            # reads .env on a developer's machine
+pyyaml>=6.0                     # reads the rules in config/*.yml

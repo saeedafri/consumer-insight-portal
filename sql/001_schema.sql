@@ -22,7 +22,7 @@
 --   PUBLICATIONS cip_publication · cip_publication_cell
 --   SUPPORT     cip_profile_map · cip_auth_session · cip_saved_view
 --
--- Spec: docs/superpowers/specs/2026-09-29-survey-platform-design.md §5
+-- Design: docs/design/2026-09-29-survey-platform-design.md
 -- ═══════════════════════════════════════════════════════════════════════════
 
 SET NAMES utf8mb4;

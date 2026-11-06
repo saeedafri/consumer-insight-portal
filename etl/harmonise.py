@@ -117,7 +117,7 @@ def _units(conn, survey_id: int) -> list[Unit]:
     return units
 
 
-def _concepts(conn) -> dict[int, Concept]:
+def load_concepts(conn) -> dict[int, Concept]:
     concepts = {cid: Concept(cid, code, qtype, match or normalise_text(name))
                 for cid, code, qtype, match, name in conn.execute(text(
                     "SELECT concept_id, concept_code, qtype, match_text, concept_name"
@@ -278,7 +278,7 @@ def harmonise_survey(survey_id: int) -> dict[str, int]:
     match a sibling), then write concepts, options and map rows in batches."""
     counts = {"exact": 0, "changed": 0, "similar": 0, "new": 0, "skipped": 0}
     with get_engine("etl").begin() as conn:
-        concepts = _concepts(conn)
+        concepts = load_concepts(conn)
         mapped = conn.execute(text(
             "SELECT map_key, concept_id FROM cip_concept_map WHERE survey_id = :sid"),
             {"sid": survey_id}).all()
@@ -341,7 +341,7 @@ def confirm(survey_id: int, question_id: int, item_id: Optional[int],
     """Accept the proposal, or map the unit to another concept instead."""
     with get_engine("etl").begin() as conn:
         unit = _open_unit(conn, survey_id, question_id, item_id)
-        concept = _concepts(conn).get(concept_id)
+        concept = load_concepts(conn).get(concept_id)
         if concept is None:
             raise ValueError(f"concept {concept_id} does not exist")
         clash = conn.execute(text(
@@ -353,27 +353,6 @@ def confirm(survey_id: int, question_id: int, item_id: Optional[int],
         _claim(conn, survey_id, unit, "confirmed", reviewer, concept_id=concept_id)
         _add_options(conn, [(concept, unit)])
         _map_choices(conn, survey_id, [(concept, unit)], reviewer)
-
-
-def keep_separate(survey_id: int, question_id: int, item_id: Optional[int], reviewer: str) -> int:
-    """Not the same question after all: give it its own concept."""
-    with get_engine("etl").begin() as conn:
-        unit = _open_unit(conn, survey_id, question_id, item_id)
-        _claim(conn, survey_id, unit, "confirmed", reviewer, method="manual")
-        concept = _create_concepts(conn, [unit], _concepts(conn))[0]
-        conn.execute(text(
-            "UPDATE cip_concept_map SET concept_id = :cid WHERE survey_id = :sid AND map_key = :key"),
-            {"cid": concept.concept_id, "sid": survey_id, "key": unit.key})
-        _add_options(conn, [(concept, unit)])
-        _map_choices(conn, survey_id, [(concept, unit)], reviewer)
-        return concept.concept_id
-
-
-def reject(survey_id: int, question_id: int, item_id: Optional[int], reviewer: str) -> None:
-    """Never trend this unit."""
-    with get_engine("etl").begin() as conn:
-        unit = _open_unit(conn, survey_id, question_id, item_id)
-        _claim(conn, survey_id, unit, "rejected", reviewer)
 
 
 def confirm_same_wording(apply: bool = False, reviewer: str = "auto:same_wording") -> dict[int, int]:
@@ -397,7 +376,7 @@ def confirm_same_wording(apply: bool = False, reviewer: str = "auto:same_wording
     if not apply:
         return {sid: len(units) for sid, units in plan.items()}
     with get_engine("etl").connect() as conn:
-        concepts = _concepts(conn)
+        concepts = load_concepts(conn)
     for sid, units in plan.items():
         with get_engine("etl").begin() as conn:
             own = {(u.question_id, u.item_id): u for u in _units(conn, sid)}

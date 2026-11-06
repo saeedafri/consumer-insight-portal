@@ -1,3 +1,5 @@
+// The outer frame of every page (public site and portal): the <html> tag, search-engine metadata, and the light/dark
+// theme set before the first paint so nothing flashes. Next.js wraps every page in it.
 import type { Metadata, Viewport } from "next";
 import { NAME, SITE } from "./site";
 

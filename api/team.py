@@ -24,7 +24,7 @@ from api.dashboards import significant
 from app.core import access, audit
 from app.core.database import get_engine
 from app.data import payloads
-from app.data.harmonise import normalise_text
+from etl.harmonise import normalise_text
 from app.data.payloads import HIDDEN_BASE, TEST_BASE
 from etl.publish import ROOT as PUBLISH_ROOT
 from etl.serving import CUTS
@@ -70,14 +70,14 @@ def person_of(request: Request | None) -> dict:
     return found
 
 
-def need(request: Request | None, feature: str) -> dict:
+def who_may_use(request: Request | None, feature: str) -> dict:
     who = person_of(request)
     if not access.allows(who, feature):
         raise HTTPException(403, "Not included in your subscription")
     return who
 
 
-def mine(who: dict, owner: str | None) -> bool:
+def owned_by(who: dict, owner: str | None) -> bool:
     """Is a thing owned by `owner` (an email, or None for one saved before owners were recorded) in this person's team."""
     if who["role"] == "admin":
         return True
@@ -119,7 +119,7 @@ def remove(table: str, key_column: str, owner_column: str, key: int, request: Re
                             {"k": key, "me": who["email"]}).rowcount
         if not gone:
             row = conn.execute(text(f"SELECT {owner_column} FROM {table} WHERE {key_column} = :k"), {"k": key}).first()
-            if row is None or not mine(who, row[0]):
+            if row is None or not owned_by(who, row[0]):
                 raise HTTPException(404, "Not found")
             raise HTTPException(403, f"Only {row[0]} can remove this" if row[0] else "Only an admin can remove this")
     changed()
@@ -148,8 +148,8 @@ def open_wave(who: dict, survey_id: int) -> dict:
 # ── saved views ────────────────────────────────────────────────────────────
 def scoped(request: Request | None, feature: str, key: str, sql: str) -> list[dict]:
     """A team list as this person's team sees it (owner column dropped), from memory when nothing changed."""
-    who = need(request, feature)
-    return [{k: v for k, v in r.items() if k != "_owner"} for r in cached((key,), lambda: _rows(sql)) if mine(who, r["_owner"])]
+    who = who_may_use(request, feature)
+    return [{k: v for k, v in r.items() if k != "_owner"} for r in cached((key,), lambda: _rows(sql)) if owned_by(who, r["_owner"])]
 
 
 VIEWS = "SELECT view_id, name, url, note, saved_by, created_at, owner_email AS _owner FROM cip_team_view ORDER BY created_at DESC LIMIT 500"
@@ -168,7 +168,7 @@ def views(request: Request = None) -> list[dict]:
 
 @router.post("/team/views", status_code=201)
 async def save_view(request: Request) -> dict:
-    need(request, "saved_views")
+    who_may_use(request, "saved_views")
     body = await json_body(request)
     url, name = str(body.get("url") or ""), " ".join(str(body.get("name") or "").split())[:200]
     if not url.startswith("/w/") or len(url) > 1000 or not name:
@@ -197,7 +197,7 @@ def alerts(request: Request = None) -> list[dict]:
 async def save_alert(request: Request) -> dict:
     """{survey_id, qcode, item_label, option_code, answer_label, dim, dim_value, against, name, by}: the wave fixes the
     family and the question's wording, so a later wave that reuses the code for another question never fires it."""
-    who = need(request, "alerts")
+    who = who_may_use(request, "alerts")
     body = await json_body(request)
     dim, against = str(body.get("dim") or "total"), str(body.get("against") or "prior")
     if dim not in ("total",) + CUTS or against not in ("prior", "ly"):
@@ -286,7 +286,7 @@ def _definition(body) -> dict:
 
 @router.post("/audiences", status_code=201)
 async def save_audience(request: Request) -> dict:
-    need(request, "audiences")
+    who_may_use(request, "audiences")
     body = await json_body(request)
     definition, name = _definition(body.get("definition") or {}), " ".join(str(body.get("name") or "").split())[:200]
     if not name:
@@ -306,7 +306,7 @@ def drop_audience(audience_id: int, request: Request) -> None:
 
 @router.post("/waves/{survey_id}/audience")
 async def audience_view(survey_id: int, request: Request) -> dict:
-    who = need(request, "audiences")
+    who = who_may_use(request, "audiences")
     if not access.spend(who["email"], "audience"):
         raise HTTPException(429, "Too many audience requests: wait a minute", headers={"Retry-After": "60"})
     body = await json_body(request)
@@ -316,7 +316,7 @@ async def audience_view(survey_id: int, request: Request) -> dict:
 
 @router.post("/waves/{survey_id}/audience/profile")
 async def audience_profile_view(survey_id: int, request: Request) -> dict:
-    who = need(request, "audiences")
+    who = who_may_use(request, "audiences")
     if not access.spend(who["email"], "audience"):
         raise HTTPException(429, "Too many audience requests: wait a minute", headers={"Retry-After": "60"})
     body = await json_body(request)
@@ -407,7 +407,7 @@ def _multi(question: dict) -> bool:
 def _compare(question: dict, group: int) -> list[list]:
     """The question's rows for the audience against everyone else: [label, n, base, pct, rest_pct, rest_base, sig,
     index, everyone's pct]."""
-    mine = {key: (b & group).bit_count() for key, b in question["bits"].items()}
+    audience_counts = {key: (b & group).bit_count() for key, b in question["bits"].items()}
     everyone = {key: b.bit_count() for key, b in question["bits"].items()}
     labels = [dict(zip(("item_id", "option_id", "item_label", "option_code", "option_label"), r)) for r in question["rows"]]
     multi = _multi(question)
@@ -418,8 +418,8 @@ def _compare(question: dict, group: int) -> list[list]:
     rows = []
     for r in labels:
         key = (r["item_id"], r["option_id"])
-        b, b_all = base(mine, r["item_id"]), base(everyone, r["item_id"])
-        n, n_all = mine.get(key, 0), everyone.get(key, 0)
+        b, b_all = base(audience_counts, r["item_id"]), base(everyone, r["item_id"])
+        n, n_all = audience_counts.get(key, 0), everyone.get(key, 0)
         rest_b, rest_n = b_all - b, n_all - n
         label = r["item_label"] if multi else (f"{r['item_label']} · {r['option_label']}" if r["item_label"] else r["option_label"])
         if b < smallest or 0 < rest_b < HIDDEN_BASE:
@@ -448,7 +448,7 @@ def boards(request: Request = None) -> list[dict]:
 
 @router.post("/boards", status_code=201)
 async def new_board(request: Request) -> dict:
-    need(request, "boards")
+    who_may_use(request, "boards")
     name = " ".join(str((await json_body(request)).get("name") or "").split())[:200]
     if not name:
         raise HTTPException(422, "A board needs a name")
@@ -483,7 +483,7 @@ def board(board_id: int, request: Request = None) -> dict:
                                                         "body": r["body"], "created_at": r["commented_at"]})
         return {**{k: rows[0][k] for k in ("board_id", "name", "created_by", "created_at")}, "items": list(items.values())}
     found = cached(("board", board_id), load)
-    if found is None or not mine(need(request, "boards"), found["created_by"]):
+    if found is None or not owned_by(who_may_use(request, "boards"), found["created_by"]):
         raise HTTPException(404, "No such board")
     return {**found, "current_version": data_version()}
 
@@ -503,7 +503,7 @@ async def pin(board_id: int, request: Request) -> dict:
     """{title, url, spec}: spec is the table the screen exports (api/exports.check), kept as it is now. Only onto a
     board of this person's own team."""
     from api.exports import check
-    who = need(request, "boards")
+    who = who_may_use(request, "boards")
     body = await json_body(request)
     url = str(body.get("url") or "")
     try:
@@ -514,7 +514,7 @@ async def pin(board_id: int, request: Request) -> dict:
         raise HTTPException(422, "An item needs its portal screen (/w/…)")
     with get_engine("api_write").begin() as conn:
         owner = conn.execute(text("SELECT created_by FROM cip_board WHERE board_id = :b"), {"b": board_id}).first()
-        if owner is None or not mine(who, owner[0]):
+        if owner is None or not owned_by(who, owner[0]):
             raise HTTPException(404, "No such board")
         item_id = conn.execute(text(
             "INSERT INTO cip_board_item (board_id, title, url, spec, data_version, added_by) VALUES (:b, :t, :u, :s, :v, :by)"),
@@ -532,14 +532,14 @@ def unpin(item_id: int, request: Request) -> None:
 
 @router.post("/boards/items/{item_id}/comments", status_code=201)
 async def comment(item_id: int, request: Request) -> dict:
-    who = need(request, "boards")
+    who = who_may_use(request, "boards")
     body = str((await json_body(request)).get("body") or "").strip()[:2000]
     if not body:
         raise HTTPException(422, "Write something")
     with get_engine("api_write").begin() as conn:
         owner = conn.execute(text("SELECT b.created_by FROM cip_board_item i JOIN cip_board b ON b.board_id = i.board_id"
                                   " WHERE i.item_id = :i"), {"i": item_id}).first()
-        if owner is None or not mine(who, owner[0]):
+        if owner is None or not owned_by(who, owner[0]):
             raise HTTPException(404, "No such item")
         comment_id = conn.execute(text("INSERT INTO cip_board_comment (item_id, author, body) VALUES (:i, :a, :b)"),
                                   {"i": item_id, "a": email_of(request), "b": body}).lastrowid

@@ -19,7 +19,7 @@
 # Spending", "Holiday Shopping and Spending 2025", "Holiday Shopping 2026") loses its year-on-year comparison.
 # Listed here by source reference (Forsta path, Qualtrics SV_ id, SurveyMonkey id), the waves share one family
 # and each compares with the one a year before (etl/serving.YEAR_DAYS). Applied at load; for waves already
-# loaded see docs/REA Claude Opus 2026-10-23/80-fixes-etl.md (runbook).
+# loaded, re-run the family step as docs/technical/08-operations-runbook.md describes.
 family:
   HOLIDAY_SHOPPING:             # annual
     - "311513587"               # survey_id 361 · Holiday 2021 Shopping and Spending (SurveyMonkey)

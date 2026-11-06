@@ -1,5 +1,5 @@
 #!/bin/bash
-# The Logs page's machine numbers (api/logs.py metrics): one JSON line every 15 s in logs/machine.log, from the
+# The Logs page's machine numbers (api/metrics.py): one JSON line every 15 s in logs/machine.log, from the
 # container's own counters, so they match Azure's metrics:
 #   cpu_pct / cores_used  CPU used: % of the CPUs we may use (the cgroup quota, else nproc) and in whole cores
 #   working_set_mb        memory as Azure counts it: used minus inactive file cache

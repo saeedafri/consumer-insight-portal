@@ -1,3 +1,4 @@
+// Public page /sign-in/: the sign-in button. Signing in itself is handled by the API (api/signin.py).
 import { Breadcrumbs } from "../seo";
 
 export const metadata = {

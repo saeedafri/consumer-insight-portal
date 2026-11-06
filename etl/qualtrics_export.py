@@ -1,4 +1,6 @@
-"""Qualtrics' Excel export: row 1 column codes (B10_3), row 2 question text
+"""Historical reload only (not part of the weekly run): a Qualtrics Excel export loaded as a wave.
+
+Qualtrics' Excel export: row 1 column codes (B10_3), row 2 question text
 ("<question> - <answer>"), then one row per respondent. There is no datamap,
 so types and answer lists are recovered from the columns and their values:
 
@@ -25,8 +27,8 @@ import openpyxl
 from sqlalchemy import text
 
 from app.core.database import get_engine
-from app.data import cube, harmonise
-from etl import records as xp
+from etl import cube, harmonise
+from etl.records import NO_TO, ParsedQuestion, clean_text
 from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey
 
 log = logging.getLogger("cip.qualtrics")
@@ -56,9 +58,9 @@ def parse_export(path) -> tuple[list, list[dict]]:
     ws = openpyxl.load_workbook(path, read_only=True, data_only=True).worksheets[0]
     rows = ws.iter_rows(values_only=True)
     codes = [re.sub(r"\s+(?=_)", "", str(c or "").strip()) for c in next(rows)]   # "B9C _10_TEXT"
-    headers = [xp.clean_text(t or "") for t in next(rows)]
+    headers = [clean_text(t or "") for t in next(rows)]
     data = [list(r) for r in rows if any(v not in (None, "") for v in r)]
-    cell = [[None if v in (None, "") else xp.clean_text(v) for v in r] for r in data]
+    cell = [[None if v in (None, "") else clean_text(v) for v in r] for r in data]
 
     groups: dict[str, list[int]] = {}
     for i, code in enumerate(codes):
@@ -72,23 +74,23 @@ def parse_export(path) -> tuple[list, list[dict]]:
         values = {i: {r[i] for r in cell if r[i] is not None} for i in cols}
         stem = _multi_stem(cols, headers, values) if len(cols) > 1 else None
         if key.endswith("_TEXT"):
-            questions.append(xp.ParsedQuestion(qcode=key, qtext=headers[cols[0]], qtype="text"))
+            questions.append(ParsedQuestion(qcode=key, qtext=headers[cols[0]], qtype="text"))
             kinds[key] = "text"
         elif stem:
             items = [(codes[i], headers[i][len(stem) + 3:]) for i in cols]
-            questions.append(xp.ParsedQuestion(qcode=key, qtext=stem, qtype="multi",
+            questions.append(ParsedQuestion(qcode=key, qtext=stem, qtype="multi",
                                                value_min=0, value_max=1, rows=items))
             kinds[key] = "multi"
         elif len(cols) > 1:
             scale = list(dict.fromkeys(r[i] for r in cell for i in cols if r[i] is not None))
-            questions.append(xp.ParsedQuestion(qcode=key, qtext=headers[cols[0]].rsplit(" - ", 1)[0],
+            questions.append(ParsedQuestion(qcode=key, qtext=headers[cols[0]].rsplit(" - ", 1)[0],
                                                qtype="grid_single", value_min=1, value_max=len(scale),
                                                rows=[(codes[i], headers[i].rsplit(" - ", 1)[-1]) for i in cols],
                                                options=list(enumerate(scale, start=1))))
             kinds[key] = "grid"
         else:
             options = list(dict.fromkeys(r[cols[0]] for r in cell if r[cols[0]] is not None))
-            questions.append(xp.ParsedQuestion(qcode=key, qtext=headers[cols[0]], qtype="single",
+            questions.append(ParsedQuestion(qcode=key, qtext=headers[cols[0]], qtype="single",
                                                value_min=1, value_max=len(options),
                                                options=list(enumerate(options, start=1))))
             kinds[key] = "single"
@@ -104,7 +106,7 @@ def parse_export(path) -> tuple[list, list[dict]]:
                 if any(r[i] is not None for i in cols):
                     for i in cols:
                         label = labels[key][codes[i]]
-                        rec[codes[i]] = label if r[i] is not None else f"{xp.NO_TO}{label}"
+                        rec[codes[i]] = label if r[i] is not None else f"{NO_TO}{label}"
             elif kinds[key] == "grid":
                 rec.update({codes[i]: r[i] for i in cols if r[i] is not None})
             elif r[cols[0]] is not None:
@@ -119,7 +121,7 @@ def order_like_concepts(questions: list) -> None:
     has the question (from a legacy wave, in questionnaire order), use its
     order; answers it does not know keep their place after the known ones."""
     with get_engine("etl").connect() as conn:
-        concepts = harmonise._concepts(conn)
+        concepts = harmonise.load_concepts(conn)
         position = dict(conn.execute(text("SELECT concept_option_id, sort_order FROM cip_concept_option")).all())
     order = {c.match_text: {label: position[coid] for label, coid in c.options.items()}
              for c in concepts.values() if c.qtype == "single" or c.qtype.startswith("grid")}
@@ -135,7 +137,7 @@ def order_like_concepts(questions: list) -> None:
 
 
 def ingest_export(path, wave: str, family: str = "CSI-US") -> int:
-    from etl.run_pipeline import _code_lookup, _rebuild_profiles, _rebuild_question_bases, _replace_respondents
+    from etl.wave_loader import code_lookup, rebuild_profiles, rebuild_question_bases, replace_respondents
 
     questions, records = parse_export(path)
     order_like_concepts(questions)
@@ -145,13 +147,13 @@ def ingest_export(path, wave: str, family: str = "CSI-US") -> int:
                               wave_label=wave, wave_date=wave, platform="qualtrics", source_ref=ref)
     run = start_run(survey_id, "excel", "data", str(path))
     fields = load_definitions(survey_id, questions, family)
-    code_map = _code_lookup(survey_id)
-    loaded = _replace_respondents(survey_id, records, fields, run, code_map)
+    code_map = code_lookup(survey_id)
+    loaded = replace_respondents(survey_id, records, fields, run, code_map)
     finish_run(run, len(records), loaded)
     # Demographics by wording, never the Forsta D-code map: Qualtrics numbers
     # them differently (its D7 is state, Forsta's D7 is political view).
-    _rebuild_profiles(survey_id, None, None)
-    _rebuild_question_bases(survey_id)
+    rebuild_profiles(survey_id, None, None)
+    rebuild_question_bases(survey_id)
     log.info("%s -> survey_id=%s: %d respondents; harmonised %s", Path(path).name, survey_id, loaded,
              harmonise.harmonise_survey(survey_id))
     log.info("Cube: %d cells", cube.refresh_wave(survey_id))

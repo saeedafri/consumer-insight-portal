@@ -207,7 +207,7 @@ def compute(conn, code: str, survey_id: int) -> tuple[dict, list[dict]]:
     return header, rows
 
 
-def _pts(a, b):
+def point_change(a, b):
     return None if a is None or b is None else round(a - b, 1)
 
 
@@ -278,7 +278,7 @@ def payload(header: dict, rows: list[dict]) -> dict:
             return {"label": r["label"], "segment": r["segment"], "pct": None, "n": None, "base": r["base_n"],
                     "vs_prior": None, "vs_ly": None, "ly_pct": None, "flags": [f for f in r["flags"].split(",") if f]}
         return {"label": r["label"], "segment": r["segment"], "pct": round(r["pct"], 1), "n": r["n"], "base": r["base_n"],
-                "vs_prior": _pts(r["pct"], r["prior_pct"]), "vs_ly": _pts(r["pct"], r["ly_pct"]),
+                "vs_prior": point_change(r["pct"], r["prior_pct"]), "vs_ly": point_change(r["pct"], r["ly_pct"]),
                 "ly_pct": None if r["ly_pct"] is None else round(r["ly_pct"], 1),
                 "flags": [f for f in r["flags"].split(",") if f]}
     group = lambda code: [number(r) for r in rows if r["metric_code"] == code]

@@ -16,7 +16,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from etl import records as xp
+from etl import records
 
 STATUS = {1: "Terminated", 2: "Overquota", 3: "Qualified", 4: "Partial"}
 # Never stored (spec D7), whatever the datamap says: the browser string, the
@@ -27,7 +27,7 @@ _KINDS = {"number": "numeric", "float": "numeric", "text": "text", "textarea": "
 
 
 def _title(value: Any) -> str:
-    return xp.clean_text(html.unescape(str(value or "")))
+    return records.clean_text(html.unescape(str(value or "")))
 
 
 def _values(question: dict) -> list[tuple[int, str]]:
@@ -68,7 +68,7 @@ def questions_from_datamap(payload: dict) -> list:
                                          or v.get("title") or v["label"])) for v in main]
         named_apart = len(rows) > 1 or (rows and rows[0][0] != label)
         values = _values(q)
-        question = xp.ParsedQuestion(qcode=label, qtext=title, flags=flags)
+        question = records.ParsedQuestion(qcode=label, qtext=title, flags=flags)
         if kind == "multiple":
             question.qtype, question.rows, question.options = "multi", rows, values
             question.value_min, question.value_max = 0, 1
@@ -91,7 +91,7 @@ def questions_from_datamap(payload: dict) -> list:
         if question.qcode:
             out.append(question)
         for v in other:
-            out.append(xp.ParsedQuestion(
+            out.append(records.ParsedQuestion(
                 qcode=str(v["label"])[:50], qtype="text", flags=flags,
                 qtext=f"{title} — {_title(v.get('rowTitle')) or 'Other'} (please specify)"))
     return out

@@ -1,3 +1,4 @@
+// Public page /features/: what people can do in the portal (the list is app/features.ts).
 import Link from "next/link";
 import { FEATURES } from "../../features";
 import { Breadcrumbs, Faq } from "../seo";

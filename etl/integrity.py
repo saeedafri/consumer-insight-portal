@@ -33,7 +33,7 @@ log = logging.getLogger("cip.integrity")
 
 
 def rebuild_cube(survey_id: int) -> None:
-    from app.data import cube
+    from etl import cube
     cube.refresh_wave(survey_id)
 
 

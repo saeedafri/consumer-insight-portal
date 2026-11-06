@@ -1,4 +1,5 @@
-"""Branded Excel export — same house style as the Market Data Portal.
+"""The Coresight-branded Excel workbook the ETL attaches to its emails (etl/notify.py) and the cross-tab export
+(etl/crosstab_export.py) builds. (The portal's own Export button uses api/exports.py.)
 
 Every workbook carries the numbers AND the provenance: which wave, which
 filters, which base each percentage was computed on. A spreadsheet of
@@ -7,10 +8,9 @@ saying the wrong number, so the "About this export" sheet is not optional.
 """
 from __future__ import annotations
 
-import hashlib
 import io
 from datetime import datetime
-from typing import Callable, Iterable, Optional, Sequence
+from typing import Iterable, Optional, Sequence
 
 import pandas as pd
 

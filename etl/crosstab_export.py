@@ -26,7 +26,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 import yaml
 from sqlalchemy import text
@@ -266,8 +265,7 @@ def compute(wave: Wave, key: str) -> dict:
 def build(survey_id: int, key: str, wave: Optional[Wave] = None) -> bytes:
     """One banner set as an .xlsx: Summary, Percentages, Counts."""
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Font
 
     wave = wave or load_wave(survey_id)
     plan = banners()[key]
@@ -341,7 +339,7 @@ def build(survey_id: int, key: str, wave: Optional[Wave] = None) -> bytes:
                         count, base = per_segment[j][b][1][k][1], per_segment[j][b][2]
                         stat = row_label in STATS
                         value = round(count, 4) if stat else (count / base if base else 0) if percent else count
-                        cell = ws.cell(r, 2 + 2 * j, 0 if value is None or (isinstance(value, float) and np.isnan(value)) else value)
+                        cell = ws.cell(r, 2 + 2 * j, 0 if value is None or (isinstance(value, float) and math.isnan(value)) else value)
                         if percent and not stat:
                             cell.number_format = "0%"
                         if k in sig and sig[k][j]:
@@ -422,16 +420,6 @@ def describe(wave: Wave, expression: str) -> str:
     code = banners().get("choice_code", {}).get(first["q"], {}).get(n, n) if first["kind"] == "ch" else n
     option = wave.options[(wave.options["question_id"] == qid) & (wave.options["value_code"] == code)]["value_label"]
     return f"{first['q']}: {option.iloc[0] if len(option) else code}"
-
-
-def segment_rows(wave: Wave, key: str) -> list[tuple[str, str, int]]:
-    """[(label, definition in words, n)] for the banner set, Total first."""
-    plan = banners()[key]
-    rows = [("Total", "All qualified respondents", len(wave.wide))]
-    for s in plan["segments"]:
-        label = f"{s['under']} — {s['label']}" if s.get("under") else s["label"]
-        rows.append((label, describe(wave, s["expr"]), int(member(wave, s["expr"]).sum())))
-    return rows
 
 
 def preview(wave: Wave, key: str, qcode: str, labels: list[str], top: int = 0) -> tuple[str, list[str], list[tuple[str, list[Optional[float]]]], list[int]]:

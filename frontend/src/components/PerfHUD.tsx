@@ -1,3 +1,5 @@
+// The developers' speed badge (bottom corner): page, API, chart and render timings from src/perf.ts. Shown only in a
+// browser that opened the portal once with ?perf=1 (components/Shell.tsx); never downloaded for anyone else.
 import { useEffect, useState } from "react";
 import { perf } from "../perf";
 import type { TransactionMetric } from "../perf";

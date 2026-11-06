@@ -1,4 +1,4 @@
-// The FastAPI contract (api/main.py, docs/Ui-Design-Claude/13 §5) and one cached hook per endpoint.
+// The FastAPI contract (api/main.py) and one cached hook per endpoint.
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import { perf } from "./perf";
 import { moves } from "./moves";

@@ -1,3 +1,5 @@
+// The frame of the signed-in portal (/app and everything under it): its loading screen styles, the theme, and the
+// early request for the data every screen needs (see `early` below). The portal itself is src/main.tsx.
 import "./boot.css";
 
 export const metadata = { title: "Portal", robots: { index: false, follow: false } };

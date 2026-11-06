@@ -1,6 +1,6 @@
-import { myName, queries, send } from "./api";
 // Saved views: any screen's full state is its URL, so saving an analysis is keeping its link and a name. Kept in this
 // browser and shared with the team through the API (api/team.py); Copy link shares one directly.
+import { myName, queries, send } from "./api";
 export type SavedView = { url: string; name: string; saved: string };
 const KEY = "cip_saved_views";
 

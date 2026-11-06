@@ -13,11 +13,11 @@ mappings (a rule is written over concepts) — refresh_wave re-derives them. The
 serving rows do too (etl/serving.cube_rows joins the mapping when it builds):
 refresh_cohorts rebuilds the wave's serving rows after every decision.
 
-The counts and bases are exactly repository.analyse's — tests prove it for
+The counts and bases are exactly what counting the raw responses gives (tests/reference_queries.analyse): tests prove it for
 every question and cut.
 
-    python -m app.data.cube --all          # every wave
-    python -m app.data.cube --wave 2025-02-17
+    python -m etl.cube --all          # every wave
+    python -m etl.cube --wave 2025-02-17
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from typing import Optional, Sequence
 from sqlalchemy import bindparam, text
 
 from app.core.database import get_engine
-from app.data import cohorts
+from etl import cohorts
 
 log = logging.getLogger("cip.cube")
 

@@ -152,7 +152,7 @@ def run(client=None) -> int:
     if result["failed"]:
         log.error("Failed %d: %s", len(result["failed"]), result["failed"])
         return 1
-    from app.data import publications
+    from etl import publications
 
     drift = publications.drift_summary()
     moved = drift[(drift[["moved", "missing", "new", "error"]].sum(axis=1)) > 0] if not drift.empty else drift

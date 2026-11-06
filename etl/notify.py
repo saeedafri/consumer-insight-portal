@@ -38,7 +38,7 @@ import requests
 import yaml
 from sqlalchemy import text
 
-from app.core import config as _config  # noqa: F401  loads .env
+import app.core.config  # noqa: F401  imported for its side effect: it loads .env (SMTP and Teams settings)
 from app.core.database import get_engine
 from etl import tracker_line
 
@@ -211,7 +211,7 @@ def survey_loaded(survey_id: int) -> bool:
 def loaded_email(survey_id: int) -> tuple:
     """(subject, plain, to, attachments, HTML, Teams headline) of one loaded survey's email."""
     import pandas as pd
-    from app.components.export import build_workbook   # pandas and openpyxl: only when an email is built
+    from etl.workbook import build_workbook   # pandas and openpyxl: only when an email is built
     from etl import crosstab_export
 
     info = query("""SELECT s.title, s.wave_label, s.study_type, s.survey_family, f.forsta_path, f.qualified_n
@@ -229,7 +229,7 @@ def loaded_email(survey_id: int) -> tuple:
     if info["forsta_path"]:
         from etl import forsta_etl   # notify is imported by the pipeline, not the other way round
         try:
-            attachments.append((f"Raw Data {dated}.xlsx", crosstab_export.raw_data(forsta_etl._client(), info["forsta_path"])))
+            attachments.append((f"Raw Data {dated}.xlsx", crosstab_export.raw_data(forsta_etl.open_forsta(), info["forsta_path"])))
         except Exception as exc:   # Forsta down: the rest of the email still goes
             log.warning("Raw Data for %s not built: %s", info["forsta_path"], exc)
             missing.append("Raw Data (Forsta could not be reached when this email was built)")

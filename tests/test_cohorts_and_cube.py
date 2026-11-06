@@ -1,7 +1,5 @@
-"""Phase 4: cohorts (Deriver), cube (Aggregator), cube-first repository.
-
-See docs/superpowers/plans/2026-10-01-cohorts-and-cube-phase4.md.
-"""
+"""Cohorts (groups of respondents, etl/cohorts.py) and the cube (every answer counted by every cut, etl/cube.py):
+the cube must give exactly what counting the raw responses gives (tests/reference_queries.py)."""
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -18,9 +16,9 @@ def test_cube_cells_carry_their_map_key_and_midpoint_counts(csi_db):
 
 import pytest
 
-from app.data import cohorts, harmonise
+from etl import cohorts, harmonise
 from etl import legacy_dwh
-from tests.test_phase3 import legacy  # noqa: F401  (pytest fixture: the Phase 3 legacy wave)
+from tests.test_legacy_history import legacy  # noqa: F401  (pytest fixture: the Phase 3 legacy wave)
 
 
 def concept_code(engine, sid, qcode):
@@ -97,7 +95,8 @@ def test_unknown_concept_or_option_is_refused_by_name(wave):
         cohorts.define_cohort("X", "x", {"concept": b1, "option": "maybe"})
 
 
-from app.data import cube, repository
+from etl import cube, publications
+from tests import reference_queries as queries
 
 
 def strip(fn):
@@ -105,7 +104,7 @@ def strip(fn):
 
 
 def engine_frame(sid, qid, dim, criteria=()):
-    return strip(repository.analyse)(sid, qid, criteria, None if dim == "total" else dim).reset_index(drop=True)
+    return strip(queries.analyse)(sid, qid, criteria, None if dim == "total" else dim).reset_index(drop=True)
 
 
 def reportable(engine, sid):
@@ -121,18 +120,18 @@ def test_cube_equals_the_engine_for_every_question_and_cut(wave):
     for qid in reportable(engine, sid):
         for dim in cube.CUBE_DIMS:
             want = engine_frame(sid, qid, dim).to_dict("records")
-            assert repository.analyse_cube(sid, qid, None, None if dim == "total" else dim).to_dict("records") == want, (qid, dim)
+            assert queries.analyse_cube(sid, qid, None, None if dim == "total" else dim).to_dict("records") == want, (qid, dim)
 
 
 def test_cube_equals_the_engine_on_a_grid_and_a_multi_select(csi_db, tmp_path):
     from etl import qualtrics_export
-    from tests.test_phase3 import qualtrics_file
+    from tests.test_legacy_history import qualtrics_file
     sid = qualtrics_export.ingest_export(qualtrics_file(tmp_path), "2025-05-12")
     cube.build_cube(sid)
     for qid in reportable(csi_db, sid):
         for dim in ("total", "census_region"):
             want = engine_frame(sid, qid, dim).to_dict("records")
-            assert repository.analyse_cube(sid, qid, None, None if dim == "total" else dim).to_dict("records") == want, (qid, dim)
+            assert queries.analyse_cube(sid, qid, None, None if dim == "total" else dim).to_dict("records") == want, (qid, dim)
 
 
 def test_cube_equals_the_engine_within_a_cohort(wave):
@@ -142,7 +141,7 @@ def test_cube_equals_the_engine_within_a_cohort(wave):
     cube.build_cube(sid)
     crit = ({"kind": "cohort", "cohort_id": cid},)
     for qid in reportable(engine, sid):
-        assert repository.analyse_cube(sid, qid, cid, "age_band").to_dict("records") == \
+        assert queries.analyse_cube(sid, qid, cid, "age_band").to_dict("records") == \
             engine_frame(sid, qid, "age_band", crit).to_dict("records"), qid
 
 
@@ -173,7 +172,7 @@ def test_cube_rejects_zero_as_a_cohort_identifier(wave):
 
 
 def question_id(sid, qcode):
-    frame = strip(repository.question_lookup)(sid)
+    frame = strip(queries.question_lookup)(sid)
     return int(frame[frame.qcode == qcode].question_id.iloc[0])
 
 
@@ -189,7 +188,7 @@ def test_analyse_answers_from_the_cube_when_it_can(wave):
     reads = []
     listener = lambda conn, cur, stmt, *args: reads.append(stmt)
     sa.event.listen(engine, "before_cursor_execute", listener)
-    frame = strip(repository.analyse)(sid, qid, (), "age_band")
+    frame = strip(queries.analyse)(sid, qid, (), "age_band")
     sa.event.remove(engine, "before_cursor_execute", listener)
     assert any("cip_agg_cell" in s for s in reads) and not any("cip_answer" in s for s in reads)
     assert not frame.empty
@@ -204,14 +203,14 @@ def test_a_cohort_criterion_reads_the_same_from_cube_and_engine(wave):
     forced_engine = crit + ({"kind": "profile", "dimension": "gender", "values": []},)   # a no-op criterion
     for qcode in ("Q1", "Q2"):
         qid = question_id(sid, qcode)
-        assert strip(repository.analyse)(sid, qid, crit, None).to_dict("records") == \
-            strip(repository.analyse)(sid, qid, forced_engine, None).to_dict("records")
+        assert strip(queries.analyse)(sid, qid, crit, None).to_dict("records") == \
+            strip(queries.analyse)(sid, qid, forced_engine, None).to_dict("records")
 
 
 def test_concept_trend_reads_every_wave_through_the_mapping(wave):
     engine, sid, b1, _ = wave
     cube.build_cube(sid)
-    trend = strip(repository.concept_trend)(concept_id(engine, b1))
+    trend = strip(publications.concept_trend)(concept_id(engine, b1))
     assert set(trend.wave_label) == {"2025-02-17"}
     assert trend.set_index("answer").n.to_dict() == {"Yes": 2, "No": 1}
     assert set(trend.base_n) == {3}
@@ -224,8 +223,8 @@ def test_concept_reads_preserve_specific_cohort_results(wave):
     cube.build_cube(sid)
     concept = concept_id(engine, b1)
 
-    trend = strip(repository.concept_trend)(concept, cid)
-    pooled = strip(repository.concept_pooled)(concept, [sid], cid)
+    trend = strip(publications.concept_trend)(concept, cid)
+    pooled = strip(publications.concept_pooled)(concept, [sid], cid)
 
     assert trend.set_index("answer").n.to_dict() == {"Yes": 2}
     assert set(trend.base_n) == {2}
@@ -248,8 +247,8 @@ def test_concept_everyone_preserves_legacy_zero_cells(wave):
             "WHERE c.survey_id=:s AND q.qcode='Q1' AND c.cohort_id IS NULL"
         ), {"s": sid})
 
-    trend = strip(repository.concept_trend)(concept)
-    pooled = strip(repository.concept_pooled)(concept, [sid])
+    trend = strip(publications.concept_trend)(concept)
+    pooled = strip(publications.concept_pooled)(concept, [sid])
 
     assert trend.set_index("answer").n.to_dict() == {"Yes": 4, "No": 2}
     assert pooled.set_index("answer").n.to_dict() == {"Yes": 4, "No": 2}
@@ -259,7 +258,7 @@ def test_concept_everyone_preserves_legacy_zero_cells(wave):
 def test_concept_pooled_stacks_waves_and_averages_midpoints(wave):
     engine, sid, b1, _ = wave
     cube.build_cube(sid)
-    pooled = strip(repository.concept_pooled)(concept_id(engine, b1), [sid])
+    pooled = strip(publications.concept_pooled)(concept_id(engine, b1), [sid])
     yes = pooled[pooled.answer == "Yes"].iloc[0]
     assert (yes.n, yes.base_n, yes.avg_age) == (2, 3, (23.5 + 67.0) / 2)
 
@@ -272,7 +271,7 @@ def test_loading_a_wave_builds_its_cube(legacy):  # noqa: F811
 
 def test_loading_an_export_builds_its_cube(csi_db, tmp_path):
     from etl import qualtrics_export
-    from tests.test_phase3 import qualtrics_file
+    from tests.test_legacy_history import qualtrics_file
     sid = qualtrics_export.ingest_export(qualtrics_file(tmp_path), "2025-05-12")
     with csi_db.connect() as conn:
         assert conn.execute(sa.text("SELECT COUNT(*) FROM cip_agg_cell WHERE survey_id = :s"), {"s": sid}).scalar() > 0
@@ -319,7 +318,7 @@ def test_a_criterion_follows_the_cohort_to_its_new_version(wave):
     cohorts.derive(v2)
     cube.build_cube(sid)
     qid = question_id(sid, "Q1")
-    assert strip(repository.analyse)(sid, qid, crit, None).set_index("answer").n.to_dict() == {"No": 1}
+    assert strip(queries.analyse)(sid, qid, crit, None).set_index("answer").n.to_dict() == {"No": 1}
     assert members(engine, v1) == []                    # the retired version keeps nothing
 
 
@@ -359,7 +358,7 @@ def test_a_failed_full_rebuild_leaves_no_stale_cells_behind(wave, monkeypatch):
 
 def test_answered_on_a_grid_row_means_that_row(csi_db, tmp_path):
     from etl import qualtrics_export
-    from tests.test_phase3 import qualtrics_file
+    from tests.test_legacy_history import qualtrics_file
     sid = qualtrics_export.ingest_export(qualtrics_file(tmp_path), "2025-05-12")
     with csi_db.connect() as conn:
         cvs_row = conn.execute(sa.text(
@@ -383,9 +382,9 @@ def test_a_mapping_confirmed_after_the_cube_was_built_joins_the_trend(wave):
                              " AND concept_option_id IS NOT NULL"), {"s": sid, "q": qid})
         conn.execute(sa.text("UPDATE cip_concept_map SET status = 'proposed' WHERE survey_id = :s AND question_id = :q"),
                      {"s": sid, "q": qid})
-    assert strip(repository.concept_trend)(concept).empty
+    assert strip(publications.concept_trend)(concept).empty
     harmonise.confirm(sid, qid, None, concept, "analyst@coresight.com")
-    assert set(strip(repository.concept_trend)(concept).wave_label) == {"2025-02-17"}
+    assert set(strip(publications.concept_trend)(concept).wave_label) == {"2025-02-17"}
     assert count_cells(engine, sid, "IS NULL") == cells
 
 
@@ -402,7 +401,7 @@ def test_two_surveys_of_one_wave_are_one_point_on_the_trend(wave):
                              " FROM dwh_smresponseqa WHERE survey_id = 'SV_T'"))
     legacy_dwh.load_legacy("SV_T2")
     cube.build_cube(sid)
-    trend = strip(repository.concept_trend)(concept_id(engine, b1))
+    trend = strip(publications.concept_trend)(concept_id(engine, b1))
     assert len(trend[trend.answer == "Yes"]) == 1
     assert trend[trend.answer == "Yes"].iloc[0][["n", "base_n"]].tolist() == [4, 6]
 
@@ -414,7 +413,7 @@ def test_a_standard_view_is_one_read(wave):
     reads = []
     listener = lambda conn, cur, stmt, *args: reads.append(stmt)
     sa.event.listen(engine, "before_cursor_execute", listener)
-    strip(repository.analyse)(sid, qid, (), "age_band")
+    strip(queries.analyse)(sid, qid, (), "age_band")
     sa.event.remove(engine, "before_cursor_execute", listener)
     assert len(reads) == 1, reads
 

@@ -48,11 +48,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core import access, audit
 from app.core.database import get_engine
-from app.core.session import issue   # noqa: F401 — tests and tools sign sessions through the API module
 from app.data import payloads
-from api import assistant, exports, logs, mcp, signin, team
+from api import assistant, exports, logs, mcp, metrics, signin, team
 from api.search import SearchIndex
-from api.signin import COOKIE, admin, user
+from api.signin import admin, user
 from etl import launch_schedule
 from etl.publish import ROOT as PUBLISH_ROOT
 from etl.serving import CUTS
@@ -108,7 +107,7 @@ PUBLISHED = PUBLISH_ROOT / "current"     # the ETL's prebuilt responses (etl/pub
 PUBLISHED_VERSION = ""
 
 
-def _load() -> None:
+def load_published() -> None:
     """Read every published payload (one query) and swap the in-memory store in one assignment."""
     global STORE, LATEST, STAMP
     with get_engine("app").connect() as conn:
@@ -126,7 +125,7 @@ def _load() -> None:
     log.info("Loaded %d dashboard payloads (%d KB gzipped)", len(store), sum(len(p.gz) for p in store.values()) // 1024)
 
 
-def _changed() -> bool:
+def published_changed() -> bool:
     global SERVING, RESULTS, CACHED_BYTES, CATALOGUE, PUBLISHED_VERSION
     with get_engine("app").connect() as conn:
         serving = tuple(conn.execute(text("SELECT COUNT(*), MAX(built_at) FROM srv_wave")).one())
@@ -140,7 +139,7 @@ def _changed() -> bool:
     return dashboards != STAMP
 
 
-def _published(*parts: str) -> Payload | None:
+def published_file(*parts: str) -> Payload | None:
     """The prebuilt response for api/v1/<parts>, or None when it was not published (a new wave before the next
     publish, a single-wave family's trend): the caller then builds it from the database."""
     if any(not p or p.startswith(".") or ".." in p or "/" in p or "\\" in p for p in parts):
@@ -202,25 +201,25 @@ def _catalogue(rows, labels, measure) -> SearchIndex:
 
 def _load_schedule() -> None:
     global SCHEDULE
-    SCHEDULE = _json(launch_schedule.weeks())
+    SCHEDULE = to_payload(launch_schedule.weeks())
 
 
 async def _refresh_forever() -> None:
     while True:
         await asyncio.sleep(REFRESH_SECONDS)
         try:
-            if await run_in_threadpool(_changed):
-                await run_in_threadpool(_load)
+            if await run_in_threadpool(published_changed):
+                await run_in_threadpool(load_published)
             await run_in_threadpool(_load_schedule)
             await run_in_threadpool(signin.load_revoked)
-            await run_in_threadpool(logs.read_traffic)   # every minute, so a busy log is counted before it rotates
-            await run_in_threadpool(logs.measure_storage)   # folder and database sizes, at most every 5 minutes
+            await run_in_threadpool(metrics.read_traffic)   # every minute, so a busy log is counted before it rotates
+            await run_in_threadpool(metrics.measure_storage)   # folder and database sizes, at most every 5 minutes
         except Exception:   # keep serving the last good payloads; the next poll retries
             log.exception("Dashboard refresh failed; still serving the previous payloads")
 
 
 def report_caches() -> list[dict]:
-    """The API's memory caches for the Logs page (api/logs.py CACHE_REPORTERS): what each holds, its size, its hits."""
+    """The API's memory caches for the Logs page (api/metrics.py CACHE_REPORTERS): what each holds, its size, its hits."""
     asked = CACHE_COUNTS["hits"] + CACHE_COUNTS["misses"]
     search_mb = 0.0
     if CATALOGUE is not None:   # the search index is an in-memory SQLite database
@@ -240,7 +239,7 @@ def report_caches() -> list[dict]:
     ]
 
 
-logs.CACHE_REPORTERS.append(report_caches)
+metrics.CACHE_REPORTERS.append(report_caches)
 
 
 def check_settings() -> None:
@@ -258,19 +257,19 @@ def check_settings() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     check_settings()
-    await run_in_threadpool(_load)
-    await run_in_threadpool(_changed)
+    await run_in_threadpool(load_published)
+    await run_in_threadpool(published_changed)
     await run_in_threadpool(_load_schedule)
     audit.start()
     task = asyncio.get_running_loop().create_task(_refresh_forever())
-    asyncio.get_running_loop().run_in_executor(None, logs.measure_storage)   # the Logs page's storage table, at start
+    asyncio.get_running_loop().run_in_executor(None, metrics.measure_storage)   # the Logs page's storage table, at start
     try:
         yield
     finally:
         task.cancel()
 
 
-# OpenAPI: the typed contract a future chatbot's tools are generated from (docs/Ui-Design-Claude/20); signed-in only
+# OpenAPI: the typed contract a future chatbot's tools are generated from (api/mcp.py); signed-in only
 app = FastAPI(title="Coresight Consumer Insight Portal API", version="1", docs_url=None, redoc_url=None,
               openapi_url=None, lifespan=lifespan)
 
@@ -315,7 +314,7 @@ def all_waves() -> list[dict]:
         return WAVES[1]
     with WAVES_LOCK:
         if WAVES[0] != version:
-            listed = _published("waves")
+            listed = published_file("waves")
             WAVES = (version, [payloads.describe(w) for w in (json.loads(listed.body) if listed else payloads.waves(_boards()))])
         return WAVES[1]
 
@@ -328,12 +327,12 @@ async def visible(who: dict, survey_id: int) -> dict:
     return wave
 
 
-def need(who: dict, feature: str) -> None:
+def require_feature(who: dict, feature: str) -> None:
     if not access.allows(who, feature):
         raise HTTPException(403, "Not included in your subscription")
 
 
-def _send(request: Request, item: Payload) -> Response:
+def send_payload(request: Request, item: Payload) -> Response:
     headers = {"ETag": item.etag, "Cache-Control": "private, max-age=60", "Vary": "Accept-Encoding, Cookie"}
     if request.headers.get("if-none-match") == item.etag:
         return Response(status_code=304, headers=headers)
@@ -349,7 +348,7 @@ async def latest(code: str, request: Request, who: dict = Depends(user)) -> Resp
 
 @app.get("/api/v1/dashboards/{code}/{survey_id}")
 async def wave(code: str, survey_id: int, request: Request, who: dict = Depends(user)) -> Response:
-    need(who, "dashboards")
+    require_feature(who, "dashboards")
     if "*" not in who["products"] and code not in who["products"]:
         raise HTTPException(403, "Not included in your subscription")
     item = STORE.get((code, survey_id))
@@ -357,10 +356,10 @@ async def wave(code: str, survey_id: int, request: Request, who: dict = Depends(
         await visible(who, survey_id)
     if item is None:
         raise HTTPException(404, "No published dashboard for that wave")
-    return _send(request, item)
+    return send_payload(request, item)
 
 
-async def _cached(key: tuple, build, *args) -> Payload:
+async def cached_payload(key: tuple, build, *args) -> Payload:
     """A finished response from this worker's cache, or built in a thread and kept until the serving data
     changes. Least recently used responses leave first once the cache reaches CACHE_BYTES."""
     global CACHED_BYTES, RESULTS, PUBLISHED_VERSION
@@ -392,7 +391,7 @@ async def _cached(key: tuple, build, *args) -> Payload:
     return item
 
 
-def _json(data) -> Payload:
+def to_payload(data) -> Payload:
     """A finished response: compact JSON (app/data/payloads.encode), its ETag and its gzip."""
     body = payloads.encode(data)
     return Payload(f'"{hashlib.sha256(body).hexdigest()[:16]}"', body, gzip.compress(body, 6))
@@ -411,7 +410,7 @@ async def results(survey_id: int, request: Request, q: str, dim: str = "total", 
     """Finished rows for any questions × cuts of one wave, e.g. ?q=XM3,XM1&dim=total,generation."""
     await visible(who, survey_id)
     qcodes, dims = tuple(sorted(set(q.split(",")))[:20]), tuple(sorted(set(dim.split(",")))[:8])
-    return _send(request, await _cached((SERVING, survey_id, qcodes, dims), lambda: _json(payloads.results(survey_id, qcodes, dims))))
+    return send_payload(request, await cached_payload((SERVING, survey_id, qcodes, dims), lambda: to_payload(payloads.results(survey_id, qcodes, dims))))
 
 
 @app.get("/api/v1/schedule")
@@ -419,14 +418,14 @@ async def schedule(request: Request, who: dict = Depends(user)) -> Response:
     """The data team's launch plan, week by week, against what Forsta fielded (etl/launch_schedule.py)."""
     if SCHEDULE is None:
         raise HTTPException(503, "The schedule is loading", headers={"Retry-After": "3"})
-    return _send(request, SCHEDULE)
+    return send_payload(request, SCHEDULE)
 
 
 @app.get("/api/v1/waves")
 async def waves(request: Request, who: dict = Depends(user)) -> Response:
     """Every wave this person may open, newest first, each with its provenance (payloads.describe)."""
-    return _send(request, await _cached((SERVING, "waves", access.scope(who)),
-                                        lambda: _json([w for w in all_waves() if access.sees(who, w)])))
+    return send_payload(request, await cached_payload((SERVING, "waves", access.scope(who)),
+                                        lambda: to_payload([w for w in all_waves() if access.sees(who, w)])))
 
 
 @app.get("/api/v1/waves/{survey_id}/book")
@@ -434,10 +433,10 @@ async def book(survey_id: int, request: Request, who: dict = Depends(user)) -> R
     """The whole wave for the four dashboard screens in one cached response (≈ 30 KB gzipped)."""
     await visible(who, survey_id)
     def build() -> Payload:   # a book published before the provenance fields existed gets them here
-        found = _published("waves", str(survey_id), "book")
+        found = published_file("waves", str(survey_id), "book")
         data = json.loads(found.body) if found else payloads.book(survey_id)
-        return _json({**data, "wave": payloads.describe(data["wave"])})
-    return _send(request, await _cached((SERVING, "book", survey_id), build))
+        return to_payload({**data, "wave": payloads.describe(data["wave"])})
+    return send_payload(request, await cached_payload((SERVING, "book", survey_id), build))
 
 
 @app.get("/api/v1/search")
@@ -445,14 +444,14 @@ async def search(request: Request, q: str = Query(..., min_length=2, max_length=
                  offset: int = Query(0, ge=0, le=5000), who: dict = Depends(user)) -> Response:
     """Questions by words, code, answer label or survey title, typo- and synonym-tolerant (api/search.py).
     The response says what it understood: {"results": [...], "understood": {corrected, expanded, matched_by}}."""
-    need(who, "search")
+    require_feature(who, "search")
     def run() -> Payload:
         index = catalogue(who)
         found = index.search(q, limit, offset) if index else {"results": [], "total": 0, "understood": {}}
         if not found["results"]:
             log.info("search with no results: %r", q[:100])   # reviewed monthly to grow config/search_synonyms.yml
-        return _json(found)
-    return _send(request, await _cached((SERVING, "search", access.scope(who), " ".join(q.lower().split()), limit, offset), run))
+        return to_payload(found)
+    return send_payload(request, await cached_payload((SERVING, "search", access.scope(who), " ".join(q.lower().split()), limit, offset), run))
 
 
 def catalogue(who: dict) -> SearchIndex | None:
@@ -470,16 +469,16 @@ def catalogue(who: dict) -> SearchIndex | None:
 async def crosstab(survey_id: int, request: Request, q: str, by: str, weeks: int = Query(1, ge=1, le=4),
                    who: dict = Depends(user)) -> Response:
     """One question by two cuts, e.g. ?q=XM3&by=generation,gender&weeks=4 (this wave and the 3 before)."""
-    need(who, "crosstab")
+    require_feature(who, "crosstab")
     await visible(who, survey_id)
     cuts = tuple(by.split(","))
     if len(cuts) != 2 or len(set(cuts)) != 2 or not set(cuts) <= set(CUTS):
         raise HTTPException(422, f"by takes two different cuts from: {', '.join(CUTS)}")
-    return _send(request, await _cached((SERVING, "crosstab", survey_id, q, cuts, weeks),
-                                        _crosstab_payload, survey_id, q, cuts, weeks))
+    return send_payload(request, await cached_payload((SERVING, "crosstab", survey_id, q, cuts, weeks),
+                                        crosstab_payload, survey_id, q, cuts, weeks))
 
 
-def _crosstab_payload(survey_id: int, qcode: str, cuts: tuple, weeks: int) -> Payload:
+def crosstab_payload(survey_id: int, qcode: str, cuts: tuple, weeks: int) -> Payload:
     """Use versioned published cut files; query live only when they are absent or incomplete."""
     waves = all_waves()   # parsed once per version, not on every cross-tab (half of each one's time)
     me = next((w for w in waves if w["survey_id"] == survey_id), None)
@@ -491,15 +490,15 @@ def _crosstab_payload(survey_id: int, qcode: str, cuts: tuple, weeks: int) -> Pa
     parts = {
         w["survey_id"]: json.loads(found.body)
         for w in pool
-        if (found := _published("waves", str(w["survey_id"]), "cuts", qcode))
+        if (found := published_file("waves", str(w["survey_id"]), "cuts", qcode))
     }
     if parts.get(survey_id, {}).get("counts"):
-        return _json(payloads.crosstab_from(survey_id, qcode, cuts, pool, parts))
+        return to_payload(payloads.crosstab_from(survey_id, qcode, cuts, pool, parts))
     # a published wave's cuts folder lists every question it has (etl/publish.py): one missing from it (an "other,
     # please specify" text) is not in the wave, so say so now instead of a 1–5 s database round trip to the same 404
     if survey_id not in parts and (PUBLISHED / "api" / "v1" / "waves" / str(survey_id) / "cuts").is_dir():
         raise LookupError("That question is not in that wave")
-    return _json(payloads.crosstab(survey_id, qcode, cuts, weeks))
+    return to_payload(payloads.crosstab(survey_id, qcode, cuts, weeks))
 
 
 @app.get("/api/v1/questions/{family}/{study_type}/{qcode}")
@@ -507,20 +506,20 @@ async def question(family: str, study_type: str, qcode: str, request: Request, w
     """One question across every wave of its family and every cut, in compact columns: Compare and Trends pick waves
     and cuts from it on screen. The ETL publishes one per question (a static read); others are built once and cached.
     Someone who may not see every wave of the family gets the file without those waves."""
-    need(who, "trends")
+    require_feature(who, "trends")
     scope = access.scope(who)
     def build() -> Payload:
-        found = _published("questions", family, study_type, qcode)
+        found = published_file("questions", family, study_type, qcode)
         if found is None and not family.startswith(".") and (PUBLISHED / "api" / "v1" / "questions" / family / study_type).is_dir():
             # publish writes every question of a published family that has figures; one missing (an "other, please
             # specify" text) has none: the same empty file the database gave after 1-5 s, now without the round trip
-            found = _json(payloads.question_from(qcode, [], [], {}))
-        found = found or _json(payloads.question(family, study_type, qcode))
+            found = to_payload(payloads.question_from(qcode, [], [], {}))
+        found = found or to_payload(payloads.question(family, study_type, qcode))
         if scope == access.EVERYTHING:
             return found
         shown = {w["survey_id"] for w in all_waves() if access.sees(who, w)}
-        return _json(only_waves(json.loads(found.body), shown))
-    return _send(request, await _cached((SERVING, "question", scope, family, study_type, qcode), build))
+        return to_payload(only_waves(json.loads(found.body), shown))
+    return send_payload(request, await cached_payload((SERVING, "question", scope, family, study_type, qcode), build))
 
 
 def only_waves(doc: dict, shown: set) -> dict:
@@ -538,14 +537,15 @@ app.include_router(team.router, dependencies=[Depends(user)])   # saved views, a
 app.include_router(signin.router)                                 # /auth/* and the admin's session revocation
 app.include_router(mcp.router)                                    # /mcp: the MCP connector, by API key (api/mcp.py)
 app.include_router(logs.router)                                   # /api/v1/admin/logs: operational logs (api/logs.py)
+app.include_router(metrics.router)                                # /api/v1/admin/metrics: the Logs page's dashboard (api/metrics.py)
 
-def _book_data(survey_id: int) -> Optional[dict]:
+def book_data(survey_id: int) -> Optional[dict]:
     return _parsed_book(survey_id, PUBLISHED_VERSION)
 
 
 @lru_cache(maxsize=128)   # parsed once per published version: Ask CIP reads up to 12 books per question
 def _parsed_book(survey_id: int, version: str) -> Optional[dict]:
-    found = _published("waves", str(survey_id), "book")
+    found = published_file("waves", str(survey_id), "book")
     try:
         return json.loads(found.body) if found else payloads.book(survey_id)
     except LookupError:
@@ -556,7 +556,7 @@ def _parsed_book(survey_id: int, version: str) -> Optional[dict]:
 async def ask(request: Request, who: dict = Depends(user)) -> dict:
     """A question in plain words, answered only from published figures with every source cited (api/assistant.py).
     Only from the waves this person may see; at most limits.ask questions a minute (config/access.yml)."""
-    need(who, "ask")
+    require_feature(who, "ask")
     if not access.spend(who["email"], "ask"):
         raise HTTPException(429, "Too many questions: wait a minute", headers={"Retry-After": "60"})
     body = await team.json_body(request)
@@ -564,7 +564,7 @@ async def ask(request: Request, who: dict = Depends(user)) -> dict:
     search = index.search if index else (lambda q, n: {"results": []})
     shown = {w["survey_id"] for w in await run_in_threadpool(all_waves) if access.sees(who, w)}
     answer = await run_in_threadpool(assistant.ask, str(body.get("question") or ""), search,
-                                     lambda sid: _book_data(sid) if sid in shown else None)
+                                     lambda sid: book_data(sid) if sid in shown else None)
     audit.record(request, "ask", target=str(body.get("question") or "")[:300],
                  detail={"mode": answer["mode"], "sources": [s["link"] for s in answer["sources"]]})
     return answer
@@ -579,14 +579,14 @@ async def export(kind: str, request: Request, who: dict = Depends(user)) -> Resp
     """The table a screen offers as CSV, as an Excel workbook or a PowerPoint slide (api/exports.py)."""
     if kind not in EXPORT_TYPES:
         raise HTTPException(404, "Exports are xlsx or pptx")
-    need(who, "export")
+    require_feature(who, "export")
     if not access.spend(who["email"], "export"):
         raise HTTPException(429, "Too many exports: wait a minute", headers={"Retry-After": "60"})
     try:
         spec = exports.check(await team.json_body(request))
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(422, str(exc))
-    body = await run_in_threadpool(exports.xlsx if kind == "xlsx" else exports.pptx, spec)
+    body = await run_in_threadpool(exports.build_xlsx if kind == "xlsx" else exports.build_pptx, spec)
     audit.record(request, "export", target=spec["name"], detail={"kind": kind, "rows": len(spec["rows"])})
     return Response(body, media_type=EXPORT_TYPES[kind], headers={"Content-Disposition": f'attachment; filename="{spec["name"]}.{kind}"'})
 
@@ -623,14 +623,14 @@ async def me(who: dict = Depends(user)) -> dict:
 @lru_cache(maxsize=1)
 def _methodology() -> Payload:
     import yaml
-    return _json(yaml.safe_load(METHODOLOGY.read_text(encoding="utf-8")))
+    return to_payload(yaml.safe_load(METHODOLOGY.read_text(encoding="utf-8")))
 
 
 @app.get("/api/v1/methodology")
 async def methodology(request: Request, who: dict = Depends(user)) -> Response:
     """config/methodology.yml as JSON: {population: {default, study_types, families, ids}, panel, qualification,
     fielding, weighting ("none"), weighting_text, data_quality: [text], small_cells, significance} (all text)."""
-    return _send(request, _methodology())
+    return send_payload(request, _methodology())
 
 
 @app.get("/api/v1/admin/audit")

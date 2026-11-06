@@ -1,3 +1,4 @@
+// sitemap.xml for search engines: the public pages' addresses. Built once, as a file.
 import type { MetadataRoute } from "next";
 import { SITE } from "./site";
 

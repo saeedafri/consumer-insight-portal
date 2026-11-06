@@ -1,5 +1,5 @@
 """Downloads DB-IP's free "IP to City Lite" file at image build (deploy/Dockerfile), for the Logs page's Top visitors:
-the city of a visitor's address is then looked up on our own server (api/logs.py place_of), no address sent anywhere.
+the city of a visitor's address is then looked up on our own server (api/metrics.py place_of), no address sent anywhere.
 DB-IP publishes a new file each month; this tries this month's, then last month's. Licence: CC BY 4.0, credited on the
 Logs page. A failed download never fails the build: visitors are then shown without a place.
     python deploy/geo-download.py /srv/cip/geo/dbip-city-lite.mmdb"""

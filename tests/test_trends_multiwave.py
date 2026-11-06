@@ -42,7 +42,7 @@ def two_wave_db(csi_db):
 
 
 def test_trend_joins_two_waves(two_wave_db):
-    import app.data.repository as repo
+    import tests.reference_queries as repo
     for name in dir(repo):
         fn = getattr(repo, name)
         if hasattr(fn, "__wrapped__"):
@@ -64,7 +64,7 @@ def test_trend_joins_two_waves(two_wave_db):
 
 def test_single_wave_family_returns_one_point(two_wave_db):
     """A family with one wave must not silently look like a trend."""
-    import app.data.repository as repo
+    import tests.reference_queries as repo
     for name in dir(repo):
         fn = getattr(repo, name)
         if hasattr(fn, "__wrapped__"):

@@ -1,7 +1,4 @@
-"""Phase 3: legacy survey history and the Qualtrics Excel export.
-
-See docs/superpowers/plans/2026-09-30-legacy-history-phase3.md.
-"""
+"""Loading the survey history from before Forsta (the legacy warehouse) and from the Qualtrics Excel exports."""
 from __future__ import annotations
 
 from etl import survey_map
@@ -24,16 +21,16 @@ def test_income_midpoints_match_the_analysts_workbook():
 
 import sqlalchemy as sa
 
-from etl import records as xp
+from etl.records import ParsedQuestion
 from etl.loaders import load_definitions, upsert_survey
 
 
 def wave_questions(n_questions: int) -> list:
-    return [xp.ParsedQuestion(qcode=f"Q{i}", qtext=f"Question {i}?", qtype="single",
+    return [ParsedQuestion(qcode=f"Q{i}", qtext=f"Question {i}?", qtype="single",
                               value_min=1, value_max=3,
                               options=[(1, "Yes"), (2, "No"), (3, "Not sure")])
             for i in range(n_questions)] + [
-        xp.ParsedQuestion(qcode="M1", qtext="Which apply?", qtype="multi", value_min=0, value_max=1,
+        ParsedQuestion(qcode="M1", qtext="Which apply?", qtype="multi", value_min=0, value_max=1,
                           rows=[(f"M1r{i}", f"Item {i}") for i in range(20)])]
 
 
@@ -72,14 +69,14 @@ def test_upsert_survey_records_study_type(csi_db):
                             {"s": sid}).scalar() == "annual"
 
 
-from app.data import harmonise
+from etl import harmonise
 
 
 def test_harmonising_a_wave_costs_the_same_whatever_its_size(csi_db):
     small = upsert_survey(host="h", path="p", title="t", wave_label="2025-01-01")
     large = upsert_survey(host="h", path="p", title="t", wave_label="2025-01-08")
     load_definitions(small, wave_questions(3))
-    load_definitions(large, [xp.ParsedQuestion(qcode=f"Z{i}", qtext=f"Other question {i}?",
+    load_definitions(large, [ParsedQuestion(qcode=f"Z{i}", qtext=f"Other question {i}?",
                                                qtype="single", options=[(1, "A"), (2, "B")])
                              for i in range(40)])
     few = statements(csi_db, lambda: harmonise.harmonise_survey(small))
@@ -314,7 +311,7 @@ def test_qualtrics_reload_is_a_transactional_snapshot(csi_db, tmp_path):
 
 
 def test_qualtrics_snapshot_rolls_back_on_answer_failure(csi_db, tmp_path, monkeypatch):
-    from etl import run_pipeline
+    from etl import wave_loader
 
     path = qualtrics_file(tmp_path)
     sid = qualtrics_export.ingest_export(path, "2025-05-12")
@@ -327,7 +324,7 @@ def test_qualtrics_snapshot_rolls_back_on_answer_failure(csi_db, tmp_path, monke
     def fail(*_args, **_kwargs):
         raise RuntimeError("injected bulk answer failure")
 
-    monkeypatch.setattr(run_pipeline, "bulk_insert", fail)
+    monkeypatch.setattr(wave_loader, "bulk_insert", fail)
     with pytest.raises(RuntimeError, match="injected bulk answer failure"):
         qualtrics_export.ingest_export(path, "2025-05-12")
     with csi_db.connect() as conn:

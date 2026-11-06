@@ -1,4 +1,4 @@
-// Two-proportion z-test at 95 %: the same rule as the backend's comparisons (docs/Ui-Design-Claude/13).
+// Two-proportion z-test at 95 %: the same rule as the backend's comparisons (etl/serving.py).
 export function significant(p1: number, n1: number, p2: number, n2: number): boolean {
   return pValue(p1, n1, p2, n2) < 0.05;
 }

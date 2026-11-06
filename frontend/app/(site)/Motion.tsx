@@ -1,10 +1,10 @@
+// All motion is gated on html.anim, added here only when JS runs AND motion is allowed. No scroll handlers:
+// IntersectionObserver fires on enter, so there is no per-frame work. Without JS or with reduced motion,
+// nothing is hidden and nothing animates — the page is complete and readable for crawlers and everyone.
 "use client";
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
-// All motion is gated on html.anim, added here only when JS runs AND motion is allowed. No scroll handlers:
-// IntersectionObserver fires on enter, so there is no per-frame work. Without JS or with reduced motion,
-// nothing is hidden and nothing animates — the page is complete and readable for crawlers and everyone.
 export default function Motion() {
   const path = usePathname();
   useEffect(() => {

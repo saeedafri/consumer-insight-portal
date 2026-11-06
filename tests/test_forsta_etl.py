@@ -1,7 +1,6 @@
 """The Forsta ETL build (Oct 2026): schema, API adapter, pipeline, search.
 
-See docs/superpowers/plans/2026-10-07-forsta-etl-build.md and the design in
-docs/design/2026-10-07-cip-forsta-etl-and-ui-design.md.
+The design: docs/design/2026-10-07-cip-forsta-etl-and-ui-design.md.
 """
 from __future__ import annotations
 
@@ -350,17 +349,17 @@ def test_the_weekly_run_fails_when_a_wave_fails(csi_db):
 
 
 def test_a_wave_that_does_not_match_its_payload_is_failed_and_hidden(csi_db, monkeypatch):
-    from app.data import repository
+    from tests import reference_queries as queries
     real = forsta_etl._answer_values
     monkeypatch.setattr(forsta_etl, "_answer_values", lambda field, value: None if value == "note 3" else real(field, value))
     with pytest.raises(RuntimeError, match="does not match"):
         forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
     assert loaded(csi_db, "SELECT load_status FROM cip_survey WHERE source_ref = 'selfserve/58f/260907'")[0][0] == "failed"
-    assert "2026-09-21" not in set(getattr(repository.list_surveys, "__wrapped__", repository.list_surveys)().wave_label)
+    assert "2026-09-21" not in set(getattr(queries.list_surveys, "__wrapped__", queries.list_surveys)().wave_label)
 
 
 # ── the report UI: search and auto-charting ────────────────────────────────
-from app.data import repository
+from tests import reference_queries as queries
 
 
 def unwrapped(fn):
@@ -369,23 +368,23 @@ def unwrapped(fn):
 
 def test_search_finds_waves_and_questions_by_their_words(csi_db):
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
-    hits = unwrapped(repository.search)("household income")
+    hits = unwrapped(queries.search)("household income")
     assert ("question", sid) in set(zip(hits.kind, hits.survey_id))
     assert "What was your total household income last year?" in set(hits.title)
-    assert "survey" in set(unwrapped(repository.search)("Beauty").kind)
-    assert unwrapped(repository.search)("x").empty                         # too short to search
+    assert "survey" in set(unwrapped(queries.search)("Beauty").kind)
+    assert unwrapped(queries.search)("x").empty                         # too short to search
 
 
 def test_search_hides_waves_that_are_not_verified(csi_db):
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
     with csi_db.begin() as conn:
         conn.execute(sa.text("UPDATE cip_survey SET load_status = 'failed' WHERE survey_id = :s"), {"s": sid})
-    assert not {"survey", "question"} & set(unwrapped(repository.search)("household income").kind)
+    assert not {"survey", "question"} & set(unwrapped(queries.search)("household income").kind)
 
 
 def test_the_wave_report_reads_every_chartable_question_once(csi_db):
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
-    cells, numbers, texts = unwrapped(repository.wave_report)(sid)
+    cells, numbers, texts = unwrapped(queries.wave_report)(sid)
     by_q = dict(loaded(csi_db, "SELECT qcode, question_id FROM cip_question WHERE survey_id = :s", s=sid))
     d5 = cells[cells.question_id == by_q["D5"]]
     assert dict(zip(d5.value_label, d5.n)) == {"$25,000 - $49,999": 4} and set(d5.base_n) == {4}   # qualified only
@@ -399,7 +398,7 @@ def test_the_wave_report_reads_every_chartable_question_once(csi_db):
 
 def test_the_catalog_leaves_out_virtual_questions(csi_db):
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")
-    assert "HX6_norm" not in set(unwrapped(repository.question_catalog)(sid).qcode)
+    assert "HX6_norm" not in set(unwrapped(queries.question_catalog)(sid).qcode)
 
 
 

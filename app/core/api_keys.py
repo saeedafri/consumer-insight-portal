@@ -11,7 +11,6 @@ repository); the key itself is shown once, when it is made.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import os
 import secrets
 import time
@@ -19,13 +18,11 @@ from pathlib import Path
 
 import yaml
 
+from app.core.session import digest   # the same SHA-256 the session ids are kept as
+
 FILE = Path(os.environ.get("CIP_API_KEYS") or Path.home() / ".config/cip/api_keys.yml")
 PREFIX = "cip_"
 _cache: dict = {"mtime": None, "keys": {}}
-
-
-def digest(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def keys() -> dict:

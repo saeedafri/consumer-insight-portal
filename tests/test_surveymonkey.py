@@ -1,7 +1,4 @@
-"""Phase 6: the SurveyMonkey years (2018 – 2022) through the legacy adapter.
-
-See docs/superpowers/plans/2026-10-01-surveymonkey-phase6.md.
-"""
+"""The SurveyMonkey years (2018 – 2022), loaded through the legacy adapter (etl/legacy_dwh.py)."""
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -33,7 +30,7 @@ def test_census_divisions_roll_up_to_regions():
 import pytest
 
 from etl import legacy_dwh
-from tests.test_phase3 import LEGACY_DDL, answers
+from tests.test_legacy_history import LEGACY_DDL, answers
 
 DEMOGRAPHY_DDL = ("CREATE TABLE dwh_smdemography (id INTEGER PRIMARY KEY, response_id VARCHAR(100), collector_id VARCHAR(100),"
                   " age VARCHAR(50), gender VARCHAR(50), income VARCHAR(50), region VARCHAR(50), device VARCHAR(50),"

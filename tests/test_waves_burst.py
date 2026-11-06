@@ -14,7 +14,7 @@ def test_a_burst_builds_the_wave_list_once(monkeypatch):
         time.sleep(0.2)
         return [{"survey_id": 1, "survey_family": "CSI-US", "study_type": "tracker"}]
     monkeypatch.setattr(main, "WAVES", ((), []))
-    monkeypatch.setattr(main, "_published", lambda *parts: None)
+    monkeypatch.setattr(main, "published_file", lambda *parts: None)
     monkeypatch.setattr(main.payloads, "waves", slow_waves)
     start = threading.Barrier(40)
     def ask():

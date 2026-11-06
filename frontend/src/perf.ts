@@ -1,6 +1,18 @@
-// CIP High-Performance Telemetry & Profiling Engine
-// Built natively on User Timing API, PerformanceObserver, React Profiler & ECharts lifecycles.
-// Zero external dependencies, bounded ring-buffer memory (<0.5 MB RAM), nanosecond precision.
+// The developers' speed meter for the portal: how long each page change, API call, chart and component render takes.
+// Off for everyone by default, so a normal visitor's browser does no extra work. A developer turns it on by opening
+// the portal once with ?perf=1 (which also shows the badge, components/PerfHUD.tsx) and off again with ?perf=0;
+// localStorage cip_perf_console=1 also prints each measurement to the browser console.
+// Fed by: src/api.ts (each API call), components/Shell.tsx (page changes), components/EChart.tsx (charts),
+// components/Profiled.tsx (component renders) and the screens' filters. Memory is bounded (a few hundred entries).
+
+/** Whether this browser measures at all: ?perf=1 now, or once before (remembered in localStorage cip_perf). */
+function measuring(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const flag = new URLSearchParams(location.search).get("perf");
+    return flag !== null ? flag === "1" : localStorage.getItem("cip_perf") === "1";
+  } catch { return false; }   // storage blocked (a private window): off
+}
 
 export interface ApiMetric {
   id: string;
@@ -72,12 +84,12 @@ class CIPTelemetry {
     timeoutId?: number;
   } | null = null;
 
-  public consoleLogging = true;
+  public enabled = measuring();   // off: every method below returns at once
+  public consoleLogging = false;
 
   constructor() {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("cip_perf_console");
-      if (stored !== null) this.consoleLogging = stored === "1";
+    if (this.enabled) {
+      try { this.consoleLogging = localStorage.getItem("cip_perf_console") === "1"; } catch { /* storage blocked */ }
     }
   }
 
@@ -106,6 +118,7 @@ class CIPTelemetry {
 
   // ── 1. Page & Route Transitions ──────────────────────────────────────────
   public startPageTransition(pathname: string): void {
+    if (!this.enabled) return;
     this.closeActiveTx();
 
     const id = `page_${Date.now()}`;
@@ -127,6 +140,7 @@ class CIPTelemetry {
 
   // ── 2. Filter Changes ────────────────────────────────────────────────────
   public startFilterChange(filterName: string, value: string): void {
+    if (!this.enabled) return;
     this.closeActiveTx();
 
     const id = `filter_${Date.now()}`;
@@ -270,6 +284,7 @@ class CIPTelemetry {
 
   // ── 3. API & Endpoint Logging ────────────────────────────────────────────
   public logApi(metric: Omit<ApiMetric, "id" | "timestamp">): void {
+    if (!this.enabled) return;
     const entry: ApiMetric = {
       ...metric,
       id: `api_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -313,6 +328,7 @@ class CIPTelemetry {
     actualDuration: number,
     baseDuration: number
   ): void => {
+    if (!this.enabled) return;
     const dur = Math.round(actualDuration * 100) / 100;
     const base = Math.round(baseDuration * 100) / 100;
 
@@ -359,6 +375,7 @@ class CIPTelemetry {
 
   // ── 5. ECharts & Graph Canvas Timing ─────────────────────────────────────
   public logGraph(metric: Omit<GraphMetric, "id" | "timestamp">): void {
+    if (!this.enabled) return;
     const entry: GraphMetric = {
       ...metric,
       id: `graph_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,

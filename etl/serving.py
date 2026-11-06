@@ -37,8 +37,8 @@ from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.exc import OperationalError
 
 from app.core.database import bulk_insert, get_engine
-from app.data.cube import ANSWER_CUTS, ANSWER_ROWS, CUBE_DIMS
-from app.data.harmonise import normalise_text
+from etl.cube import ANSWER_CUTS, ANSWER_ROWS, CUBE_DIMS
+from etl.harmonise import normalise_text
 
 log = logging.getLogger("cip.serving")
 SMALL_BASE = 50       # respondents: below this a percentage is flagged

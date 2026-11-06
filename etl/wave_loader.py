@@ -13,7 +13,7 @@ from typing import Any, Optional
 from sqlalchemy import bindparam, text
 
 from app.core.database import bulk_insert, execute_many, get_engine
-from etl import records as xp
+from etl.records import normalise_label_cell
 from etl import survey_map
 
 logging.basicConfig(
@@ -25,7 +25,7 @@ STATUS_MAP = {"Terminated": 1, "Overquota": 2, "Qualified": 3, "Partial": 4}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-def _code_lookup(survey_id: int) -> dict[int, dict[str, int]]:
+def code_lookup(survey_id: int) -> dict[int, dict[str, int]]:
     """field_id -> {answer label: code}, for every question that is not a
     0/1 multi-punch.
 
@@ -54,91 +54,7 @@ def _code_lookup(survey_id: int) -> dict[int, dict[str, int]]:
     return lookup
 
 
-def _load_one_respondent(survey_id: int, rec: dict[str, Any], var_map: dict[str, int],
-                         run_id: int, code_map: Optional[dict[int, dict[str, int]]] = None) -> int:
-    status_label = str(rec.get("status") or "").strip()
-    status_code = STATUS_MAP.get(status_label)
-    with get_engine("etl").begin() as conn:
-        res = conn.execute(
-            text(
-                """
-                INSERT INTO cip_respondent
-                    (survey_id, record_no, forsta_uuid, status_code, status_label,
-                     is_qualified, completed_at, interview_secs, panel_source, sample_rid,
-                     markers, device, os, browser, dropout_qcode,
-                     load_id)
-                VALUES (:sid, :rec, :uuid, :sc, :sl, :qual, :done, :secs, :src, :rid,
-                        :markers, :dev, :os, :br, :drop, :run)
-                ON DUPLICATE KEY UPDATE
-                    status_code = VALUES(status_code), status_label = VALUES(status_label),
-                    is_qualified = VALUES(is_qualified), completed_at = VALUES(completed_at),
-                    interview_secs = VALUES(interview_secs),
-                    load_id = VALUES(load_id),
-                    respondent_id = LAST_INSERT_ID(respondent_id)
-                """
-            ),
-            {
-                "sid": survey_id,
-                "rec": _int(rec.get("record")) or 0,
-                "uuid": _str(rec.get("uuid"), 64),
-                "sc": status_code,
-                "sl": status_label[:30] or None,
-                "qual": 1 if status_code == 3 else 0,
-                "done": _dt(rec.get("date")),
-                "secs": _int(rec.get("qtime")),
-                "src": _str(rec.get("source"), 100),
-                "rid": _str(rec.get("RID"), 100),
-                "markers": _str(rec.get("markers"), 1000),
-                "dev": _str(rec.get("vmobiledevice"), 50),
-                "os": _str(rec.get("vos"), 100),
-                "br": _str(rec.get("vbrowser"), 100),
-                "drop": _str(rec.get("vdropout"), 50),
-                "run": run_id,
-            },
-        )
-        respondent_id = conn.execute(
-            text("SELECT respondent_id FROM cip_respondent "
-                 "WHERE survey_id = :sid AND record_no = :rec"),
-            {"sid": survey_id, "rec": _int(rec.get("record")) or 0},
-        ).scalar()
-
-        payload = []
-        for column, value in rec.items():
-            vid = var_map.get(column)
-            if vid is None or value is None:
-                continue
-            code, label = xp.normalise_label_cell(value)
-            # Single-punch and grid cells carry a scale label, not 0/1 — resolve
-            # it back to the datamap's code so filters and ordering work.
-            choices = (code_map or {}).get(vid)
-            if choices is not None and label is not None:
-                code = choices.get(label.strip().lower())
-            payload.append(
-                {
-                    "rid": respondent_id, "sid": survey_id, "vid": vid,
-                    "code": code, "label": (label or "")[:500] or None,
-                    "num": _float(value), "txt": None,
-                }
-            )
-        if payload:
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO cip_answer
-                        (respondent_id, survey_id, field_id, value_code,
-                         value_label, value_number, value_text)
-                    VALUES (:rid, :sid, :vid, :code, :label, :num, :txt)
-                    ON DUPLICATE KEY UPDATE
-                        value_code = VALUES(value_code), value_label = VALUES(value_label),
-                        value_number = VALUES(value_number), value_text = VALUES(value_text)
-                    """
-                ),
-                payload,
-            )
-    return 1
-
-
-def _replace_respondents(survey_id: int, records: list[dict[str, Any]], var_map: dict[str, int],
+def replace_respondents(survey_id: int, records: list[dict[str, Any]], var_map: dict[str, int],
                          run_id: int, code_map: Optional[dict[int, dict[str, int]]] = None) -> int:
     """Replace one export snapshot in one transaction, with bounded round trips."""
     people = []
@@ -152,7 +68,7 @@ def _replace_respondents(survey_id: int, records: list[dict[str, Any]], var_map:
             "sc": status_code,
             "sl": status_label[:30] or None,
             "qual": 1 if status_code == 3 else 0,
-            "done": _dt(rec.get("date")),
+            "done": parse_datetime(rec.get("date")),
             "secs": _int(rec.get("qtime")),
             "src": _str(rec.get("source"), 100),
             "rid": _str(rec.get("RID"), 100),
@@ -202,7 +118,7 @@ def _replace_respondents(survey_id: int, records: list[dict[str, Any]], var_map:
                     field_id = var_map.get(column)
                     if field_id is None or value is None:
                         continue
-                    code, label = xp.normalise_label_cell(value)
+                    code, label = normalise_label_cell(value)
                     choices = (code_map or {}).get(field_id)
                     if choices is not None and label is not None:
                         code = choices.get(label.strip().lower())
@@ -225,7 +141,7 @@ def _replace_respondents(survey_id: int, records: list[dict[str, Any]], var_map:
     return len(people)
 
 
-def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
+def rebuild_profiles(survey_id: int, questions: Optional[list] = None,
                       family: Optional[str] = None) -> None:
     """Flatten the demographic questions into cip_profile.
 
@@ -341,7 +257,7 @@ def _rebuild_profiles(survey_id: int, questions: Optional[list] = None,
     log.info("Rebuilt %d profiles for survey_id=%s", len(payload), survey_id)
 
 
-def _rebuild_question_bases(survey_id: int, drop_labels: bool = True) -> None:
+def rebuild_question_bases(survey_id: int, drop_labels: bool = True) -> None:
     """Set cip_question.base_n to the number of qualified respondents who
     actually reached each question.
 
@@ -406,7 +322,7 @@ def wave_from_records(records: list[dict]) -> str:
     (the Excel exports: 2026-09-21, 2026-09-28)."""
     first = None
     for rec in records:
-        stamp = _dt(rec.get("date"))
+        stamp = parse_datetime(rec.get("date"))
         if stamp:
             day = stamp.date()
             first = day if first is None else min(first, day)
@@ -438,7 +354,7 @@ def _str(v: Any, limit: int) -> Optional[str]:
     return s[:limit] or None
 
 
-def _dt(v: Any) -> Optional[datetime]:
+def parse_datetime(v: Any) -> Optional[datetime]:
     if v is None:
         return None
     if isinstance(v, datetime):
