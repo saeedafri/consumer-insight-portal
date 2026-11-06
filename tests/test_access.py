@@ -289,3 +289,15 @@ def test_sign_in_through_stage3_coresight_idp(portal, monkeypatch):
     monkeypatch.setattr(requests, "post", lambda url, **kw: Answer() if url.endswith("/csr-idp/token") else None)
     status, head, _ = call(f"/auth/callback?code=c&state={sent['state'][0]}", headers={"cookie": login})
     assert status in (302, 303) and any(c.startswith(signin.COOKIE + "=") for c in head["set-cookie"])
+
+
+def test_logout_never_500s_when_idp_has_no_discovery(portal, monkeypatch):
+    """Logging out when the provider has no openid-configuration returns 200 and drops the cookie."""
+    for key, value in {"CIP_OIDC_ISSUER": "https://stage3.coresight.com", "CIP_OIDC_CLIENT_ID": "cip-staging",
+                       "CIP_OIDC_AUTHORIZE_URL": "https://stage3.coresight.com/csr-idp/authorize",
+                       "CIP_OIDC_TOKEN_URL": "https://stage3.coresight.com/csr-idp/token"}.items():
+        monkeypatch.setenv(key, value)
+    status, head, body = call("/auth/logout", signed("dataautomation@coresight.com"))
+    assert status == 200
+    assert b"Signed out" in body
+    assert any(c.startswith(signin.COOKIE + "=;") or "Max-Age=0" in c for c in head.get("set-cookie", []))

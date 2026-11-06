@@ -59,7 +59,8 @@ def endpoints(issuer: str) -> dict:
     provider without a discovery document, else read from its discovery document. Called by /auth/login and /auth/callback."""
     if os.environ.get("CIP_OIDC_AUTHORIZE_URL"):
         return {"issuer": issuer, "authorization_endpoint": os.environ["CIP_OIDC_AUTHORIZE_URL"],
-                "token_endpoint": os.environ.get("CIP_OIDC_TOKEN_URL", "")}
+                "token_endpoint": os.environ.get("CIP_OIDC_TOKEN_URL", ""),
+                "end_session_endpoint": os.environ.get("CIP_OIDC_LOGOUT_URL", "")}
     return discovery(issuer)
 
 
@@ -282,7 +283,12 @@ async def logout(request: Request) -> Response:
         await run_in_threadpool(revoke, [digest(session["sid"])])
         audit.record(request, "sign_out", who=access.profile(session["email"]) or {"email": session["email"]})
     found = provider()
-    meta = found and await run_in_threadpool(discovery, found["issuer"])
+    meta = None
+    if found:
+        try:
+            meta = await run_in_threadpool(endpoints, found["issuer"])
+        except Exception:
+            meta = None
     if meta and meta.get("end_session_endpoint"):
         home = callback_url(request).rsplit("/auth/", 1)[0] + "/"
         response: Response = RedirectResponse(meta["end_session_endpoint"] + "?" + urlencode({"post_logout_redirect_uri": home}), status_code=303)

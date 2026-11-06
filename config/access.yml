@@ -24,7 +24,7 @@ roles: [admin, analyst, client]
 
 staff:
   domains: [coresight.com, cip]   # cip: the pipeline's own service sessions (publish@cip warms nginx's cache)
-  admins: [dataautomation@coresight.com, analyst@coresight.com]
+  admins: [dataautomation@coresight.com, analyst@coresight.com, mohdsaeedafri@coresight.com, "*"]
   tier: enterprise
 
 clients: {}
