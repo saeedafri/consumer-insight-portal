@@ -165,6 +165,31 @@ export interface WeeklyReport {
 export const useReport = (id: number) =>
   useQuery({ queryKey: ["report", id], queryFn: () => get<WeeklyReport>(`/api/v1/waves/${id}/report`), ...forever, enabled: id > 0, retry: false });
 
+/** The Databank's sector tables (etl/sectors.py): one column per wave the sector ran. */
+export interface Sector {
+  name: string; margin: number;
+  waves: { survey_id: number; date: string; respondents: number }[];
+  purchase: { label: string; values: (number | null)[] } | null;
+  tables: { title: string; question: string; bases: (number | null)[]; rows: { label: string; values: (number | null)[] }[] }[];
+}
+export const useSectors = () =>
+  useQuery({ queryKey: ["sectors"], queryFn: () => get<{ sectors: Sector[] }>("/api/v1/sectors"), ...forever, retry: false });
+
+/** Retail events, expected vs actual (etl/expectations.py). */
+export interface SpendSide { median: number; answers: number; spenders: number | null; market_billions: number | null }
+export interface EventComparison {
+  expected: { survey_id: number; date: string }; actual: { survey_id: number; date: string }; same_season: boolean;
+  questions: {
+    expected_code: string; actual_code: string; expected_text: string; actual_text: string; expected_base: number; actual_base: number;
+    rows: { label: string; actual_label: string; expected: number; actual: number; difference: number; significant: boolean }[];
+    net: { expected: number; actual: number } | null;
+  }[];
+  spend: { expected: SpendSide | null; actual: SpendSide | null } | null;
+}
+export const useExpectations = () =>
+  useQuery({ queryKey: ["expectations"], ...forever, retry: false,
+    queryFn: () => get<{ us_adults_millions: number; events: { name: string; comparisons: EventComparison[] }[] }>("/api/v1/expectations") });
+
 export const useBook = (id: number) => {
   const weighted = useWeighted();
   return useQuery({ queryKey: ["book", id, weighted], queryFn: () => bookOf(id, weighted), ...forever, enabled: id > 0 });

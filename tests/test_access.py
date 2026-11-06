@@ -215,3 +215,21 @@ def test_the_weekly_report_is_served_as_published_and_a_wave_without_one_says_so
     status, _, body = call("/api/v1/waves/300/report", signed("ana@coresight.com"))
     assert status == 404 and "no weekly report" in json.loads(body)["detail"]
     assert call("/api/v1/waves/415/report")[0] == 401                       # signed out: nothing
+
+
+def test_the_tracker_views_are_served_as_published_and_say_so_before_the_first_publish(portal):
+    for name in ("sectors", "expectations"):
+        assert call(f"/api/v1/{name}", signed("ana@coresight.com"))[0] == 404              # not published yet
+        put(portal, name, {"sectors": [], "events": []})
+        status, _, body = call(f"/api/v1/{name}", signed("pat@acme.com"))                 # a client who sees every tracker wave
+        assert status == 200 and "sectors" in json.loads(body)
+        assert call(f"/api/v1/{name}")[0] == 401                                           # signed out: nothing
+
+
+
+def test_the_tracker_views_refuse_someone_who_may_not_open_every_tracker_wave(portal, monkeypatch):
+    put(portal, "sectors", {"sectors": []})
+    monkeypatch.setitem(RULES["surveys"], "ids", {415: {"client": "acme", "visibility": "client"}})   # one tracker wave: Acme's
+    assert call("/api/v1/sectors", signed("pat@acme.com"))[0] == 200
+    status, _, body = call("/api/v1/sectors", signed("zed@zeta.com"))
+    assert status == 403 and "subscription" in json.loads(body)["detail"]

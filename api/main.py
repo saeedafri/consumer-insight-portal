@@ -451,6 +451,31 @@ async def weekly_report(survey_id: int, request: Request, who: dict = Depends(us
     return send_payload(request, found)
 
 
+async def tracker_view(request: Request, who: dict, name: str) -> Response:
+    """A view across the weekly tracker's waves, as the ETL published it (api/v1/<name>.json.gz). nginx sends the file
+    itself to most people (deploy/cip_locations.conf); this serves a filtered session and a laptop without nginx.
+    Someone who may not open every tracker wave gets 403: the file mixes all of them. Nothing is computed here."""
+    tracker = [w for w in await run_in_threadpool(all_waves) if w["study_type"] == "tracker"]
+    if not all(access.sees(who, w) for w in tracker):
+        raise HTTPException(403, "Not included in your subscription: this view covers every weekly tracker survey")
+    found = published_file(name)
+    if found is None:
+        raise HTTPException(404, "Not published yet")
+    return send_payload(request, found)
+
+
+@app.get("/api/v1/sectors")
+async def sectors(request: Request, who: dict = Depends(user)) -> Response:
+    """The Databank's sector tables (etl/sectors.py): purchase rate, retailers, brands and categories per sector wave."""
+    return await tracker_view(request, who, "sectors")
+
+
+@app.get("/api/v1/expectations")
+async def expectations(request: Request, who: dict = Depends(user)) -> Response:
+    """Retail events, expected vs actual (etl/expectations.py): answers before and after, median spend, market size."""
+    return await tracker_view(request, who, "expectations")
+
+
 @app.get("/api/v1/search")
 async def search(request: Request, q: str = Query(..., min_length=2, max_length=100), limit: int = Query(40, ge=1, le=200),
                  offset: int = Query(0, ge=0, le=5000), who: dict = Depends(user)) -> Response:

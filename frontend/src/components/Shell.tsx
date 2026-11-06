@@ -122,6 +122,8 @@ export default function Shell() {
         {allowed(me, "schedule") && <NavLink to="/schedule"><Icon d="M7 2v2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2h-2V2h-2v2H9V2zm-2 8h14v10H5zm2 2v2h2v-2zm4 0v2h2v-2zm4 0v2h2v-2z" />Launch schedule</NavLink>}
         {allowed(me, "ask") && <NavLink to="/ask"><Icon d="M4 4h16v12H8l-4 4zm4 5v2h2V9zm4 0v2h2V9zm4 0v2h2V9z" />Ask CIP</NavLink>}
         {allowed(me, "boards") && <NavLink to="/boards"><Icon d="M16 3l5 5-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z" />Boards</NavLink>}
+        <NavLink to="/sectors"><Icon d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z" />Sector databank</NavLink>
+        <NavLink to="/expectations"><Icon d="M4 20V10h4v10zm6 0V4h4v16zm6 0v-7h4v7z" />Expected vs actual</NavLink>
         <NavLink to="/methodology"><Icon d="M12 2a10 10 0 110 20 10 10 0 010-20zm-1 15h2v-6h-2zm0-8h2V7h-2z" />Methodology</NavLink>
         {me?.role === "admin" && <NavLink to="/logs"><Icon d="M4 4h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm0 5h16v2H4z" />Logs</NavLink>}
         <NavLink to="/whats-new"><Icon d="M12 2l2.4 6.9H22l-6 4.4 2.3 7-6.3-4.5L5.7 20.3 8 13.3 2 8.9h7.6z" />What's new</NavLink>

@@ -1,0 +1,32 @@
+# Expected vs actual for retail events (etl/expectations.py → the Expected vs actual screen): what people said they
+# would do before an event against what people said they did afterwards, from two different weekly surveys, as the
+# "US Consumer Survey Insights Extra" seasonal report shows them. Change it here: no code changes needed.
+#
+#   day        the event's day (month-day). A wave fielded before it asks the expectations, a wave fielded after it
+#              asks what people did. Black Friday moves (23-29 Nov) and Prime Big Deal Days too (early Oct): the
+#              surveys around them are weeks away, so one day is close enough.
+#   questions  expectation question: the question asking the same thing afterwards (often the same code, reworded)
+#   net        the more/less questions that get a net score (% more minus % less), as the report gives
+#   spenders   who spend: the question and answer codes, for the market size
+#   spend      how much they spend, an open number in dollars: its median, and the market size
+#              (share who spend x US adults x median spend)
+
+us_adults_millions: 270   # US adults 18+. Reproduces the 4Q26 report's Halloween estimate ($14.7 billion at 54.4 % and
+                          # a $100 median); replace with the research team's census figure if theirs differs
+
+events:
+  - name: Halloween
+    day: "10-31"
+    questions: {HW1: HW1, HW2: HW2, HW5: HW5}
+    net: [HW2]                  # spend more or less than last year
+    spenders: {question: HW1, codes: [2]}
+    spend: HW4
+  - name: Prime Big Deal Days
+    day: "10-08"
+    questions: {BD2: BD2, BD3: BD3, BD4: BD4}
+  - name: Singles' Day
+    day: "11-11"
+    questions: {SD2: SD2, SD3: SD3, SD4: SD4}
+  - name: Black Friday
+    day: "11-27"
+    questions: {BF1: BFR1, BF2: BFR2, BF3: BFR3, BF4: BFR4, BF5: BFR5}

@@ -27,6 +27,7 @@ import math
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
+from typing import Iterable
 
 import yaml
 from sqlalchemy import bindparam, text
@@ -63,8 +64,11 @@ class Question:
         self.ids = [w[0] for w in file["waves"]]
         self.dates = [w[1] for w in file["waves"]]
         self.days = [date.fromisoformat(d) for d in self.dates]   # parsed once: wave_of runs thousands of times
+        self.wordings = [file["versions"][w[2] - 1] if file.get("versions") else "" for w in file["waves"]]   # per wave
         self.labels = [answer[2] or answer[0] for answer in file["answers"]]
+        self.codes = [answer[1] for answer in file["answers"]]   # single-choice answer codes; None for a multi-choice item
         self.cuts = {(dim, value): i for i, (dim, value) in enumerate(file["cuts"])}
+        self.total = [self.cuts[("total", "Total")]]   # the all-respondents cut, as `cuts` arguments take it
         self.count, self.base = {}, {}
         for w, c, a, n, b in zip(file["w"], file["c"], file["a"], file["n"], file["b"]):
             self.count[(w, c, a)] = n or 0   # n is empty under the privacy minimum: counted as none
@@ -81,10 +85,27 @@ class Question:
         """This question's place for one wave, by its id: two waves can share a date (two panels in one week)."""
         return self.ids.index(survey_id) if survey_id in self.ids else None
 
+    def offered(self, wave: int) -> list[int]:
+        """The answers one wave's survey offered (the file keeps every wave's answers; another wave's wording is not)."""
+        return [a for a in range(len(self.labels)) if (wave, self.total[0], a) in self.count]
+
     def counts(self, wave: int, cuts: list[int], answers: list[int]) -> tuple[int, int]:
         """(respondents who gave any of `answers`, base) in one wave, over one or several cuts added together."""
         base = sum(self.base.get((wave, c), 0) for c in cuts)
         return sum(self.count.get((wave, c, a), 0) for c in cuts for a in answers), base
+
+
+def read_questions(folder: Path, codes: Iterable[str]) -> dict[str, Question]:
+    """The published question files of `codes` in one family folder (api/v1/questions/<family>/<study>), read and
+    indexed once; a code with no file is left out. Also used by etl/sectors.py and etl/expectations.py."""
+    return {code: Question(json.loads(gzip.decompress((folder / f"{code}.json.gz").read_bytes())))
+            for code in codes if (folder / f"{code}.json.gz").exists()}
+
+
+def read_waves(out: Path, family: str, study: str) -> list[dict]:
+    """The published waves of one family and study type (api/v1/waves.json.gz), oldest first."""
+    waves = json.loads(gzip.decompress((out / "api/v1/waves.json.gz").read_bytes()))
+    return sorted((w for w in waves if w["survey_family"] == family and w["study_type"] == study), key=lambda w: w["wave_date"])
 
 
 def share(question: Question, wave: int | None, cuts: list[int], answers: list[int]) -> float | None:
@@ -274,12 +295,9 @@ def publish(out: Path, write) -> int:
     api/v1/waves/<id>/report.json.gz, from the question files in `out` (no database) plus the shopper profiles (one
     query). Returns the bytes written."""
     family, study = settings()["family"], settings()["study_type"]
-    folder = out / "api/v1/questions" / family / study
     codes = {*(s["question"] for s in settings()["sections"]), *settings()["sentiment"].values()}
-    questions = {code: Question(json.loads(gzip.decompress((folder / f"{code}.json.gz").read_bytes()))) for code in codes
-                 if (folder / f"{code}.json.gz").exists()}   # read and indexed once, for all the reports
-    waves = sorted((w for w in json.loads(gzip.decompress((out / "api/v1/waves.json.gz").read_bytes()))
-                    if w["survey_family"] == family and w["study_type"] == study), key=lambda w: w["wave_date"])
+    questions = read_questions(out / "api/v1/questions" / family / study, codes)   # once, for all the reports
+    waves = read_waves(out, family, study)
     recent = waves[-settings()["recent_waves"]:]
     cells = profile_cells([w["survey_id"] for w in waves[-(len(recent) + TABLE_WEEKS - 1):]])
     size = 0

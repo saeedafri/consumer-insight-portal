@@ -48,7 +48,7 @@ from sqlalchemy import text
 
 from shared.core.database import get_engine
 from shared.data import payloads
-from etl import weekly_report
+from etl import expectations, sectors, weekly_report
 
 log = logging.getLogger("cip.publish")
 ROOT = Path(os.environ.get("CIP_PUBLISH_DIR") or Path(__file__).resolve().parents[1] / "data/published")
@@ -211,6 +211,8 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
         done = list(pool.map(question, questions))
     size += sum(done)
     size += weekly_report.publish(out, write)   # the weekly report of the recent tracker waves, from the files above
+    size += sectors.publish(out, write)         # the Databank's sector tables, from the same files
+    size += expectations.publish(out, write)    # retail events: expected vs actual, plus the spend answers
     manifest = {"version": version, "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "serving_version": serving, "waves": len(ids), "books": len(ids), "dashboards": len(boards),
                 "rebuilt_waves": len(fresh), "rebuilt_families": len(redo), "questions_written": len(done),

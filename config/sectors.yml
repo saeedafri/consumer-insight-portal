@@ -1,0 +1,68 @@
+# The sector tables of the Databank (etl/sectors.py → the Sectors screen): for each sector, the share who bought in the
+# category in the past three months, then its retailers, brands or categories, one column per survey the sector ran
+# (back to 2022). Change it here: no code changes needed.
+#
+#   module    the sector's wave module (config/survey_calendar.yml sectors: name). Its surveys: those tagged with it
+#             (since Jul 2025), and before tags those whose title names it (that file's title rule)
+#   purchase  the purchase-rate row: a single-choice question and the answer codes that count as "bought"
+#   tables    one table per tab, title: question code (multi-choice: each answer becomes a row). Older surveys numbered
+#             their questions Q1, Q2…: there the question is found by its wording, which also tells a reused code apart
+#             (DS1-DS3: drugstores in drugstore weeks, dollar stores in off-price weeks)
+#
+# In the Databank's order (Clothing first); Social commerce is CIP's addition.
+
+sectors:
+  - name: Clothing
+    module: Apparel
+    purchase: {question: AP1, codes: [1], label: Bought clothing or accessories in the past three months}
+    tables: {Retailers: AP3, Brands: AP5, Categories: AP2}
+  - name: Beauty
+    module: Beauty
+    purchase: {question: BT1, codes: [1], label: Bought beauty products in the past three months}
+    tables: {Retailers: BT13, Products: BT7, "Where they discover products": BT3}
+  - name: Department stores
+    module: Department stores
+    purchase: {question: DP1, codes: [1], label: Bought from a department store in the past three months}
+    tables: {Retailers: DP2, Products: DP3}
+  - name: Dollar stores
+    module: Off-price / dollar stores
+    purchase: {question: DS1, codes: [1], label: Bought from a dollar store in the past three months}
+    tables: {Retailers: DS2, Products: DS3}
+  - name: Drugstore / pharmacy
+    module: Drugstore / pharmacy
+    purchase: {question: DS1, codes: [1], label: Bought from a drugstore or pharmacy in the past three months}
+    tables: {Retailers: DS2, Products: DS3}
+  - name: eCommerce
+    module: eCommerce
+    purchase: {question: EC1, codes: [1], label: Bought online in the past three months}
+    tables: {Retailers: EC2, Categories: EC4}
+  - name: Footwear
+    module: Footwear
+    purchase: {question: FW1, codes: [1], label: Bought footwear in the past three months}
+    tables: {Retailers: FW2, Brands: FW3, Categories: FW4}
+  - name: Home furnishings
+    module: Home furnishings
+    purchase: {question: HF1, codes: [1], label: Bought home-furnishing or décor products in the past three months}
+    tables: {Retailers: HF2, Products: HF3}
+  - name: Home improvement
+    module: Home improvement / DIY
+    purchase: {question: HI1, codes: [1], label: Bought home-improvement, DIY or garden products in the past three months}
+    tables: {Retailers: HI2, Products: HI3}
+  - name: Luxury
+    module: Luxury
+    purchase: {question: LX1, codes: [1], label: Bought luxury products in the past three months}
+    tables: {Brands: LX3, Categories: LX2, "Where they bought": LX4}
+  - name: Mass merchants and warehouse clubs
+    module: Mass merchants / warehouse clubs
+    tables: {Retailers: M1, Categories: M2}      # no purchase question: M1 is asked of everyone
+  - name: Off-price
+    module: Off-price / dollar stores
+    purchase: {question: O1, codes: [1], label: Bought from an off-price retailer in the past three months}
+    tables: {Retailers: O2, Products: O3}
+  - name: Social commerce
+    module: Social commerce
+    purchase: {question: SC1, codes: [1], label: Used social media while shopping in the past three months}
+    tables: {Platforms: SC2, Products bought on social media: SC6}
+
+# surveys left out: a parallel panel fielded the same week as the main survey (Dec 2023), one column per date
+leave_out_titles: ["RIWI"]
