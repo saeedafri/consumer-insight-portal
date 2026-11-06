@@ -7,8 +7,8 @@ import type { Theme } from "../theme";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from "react-router";
 import { allowed, useMe, useWaves } from "../api";
 import PinDialog from "./PinDialog";
-import { UndoBar } from "./bits";
-import type { Wave } from "../api";
+import { Menu, UndoBar } from "./bits";
+import type { Me, Wave } from "../api";
 import { fmtDate } from "../stats";
 import { perf } from "../perf";
 import { isSaved, removeView, saveView } from "../saved";
@@ -263,9 +263,23 @@ function SiteHeader({ theme, onTheme, menuOpen, onToggleMenu }: { theme: Theme; 
         {theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
       </TooltipContent>
     </Tooltip>
-    {me && <p className="site-user"><span>{me.name || me.email}</span>
-      <a className="site-signout" href="/auth/logout">Sign out</a></p>}
+    {me && <AccountMenu me={me} />}
   </header>;
+}
+
+/** The signed-in person as a round icon at the far right of the header; it opens their name and email, My account
+ *  (screens/Account.tsx) and Sign out. */
+function AccountMenu({ me }: { me: Me }) {
+  const person = <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 12a4.5 4.5 0 100-9 4.5 4.5 0 000 9zm0 2c-4.4 0-8 2.2-8 5v2h16v-2c0-2.8-3.6-5-8-5z" /></svg>;
+  return <Menu label="" icon={person} name={`Account: ${me.email}`} className="account-menu">
+    <div className="account-who"><b>{me.name || me.email.split("@")[0]}</b><span>{me.email}</span></div>
+    <Link className="btn" to="/account">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 12a4.5 4.5 0 100-9 4.5 4.5 0 000 9zm0 2c-4.4 0-8 2.2-8 5v2h16v-2c0-2.8-3.6-5-8-5z" /></svg>
+      My account</Link>
+    <a className="btn account-signout" href="/auth/logout">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M10 17l1.4-1.4-2.6-2.6H20v-2H8.8l2.6-2.6L10 7l-5 5 5 5zM4 5h7V3H4a2 2 0 00-2 2v14a2 2 0 002 2h7v-2H4V5z" /></svg>
+      Sign out</a>
+  </Menu>;
 }
 
 /** Keep this exact view (wave, screen, question, cut, waves picked) under a name in the Library. */

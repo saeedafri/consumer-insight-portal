@@ -40,8 +40,9 @@ interface Metrics {
 interface Health { build?: string }
 
 // ---- Small helpers --------------------------------------------------------------------------------------------------
-const TOKEN = "cip_admin_token";   // this tab only (sessionStorage): gone when the tab closes
-const readToken = () => { try { return sessionStorage.getItem(TOKEN) ?? ""; } catch { return ""; } };
+const TOKEN = "cip_admin_token";   // remembered in this browser (localStorage), so a bookmark of the page opens it straight away;
+                                   // emptying the box forgets it. Admin pages still need an admin account too.
+const readToken = () => { try { return localStorage.getItem(TOKEN) ?? ""; } catch { return ""; } };
 const num = (n: number, digits = 0) => n.toLocaleString("en-US", { maximumFractionDigits: digits });
 const mb = (n: number | null | undefined) => n == null ? "not measured" : n >= 1024 ? `${num(n / 1024, 2)} GB` : `${num(n, 1)} MB`;
 const bytes = (n: number) => n < 2 ** 20 ? `${num(n / 1024)} KB` : n < 2 ** 30 ? `${num(n / 2 ** 20, 1)} MB` : `${num(n / 2 ** 30, 2)} GB`;
@@ -97,7 +98,7 @@ export default function Logs() {
   }, [live]);
 
   // trimmed: a token pasted with a space or line break around it would otherwise never match
-  const keepToken = (value: string) => { const clean = value.trim(); setToken(clean); try { sessionStorage.setItem(TOKEN, clean); } catch { /* private window */ } };
+  const keepToken = (value: string) => { const clean = value.trim(); setToken(clean); try { if (clean) localStorage.setItem(TOKEN, clean); else localStorage.removeItem(TOKEN); } catch { /* private window */ } };
   const me = useMe().data;
 
   return (

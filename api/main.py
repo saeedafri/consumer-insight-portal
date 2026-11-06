@@ -701,7 +701,10 @@ async def every_request(request: Request, call_next):
     if path.startswith("/api/") and duration_ms > 200:   # every request's time is in nginx's log (the dashboard reads it):
         # a line per fast request too cost 2.5 % of the API's CPU and an unbuffered write each to /home (5 Nov 2026)
         log.warning("[PERF-SLOW] %s %s took %.1f ms (status %d)", request.method, path, duration_ms, response.status_code)
-    html = headers.get("content-type", "").startswith("text/html")
+    # a 304 ("you already have it") carries no content type, yet the browser applies its policy to the page it kept:
+    # a page's 304 must get the page policy, or a reload is blocked (seen with the local server; nginx serves pages on Azure)
+    html = headers.get("content-type", "").startswith("text/html") or (
+        response.status_code == 304 and not path.startswith(("/api/", "/auth/", "/_next/")))
     # only a page runs scripts: everything else gets the short API policy, not the pages' ~4 KB list of script hashes
     headers.setdefault("Content-Security-Policy", policy() if html else "default-src 'none'; frame-ancestors 'none'")
     headers["X-Frame-Options"] = "DENY"
