@@ -6,6 +6,8 @@ type Entry = { title: string; body: string; shot?: string; alt?: string; link?: 
 const RELEASES: { date: string; entries: Entry[] }[] = [{
   date: "7 November 2026",
   entries: [
+    { title: "Audiences, stacked charts and older wordings",
+      body: "Changing an audience (adding or removing an answer, opening a saved one) now clears the last figures until you show them again, instead of leaving the previous audience's numbers on screen. A stacked chart with many answers keeps its legend on one scrolling line instead of writing over the bar. Older wordings no longer show HTML codes such as &#39; or &amp;. A wave built since the last publish is listed at once instead of \"No such wave\"." },
     { title: "The wave switcher works again",
       body: "Previous wave, Next wave, the wave list and the [ and ] keys on a wave's screens now open the chosen wave on the same screen; since 29 October they opened a \"Page not found\". Copying a new API key also says when the browser blocks it." },
     { title: "Question codes in any case",

@@ -351,3 +351,9 @@ def test_a_reload_removes_the_empty_answers_the_old_list_left(monkey, monkeypatc
             " LEFT JOIN cip_field f ON f.item_id = i.item_id LEFT JOIN cip_answer a ON a.field_id = f.field_id"
             " WHERE q.survey_id = :s AND q.qtext LIKE 'Which apps%' GROUP BY i.item_id, i.item_label"), {"s": sid}).all()
     assert sorted(rows) == [("Facebook", 2), ("Instagram", 1)]   # no second, empty "Facebook" or "LinkedIn"
+
+
+def test_wordings_lose_their_html_codes_and_extra_spaces():
+    """The Qualtrics years kept some wordings HTML-coded; every screen showed "a brand&#39;s store" as typed (7 Nov 2026)."""
+    from etl import records
+    assert records.clean_text("a brand&#39;s  store, Stop &amp; Shop\xa0now") == "a brand's store, Stop & Shop now"

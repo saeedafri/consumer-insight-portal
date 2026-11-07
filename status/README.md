@@ -29,6 +29,7 @@ The one place every agent (Claude, Gemini, Codex, others) and every person reads
 
 | Item | Status | Where | Note |
 |---|---|---|---|
+| Audiences clear stale figures; stacked legend on one line; HTML codes out of wordings; new waves listed before publish | Waiting for deploy | Audience.tsx, QuestionChart.tsx, etl/records.py clean_text, api/main.py all_waves | 106 staging wordings repaired in cip_stg 7 Nov 20:05 IST (originals kept by Claude); they show after staging's next publish. all_waves fallback was Gemini's, kept with a test |
 | Wave switcher (Previous, Next, the list, [ and ]) | Waiting for deploy | frontend/src/components/Shell.tsx TopBar | Used the browser's path (/app/w/…) with the router's navigate, so every switch opened /app/app/w/… ("Page not found") since 29 Oct; found by Gemini's 7 Nov screen test, checked in a browser after the fix |
 
 ## Pending
@@ -58,6 +59,7 @@ The one place every agent (Claude, Gemini, Codex, others) and every person reads
 |---|---|---|---|
 | Demo sign-in off, cache warm-up, question codes in any case | Done (staging ad9a9d57, 7 Nov 19:10 IST) | api/signin.py, config/access.yml, api/main.py | /auth/dev-login 404; warmed 1,740 of 1,740 cross-tabs; crosstab?q=Q1 200 |
 | Keys survive a redeploy | Done | /home/cip/api_keys.yml | The staging MCP key still worked after the 885d7fa6 deploy (7 Nov 18:15 IST) |
+| Gemini's second screen test (7 Nov) reviewed | Done | this board | Right: audiences stale, stacked legend, HTML codes, live :8000 stale. Wrong: empty waves spin, two-cut errors, Compare overlap, OIDC fails outside the office (public DNS resolves) |
 | Gemini's local screen test (7 Nov) reviewed | Done | this board | Right: wave switcher, key copy error. Its local data gaps are the live :8000's published files (2 Nov); its admin-token bypass and reports-as-empty fixes would be wrong |
 | Gemini's staging investigation (7 Nov) reviewed | Done | this board | Right: case bug, HEAD /healthz, team LIMIT 500, logout URL join, demo sign-in. Wrong or not a bug: its case fix, analyst menus (your Access choice, 15:18 IST), admin token under demo (by design), 228 RPS "brick wall" (a model, not measured) |
 | Second Gemini Forsta research reviewed | Done | docs/FORSTA_API_REVIEW.md section 5 | 7 endpoints do not exist, statuses unmeasured, all six proposed menus would be empty or not apply: none built |

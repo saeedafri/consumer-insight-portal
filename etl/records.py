@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import html
 import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -26,13 +27,14 @@ def respondent_key(rid: Any) -> str:
 
 
 def clean_text(value: Any) -> str:
-    """Collapse every run of whitespace to one space.
+    """Collapse every run of whitespace to one space, and turn HTML codes (&amp; &#39;) into their characters.
 
     Forsta's datamap writes some labels with non-breaking spaces
     ('Spent\xa0a lot less…') while the raw export uses ordinary ones. Compared
     as-is the label->code lookup misses and the answer loads with no code, so
-    every label passes through here, on every sheet."""
-    return " ".join(str(value).split())
+    every label passes through here, on every sheet. The Qualtrics years kept
+    some wordings HTML-coded ("a brand&#39;s store"), which the screens showed as typed."""
+    return " ".join(html.unescape(str(value)).split())
 
 
 @dataclass

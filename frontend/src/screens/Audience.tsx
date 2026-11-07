@@ -1,6 +1,6 @@
 // Audiences: a group of respondents from any cuts and answers combined (e.g. Gen Z women who used GenAI to shop), shown
 // against everyone else on any question with an index (120 = 20 % more likely), and what sets it apart across the wave.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { CUT_NAMES, myName, queries, send, useAudiences, useBook, useQuestion } from "../api";
 import type { AudienceDef, AudienceProfile, AudienceResult, Book, Question } from "../api";
@@ -49,6 +49,9 @@ export default function Audience() {
   const [profile, setProfile] = useState<AudienceProfile | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  // a changed audience (an answer added or removed, a saved one opened) makes the last figures someone else's
+  const audience = params.get("aud");
+  useEffect(() => { setResult(null); setProfile(null); }, [audience]);
   if (isLoading) return <Loading what="questions" />;
   if (error || !book) return <Failure error={error} />;
   if (!question) return <Empty>This wave has no questions with percentages.</Empty>;

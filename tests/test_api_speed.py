@@ -133,3 +133,17 @@ def test_a_question_code_typed_in_another_case_gives_the_same_cross_tab(client, 
                         {p.name for p in api.PUBLISHED.joinpath("api", "v1", *parts[:-1]).glob("*")} else None)
     response = client.get("/api/v1/waves/415/crosstab?q=xm1a&by=gender,generation")
     assert response.status_code == 200 and json.loads(response.body)["qcode"] == "XM1A"
+
+
+def test_a_wave_built_after_the_last_publish_is_listed_from_the_database(client, monkeypatch):
+    """A machine with no ETL loop keeps an old published list: a wave the database has built since (532 on 7 Nov 2026)
+    must not answer "No such wave". When the two agree, the list is the published file and the database is not read."""
+    newer = {"survey_id": 418, "survey_family": "CSI-US", "study_type": "tracker", "prior_survey_id": 415, "wave_date": "2026-10-26"}
+    monkeypatch.setattr(api, "WAVES", ((), []))
+    monkeypatch.setattr(api, "SERVING", (2, "2026-10-20"))
+    monkeypatch.setattr(api.payloads, "waves", lambda boards: pytest.fail("the lists agree: no database read"))
+    assert {w["survey_id"] for w in api.all_waves()} == {415, 412}
+    published = json.loads(api.published_file("waves").body)
+    monkeypatch.setattr(api, "SERVING", (3, "2026-10-27"))
+    monkeypatch.setattr(api.payloads, "waves", lambda boards: [newer, *published])
+    assert {w["survey_id"] for w in api.all_waves()} == {418, 415, 412}

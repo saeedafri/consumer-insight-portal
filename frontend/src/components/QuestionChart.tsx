@@ -110,7 +110,8 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
     const shades = scaleColours(answers) ?? blues(answers.length);
     return {
       tooltip: { ...tooltip(), formatter: (p: { data: { row: Row; group: Group } }) => tip(p.data.row, "Total", p.data.group, q, wave, vs) },
-      legend: { bottom: 0, textStyle: axisText(), itemWidth: 12, itemHeight: 12, icon: "roundRect" },
+      // one scrolling line: 12+ answers wrapped onto the bar and its axis (Q1, 7 Nov 2026)
+      legend: { type: "scroll", bottom: 0, textStyle: axisText(), itemWidth: 12, itemHeight: 12, icon: "roundRect" },
       grid: { left: 8, right: 16, top: 8, bottom: 56, containLabel: true },
       xAxis: { type: "value", max: sharesOfMentions(q) ? undefined : 100, axisLabel: { ...valueText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.line, type: [2, 3] } } },
       yAxis: { type: "category", inverse: true, data: groups.map(x => x.label || "Total"),

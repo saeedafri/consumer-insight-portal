@@ -315,7 +315,11 @@ def all_waves() -> list[dict]:
     with WAVES_LOCK:
         if WAVES[0] != version:
             listed = published_file("waves")
-            WAVES = (version, [payloads.describe(w) for w in (json.loads(listed.body) if listed else payloads.waves(_boards()))])
+            published = json.loads(listed.body) if listed else []
+            # a wave built since the last publish (532 on a machine with no ETL loop) is listed from the database, its
+            # screens built live, instead of answering "No such wave"; one read per data version, none when they agree
+            waves = payloads.waves(_boards()) if not published or (SERVING and len(published) < SERVING[0]) else published
+            WAVES = (version, [payloads.describe(w) for w in waves])
         return WAVES[1]
 
 

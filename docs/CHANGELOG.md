@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 7 November 2026
 
+### Audiences, stacked charts and older wordings
+
+Changing an audience (adding or removing an answer, opening a saved one) now clears the last figures until you show them again, instead of leaving the previous audience's numbers on screen. A stacked chart with many answers keeps its legend on one scrolling line instead of writing over the bar. Older wordings no longer show HTML codes such as &#39; or &amp;. A wave built since the last publish is listed at once instead of "No such wave".
+
 ### The wave switcher works again
 
 Previous wave, Next wave, the wave list and the [ and ] keys on a wave's screens now open the chosen wave on the same screen; since 29 October they opened a "Page not found". Copying a new API key also says when the browser blocks it.
