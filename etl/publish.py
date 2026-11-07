@@ -430,7 +430,9 @@ def ask_nginx(urls: list[str], what: str) -> int:
         return 0
     from urllib.request import Request, urlopen
     from shared.core.session import issue
-    cookie = f'cip_session="{issue("publish@cip", hours=1)}"'
+    # a full-length cookie: nginx sends a shorter one to the API instead of its cache (api/signin.stale_before; the
+    # 1 h one warmed 0 of 1,740 cross-tabs after the 7 Nov 2026 deploy)
+    cookie = f'cip_session="{issue("publish@cip")}"'
 
     def get(url: str) -> bool:
         took = time.perf_counter()

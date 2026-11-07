@@ -231,8 +231,12 @@ def test_the_warm_up_asks_only_the_newest_wave_one_at_a_time(tmp_path, monkeypat
 
     monkeypatch.setenv("CIP_NGINX_URL", "http://nginx")
     monkeypatch.setattr(publish.time, "sleep", lambda s: None)
-    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout: (asked.append(req.full_url), Reply())[1])
+    cookies = []
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout: (asked.append(req.full_url), cookies.append(req.get_header("Cookie")), Reply())[2])
     publish.warm_nginx(out)
+    from api import signin
+    from shared.core import session
+    assert session.read(cookies[0].split("=", 1)[1])["expires"] >= signin.stale_before()   # nginx caches, not the API
     assert asked and all("/waves/2/" in u and u.endswith("weeks=1") for u in asked)   # newest wave, this week only
     assert len(asked) == 6 * 5 and at_once[0] == 1                                    # every ordered pair of 6 cuts, serially
 
