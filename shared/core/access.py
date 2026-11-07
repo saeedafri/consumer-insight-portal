@@ -56,6 +56,8 @@ def profile(email: str) -> dict | None:
     chosen = managed_features().get(role) if "all_features" not in permissions_of(role) else None
     if chosen is not None:                             # the super admin's choice on the Access screen wins
         features = [f for f in r["features"] if f in chosen]
+    elif "all_features" not in permissions_of(role):   # until chosen, no package includes a chosen_only feature
+        features = [f for f in features if f not in r.get("chosen_only", [])]
     return {"email": email, "role": role, "tier": tier, "client": client, "features": features,
             "study_types": package["study_types"]}
 
@@ -98,7 +100,8 @@ def internal(person: dict) -> bool:
 def scope(person: dict) -> str:
     """"*" for someone who sees every survey and feature, else "client:tier": the key their filtered answers are cached
     under, and the part of the cookie nginx reads (deploy/cip_auth.js)."""
-    if internal(person) and person["study_types"] == EVERYTHING and set(person["features"]) >= set(rules()["features"]):
+    every = set(rules()["features"]) - set(rules().get("chosen_only", []))   # opt-in features are not nginx files: they never split the cache
+    if internal(person) and person["study_types"] == EVERYTHING and set(person["features"]) >= every:
         return EVERYTHING
     return f"{person['client'] or ''}:{person['tier']}"
 

@@ -19,7 +19,8 @@
 # stored in cip_role_access); export, alerts and saved_views are actions inside screens. Survey library, a wave's
 # Overview, Methodology, What's new and My account are always there; Logs, Fieldwork and Access are the super admin's.
 features: [dashboards, explorer, crosstab, trends, compare, audiences, changes, report, survey, search, schedule, ask, boards,
-           sectors, expectations, export, alerts, saved_views]
+           sectors, expectations, export, alerts, saved_views, fieldwork]
+chosen_only: [fieldwork]   # features no package includes: a role gets one only once the super admin turns it on
 feature_labels:   # the names the Access screen shows
   dashboards: Topic dashboards (on a wave's Overview)
   explorer: Question explorer
@@ -39,6 +40,7 @@ feature_labels:   # the names the Access screen shows
   export: Export (CSV, Excel, PowerPoint)
   alerts: Alerts
   saved_views: Saved views
+  fieldwork: Fieldwork (each survey's funnel and why respondents dropped out; no deletion schedule, no Forsta user emails)
 
 tiers:
   demo:         {features: [dashboards, explorer, trends, search], study_types: [tracker]}

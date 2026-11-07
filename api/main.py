@@ -674,6 +674,17 @@ async def fieldwork_record(request: Request, who: dict = Depends(admin)) -> Resp
     return send_payload(request, found)
 
 
+@app.get("/api/v1/fieldwork")
+async def fieldwork_shared(request: Request, who: dict = Depends(user)) -> Response:
+    """The Fieldwork screens for a role the super admin turned the "fieldwork" feature on for (the Access page): the
+    same surveys without the deletion schedule or Forsta user emails (etl/fieldwork.py publish). Nothing computed here."""
+    require_feature(who, "fieldwork")
+    found = published_file("fieldwork")
+    if found is None:
+        raise HTTPException(404, "No fieldwork record yet: the next Forsta run collects it")
+    return send_payload(request, found)
+
+
 ROLE_SAVE_FAILED = "The menus were not saved: the database did not accept it. Nothing changed; try again in a minute."
 
 
@@ -691,7 +702,8 @@ async def roles(who: dict = Depends(admin)) -> dict:
         said = rules.get("staff") if role == "analyst" else rules.get("unknown")   # `unknown` may be the word "refuse"
         tier = said.get("tier", "core") if isinstance(said, dict) else "core"
         features = rules["tiers"][tier]["features"]
-        return list(rules["features"]) if features == access.EVERYTHING else list(features)
+        features = rules["features"] if features == access.EVERYTHING else features
+        return [f for f in features if f not in rules.get("chosen_only", [])]
     return {"features": [{"key": f, "label": labels.get(f, f)} for f in rules["features"]],
             "roles": [{"role": role, "features": chosen.get(role, package(role)), "chosen": role in chosen} for role in listed]}
 

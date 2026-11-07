@@ -1,44 +1,47 @@
-// Fieldwork (/app/fieldwork, admins only): how each survey's fieldwork went, as Forsta recorded it, and when Forsta
-// will delete the archived ones. Built by the ETL from read-only Forsta calls (etl/fieldwork.py → GET
-// /api/v1/admin/fieldwork): the funnel (opened, terminated, over quota, dropped out, qualified), the interview length,
-// the warnings, and page by page where respondents dropped out. This screen only draws.
-// Opened from the left menu ("Fieldwork", shown to admins next to Logs); the chosen survey is kept in the address.
-import { Link, useSearchParams } from "react-router";
-import { useFieldwork } from "../api";
+// Fieldwork (/app/fieldwork): every survey's funnel as Forsta recorded it, and when Forsta will delete the archived ones.
+// Built by the ETL from read-only Forsta calls (etl/fieldwork.py): admins read GET /api/v1/admin/fieldwork (everything);
+// a role the super admin turned "fieldwork" on for (the Access page) reads GET /api/v1/fieldwork (no deletion schedule,
+// no Forsta user emails). A survey's row opens its own page (FieldworkSurvey.tsx): why people dropped out, the quota
+// cells, the timelines. Opened from the left menu ("Fieldwork"). This screen only draws.
+import { Link, useNavigate } from "react-router";
+import { useFieldwork, useMe } from "../api";
 import type { FieldworkRecord, FieldworkSurvey } from "../api";
 import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
 import { downloadTable } from "../csv";
 import { fmtDate } from "../stats";
 
-const n = (v: number | null | undefined) => v == null ? "–" : v.toLocaleString("en-US");
-const day = (iso: string | null | undefined) => iso ? fmtDate(iso.slice(0, 10)) : "–";
-const SOURCE = "Source: Forsta (read-only), kept by CIP";
+export const n = (v: number | null | undefined) => v == null ? "–" : v.toLocaleString("en-US");
+export const day = (iso: string | null | undefined) => iso ? fmtDate(iso.slice(0, 10)) : "–";
+export const SOURCE = "Source: Forsta (read-only), kept by CIP";
+
+/** The record for this person (admins: everything), or what to say when it is not there or not theirs. */
+export function useRecord() {
+  const { data: me } = useMe();
+  const full = !!me?.permissions?.includes("admin_pages");
+  const { data, isLoading, error } = useFieldwork(full);
+  const status = (error as { status?: number } | null)?.status;
+  const problem = isLoading || !me ? <SkeletonScreen kind="page" />
+    : status === 404 || (error as Error | null)?.message?.includes("No fieldwork") ? <Empty>No fieldwork record yet. The next Forsta run collects it.</Empty>
+    : status === 403 || (error as Error | null)?.message?.includes("subscription") ? <Empty>{String((error as Error).message)}. Fieldwork is shown to admins, and to the roles the super admin turns it on for (the Access page). With the demo sign-in, an admin enters the admin token on the Logs page first.</Empty>
+    : error || !data ? <Failure error={error} /> : null;
+  return { data, full, problem };
+}
 const PLANNED: Record<string, string> = { autoclose_planned: "automatic closes", archives_planned: "planned archive actions",
   archives_scheduled: "surveys scheduled for archiving", archives_deleted: "surveys already deleted" };
 
 export default function Fieldwork() {
-  const { data, isLoading, error } = useFieldwork();
-  const [params, setParams] = useSearchParams();
-  if (isLoading) return <SkeletonScreen kind="page" />;
-  if ((error as { status?: number } | null)?.status === 404)
-    return <Empty>No fieldwork record yet. The next Forsta run collects it, for the surveys it loads and a few older ones each time.</Empty>;
-  if ((error as { status?: number } | null)?.status === 403)
-    return <Empty>{String((error as Error).message)}. Sign in with your Coresight account; with the demo sign-in, enter the admin token on the Logs page first.</Empty>;
-  if (error || !data) return <Failure error={error} />;
-  const shown = data.surveys.find(s => s.path === params.get("survey")) ?? data.surveys[0];
+  const { data, problem } = useRecord();
+  if (problem || !data) return problem;
   return <div className="stack">
     <div className="page-head"><div>
       <h1>Fieldwork</h1>
       <p className="lede">How each survey's fieldwork went, as Forsta recorded it: who opened it, who was screened out or over quota,
         where people dropped out, and how long the interview took. Read from Forsta without changing anything, and kept by CIP, because
-        Forsta deletes an archived survey a year after archiving it.</p>
+        Forsta deletes an archived survey a year after archiving it. What each number means: <Link to="/methodology#fieldwork-terms">Methodology</Link>.</p>
     </div></div>
+    <Surveys surveys={data.surveys} />
     <Archive record={data} />
     <NotLoaded record={data} />
-    <Surveys surveys={data.surveys} shown={shown} pick={path => setParams({ survey: path }, { replace: true })} />
-    {shown && <Dropouts survey={shown} />}
-    {shown && <Timeline survey={shown} />}
-    {shown && <Details survey={shown} />}
   </div>;
 }
 
@@ -69,19 +72,22 @@ function Archive({ record }: { record: FieldworkRecord }) {
   </Card>;
 }
 
-/** Every survey with a kept record, newest first: its funnel in one row. A row opens its drop-out funnel below. */
-function Surveys({ surveys, shown, pick }: { surveys: FieldworkSurvey[]; shown?: FieldworkSurvey; pick: (path: string) => void }) {
+/** Every survey with a kept record, newest first: its funnel in one row, the table scrolling inside its card. A row
+ *  opens the survey's own page. */
+function Surveys({ surveys }: { surveys: FieldworkSurvey[] }) {
+  const navigate = useNavigate();
+  const open = (path: string) => navigate(`/fieldwork/${encodeURIComponent(path)}`);
   const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, "Fieldwork by survey",
     ["Survey", "Forsta path", "Launched", "Opened", "Qualified", "Terminated", "Over quota", "Dropped out", "Incidence %", "Median minutes", "Blocked sessions", "Server errors"],
     surveys.map(s => [s.title, s.path, s.launched?.slice(0, 10), s.opened, s.qualified, s.terminated, s.overquota, s.partial, s.incidence, s.median_minutes,
       s.warnings.blocks ?? null, s.warnings.server_errors ?? null]), ["Fieldwork by survey", "Incidence = qualified / opened the survey", SOURCE]);
-  return <Card title="Every survey's fieldwork" sub="Incidence = qualified ÷ opened the survey. Choose a survey to see where its respondents dropped out."
+  return <Card title="Every survey's fieldwork" sub={`${surveys.length} surveys. Opened = qualified + terminated + over quota + dropped out. Incidence = qualified ÷ opened. Choose a survey to see why its respondents dropped out.`}
                aside={<ExportButtons onExport={exportTable} />}>
-    <div className="table-wrap"><table className="data report-table fieldwork-table">
+    <div className="table-wrap fieldwork-scroll tall"><table className="data report-table fieldwork-table">
       <thead><tr><th>Survey</th><th className="num">Launched</th><th className="num">Opened</th><th className="num">Qualified</th><th className="num">Terminated</th>
         <th className="num">Over quota</th><th className="num">Dropped out</th><th className="num">Incidence</th><th className="num">Median length</th><th className="num">Warnings</th></tr></thead>
-      <tbody>{surveys.map(s => <tr key={s.path} className={s === shown ? "picked" : undefined}>
-        <th scope="row"><button className="link-button" onClick={() => pick(s.path)} aria-pressed={s === shown}>{s.title ?? s.path}</button>
+      <tbody>{surveys.map(s => <tr key={s.path} className="clickable" onClick={() => open(s.path)}>
+        <th scope="row"><button className="link-button" onClick={e => { e.stopPropagation(); open(s.path); }}>{s.title ?? s.path}</button>
           {s.hibernated && <span className="chip warn">hibernated</span>}{s.state === "live" && <span className="chip sig">in the field</span>}</th>
         <td className="num">{day(s.launched)}</td><td className="num">{n(s.opened)}</td><td className="num">{n(s.qualified)}</td><td className="num">{n(s.terminated)}</td>
         <td className="num">{n(s.overquota)}</td><td className="num">{n(s.partial)}</td><td className="num">{s.incidence == null ? "–" : `${s.incidence}%`}</td>
@@ -90,50 +96,6 @@ function Surveys({ surveys, shown, pick }: { surveys: FieldworkSurvey[]; shown?:
       </tr>)}</tbody>
     </table></div>
   </Card>;
-}
-
-/** One survey's pages in order: how many reached each, how many left there, and the seconds spent on it. */
-function Dropouts({ survey }: { survey: FieldworkSurvey }) {
-  if (!survey.pages.length) return <Card title={`Where respondents dropped out: ${survey.title ?? survey.path}`}>
-    <Empty>{survey.hibernated ? "This survey is hibernated in Forsta: its page record cannot be read until it is woken." : "Forsta has no page record for this survey."}</Empty>
-  </Card>;
-  const most = Math.max(...survey.pages.map(p => p[4]));
-  const top = [...survey.pages].sort((a, b) => b[4] - a[4]).slice(0, 3).map(p => p[0]);
-  const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, `Drop-outs - ${survey.path}`,
-    ["Question", "Wording", "Reached the page", "Went on", "Dropped out", "Dropped %", "Average seconds"],
-    survey.pages.map(([code, text, started, submitted, dropped, seconds]) => [code, text, started, submitted, dropped, started ? +(100 * dropped / started).toFixed(1) : null, seconds && +seconds.toFixed(1)]),
-    [`Where respondents dropped out: ${survey.title ?? survey.path}`, SOURCE]);
-  return <Card title={`Where respondents dropped out: ${survey.title ?? survey.path}`}
-               sub={`${n(survey.partial)} dropped out after opening the survey. The three pages that lost the most are marked.`}
-               aside={<ExportButtons onExport={exportTable} />}>
-    <div className="table-wrap"><table className="data report-table">
-      <thead><tr><th>Question</th><th className="num">Reached</th><th className="num">Dropped out</th><th className="num">Dropped %</th><th className="num">Average time</th></tr></thead>
-      <tbody>{survey.pages.map(([code, text, started, , dropped, seconds], i) => <tr key={i} className={top.includes(code) && dropped ? "picked" : undefined}>
-        <th scope="row" title={text}><b>{code}</b> <span className="muted">{text.length > 70 ? text.slice(0, 70) + "…" : text}</span></th>
-        <td className="num">{n(started)}</td>
-        <td className="num"><span className="vs-bar actual" style={{ width: most ? 80 * dropped / most : 0 }} />{n(dropped)}</td>
-        <td className="num">{started ? `${(100 * dropped / started).toFixed(1)}%` : "–"}</td>
-        <td className="num">{seconds == null ? "–" : `${seconds.toFixed(0)} s`}</td>
-      </tr>)}</tbody>
-    </table></div>
-  </Card>;
-}
-
-/** What happened to the survey, from Forsta's audit log (launched, closed, edited, permissions; not the reads), and the
- *  screen-out rules behind its "terminated" count. */
-function Timeline({ survey }: { survey: FieldworkSurvey }) {
-  const events = survey.timeline ?? [], terms = survey.terms ?? [];
-  if (!events.length && !terms.length) return null;
-  return <div className="grid g2">
-    {events.length > 0 && <Card title="Fieldwork timeline" sub="From Forsta's audit log: launches, closes, edits and permission changes (reads left out).">
-      <ol className="timeline">{events.map(([when, who, what], i) => <li key={i}>
-        <time dateTime={when}>{when.slice(0, 16).replace("T", " ")} UTC</time><span>{what}</span>{who && <span className="muted">{who}</span>}
-      </li>)}</ol>
-    </Card>}
-    {terms.length > 0 && <Card title="Screen-out rules" sub="The terms in the questionnaire: a respondent who meets one is terminated.">
-      <ul className="terms">{terms.map(([label, description], i) => <li key={i}><b>{label}</b> {description}</li>)}</ul>
-    </Card>}
-  </div>;
 }
 
 /** The surveys Forsta's history has that CIP has not loaded: test surveys, or one the load missed. */
@@ -145,25 +107,5 @@ function NotLoaded({ record }: { record: FieldworkRecord }) {
       <thead><tr><th>Survey</th><th>Forsta path</th><th>State in Forsta</th></tr></thead>
       <tbody>{list.map(n => <tr key={n.path}><th scope="row">{n.title ?? "–"}</th><td>{n.path}</td><td>{n.state ?? "not in the register"}</td></tr>)}</tbody>
     </table></div>
-  </Card>;
-}
-
-/** What else Forsta holds about the survey: its category, the research team's saved reports, whether it can be archived,
- *  open tasks, data layouts and sources, and how many questions have a display condition (shown on the Survey preview). */
-function Details({ survey }: { survey: FieldworkSurvey }) {
-  const saved = survey.saved_reports ?? [];
-  return <Card title="In Forsta" sub="Read from Forsta without changing anything.">
-    <dl className="details">
-      <div><dt>Category</dt><dd>{survey.category || "–"}</dd></div>
-      <div><dt>Can be archived</dt><dd>{survey.can_archive || "–"}</dd></div>
-      <div><dt>Open tasks</dt><dd>{n(survey.tasks)}</dd></div>
-      <div><dt>Data layouts · data sources</dt><dd>{n(survey.layouts)} · {n(survey.datasources)}</dd></div>
-      <div><dt>Questions shown on a condition</dt><dd>{survey.conditions == null ? "questionnaire not kept yet" : <>{survey.conditions}
-        {survey.survey_id && <> · <Link to={`/w/${survey.survey_id}/survey`}>see them on the Survey preview</Link></>}</>}</dd></div>
-    </dl>
-    {saved.length > 0 && <>
-      <h3 className="details-head">Saved reports in Forsta</h3>
-      <ul className="terms">{saved.map(([title, updated, access], i) => <li key={i}><b>{title || "Untitled"}</b> <span className="muted">{[updated && `updated ${day(updated)}`, access].filter(Boolean).join(" · ")}</span></li>)}</ul>
-    </>}
   </Card>;
 }

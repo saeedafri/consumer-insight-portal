@@ -21,7 +21,10 @@ Who calls it:
   python -m etl.fieldwork   at each server start (deploy/etl-loop.sh, in the background): every survey still missing
              a record, then the published files refreshed, so a deploy never shows an empty Fieldwork screen.
   publish()  etl/publish.py write_views, from the table (no Forsta call):
-             api/v1/admin/fieldwork.json.gz  the admins' Fieldwork screen (frontend/src/screens/Fieldwork.tsx)
+             api/v1/admin/fieldwork.json.gz  the admins' Fieldwork screens (frontend/src/screens/Fieldwork.tsx and
+                                             FieldworkSurvey.tsx): everything
+             api/v1/fieldwork.json.gz        the same surveys for the roles the super admin lets see Fieldwork (the
+                                             "fieldwork" feature): no deletion schedule, no Forsta user emails
              api/v1/waves/<id>/logic.json.gz each wave's question conditions and screen-out rules, from its
                                              survey.xml (the Survey preview, frontend/src/screens/Survey.tsx)
 A hibernated survey is not woken (that changes Forsta and is a paid action): it is marked hibernated and skipped.
@@ -35,7 +38,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import inspect, text
+from sqlalchemy import bindparam, inspect, text
 
 from shared.core.database import apply_sql, get_engine
 
@@ -183,8 +186,59 @@ def number(completions: dict, formula: str):
     return row["cells"][0].get("raw") if row and row.get("cells") else None
 
 
-def summary(record: dict, wave: dict | None) -> dict:
-    """One survey's line on the Fieldwork screen, its drop-out pages, its timeline and its Forsta details."""
+def cause_label(cause: str, record: dict) -> tuple[str, str]:
+    """A respondent's cause as people read it, and where in the survey it happened: a screen-out rule from the
+    questionnaire's terms ("Speeder (te4): timeSpent() < 120"), or the full quota cell ("Regions: Northeast")."""
+    if cause.startswith("term:"):
+        term = next((t for t in record.get("terms") or [] if t.get("marker") == cause), {})
+        rule = term.get("cond") or cause[5:]
+        return (f"{term.get('description') or 'Screen-out rule'} ({term['label']}): {rule}" if term.get("label") else rule,
+                "the whole interview (time taken)" if "timeSpent" in rule else "the screen-out rule's question")
+    sheet, _, cell = cause.removeprefix("OQ ").strip("/").partition("/")
+    defined = ((record.get("quota") or {}).get("defines") or {}).get(cell) or {}
+    return f"{sheet}: {defined.get('description') or cell} was already full", f"the {sheet} question"
+
+
+def reasons(survey_ids: list[int]) -> dict[int, dict]:
+    """Per survey, from the respondents CIP loaded: how many were terminated or over quota for each cause Forsta wrote
+    on their record (the screen-out rule, or the full quota cell), with their average minutes, and every finished
+    interview hour by hour. Drop-outs are not loaded (Forsta's export leaves them out): their pages come from Forsta."""
+    found: dict[int, dict] = {}
+    if not survey_ids:
+        return found
+    with get_engine("app").connect() as conn:
+        rows = conn.execute(text("SELECT survey_id, status_label, markers, interview_secs, completed_at FROM cip_respondent"
+                                 " WHERE survey_id IN :ids").bindparams(bindparam("ids", expanding=True)), {"ids": survey_ids})
+        for survey_id, status, markers, secs, done in rows:
+            why = found.setdefault(survey_id, {"causes": {}, "hours": {}})
+            if done:
+                hour = why["hours"].setdefault(str(done)[:13], {"Qualified": 0, "Terminated": 0, "Overquota": 0})
+                hour[status] = hour.get(status, 0) + 1
+            if status in ("Terminated", "Overquota"):
+                prefix = "term:" if status == "Terminated" else "OQ /"
+                cause = next((m.strip() for m in (markers or "").split(",") if m.strip().startswith(prefix)), "")
+                line = why["causes"].setdefault((status, cause), [0, 0, 0])   # people, seconds summed, people timed
+                line[0] += 1
+                if secs is not None:
+                    line[1] += secs
+                    line[2] += 1
+    return found
+
+
+def explain(why: dict | None, record: dict) -> tuple[list, list]:
+    """The reasons table and the hour-by-hour timeline of one survey, from reasons()."""
+    if not why:
+        return [], []
+    causes = sorted(([status, *(cause_label(cause, record) if cause else ("Not recorded by Forsta", "–")), people,
+                      round(seconds / timed / 60, 1) if timed else None]
+                     for (status, cause), (people, seconds, timed) in why["causes"].items()), key=lambda c: -c[3])
+    hours = [[hour.replace(" ", "T") + ":00", n["Qualified"], n["Terminated"], n["Overquota"]] for hour, n in sorted(why["hours"].items())]
+    return causes, hours
+
+
+def summary(record: dict, wave: dict | None, why: dict | None = None) -> dict:
+    """One survey's line on the Fieldwork screen, and its own page: drop-out pages, why people left, quota cells,
+    timelines and Forsta details."""
     info, completions = record.get("survey") or {}, record.get("completions") or {}
     opened, qualified = number(completions, "clickthrough"), number(completions, "qualified")
     median = number(completions, "completionTimeMedian")
@@ -198,6 +252,14 @@ def summary(record: dict, wave: dict | None) -> dict:
              if split.get("started")]
     saved = [[r.get("title"), datetime.fromtimestamp(r["updated_on"] / 1000, timezone.utc).date().isoformat() if r.get("updated_on") else None,
               r.get("access")] for r in record.get("saved_reports") or []]
+    quota = record.get("quota") or {}
+    defines = quota.get("defines") or {}
+    cells = []   # [sheet, cell, limit, completes, turned away over quota], the busiest cells first
+    for marker, c in (quota.get("markers") or {}).items():
+        sheet, _, cell = marker.strip("/").partition("/")
+        cells.append([sheet, (defines.get(cell) or {}).get("description") or cell, c.get("limit"), c.get("complete"), c.get("oq")])
+    cells.sort(key=lambda c: (-(c[4] or 0), c[0]))
+    causes, hours = explain(why, record)
     return {"path": record["path"], "survey_id": wave and wave["survey_id"], "title": info.get("title") or (wave or {}).get("title"),
             "wave_date": (wave or {}).get("wave_date"), "state": info.get("state"),
             "hibernated": (record.get("hibernation") or {}).get("status") == "hibernated",
@@ -210,7 +272,8 @@ def summary(record: dict, wave: dict | None) -> dict:
             "timeline": sorted(timeline), "terms": terms, "saved_reports": saved, "category": info.get("category"),
             "can_archive": (record.get("can_archive") or {}).get("message"), "tasks": len(record.get("tasks") or []),
             "layouts": len(record.get("layouts") or []), "datasources": len(record.get("datasources") or []),
-            "conditions": len(logic(record["survey_xml"])["questions"]) if record.get("survey_xml") else None}
+            "conditions": len(logic(record["survey_xml"])["questions"]) if record.get("survey_xml") else None,
+            "causes": causes, "hours": hours, "quota_cells": cells}
 
 
 def publish(out: Path, write) -> int:
@@ -231,7 +294,9 @@ def publish(out: Path, write) -> int:
                 size += write(out / "api/v1/waves" / str(wave["survey_id"]) / "logic", logic(record["survey_xml"]))
             except ET.ParseError as exc:
                 log.warning("survey.xml of %s does not parse: %s", path, exc)
-    surveys = sorted((summary(r, waves.get(p)) for p, r in kept.items()), key=lambda s: s.get("launched") or "", reverse=True)
+    why = reasons([waves[p]["survey_id"] for p in kept if p in waves])
+    surveys = sorted((summary(r, waves.get(p), why.get((waves.get(p) or {}).get("survey_id"))) for p, r in kept.items()),
+                     key=lambda s: s.get("launched") or "", reverse=True)
     latest = {}   # Forsta lists a survey once per archiving: its latest one decides when it goes
     for a in sorted(company.get("archived") or [], key=lambda a: a.get("archived_at") or ""):
         latest[a.get("survey_path")] = a
@@ -245,9 +310,12 @@ def publish(out: Path, write) -> int:
                if (items := company.get(kind))]
     planned += [{"kind": kind, "items": items} for kind in ("archives_scheduled", "archives_deleted")
                 for items in (company.get(kind) or {}).values() if items]
-    return size + write(out / "api/v1/admin/fieldwork", {
+    size += write(out / "api/v1/admin/fieldwork", {
         "surveys": surveys, "archive": archive, "retention": list((company.get("retention") or {}).values()),
         "not_loaded": not_loaded, "planned": planned, "collected": company.get("fetched_at")})
+    shared = [{**s, "timeline": [[when, None, what] for when, _, what in s["timeline"]]} for s in surveys]   # no Forsta user emails
+    return size + write(out / "api/v1/fieldwork", {"surveys": shared, "archive": [], "not_loaded": [], "planned": [],
+                                                    "collected": company.get("fetched_at")})
 
 
 def catch_up() -> int:

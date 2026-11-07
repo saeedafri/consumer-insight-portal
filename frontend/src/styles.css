@@ -887,6 +887,8 @@ table.data tbody tr:nth-child(n+8), .xt tbody tr:nth-child(n+8), .wave-row:nth-c
 
 /* ── fieldwork (screens/Fieldwork.tsx) ── */
 .fieldwork-scroll { max-height: 360px; overflow-y: auto; }
+.fieldwork-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }   /* the header stays while the rows scroll */
+.fieldwork-scroll.tall { max-height: 520px; }
 .report-table tr.picked th, .report-table tr.picked td { background: var(--red-wash); }
 .link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--ink); text-align: left; cursor: pointer; text-decoration: underline;
                text-underline-offset: 2px; text-decoration-color: var(--line-strong); }
@@ -914,3 +916,15 @@ table.data tbody tr:nth-child(n+8), .xt tbody tr:nth-child(n+8), .wave-row:nth-c
 .access-menu.dragging { opacity: .4; }
 .access-menu .btn { padding: 4px 10px; font-size: 12px; }
 .access-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+
+/* Fieldwork (screens/Fieldwork.tsx, FieldworkSurvey.tsx): a row opens its survey; muted rows are quota cells that turned nobody away */
+table.data tr.clickable { cursor: pointer; }
+table.data tr.clickable:hover th, table.data tr.clickable:hover td { background: var(--hover); }
+.report-table tr.past td, .report-table tr.past th { color: var(--ink-2); }
+.funnel-kpis .k-note { text-wrap: pretty; }
+/* the Methodology page's fieldwork terms: the term on the left, its meaning beside it (stacked on a phone) */
+.terms-list { grid-template-columns: 1fr; max-width: 900px; }
+.terms-list > div { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.terms-list dt { font-size: 14px; font-weight: 700; color: var(--ink); }
+.terms-list dd { margin: 0; line-height: 1.55; }
+@media (max-width: 640px) { .terms-list > div { grid-template-columns: 1fr; gap: 4px; } }

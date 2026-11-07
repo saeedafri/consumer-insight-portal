@@ -315,6 +315,12 @@ export interface FieldworkSurvey {
   timeline?: [string, string | null, string][]; terms?: [string | null, string | null][];
   saved_reports?: [string | null, string | null, string | null][]; category?: string | null; can_archive?: string | null;
   tasks?: number; layouts?: number; datasources?: number; conditions?: number | null;
+  /** why people left: [status, cause, where in the survey, people, average minutes] (etl/fieldwork.py explain) */
+  causes?: [string, string, string, number, number | null][];
+  /** finished interviews hour by hour, by Forsta's clock: [hour, qualified, terminated, over quota] */
+  hours?: [string, number, number, number][];
+  /** quota cells, the busiest first: [quota, cell, limit, completes, turned away over quota] */
+  quota_cells?: [string, string, number | null, number | null, number | null][];
 }
 export interface FieldworkRecord {
   surveys: FieldworkSurvey[];
@@ -340,7 +346,9 @@ async function admin<T>(url: string, method = "GET", body?: unknown): Promise<T>
   if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`), { status: r.status });
   return r.json() as Promise<T>;
 }
-export const useFieldwork = () => useQuery({ queryKey: ["fieldwork"], ...forever, retry: false, queryFn: () => admin<FieldworkRecord>("/api/v1/admin/fieldwork") });
+/** Admins get everything; a role the super admin let see Fieldwork gets it without the deletion schedule or emails. */
+export const useFieldwork = (full: boolean) => useQuery({ queryKey: ["fieldwork", full], ...forever, retry: false,
+  queryFn: () => full ? admin<FieldworkRecord>("/api/v1/admin/fieldwork") : get<FieldworkRecord>("/api/v1/fieldwork") });
 
 /** The Access screen (super admin): every switchable menu, and each role's current choice (api/main.py roles). */
 export interface RoleMenus { features: { key: string; label: string }[]; roles: { role: string; features: string[]; chosen: boolean }[] }

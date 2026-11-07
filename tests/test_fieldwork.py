@@ -117,3 +117,18 @@ def test_cip_only_ever_reads_from_forsta():
         calls_http = any(lib in text for lib in ("import requests", "httpx", "urllib.request", "http.client"))
         if calls_http and ("decipherinc" in text or "x-apikey" in text.lower()):
             assert source.name in ("forsta_client.py", "config.py"), f"{source} talks to Forsta outside the client"
+
+
+def test_each_respondent_who_did_not_qualify_is_explained_by_the_cause_forsta_recorded():
+    """Forsta writes the screen-out rule (term:…) or the full quota cell (OQ /sheet/cell) on each record: the survey's
+    page names it, counts the people and their minutes, and the totals equal Forsta's funnel."""
+    record = {"terms": [{"marker": "term:timeSpent() < 25", "cond": "timeSpent() < 25", "description": "Speeder", "label": "te1"}],
+              "quota": {"defines": {"hyzEw": {"description": "Female"}}}}
+    why = {"causes": {("Terminated", "term:timeSpent() < 25"): [22, 22 * 18, 22], ("Overquota", "OQ /Gender/hyzEw"): [281, 281 * 840, 281],
+                      ("Overquota", ""): [1, 0, 0]},
+           "hours": {"2026-11-02 13": {"Qualified": 317, "Terminated": 31, "Overquota": 582}}}
+    causes, hours = fieldwork.explain(why, record)
+    assert causes[0] == ["Overquota", "Gender: Female was already full", "the Gender question", 281, 14.0]
+    assert causes[1] == ["Terminated", "Speeder (te1): timeSpent() < 25", "the whole interview (time taken)", 22, 0.3]
+    assert causes[2][1] == "Not recorded by Forsta" and sum(c[3] for c in causes) == 304
+    assert hours == [["2026-11-02T13:00", 317, 31, 582]]

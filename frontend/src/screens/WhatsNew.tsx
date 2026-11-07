@@ -6,6 +6,9 @@ type Entry = { title: string; body: string; shot?: string; alt?: string; link?: 
 const RELEASES: { date: string; entries: Entry[] }[] = [{
   date: "7 November 2026",
   entries: [
+    { title: "Why respondents dropped out, survey by survey",
+      body: "Fieldwork now opens each survey on its own page: its name and dates, then everyone who opened it and how each of them ended. Qualified people finished and are in the data. Terminated people met a screen-out rule, such as answering too fast. Over-quota people fit the survey but their group was already full; the page names the full cell (for the 2 November wave, 281 were turned away because the women's cell had filled). Dropped-out people left part-way; the page shows where. A chart shows finished interviews hour by hour, next to the quota cells and Forsta's own timeline of the survey. The tables scroll inside their cards, so the page stays short. The super admin can let analysts or clients see Fieldwork from the Access page.",
+      link: ["/methodology#fieldwork-terms", "What opened, qualified, terminated and over quota mean"] },
     { title: "The weekly report, in the portal",
       body: "Every weekly tracker wave since July 2025 now has its US Consumer Survey Insights report under Weekly report in the wave's menu, in the order of the PDF: three data points to watch, net better for personal finances and the economy with the news events marked and split by income, the 13-week tables of retailers, categories and activities with their one-week and three-month changes (coloured only when significant), each with a year's chart of its biggest answers, retailers' shopper profiles, the methodology and margins of error. The figures were checked against the 27 October and 3 November reports.",
       shot: "report-1107.webp", alt: "The food retailers chart with retail events marked, above its 13-week table" },

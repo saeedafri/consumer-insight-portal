@@ -92,7 +92,7 @@ export default function Schedule() {
       </ul>
     </Card>}
     <Card title="Topic rotation" sub="Each topic rides with set lead sectors. When a week misses its topic, the next of those sectors carries it">
-      <div className="table-wrap">
+      <div className="table-wrap fieldwork-scroll">
         <table className="data">
           <thead><tr><th>Topic</th><th>Rides with</th><th>Last fielded</th><th>Next planned</th></tr></thead>
           <tbody>{data!.topics.map(t => <tr key={t.topic}>
@@ -106,7 +106,7 @@ export default function Schedule() {
     </Card>
     <Card title="Week by week" sub={`From ${data!.source}, imported ${fmtDate(data!.imported)}`}
           aside={<Button variant="outline" size="sm" onClick={() => setAll(a => !a)}>{all ? "Recent and upcoming" : "All weeks since Jul 2025"}</Button>}>
-      <div className="table-wrap">
+      <div className="table-wrap fieldwork-scroll tall">
         <table className="data schedule">
           <thead><tr><th>Monday</th><th>Lead sector</th><th>Planned topics</th><th>Status</th><th>Quota</th><th>Survey in Forsta</th></tr></thead>
           <tbody>{shown.map(w => <tr key={w.date} className={w === current ? "now" : at(w) < today ? "past" : ""}>

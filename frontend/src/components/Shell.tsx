@@ -127,7 +127,7 @@ export default function Shell() {
         <NavLink to="/methodology"><Icon d="M12 2a10 10 0 110 20 10 10 0 010-20zm-1 15h2v-6h-2zm0-8h2V7h-2z" />Methodology</NavLink>
         {isAdmin && <NavLink to="/logs"><Icon d="M4 4h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm0 5h16v2H4z" />Logs</NavLink>}
         {me?.permissions?.includes("manage_roles") && <NavLink to="/access"><Icon d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5zm0 6a2 2 0 100 4 2 2 0 000-4zm-3 8h6c0-1.7-1.3-3-3-3s-3 1.3-3 3z" />Access</NavLink>}
-        {isAdmin && <NavLink to="/fieldwork"><Icon d="M3 4h18l-7 8v6l-4 2v-8z" />Fieldwork</NavLink>}
+        {(isAdmin || me?.features?.includes("fieldwork")) && <NavLink to="/fieldwork"><Icon d="M3 4h18l-7 8v6l-4 2v-8z" />Fieldwork</NavLink>}
         <NavLink to="/whats-new"><Icon d="M12 2l2.4 6.9H22l-6 4.4 2.3 7-6.3-4.5L5.7 20.3 8 13.3 2 8.9h7.6z" />What's new</NavLink>
       </nav>
       {wave && <nav aria-label="This wave">

@@ -45,7 +45,8 @@ def put(root, rel, data):
 
 RULES = {
     "features": ["dashboards", "explorer", "crosstab", "trends", "search", "ask", "export", "boards", "audiences", "alerts", "saved_views",
-                 "report", "sectors", "expectations"],
+                 "report", "sectors", "expectations", "fieldwork"],
+    "chosen_only": ["fieldwork"],
     "feature_labels": {"sectors": "Sector databank"},
     "tiers": {"core": {"features": ["dashboards", "explorer", "trends", "search", "export", "boards", "report", "sectors", "expectations"],
                        "study_types": ["tracker", "adhoc"]},
@@ -427,3 +428,17 @@ def test_an_identity_provider_sign_in_opens_admin_pages_without_the_token(portal
     signin.remember(sid, access.profile("boss@coresight.com"), "oidc")             # what /auth/callback records
     sso = session.issue("boss@coresight.com", sid=sid, scope="*")
     assert call("/api/v1/admin/fieldwork", sso)[0] == 200                          # no token: the provider proved the email
+
+
+
+def test_fieldwork_stays_with_admins_until_the_super_admin_turns_it_on_for_a_role(portal, monkeypatch):
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
+    boss, ana = signed("boss@coresight.com"), signed("ana@coresight.com")
+    put(portal, "fieldwork", {"surveys": [{"path": "p/1", "timeline": [["2026-11-02T13:25", None, "Launched"]]}], "archive": []})
+    assert "fieldwork" not in access.profile("ana@coresight.com")["features"]                 # no package includes it
+    assert call("/api/v1/fieldwork", ana)[0] == 403
+    roles = {r["role"]: r for r in json.loads(call("/api/v1/admin/roles", boss)[2])["roles"]}
+    assert "fieldwork" not in roles["analyst"]["features"]
+    status, _, _ = call("/api/v1/admin/roles/analyst", boss, "PUT", json.dumps({"features": roles["analyst"]["features"] + ["fieldwork"]}).encode())
+    assert status == 200 and call("/api/v1/fieldwork", ana)[0] == 200                          # the shared file: no emails
+    assert call("/api/v1/admin/fieldwork", ana)[0] == 403                                      # the deletion schedule stays with admins
