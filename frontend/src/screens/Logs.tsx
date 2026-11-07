@@ -54,7 +54,6 @@ const rate = (n: number) => num(n, n < 1 ? 2 : 1);
 const CACHE_STATES: Record<string, string> = { HIT: "sent from the cache", MISS: "not in the cache yet (the API answered, then it was kept)",
   EXPIRED: "kept too long, asked the API again", STALE: "an older copy sent while the API was busy", UPDATING: "an older copy sent while it was refreshed",
   REVALIDATED: "checked with the API, still current", BYPASS: "not cacheable, the API answered" };
-const when = (iso: string) => ist(iso, false);
 const RANGES = [{ minutes: 15, label: "15 min" }, { minutes: 60, label: "1 h" }, { minutes: 360, label: "6 h" }, { minutes: 1440, label: "24 h" }];
 const NO_SAMPLES = "Machine samples start a minute after the server starts (deploy/machine-log.sh).";
 const PER_PAGE = 200;
@@ -121,7 +120,7 @@ export default function Logs() {
       </div>
       <p className="muted" style={{ margin: "-6px 0 0", fontSize: 12 }}>
         {live && <span className="chip live" style={{ marginRight: 8 }}>Live, every 15 s</span>}
-        {updated ? `updated ${updated.toLocaleTimeString("en-GB")}` : "loading…"}
+        {updated ? `updated ${ist(updated.toISOString(), false)}` : "loading…"}
         {health?.build && ` · build ${health.build}`}
       </p>
 
@@ -244,7 +243,7 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
       <Card title="How requests were answered" sub="nginx cache and published files never reach Python, the costly path.">
         {t.requests ? <EChart option={charts.answered} height={200} label="How requests were answered: nginx cache, published file or API" /> : <p className="muted">No requests in this range.</p>}
       </Card>
-      <Card title="Memory per process" sub={last ? `Our processes, latest sample at ${new Date(last.time).toLocaleTimeString("en-GB")}` : undefined}>
+      <Card title="Memory per process" sub={last ? `Our processes, latest sample at ${ist(last.time, false)}` : undefined}>
         {!last ? <p className="muted">{NO_SAMPLES}</p>
           : processes.length ? <EChart option={charts.processes} height={Math.max(120, processes.length * 32 + 20)} label="Memory per process in megabytes" />
           : <p className="muted">The latest sample lists no processes (deploy/machine-log.sh reads them from /proc every 15 s).</p>}
@@ -262,7 +261,7 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
         </tr>)}</tbody>
       </table></div>
     </Card>
-    <Card title="Storage" sub={`Which disk is which, what each folder holds and its size${m.storage.measured ? `; measured ${when(m.storage.measured)} (every 5 minutes)` : ""}.`}>
+    <Card title="Storage" sub={`Which disk is which, what each folder holds and its size${m.storage.measured ? `; measured ${ist(m.storage.measured, false)} (every 5 minutes)` : ""}.`}>
       <div className="table-wrap"><table className="data">
         <thead><tr><th>Disk</th><th>What lives there</th><th className="num">CIP's files</th><th className="num">Used (all)</th><th className="num">Size</th><th className="num">Full</th></tr></thead>
         <tbody>{m.storage.disks.map(d => <tr key={d.name}>

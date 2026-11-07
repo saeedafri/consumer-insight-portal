@@ -3,7 +3,7 @@
 -- listed here gets exactly these features (menus), over its package's (config/access.yml tiers). The super admin
 -- always has everything and is never listed. Created by the API on the first save, or by scripts/init_db.py.
 CREATE TABLE IF NOT EXISTS cip_role_access (
-  role        VARCHAR(40)   NOT NULL              COMMENT 'a role of config/access.yml roles: analyst, client',
+  role        VARCHAR(255)  NOT NULL              COMMENT 'whose menus: a role (analyst), a client (client:acme) or a person (person:ana@acme.com)',
   features    TEXT          NOT NULL              COMMENT 'JSON list of the features (menus) the role may use',
   updated_by  VARCHAR(255)  NOT NULL              COMMENT 'who saved it (the super admin)',
   updated_at  DATETIME      NOT NULL,

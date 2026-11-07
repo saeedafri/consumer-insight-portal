@@ -6,6 +6,15 @@ type Entry = { title: string; body: string; shot?: string; alt?: string; link?: 
 const RELEASES: { date: string; entries: Entry[] }[] = [{
   date: "7 November 2026",
   entries: [
+    { title: "Your own API keys, and Claude through the portal",
+      body: "Anyone signed in can now make their own API keys on the Account page and use the portal from their own programs, or from Claude and other AI assistants through the portal's MCP connector: search questions, read a wave's results, a trend or a cross-tab. A key acts as you and reads only what your menus show; if a menu is taken away, your keys lose it at the same moment. A key is shown once, and you can revoke it at any time. The new API guide lists every address, the connector's tools and the rules a key follows.",
+      link: ["/api-guide", "Read the API guide"] },
+    { title: "Menus for one client or one person, and trials that end on time",
+      body: "The super admin can now choose menus for a whole role, for one client, or for one person (a trial, an exception), by dragging them on the Access page; a person's choice beats their client's, which beats their role's. When a menu is taken away, its data is refused within a minute on every screen, API key and the MCP connector, even on a page left open, and the left menu redraws within minutes without a refresh." },
+    { title: "For admins: everything Forsta gives, under Forsta in the menu",
+      body: "Admins have a Forsta section: the team's saved reports, run by Forsta itself, with their Excel, PDF and PowerPoint files; a check of Forsta's own cross-tab against CIP's figures, cell by cell (the 2 November wave: 867 of 867 cells match); the funnel by sample source and device; warnings and launch checks; each survey's files; and when Forsta will delete archived surveys. All read from Forsta without changing anything." },
+    { title: "For admins: the logs in India time",
+      body: "The Logs, Fieldwork and Forsta pages now show every time in Indian Standard Time, so it is easy to see who did what and when. The Logs page also tells the Azure disk's own use apart from CIP's files, and no longer shows an old error in every time range." },
     { title: "Why respondents dropped out, survey by survey",
       body: "Fieldwork now opens each survey on its own page: its name and dates, then everyone who opened it and how each of them ended. Qualified people finished and are in the data. Terminated people met a screen-out rule, such as answering too fast. Over-quota people fit the survey but their group was already full; the page names the full cell (for the 2 November wave, 281 were turned away because the women's cell had filled). Dropped-out people left part-way; the page shows where. A chart shows finished interviews hour by hour, next to the quota cells and Forsta's own timeline of the survey. The tables scroll inside their cards, so the page stays short. The super admin can let analysts or clients see Fieldwork from the Access page.",
       link: ["/methodology#fieldwork-terms", "What opened, qualified, terminated and over quota mean"] },

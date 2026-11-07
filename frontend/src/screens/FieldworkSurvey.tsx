@@ -5,11 +5,11 @@
 // list (etl/fieldwork.py: summary and explain); this screen only draws. Every table scrolls inside its card.
 import { Link, useParams } from "react-router";
 import type { FieldworkSurvey as Survey } from "../api";
-import { Card, Empty, ExportButtons, ist } from "../components/bits";
+import { Card, count, day, Empty, ExportButtons, ist } from "../components/bits";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import { downloadTable } from "../csv";
 import { C } from "../theme";
-import { day, n, SOURCE, useRecord } from "./Fieldwork";
+import { SOURCE, useRecord } from "./Fieldwork";
 
 const REASON: Record<string, string> = { Terminated: "Terminated", Overquota: "Over quota", Dropped: "Dropped out" };
 const share = (part: number | null | undefined, whole: number | null | undefined) =>
@@ -52,7 +52,7 @@ function Funnel({ survey: s }: { survey: Survey }) {
   ];
   return <div className="grid g5 funnel-kpis">{parts.map(([label, value, meaning], i) => <div key={label} className={`card kpi${i === 1 ? " lead" : ""}`}>
     <div className="k-label">{label}</div>
-    <div className="k-value">{n(value)}</div>
+    <div className="k-value">{count(value)}</div>
     <div className="k-note">{i ? `${share(value, s.opened)} of opened · ` : ""}{meaning}</div>
   </div>)}</div>;
 }
@@ -71,7 +71,7 @@ function Reasons({ survey: s }: { survey: Survey }) {
     [`Why respondents dropped out: ${s.title ?? s.path}`, SOURCE]);
   const counted = rows.reduce((t, r) => t + r[3], 0);
   return <Card title="Why respondents dropped out"
-               sub={`Everyone who opened the survey and did not qualify: ${n(counted)} people here; Forsta's funnel counts ${n((s.opened ?? 0) - (s.qualified ?? 0))} ` +
+               sub={`Everyone who opened the survey and did not qualify: ${count(counted)} people here; Forsta's funnel counts ${count((s.opened ?? 0) - (s.qualified ?? 0))} ` +
                  "(the two can differ by a few when Forsta's summary and its data export disagree). " +
                  "Terminated and over quota come from the rule or quota cell Forsta recorded on each person; dropped out from the page they left on (average minutes there)."}
                aside={rows.length ? <ExportButtons onExport={exportTable} /> : undefined}>
@@ -80,7 +80,7 @@ function Reasons({ survey: s }: { survey: Survey }) {
       <tbody>{rows.map(([status, cause, where, people, minutes], i) => <tr key={i}>
         <td><span className={`chip ${status === "Terminated" ? "sig" : status === "Overquota" ? "flat" : "warn"}`}>{REASON[status] ?? status}</span></td>
         <th scope="row">{cause}</th><td title={where}>{where.length > 80 ? where.slice(0, 80) + "…" : where}</td>
-        <td className="num">{n(people)}</td><td className="num">{share(people, s.opened)}</td><td className="num">{minutes ?? "–"}</td>
+        <td className="num">{count(people)}</td><td className="num">{share(people, s.opened)}</td><td className="num">{minutes ?? "–"}</td>
       </tr>)}</tbody>
     </table></div> : <Empty>{s.hibernated ? "Hibernated in Forsta: its records cannot be read until it is woken." : "No reasons recorded for this survey."}</Empty>}
   </Card>;
@@ -93,7 +93,7 @@ function QuotaCells({ survey: s }: { survey: Survey }) {
     {cells.length ? <div className="table-wrap fieldwork-scroll"><table className="data report-table">
       <thead><tr><th>Quota</th><th>Cell</th><th className="num">Limit</th><th className="num">Completes</th><th className="num">Turned away</th></tr></thead>
       <tbody>{cells.map(([sheet, cell, limit, done, away], i) => <tr key={i} className={away ? undefined : "past"}>
-        <td>{sheet}</td><th scope="row">{cell}</th><td className="num">{n(limit)}</td><td className="num">{n(done)}</td><td className="num">{n(away)}</td>
+        <td>{sheet}</td><th scope="row">{cell}</th><td className="num">{count(limit)}</td><td className="num">{count(done)}</td><td className="num">{count(away)}</td>
       </tr>)}</tbody>
     </table></div> : <Empty>No quotas defined in Forsta for this survey.</Empty>}
   </Card>;
@@ -124,14 +124,14 @@ function Pages({ survey }: { survey: Survey }) {
     ["Question", "Wording", "Reached the page", "Went on", "Dropped out", "Dropped %", "Average seconds"],
     survey.pages.map(([code, text, started, submitted, dropped, seconds]) => [code, text, started, submitted, dropped, started ? +(100 * dropped / started).toFixed(1) : null, seconds && +seconds.toFixed(1)]),
     [`Drop-outs by page: ${survey.title ?? survey.path}`, SOURCE]);
-  return <Card title="Page by page" sub={`Everyone who reached each page, in questionnaire order: ${n(survey.partial)} dropped out in all. Terminated and over-quota people also stop reaching pages, so "reached" falls faster than the drop-outs alone.`}
+  return <Card title="Page by page" sub={`Everyone who reached each page, in questionnaire order: ${count(survey.partial)} dropped out in all. Terminated and over-quota people also stop reaching pages, so "reached" falls faster than the drop-outs alone.`}
                aside={<ExportButtons onExport={exportTable} />}>
     <div className="table-wrap fieldwork-scroll tall"><table className="data report-table">
       <thead><tr><th>Question</th><th className="num">Reached</th><th className="num">Dropped out</th><th className="num">Dropped %</th><th className="num">Average time</th></tr></thead>
       <tbody>{survey.pages.map(([code, text, started, , dropped, seconds], i) => <tr key={i}>
         <th scope="row" title={text}><b>{code}</b> <span className="muted">{text.length > 70 ? text.slice(0, 70) + "…" : text}</span></th>
-        <td className="num">{n(started)}</td>
-        <td className="num"><span className="vs-bar actual" style={{ width: most ? 80 * dropped / most : 0 }} />{n(dropped)}</td>
+        <td className="num">{count(started)}</td>
+        <td className="num"><span className="vs-bar actual" style={{ width: most ? 80 * dropped / most : 0 }} />{count(dropped)}</td>
         <td className="num">{started ? `${(100 * dropped / started).toFixed(1)}%` : "–"}</td>
         <td className="num">{seconds == null ? "–" : `${seconds.toFixed(0)} s`}</td>
       </tr>)}</tbody>
@@ -163,8 +163,8 @@ function Details({ survey }: { survey: Survey }) {
     <dl className="details">
       <div><dt>Category</dt><dd>{survey.category || "–"}</dd></div>
       <div><dt>Can be archived</dt><dd>{survey.can_archive || "–"}</dd></div>
-      <div><dt>Open tasks</dt><dd>{n(survey.tasks)}</dd></div>
-      <div><dt>Data layouts · data sources</dt><dd>{n(survey.layouts)} · {n(survey.datasources)}</dd></div>
+      <div><dt>Open tasks</dt><dd>{count(survey.tasks)}</dd></div>
+      <div><dt>Data layouts · data sources</dt><dd>{count(survey.layouts)} · {count(survey.datasources)}</dd></div>
       <div><dt>Median interview</dt><dd>{survey.median_minutes == null ? "–" : `${survey.median_minutes} minutes (qualified people)`}</dd></div>
       <div><dt>Questions shown on a condition</dt><dd>{survey.conditions == null ? "questionnaire not kept yet" : <>{survey.conditions}
         {survey.survey_id && <> · <Link to={`/w/${survey.survey_id}/survey`}>see them on the Survey preview</Link></>}</>}</dd></div>

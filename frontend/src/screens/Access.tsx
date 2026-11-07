@@ -65,7 +65,7 @@ export default function Access() {
       await saveRole(saved.role, on);
       await queries.invalidateQueries({ queryKey: ["roles"] });
       setPicked((all) => Object.fromEntries(Object.entries(all).filter(([name]) => name !== saved.role)));
-      setNote("Saved. It applies at once: data they lost is refused now, and an open page redraws its menu within minutes.");
+      setNote("Saved. Data they lost is refused within a minute, and an open page redraws its menu within minutes.");
     } catch (e) { setNote((e as Error).message); }
     setSaving(false);
   };

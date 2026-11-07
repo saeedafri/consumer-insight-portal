@@ -460,6 +460,7 @@ async def weekly_report(survey_id: int, request: Request, who: dict = Depends(us
 async def wave_logic(survey_id: int, request: Request, who: dict = Depends(user)) -> Response:
     """When each question of the wave was shown and its screen-out rules, from its survey.xml in Forsta (etl/fieldwork.py
     logic), for the Survey preview. Forsta waves whose questionnaire is kept only; nothing is computed here."""
+    require_feature(who, "survey")   # the Survey preview's own rule
     await visible(who, survey_id)
     found = published_file("waves", str(survey_id), "logic")
     if found is None:
@@ -766,34 +767,37 @@ async def revoke_key(shown: str, request: Request, who: dict = Depends(user)) ->
     return {"revoked": shown}
 
 
+def super_admin(who: dict = Depends(admin)) -> dict:
+    """The Access page's routes: an admin who may also manage roles (config/access.yml manage_roles)."""
+    if not access.can(who, "manage_roles"):
+        raise HTTPException(403, "Only the super admin manages roles")
+    return who
+
+
 @app.get("/api/v1/admin/roles")
-async def roles(person: str = "", who: dict = Depends(admin)) -> dict:
+async def roles(person: str = "", who: dict = Depends(super_admin)) -> dict:
     """The Access screen: every switchable feature (its name), and the menus of each role, each client in
     config/access.yml, and each person given menus of their own (the super admin's choice in cip_role_access, else
     what they inherit: shared/core/access.py inherited), plus `person` (an email typed on the screen) with what they
     inherit now. The super admin is not listed: they always have everything."""
-    if not access.can(who, "manage_roles"):
-        raise HTTPException(403, "Only the super admin manages roles")
     rules = access.rules()
     labels = rules.get("feature_labels") or {}
     chosen = await run_in_threadpool(access.managed_features)
     targets = [(role, "role", role) for role, said in (rules.get("roles") or {}).items() if said.get("permissions") != access.EVERYTHING]
     targets += [(f"client:{cid}", "client", c.get("name") or cid) for cid, c in (rules.get("clients") or {}).items()]
     people = {key for key in chosen if key.startswith("person:")} | ({f"person:{person.strip().lower()}"} if person else set())
-    targets += [(key, "person", key[7:]) for key in sorted(people)]
+    targets += [(key, "person", key.removeprefix("person:")) for key in sorted(people)]
     return {"features": [{"key": f, "label": labels.get(f, f)} for f in rules["features"]],
             "roles": [{"role": key, "kind": kind, "label": label, "features": got, "chosen": key in chosen} for key, kind, label in targets
                       if (got := chosen[key] if key in chosen else access.inherited(key)) is not None]}
 
 
 @app.put("/api/v1/admin/roles/{role}")
-async def save_role(role: str, request: Request, who: dict = Depends(admin)) -> dict:
+async def save_role(role: str, request: Request, who: dict = Depends(super_admin)) -> dict:
     """Save the menus of a role ("analyst"), a client ("client:acme") or one person ("person:ana@acme.com") from the
     Access screen (cip_role_access, created on the first save). A person's choice beats their client's, which beats
     their role's (access.menus). Applies at once to the portal, the API and the MCP connector (signin.stale_before).
     Recorded in the access log."""
-    if not access.can(who, "manage_roles"):
-        raise HTTPException(403, "Only the super admin manages roles")
     role = role.strip().lower()
     if access.inherited(role) is None:
         raise HTTPException(404, "No such role, client or person to manage")
@@ -819,22 +823,21 @@ async def save_role(role: str, request: Request, who: dict = Depends(admin)) -> 
 def applied(request: Request, who: dict, role: str, features: list[str] | None) -> dict:
     """After the Access screen saved or dropped menus: this worker re-reads them at once, nginx stops trusting older
     "sees everything" cookies now (signin.stale_before), and the change is recorded in the access log."""
-    access.MANAGED["at"], access.MANAGED["changed"] = -1e9, time.time()
+    access.menus_changed()
     signin.share_revoked()
     audit.record(request, "role_change", who=who, target=role, detail={"features": features})
     return {"role": role, "features": features if features is not None else access.inherited(role)}
 
 
 @app.delete("/api/v1/admin/roles/{role}")
-async def forget_role(role: str, request: Request, who: dict = Depends(admin)) -> dict:
+async def forget_role(role: str, request: Request, who: dict = Depends(super_admin)) -> dict:
     """Drop a client's or a person's own menus (the Access screen's "Use the inherited menus"): they get their
     role's, or their client's, again at once."""
-    if not access.can(who, "manage_roles"):
-        raise HTTPException(403, "Only the super admin manages roles")
     role = role.strip().lower()
-    def drop() -> None:
+    def drop() -> None:   # kept as "null" with its time, not deleted: every worker then sees access changed (stale_before)
         with get_engine("api_write").begin() as conn:
-            conn.execute(text("DELETE FROM cip_role_access WHERE role = :r"), {"r": role})
+            conn.execute(text("UPDATE cip_role_access SET features = 'null', updated_by = :b, updated_at = :t WHERE role = :r"),
+                         {"r": role, "b": who["email"], "t": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())})
     try:
         await run_in_threadpool(drop)
     except Exception as exc:   # noqa: BLE001

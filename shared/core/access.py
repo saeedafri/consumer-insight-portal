@@ -111,13 +111,19 @@ def managed_features() -> dict[str, list[str]]:
             from shared.core.database import get_engine   # here, not on top: the ETL reads access without the API's tables
             with get_engine("app").connect() as conn:
                 rows = conn.execute(text("SELECT role, features, updated_at FROM cip_role_access")).all()
-            MANAGED["roles"] = {role: json.loads(features) for role, features, _ in rows}
+            MANAGED["roles"] = {role: chosen for role, features, _ in rows if (chosen := json.loads(features)) is not None}   # null: dropped
             # when access last changed (UTC): sign-in cookies older than this are re-checked (api/signin.stale_before)
             MANAGED["changed"] = max([MANAGED.get("changed", 0)] + [when.replace(tzinfo=timezone.utc).timestamp() for *_, when in rows if when])
         except Exception:   # noqa: BLE001   no table yet, or the database out of reach: keep what was read last
             pass
         MANAGED["at"] = time.monotonic()
     return MANAGED["roles"]
+
+
+def menus_changed() -> None:
+    """Called when the Access page saved or dropped menus (api/main.py applied): this process reads them again at once,
+    and sign-in cookies issued before now are re-checked (api/signin.stale_before)."""
+    MANAGED["at"], MANAGED["changed"] = -1e9, time.time()
 
 
 def can(person: dict, permission: str) -> bool:

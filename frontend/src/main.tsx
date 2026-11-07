@@ -51,6 +51,7 @@ const router = createBrowserRouter([{
     { path: "/expectations", element: page("Page:Expectations", () => import("./screens/Expectations")) },
     { path: "/methodology", element: page("Page:Methodology", () => import("./screens/Methodology")) },
     { path: "/account", element: page("Page:Account", () => import("./screens/Account")) },
+    { path: "/api-guide", element: page("Page:ApiGuide", () => import("./screens/ApiGuide")) },
     { path: "/logs", element: page("Page:Logs", () => import("./screens/Logs")) },
     { path: "/fieldwork", element: page("Page:Fieldwork", () => import("./screens/Fieldwork")) },
     { path: "/fieldwork/:survey", element: page("Page:FieldworkSurvey", () => import("./screens/FieldworkSurvey")) },

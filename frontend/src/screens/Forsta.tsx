@@ -17,12 +17,9 @@ import type { ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { downloadForstaReport, useForsta, useForstaSurvey } from "../api";
 import type { ForstaLine, ForstaOverview, ForstaReport, ForstaSurvey } from "../api";
-import { Card, Empty, Failure, ist, SkeletonScreen } from "../components/bits";
-import { fmtDate } from "../stats";
+import { Card, count, day, Empty, Failure, ist, SkeletonScreen } from "../components/bits";
 import { SECTIONS } from "../forstaSections";
 
-const n = (v: number | null | undefined) => v == null ? "–" : v.toLocaleString("en-US");
-const day = (iso: string | null | undefined) => iso ? fmtDate(iso.slice(0, 10)) : "–";
 const size = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
 
 export default function Forsta() {
@@ -111,8 +108,8 @@ function Report({ survey, report }: { survey: ForstaSurvey; report: ForstaReport
           <thead><tr><th>Answer</th>{report.columns.map((c, i) => <th key={i} className="num">{c}</th>)}</tr></thead>
           <tbody>{current.rows.map((row, r) => <tr key={r} className={r === 0 ? "base" : undefined}>
             <th scope="row">{row[0]}</th>
-            {report.columns.map((_, c) => <td key={c} className="num">{r === 0 ? n(row[2 + 2 * c] as number)
-              : <>{typeof row[1 + 2 * c] === "number" ? `${(row[1 + 2 * c] as number).toFixed(0)}%` : "–"}<small>{n(row[2 + 2 * c] as number)}</small></>}</td>)}
+            {report.columns.map((_, c) => <td key={c} className="num">{r === 0 ? count(row[2 + 2 * c] as number)
+              : <>{typeof row[1 + 2 * c] === "number" ? `${(row[1 + 2 * c] as number).toFixed(0)}%` : "–"}<small>{count(row[2 + 2 * c] as number)}</small></>}</td>)}
           </tr>)}</tbody>
         </table></div>
         <p className="muted small">First row: how many people the column has. Below: the share of them giving each answer, and how many. As Forsta computed it.</p>
@@ -136,9 +133,9 @@ function CheckSummary({ data }: { data: ForstaOverview }) {
   return <>
     <div className="grid g3">
       <div className="card kpi lead"><div className="k-label">Cells that match Forsta</div><div className="k-value">{cells ? `${(100 * equal / cells).toFixed(2)}%` : "–"}</div>
-        <div className="k-note">{n(equal)} of {n(cells)} answer counts and bases</div></div>
-      <div className="card kpi"><div className="k-label">Surveys checked</div><div className="k-value">{n(checked.length)}</div><div className="k-note">of {n(data.surveys.length)} kept from Forsta</div></div>
-      <div className="card kpi"><div className="k-label">Surveys with a difference</div><div className="k-value">{n(checked.filter(l => l.check!.differs).length)}</div>
+        <div className="k-note">{count(equal)} of {count(cells)} answer counts and bases</div></div>
+      <div className="card kpi"><div className="k-label">Surveys checked</div><div className="k-value">{count(checked.length)}</div><div className="k-note">of {count(data.surveys.length)} kept from Forsta</div></div>
+      <div className="card kpi"><div className="k-label">Surveys with a difference</div><div className="k-value">{count(checked.filter(l => l.check!.differs).length)}</div>
         <div className="k-note">each difference is listed below, per survey</div></div>
     </div>
     <Card title="Every survey" sub="Forsta's cross-tab of every question for everyone qualified, against CIP's own count from Forsta's raw data.">
@@ -146,8 +143,8 @@ function CheckSummary({ data }: { data: ForstaOverview }) {
         <thead><tr><th>Survey</th><th className="num">Questions</th><th className="num">Cells</th><th className="num">Match</th><th className="num">Differ</th></tr></thead>
         <tbody>{checked.map(l => <tr key={l.key} className={l.check!.differs ? undefined : "past"}>
           <th scope="row">{l.title ?? l.path}<br /><small className="muted">{day(l.launched)} · {l.path}</small></th>
-          <td className="num">{n(l.check!.tables)}</td><td className="num">{n(l.check!.cells)}</td><td className="num">{n(l.check!.equal)}</td>
-          <td className="num">{l.check!.differs ? <span className="chip sig">{n(l.check!.differs)}</span> : "0"}</td>
+          <td className="num">{count(l.check!.tables)}</td><td className="num">{count(l.check!.cells)}</td><td className="num">{count(l.check!.equal)}</td>
+          <td className="num">{l.check!.differs ? <span className="chip sig">{count(l.check!.differs)}</span> : "0"}</td>
         </tr>)}</tbody>
       </table></div>
     </Card>
@@ -156,18 +153,18 @@ function CheckSummary({ data }: { data: ForstaOverview }) {
 
 /** One survey's check: every difference, and the tables only Forsta has (its own quota and routing variables). */
 function Check({ survey }: { survey: ForstaSurvey }) {
-  const c = survey.check;
-  if (!c) return <Empty>{survey.check_error ? `Forsta could not run its cross-tab: ${forstaReason(survey.check_error)}` : "Not checked: this survey is not loaded in CIP."}</Empty>;
+  const check = survey.check;
+  if (!check) return <Empty>{survey.check_error ? `Forsta could not run its cross-tab: ${forstaReason(survey.check_error)}` : "Not checked: this survey is not loaded in CIP."}</Empty>;
   return <div className="grid g2">
-    <Card title={c.differs.length ? `${n(c.differs.length)} cells differ` : "Every cell matches"} sub={`${n(c.equal)} of ${n(c.cells)} cells across ${n(c.tables)} questions are the same in Forsta and CIP.`}>
-      {c.differs.length ? <div className="table-wrap fieldwork-scroll"><table className="data report-table">
+    <Card title={check.differs.length ? `${count(check.differs.length)} cells differ` : "Every cell matches"} sub={`${count(check.equal)} of ${count(check.cells)} cells across ${count(check.tables)} questions are the same in Forsta and CIP.`}>
+      {check.differs.length ? <div className="table-wrap fieldwork-scroll"><table className="data report-table">
         <thead><tr><th>Question</th><th>Answer</th><th className="num">Forsta</th><th className="num">CIP</th></tr></thead>
-        <tbody>{c.differs.map(([q, answer, forsta, cip], i) => <tr key={i}><th scope="row">{q}</th><td>{answer}</td><td className="num">{n(forsta)}</td><td className="num">{cip == null ? "not in CIP" : n(cip)}</td></tr>)}</tbody>
+        <tbody>{check.differs.map(([q, answer, forsta, cip], i) => <tr key={i}><th scope="row">{q}</th><td>{answer}</td><td className="num">{count(forsta)}</td><td className="num">{cip == null ? "not in CIP" : count(cip)}</td></tr>)}</tbody>
       </table></div> : <p className="muted">Forsta and CIP agree on every answer count and every base.</p>}
     </Card>
     <Card title="Not compared" sub="Tables only Forsta has: its own quota, routing and timing variables (v…, status, qtime), and number questions, where Forsta gives a mean and median instead of counts.">
-      <p className="chips">{c.not_compared.map(t => <span key={t} className="tag">{t}</span>)}</p>
-      {c.cip_only.length > 0 && <p className="muted small">In CIP but not in Forsta's cross-tab: {c.cip_only.join(", ")}</p>}
+      <p className="chips">{check.not_compared.map(t => <span key={t} className="tag">{t}</span>)}</p>
+      {check.cip_only.length > 0 && <p className="muted small">In CIP but not in Forsta's cross-tab: {check.cip_only.join(", ")}</p>}
     </Card>
   </div>;
 }
@@ -204,7 +201,7 @@ function Samples({ survey }: { survey: ForstaSurvey }) {
       <div className="table-wrap fieldwork-scroll"><table className="data report-table">
         <thead><tr><th>{name === "list" ? "Source" : "Segment"}</th>{FUNNEL.map(([, label]) => <th key={label} className="num">{label}</th>)}<th className="num">Incidence</th></tr></thead>
         <tbody>{rows.map(([segment, ...v]) => <tr key={segment} className={segment === "Total" ? "base" : undefined}>
-          <th scope="row">{segment}</th>{v.map((x, i) => <td key={i} className="num">{n(x)}</td>)}
+          <th scope="row">{segment}</th>{v.map((x, i) => <td key={i} className="num">{count(x)}</td>)}
           <td className="num">{v[0] ? `${(100 * (v[1] ?? 0) / v[0]).toFixed(1)}%` : "–"}</td>
         </tr>)}</tbody>
       </table></div>
@@ -220,7 +217,7 @@ function CompanyWarnings({ data }: { data: ForstaOverview }) {
     {data.warnings_summary.length ? <div className="table-wrap fieldwork-scroll"><table className="data report-table">
       <thead><tr><th>Survey</th>{WARNING_KINDS.map(([, label]) => <th key={label} className="num">{label}</th>)}<th>Last edited by</th></tr></thead>
       <tbody>{data.warnings_summary.map((w, i) => <tr key={i}><th scope="row">{w.name ?? w.path}</th>
-        {WARNING_KINDS.map(([k]) => <td key={k} className="num">{n(w[k] as number)}</td>)}<td>{w.lastEditBy ?? "–"}</td></tr>)}</tbody>
+        {WARNING_KINDS.map(([k]) => <td key={k} className="num">{count(w[k] as number)}</td>)}<td>{w.lastEditBy ?? "–"}</td></tr>)}</tbody>
     </table></div> : <p className="muted">No warnings on any survey.</p>}
   </Card>;
 }
@@ -228,7 +225,7 @@ function CompanyWarnings({ data }: { data: ForstaOverview }) {
 function SurveyWarnings({ survey }: { survey: ForstaSurvey }) {
   const checks = Object.entries(survey.launch_warnings);
   return <div className="grid g2">
-    <Card title="Warning events" sub={WARNING_KINDS.map(([k, label]) => `${label} ${n(survey.warnings.counts[k] ?? 0)}`).join(" · ")}>
+    <Card title="Warning events" sub={WARNING_KINDS.map(([k, label]) => `${label} ${count(survey.warnings.counts[k] ?? 0)}`).join(" · ")}>
       {survey.warnings.events.length ? <div className="table-wrap fieldwork-scroll"><table className="data report-table">
         <thead><tr><th>When (IST)</th><th>Kind</th><th>What Forsta said</th></tr></thead>
         <tbody>{survey.warnings.events.map(([when, kind, reason, message], i) => <tr key={i}>
@@ -259,16 +256,16 @@ function Deletion({ data }: { data: ForstaOverview }) {
     <div className="grid g4">
       <div className="card kpi lead"><div className="k-label">Deleted by Forsta next</div><div className="k-value">{data.deletion[0] ? `${data.deletion[0].days_until_deletion} days` : "–"}</div>
         <div className="k-note">{data.deletion[0] ? `${data.deletion[0].title}, ${day(data.deletion[0].date_of_deletion)}` : "nothing due"}</div></div>
-      <div className="card kpi"><div className="k-label">Surveys in the deletion report</div><div className="k-value">{n(data.deletion.length)}</div><div className="k-note">archived, waiting to be deleted</div></div>
+      <div className="card kpi"><div className="k-label">Surveys in the deletion report</div><div className="k-value">{count(data.deletion.length)}</div><div className="k-note">archived, waiting to be deleted</div></div>
       <div className="card kpi"><div className="k-label">Retention rule</div><div className="k-value">{rule ? `${rule} days` : "–"}</div><div className="k-note">from archiving to deletion, set for the company in Forsta</div></div>
-      <div className="card kpi"><div className="k-label">Scheduled · deleted · data deletions</div><div className="k-value">{n(data.scheduled.length)} · {n(data.deleted.length)} · {n(data.deletion_data.length)}</div>
-        <div className="k-note">planned closes {n(data.planned.autoclose.length)}, planned archives {n(data.planned.archives.length)}</div></div>
+      <div className="card kpi"><div className="k-label">Scheduled · deleted · data deletions</div><div className="k-value">{count(data.scheduled.length)} · {count(data.deleted.length)} · {count(data.deletion_data.length)}</div>
+        <div className="k-note">planned closes {count(data.planned.autoclose.length)}, planned archives {count(data.planned.archives.length)}</div></div>
     </div>
     <Card title="Forsta's deletion report" sub="Every archived survey Forsta will delete, soonest first, with its risk level and when someone last opened it.">
       <div className="table-wrap fieldwork-scroll tall"><table className="data report-table">
         <thead><tr><th>Survey</th><th className="num">Deleted on</th><th className="num">Days left</th><th>Risk</th><th className="num">Last opened</th><th>Created by</th></tr></thead>
         <tbody>{[...data.deletion].sort((a, b) => a.days_until_deletion - b.days_until_deletion).map(d => <tr key={d.path}>
-          <th scope="row">{d.title}<br /><small className="muted">{d.path}</small></th><td className="num">{day(d.date_of_deletion)}</td><td className="num">{n(d.days_until_deletion)}</td>
+          <th scope="row">{d.title}<br /><small className="muted">{d.path}</small></th><td className="num">{day(d.date_of_deletion)}</td><td className="num">{count(d.days_until_deletion)}</td>
           <td><span className={`chip ${d.risk_level === "HIGH" ? "sig" : d.risk_level === "MEDIUM" ? "warn" : "flat"}`}>{(d.risk_level ?? "–").toLowerCase()}</span></td>
           <td className="num">{day(d.last_access)}</td><td>{d.created_by}</td>
         </tr>)}</tbody>

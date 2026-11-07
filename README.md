@@ -78,6 +78,9 @@ pytest -q                             # the checks
 
 | Document | For |
 |---|---|
+| [Status](status/README.md) | what is done, waiting for deploy, pending and stuck: read it before starting, update it while working |
+| [What's new](docs/CHANGELOG.md) | every feature, enhancement and update, the same as the portal's What's new page |
+| [API and MCP guide](docs/API.md) | using the portal from programs and AI assistants with your own key, the same as the portal's API guide page |
 | [Business description](docs/business/Business-Description.md) | the business team: the surveys, what is collected, how the pipeline works, quality and privacy |
 | [Portal features](docs/business/portal-features.md) | what each screen does |
 | [Technical documentation](docs/technical/00-overview.md) | Forsta API, extract, transform, load, serving tables, data dictionary, survey patterns, operations runbook |

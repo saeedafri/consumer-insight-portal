@@ -964,3 +964,6 @@ code.cond { font-size: 12px; color: var(--ink-2); word-break: break-word; }
 .key-made { border: 1px solid var(--red); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; background: var(--red-wash); }
 .key-made p { margin: 0 0 8px; }
 code.key { display: block; padding: 8px 10px; margin-bottom: 8px; background: var(--surface); border-radius: 6px; word-break: break-all; font-size: 13px; }
+/* the API guide (screens/ApiGuide.tsx) */
+.guide-steps { margin: 0 0 8px; padding-left: 20px; line-height: 1.7; }
+.guide-code { margin: 0 0 12px; padding: 10px 12px; background: var(--fill); border-radius: 8px; font-size: 12.5px; overflow-x: auto; white-space: pre; }

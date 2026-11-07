@@ -113,15 +113,13 @@ def question_titles(xml: str | None) -> dict[str, str]:
         root = ET.fromstring(xml.encode("utf-8"))
     except ET.ParseError:
         return {}
-    def plain(title) -> str:   # Forsta titles can hold HTML as text (<span style=…>, &nbsp;)
-        return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", "".join(title.itertext()))).split())
-    return {node.get("label"): plain(node.find("title"))
+    return {node.get("label"): plain_text("".join(node.find("title").itertext()))
             for node in root.iter() if node.tag.split("}")[-1] in QUESTION_TAGS and node.get("label") and node.find("title") is not None}
 
 
 def plain_text(label) -> str:
-    """An answer's text as both Forsta and CIP can match it: no HTML or entities, single spaces, any case."""
-    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", str(label or ""))).split()).casefold()
+    """Text as people read it: Forsta's titles and answers can hold HTML as text (<span style=…>, &nbsp;)."""
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", str(label or ""))).split())
 
 
 def check(forsta: dict | None, survey_id: int | None) -> dict | None:
@@ -133,14 +131,20 @@ def check(forsta: dict | None, survey_id: int | None) -> dict | None:
         return None
     with get_engine("app").connect() as conn:
         rows = conn.execute(text(
-            "SELECT r.qcode, r.qtype, i.item_code, r.item_label, r.option_label, r.n, r.base_n FROM srv_result r"
+            "SELECT r.qcode, r.qtype, i.item_code, r.item_label, r.option_code, r.option_label, r.n, r.base_n FROM srv_result r"
             " LEFT JOIN cip_item i ON i.item_id = r.item_id WHERE r.survey_id = :s AND r.dim = 'total'"), {"s": survey_id}).all()
+        codes: dict[str, list] = {}   # each question's answer codes in the questionnaire's order, answers nobody gave too
+        for qcode, code in conn.execute(text("SELECT q.qcode, o.value_code FROM cip_option o JOIN cip_question q ON q.question_id = o.question_id"
+                                             " WHERE q.survey_id = :s ORDER BY q.qcode, o.sort_order"), {"s": survey_id}):
+            codes.setdefault(qcode, []).append(code)
     cip: dict[str, dict] = {}   # Forsta's table name (q1$, AP8$r1) → {answer: people, "(base)": base}
-    for qcode, qtype, item_code, item, option, people, base in rows:
+    for qcode, qtype, item_code, item, code, option, people, base in rows:
         grid = qtype.startswith("grid")
         table = f"{qcode}${item_code[len(qcode):]}" if grid and item_code else f"{qcode}$"
         counts = cip.setdefault(table, {"(base)": base})
-        counts[plain_text(option if grid or qtype == "single" else item)] = people
+        counts[plain_text(option if grid or qtype == "single" else item).casefold()] = people
+        if code is not None:
+            counts[f"#{code}"] = people   # by answer code, for answers whose wording is blank or repeated (see below)
     tables, differs, cells, equal, skipped = 0, [], 0, 0, []
     for table, answers in forsta.items():
         if table not in cip:
@@ -148,11 +152,16 @@ def check(forsta: dict | None, survey_id: int | None) -> dict | None:
             continue
         tables += 1
         mine = cip[table]
+        labels = [plain_text(row[0]).casefold() for row in answers]
         for i, row in enumerate(answers):
-            label = "(base)" if i == 0 or plain_text(row[0]) == "count" else plain_text(row[0])   # Count: Forsta's "answering", the base again
-            theirs, ours = row[2], mine.get(label)
+            label = "(base)" if i == 0 or labels[i] == "count" else labels[i]   # Count: Forsta's "answering", the base again
+            ours = mine.get(label)
+            if label != "(base)" and (not label or labels.count(label) > 1):   # blank middle points of a scale, "This one" twice:
+                order = codes.get(table.split("$")[0], [])                     # the i-th answer in the questionnaire's order
+                ours = mine.get(f"#{order[i - 1]}", 0) if i - 1 < len(order) else None   # no CIP row: nobody gave it
+            theirs = row[2]
             cells += 1
-            if theirs == ours:
+            if theirs == ours and ours is not None:
                 equal += 1
             elif not (i and theirs == 0 and ours is None):   # an answer nobody gave: CIP keeps no row for it
                 differs.append([table.rstrip("$"), "Base" if label == "(base)" else row[0], theirs, ours])
@@ -164,13 +173,13 @@ def check(forsta: dict | None, survey_id: int | None) -> dict | None:
 
 def exported() -> dict[str, dict[str, list[str]]]:
     """Which files Forsta exported for each saved report: {survey path: {report id: ["excel", "pdf", "pptx"]}}."""
-    formats = {kind: fmt for fmt, kind in EXPORTS.items()}
+    formats = {kind: file_format for file_format, kind in EXPORTS.items()}
     found: dict[str, dict[str, list[str]]] = {}
     with get_engine("app").connect() as conn:
         for path, kind in conn.execute(text("SELECT forsta_path, kind FROM cip_forsta_record WHERE kind LIKE 'saved_%:%'")):
-            prefix, _, rid = kind.partition(":")
+            prefix, _, report_id = kind.partition(":")
             if prefix in formats:
-                found.setdefault(path, {}).setdefault(rid, []).append(formats[prefix])
+                found.setdefault(path, {}).setdefault(report_id, []).append(formats[prefix])
     return found
 
 
@@ -190,7 +199,7 @@ def survey_page(record: dict, survey_id: int | None = None, files: dict | None =
         errors = record.get("saved_errors") or {}
         reports.append({"id": report.get("id"), "title": report.get("title"), "description": report.get("description"),
                         "exports": sorted((files or {}).get(report.get("id"), [])), "error": errors.get(report.get("id")),
-                        "export_errors": {fmt: errors[f"{report.get('id')}:{fmt}"] for fmt in EXPORTS if f"{report.get('id')}:{fmt}" in errors},
+                        "export_errors": {file_format: errors[f"{report.get('id')}:{file_format}"] for file_format in EXPORTS if f"{report.get('id')}:{file_format}" in errors},
                         "access": report.get("access"), "updated": report.get("updated_on"), "ran": bool(tables),
                         "columns": [g[0] for g in banner["segments"]] if banner else [f"Column {i + 1}" for i in range(width)],
                         "banner": banner and banner["title"],
@@ -211,7 +220,7 @@ def survey_page(record: dict, survey_id: int | None = None, files: dict | None =
             "check_error": (record.get("saved_errors") or {}).get("crosstab")}
 
 
-def ours(company: dict, kind: str):
+def company_part(company: dict, kind: str):
     """A company record Forsta keys by company id ({"86": …}): Coresight's part."""
     found = company.get(kind)
     return next(iter(found.values()), None) if isinstance(found, dict) else found
@@ -234,10 +243,10 @@ def publish_forsta(out: Path, write, kept: dict, company: dict, waves: dict, not
     lines.sort(key=lambda line: line["launched"] or "", reverse=True)
     return size + write(out / "api/v1/admin/forsta", {
         "surveys": lines, "warnings_summary": company.get("warnings_summary") or [],
-        "deletion": ours(company, "archives_deletion") or [], "deletion_data": ours(company, "archives_deletion_data") or [],
-        "deleted": ours(company, "archives_deleted") or [], "scheduled": ours(company, "archives_scheduled") or [],
+        "deletion": company_part(company, "archives_deletion") or [], "deletion_data": company_part(company, "archives_deletion_data") or [],
+        "deleted": company_part(company, "archives_deleted") or [], "scheduled": company_part(company, "archives_scheduled") or [],
         "planned": {"autoclose": company.get("autoclose_planned") or [], "archives": company.get("archives_planned") or []},
-        "retention": ours(company, "retention"), "crosstab_defaults": ours(company, "crosstab_defaults"), "categories": company.get("categories") or [],
+        "retention": company_part(company, "retention"), "crosstab_defaults": company_part(company, "crosstab_defaults"), "categories": company.get("categories") or [],
         "endpoints": sorted([m.get("method"), m.get("endpoint"), m.get("title")] for m in company.get("meta") or [] if m.get("endpoint")),
         "not_loaded": not_loaded, "collected": company.get("fetched_at")})
 
@@ -301,18 +310,18 @@ def computations(client, path: str, kinds: dict) -> dict:
     except Exception as exc:   # noqa: BLE001
         errors["crosstab"] = str(exc)[-300:]
     for report in kinds.get("saved_reports") or []:
-        rid = report.get("id")
+        report_id = report.get("id")
         try:
-            runs[rid] = client.read_post(f"surveys/{path}/crosstabs/saved/{rid}/execute", {"simplified": True}).json()
+            runs[report_id] = client.read_post(f"surveys/{path}/crosstabs/saved/{report_id}/execute", {"simplified": True}).json()
         except Exception as exc:   # noqa: BLE001
-            errors[rid] = str(exc)[-300:]
-            log.info("Fieldwork: saved report %s of %s not run: %s", rid, path, errors[rid])
+            errors[report_id] = str(exc)[-300:]
+            log.info("Fieldwork: saved report %s of %s not run: %s", report_id, path, errors[report_id])
             continue
-        for fmt, kind in EXPORTS.items():
+        for file_format, kind in EXPORTS.items():
             try:
-                found[f"{kind}:{rid}"] = client.read_post(f"surveys/{path}/crosstabs/saved/{rid}/export/{fmt}", {}).content
+                found[f"{kind}:{report_id}"] = client.read_post(f"surveys/{path}/crosstabs/saved/{report_id}/export/{file_format}", {}).content
             except Exception as exc:   # noqa: BLE001   e.g. a report too wide for a PDF page (Forsta's layout error)
-                errors[f"{rid}:{fmt}"] = str(exc)[-300:]
+                errors[f"{report_id}:{file_format}"] = str(exc)[-300:]
     found["saved_runs"], found["saved_errors"] = runs, errors
     before, after = kinds["survey"], client.read_json(SURVEY_READS["survey"].format(path=path))
     if (after.get("lastEdit"), after.get("state")) != (before.get("lastEdit"), before.get("state")):
@@ -399,7 +408,7 @@ def cause_label(cause: str, record: dict) -> tuple[str, str]:
     questionnaire's terms ("Speeder (te4): timeSpent() < 120"), or the full quota cell ("Regions: Northeast")."""
     if cause.startswith("term:"):
         term = next((t for t in record.get("terms") or [] if t.get("marker") == cause), {})
-        rule = term.get("cond") or cause[5:]
+        rule = term.get("cond") or cause.removeprefix("term:")
         return (f"{term.get('description') or 'Screen-out rule'} ({term['label']}): {rule}" if term.get("label") else rule,
                 "the whole interview (time taken)" if "timeSpent" in rule else "the screen-out rule's question")
     sheet, _, cell = cause.removeprefix("OQ ").strip("/").partition("/")
@@ -463,10 +472,10 @@ def summary(record: dict, wave: dict | None, why: dict | None = None) -> dict:
     quota = record.get("quota") or {}
     defines = quota.get("defines") or {}
     cells = []   # [sheet, cell, limit, completes, turned away over quota], the busiest cells first
-    for marker, c in (quota.get("markers") or {}).items():
+    for marker, counts in (quota.get("markers") or {}).items():
         sheet, _, cell = marker.strip("/").partition("/")
-        cells.append([sheet, (defines.get(cell) or {}).get("description") or cell, c.get("limit"), c.get("complete"), c.get("oq")])
-    cells.sort(key=lambda c: (-(c[4] or 0), c[0]))
+        cells.append([sheet, (defines.get(cell) or {}).get("description") or cell, counts.get("limit"), counts.get("complete"), counts.get("oq")])
+    cells.sort(key=lambda row: (-(row[4] or 0), row[0]))
     causes, hours = explain(why, record)
     return {"path": record["path"], "survey_id": wave and wave["survey_id"], "title": info.get("title") or (wave or {}).get("title"),
             "wave_date": (wave or {}).get("wave_date"), "state": info.get("state"),

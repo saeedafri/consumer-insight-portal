@@ -6,7 +6,7 @@ import { allowed, useMe } from "../api";
 import type { Wave } from "../api";
 import type { Format } from "../csv";
 import type { Move } from "../moves";
-import { pts, SMALL_BASE } from "../stats";
+import { fmtDate, pts, SMALL_BASE } from "../stats";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 /** A question as people read it: "Q3", its place in the survey. The survey's own code (BD1, LX5RA8OE), which the data
@@ -122,6 +122,11 @@ export function Empty({ children }: { children: ReactNode }) {
 /** A time in US Eastern with its zone (EDT or EST): the portal's clients read US time. */
 export const eastern = (at: Date, parts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) =>
   at.toLocaleString("en-US", { timeZone: "America/New_York", timeZoneName: "short", ...parts });
+
+/** A count as people read it ("1,193"), or "–" when there is none. */
+export const count = (value: number | null | undefined) => value == null ? "–" : value.toLocaleString("en-US");
+/** The date part of a time or date ("Nov 2, 2026"), or "–". */
+export const day = (iso: string | null | undefined) => iso ? fmtDate(iso.slice(0, 10)) : "–";
 
 /** A server time (always UTC: "2026-11-07 09:05:11", "2026-11-07T08:52", "…Z") in Indian Standard Time, as the admin
  *  team reads it: "7 Nov 2026, 14:35 IST". Logs, Fieldwork and the Forsta screens show every time this way. */

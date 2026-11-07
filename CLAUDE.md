@@ -31,5 +31,10 @@ what it does, why it exists, and who calls it, without anyone explaining.
   that report (tests/test_weekly_report.py checks Figure 6 of the 3 Nov 2026 PDF).
 - Every time you write code: review it with ponytail at ultra level (/ponytail ultra, then /ponytail-review on the
   diff) and apply what it finds, so no unnecessary line stays; say in the report what it cut.
+- Every feature, enhancement or update goes, in the same words, to What's new (frontend/src/screens/WhatsNew.tsx) and
+  docs/CHANGELOG.md; anything an API route or MCP tool changes also goes to docs/API.md and the API guide page
+  (frontend/src/screens/ApiGuide.tsx). tests/test_docs.py fails if they differ or a route is undocumented.
+- Before starting, read status/README.md (what is done, pending, stuck); update it in the same change when you start,
+  finish or get stuck on an item, following the standard at its top. Never redo a Done item.
 - Before finishing: review it as a second reader (/code-review), run the full test suite and the frontend type-check,
   and look at any screen you touched in a browser.

@@ -3,6 +3,7 @@
 // each request: what your menus hide, your keys cannot read either. Calls /api/v1/keys (api/main.py); the key is shown
 // once, here, and only its fingerprint is kept (shared/core/api_keys.py).
 import { useState } from "react";
+import { Link } from "react-router";
 import { queries, send, useKeys } from "../api";
 import { Card } from "./bits";
 
@@ -41,5 +42,6 @@ export default function ApiKeys() {
       <button className="btn primary" type="submit" disabled={!name.trim()}>Make a key</button>
     </form>
     {note && <p className="muted small" role="status">{note}</p>}
+    <p className="small" style={{ marginTop: 10 }}><Link to="/api-guide">Read the API guide</Link>: every address, the MCP tools, and the rules a key follows.</p>
   </Card>;
 }

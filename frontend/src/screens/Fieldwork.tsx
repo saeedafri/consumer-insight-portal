@@ -6,12 +6,9 @@
 import { Link, useNavigate } from "react-router";
 import { useFieldwork, useMe } from "../api";
 import type { FieldworkRecord, FieldworkSurvey } from "../api";
-import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
+import { Card, count, day, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
 import { downloadTable } from "../csv";
-import { fmtDate } from "../stats";
 
-export const n = (v: number | null | undefined) => v == null ? "–" : v.toLocaleString("en-US");
-export const day = (iso: string | null | undefined) => iso ? fmtDate(iso.slice(0, 10)) : "–";
 export const SOURCE = "Source: Forsta (read-only), kept by CIP";
 
 /** The record for this person (admins: everything), or what to say when it is not there or not theirs. */
@@ -89,10 +86,10 @@ function Surveys({ surveys }: { surveys: FieldworkSurvey[] }) {
       <tbody>{surveys.map(s => <tr key={s.path} className="clickable" onClick={() => open(s.path)}>
         <th scope="row"><button className="link-button" onClick={e => { e.stopPropagation(); open(s.path); }}>{s.title ?? s.path}</button>
           {s.hibernated && <span className="chip warn">hibernated</span>}{s.state === "live" && <span className="chip sig">in the field</span>}</th>
-        <td className="num">{day(s.launched)}</td><td className="num">{n(s.opened)}</td><td className="num">{n(s.qualified)}</td><td className="num">{n(s.terminated)}</td>
-        <td className="num">{n(s.overquota)}</td><td className="num">{n(s.partial)}</td><td className="num">{s.incidence == null ? "–" : `${s.incidence}%`}</td>
+        <td className="num">{day(s.launched)}</td><td className="num">{count(s.opened)}</td><td className="num">{count(s.qualified)}</td><td className="num">{count(s.terminated)}</td>
+        <td className="num">{count(s.overquota)}</td><td className="num">{count(s.partial)}</td><td className="num">{s.incidence == null ? "–" : `${s.incidence}%`}</td>
         <td className="num">{s.median_minutes == null ? "–" : `${s.median_minutes} min`}</td>
-        <td className="num" title="Blocked sessions, server errors and exceptions Forsta logged">{n((s.warnings.blocks ?? 0) + (s.warnings.server_errors ?? 0) + (s.warnings.exceptions ?? 0))}</td>
+        <td className="num" title="Blocked sessions, server errors and exceptions Forsta logged">{count((s.warnings.blocks ?? 0) + (s.warnings.server_errors ?? 0) + (s.warnings.exceptions ?? 0))}</td>
       </tr>)}</tbody>
     </table></div>
   </Card>;

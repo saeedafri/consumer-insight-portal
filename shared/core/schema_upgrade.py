@@ -96,6 +96,12 @@ DROP_INDEXES: list[tuple[str, str]] = [
 ]
 
 
+# (table, column, definition, length): text columns that grew; plan() lengthens an older database's
+LENGTHEN: list[tuple[str, str, str, int]] = [
+    ("cip_role_access", "role", "VARCHAR(255) NOT NULL", 255),   # 40 held "person:" and 33 characters of email (7 Nov 2026)
+]
+
+
 def plan(engine: Engine) -> list[str]:
     """Statements that bring this database to v2. Tables that do not exist
     yet are skipped — the schema files create them already at v2."""
@@ -121,6 +127,11 @@ def plan(engine: Engine) -> list[str]:
     for table, column, definition, newest in WIDEN:
         kind = next((c["type"] for c in insp.get_columns(table) if c["name"] == column), None) if table in tables else None
         if not is_sqlite and kind is not None and newest not in str(getattr(kind, "values", None) or kind.enums):   # SET / ENUM
+            statements.append(f"ALTER TABLE {table} MODIFY COLUMN {column} {definition}")
+
+    for table, column, definition, length in LENGTHEN:   # a text column made longer (MySQL only: SQLite has no lengths)
+        kind = next((c["type"] for c in insp.get_columns(table) if c["name"] == column), None) if table in tables else None
+        if not is_sqlite and kind is not None and (getattr(kind, "length", None) or length) < length:
             statements.append(f"ALTER TABLE {table} MODIFY COLUMN {column} {definition}")
 
     for table, name, kind, cols in INDEXES:

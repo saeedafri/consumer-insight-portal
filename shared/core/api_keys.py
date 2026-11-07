@@ -23,7 +23,8 @@ import yaml
 
 from shared.core.session import digest   # the same SHA-256 the session ids are kept as
 
-FILE = Path(os.environ.get("CIP_API_KEYS") or ("/home/cip/api_keys.yml" if Path("/home/cip").is_dir() else Path.home() / ".config/cip/api_keys.yml"))
+FILE = Path(os.environ.get("CIP_API_KEYS") or ("/home/cip/api_keys.yml" if os.access("/home/cip", os.W_OK)   # Azure's mount
+                                                else Path.home() / ".config/cip/api_keys.yml"))
 MOST = 10   # keys per person: enough for a few tools, few enough to keep track of
 PREFIX = "cip_"
 _cache: dict = {"mtime": None, "keys": {}, "checked": -1e9}

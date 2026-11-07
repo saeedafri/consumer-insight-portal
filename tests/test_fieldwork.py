@@ -211,15 +211,20 @@ def test_forstas_own_cross_tab_is_checked_against_cips_figures_cell_by_cell(monk
         def __exit__(self, *exc):
             return False
 
-        def execute(self, *args):
-            return Rows([("q4", "multi", None, "Walmart", None, 272, 403), ("q4", "multi", None, "Costco", None, 50, 403),
-                         ("q6", "grid_single", "q6r1", "Utilities", "Notable decrease", 23, 403)])
+        def execute(self, query, *args):
+            if "cip_option" in str(query):   # CR6's answer codes: 7 and 9, not 1 and 2, so position i is not code i
+                return [("CR6", 7), ("CR6", 9)]
+            return Rows([("q4", "multi", None, "Walmart", None, None, 272, 403), ("q4", "multi", None, "Costco", None, None, 50, 403),
+                         ("q6", "grid_single", "q6r1", "Utilities", 2, "Notable decrease", 23, 403),
+                         ("CR6", "grid_single", "CR6r1", "Prices", 7, "Left statement", 209, 387),
+                         ("CR6", "grid_single", "CR6r1", "Prices", 9, "Right statement", 178, 387)])
 
     monkeypatch.setattr(fieldwork, "get_engine", lambda role: type("E", (), {"connect": lambda self: Conn()})())
     forsta = {"q4$": [["Total", 100, 403], ["Walmart", 67.5, 272], ["Costco", 12.4, 51], ["Nobody", 0.0, 0], ["Count", 100, 403]],
-              "q6$r1": [["Total", 100, 403], ["Notable <b>decrease</b>", 5.7, 23]], "vterm$": [["Total", 100, 32]]}
+              "q6$r1": [["Total", 100, 403], ["Notable <b>decrease</b>", 5.7, 23]], "vterm$": [["Total", 100, 32]],
+              "CR6$r1": [["Total", 100, 387], ["", 54.0, 209], ["\xa0", 46.0, 178]]}   # blank wording: matched by answer code
     result = fieldwork.check(forsta, 532)
-    assert (result["tables"], result["cells"], result["equal"]) == (2, 7, 6)
+    assert (result["tables"], result["cells"], result["equal"]) == (3, 10, 9)
     assert result["differs"] == [["q4", "Costco", 51, 50]] and result["not_compared"] == ["vterm"] and result["cip_only"] == []
 
 
