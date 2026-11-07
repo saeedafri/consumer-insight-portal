@@ -4,6 +4,12 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "8 November 2026",
+  entries: [
+    { title: "Uptime checks see the portal as up",
+      body: "Uptime checks that ask the portal whether it is up with a HEAD request (as many monitors do) now get \"up\" instead of \"Page not found\"." },
+  ],
+}, {
   date: "7 November 2026",
   entries: [
     { title: "Times in your own time zone, and India time on the Logs page",

@@ -677,7 +677,7 @@ async def export(kind: str, request: Request, who: dict = Depends(user)) -> Resp
     return Response(body, media_type=EXPORT_TYPES[kind], headers={"Content-Disposition": f'attachment; filename="{spec["name"]}.{kind}"'})
 
 
-@app.get("/healthz")
+@app.api_route("/healthz", methods=["GET", "HEAD"])   # HEAD: uptime checks send it; GET-only fell through to a 404 page
 async def healthz() -> dict:
     """Public: up or not, and which code. The detail is for admins (/api/v1/admin/health)."""
     return {"ok": True, "build": BUILD}

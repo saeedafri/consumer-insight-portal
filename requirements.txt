@@ -9,22 +9,22 @@ uvicorn[standard]==0.54.0       # runs the API
 gunicorn==26.2.0                # keeps the API process running and restarts it if it dies
 
 # Data processing (the ETL and the Excel/PowerPoint exports)
-pandas>=2.3.0
+pandas==2.3.3
 
 # Database: Azure MySQL
-sqlalchemy>=2.0.46
-pymysql>=1.1.0
-cryptography>=46.0.0            # needed for MySQL's encrypted (SSL) connections
+sqlalchemy==2.1.1
+pymysql==1.2.3
+cryptography==50.0.1            # needed for MySQL's encrypted (SSL) connections
 
 # Forsta, where the surveys run (etl/forsta_client.py)
-requests>=2.32.0
-tenacity>=9.0.0                 # retries a failed Forsta call with growing waits
+requests==2.34.2
+tenacity==9.1.4                 # retries a failed Forsta call with growing waits
 
 # Exports and the assistant
-openpyxl>=3.1.5                 # Excel files
+openpyxl==3.1.5                 # Excel files
 python-pptx==1.0.2              # PowerPoint export (api/exports.py)
 anthropic==2.0.0                # Ask CIP (api/assistant.py); without credentials it answers with cited figures only
 
 # Settings
-python-dotenv>=1.0.0            # reads .env on a developer's machine
-pyyaml>=6.0                     # reads the rules in config/*.yml
+python-dotenv==1.2.3            # reads .env on a developer's machine
+pyyaml==6.0.3                   # reads the rules in config/*.yml

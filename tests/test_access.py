@@ -146,6 +146,7 @@ def test_me_and_methodology_have_the_agreed_shapes_and_openapi_needs_a_session(p
     assert method["weighting"] == "none" and "small_cells" in method and "significance" in method
     assert call("/api/v1/openapi.json")[0] == 401 and call("/api/v1/openapi.json", signed("pat@acme.com"))[0] == 200
     assert json.loads(call("/healthz")[2]).keys() == {"ok", "build"}           # public: no internals
+    assert call("/healthz", method="HEAD")[0] == 200   # uptime checks send HEAD; it was a 404 page (uvicorn drops the body)
     assert call("/api/v1/admin/health", signed("pat@acme.com"))[0] == 403
 
 

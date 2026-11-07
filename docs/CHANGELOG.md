@@ -4,6 +4,12 @@ Every feature, enhancement and update, newest first: the same entries as the por
 (`frontend/src/screens/WhatsNew.tsx`). Add each change to both; `tests/test_docs.py` fails if they differ.
 The API and the MCP connector are documented in [API.md](API.md).
 
+## 8 November 2026
+
+### Uptime checks see the portal as up
+
+Uptime checks that ask the portal whether it is up with a HEAD request (as many monitors do) now get "up" instead of "Page not found".
+
 ## 7 November 2026
 
 ### Times in your own time zone, and India time on the Logs page
