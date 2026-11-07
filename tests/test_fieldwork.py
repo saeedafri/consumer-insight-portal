@@ -16,6 +16,9 @@ def test_the_survey_line_reads_forstas_funnel():
     assert line["incidence"] == 33.8 and line["median_minutes"] == 6.0          # 403 / 1193; Forsta's median, 361 s
     assert line["pages"][0][:5] == ["q1", "Which, if any, of these have you done in the past two weeks?", 1193, 1124, 69]
     assert line["warnings"]["blocks"] == 34 and line["survey_id"] == 532
+    timeline = {"audit_log": {"data": [{"created_on": "2026-11-02T13:25:06Z", "user_email": "a@coresight.com", "event": "State set to live"},
+                                       {"created_on": "2026-11-02T13:30:00Z", "user_email": "b@coresight.com", "event": "API: GET rh/surveys in 9 ms"}]}}
+    assert fieldwork.summary({**FIXTURE, **timeline}, None)["timeline"] == [["2026-11-02T13:25:06Z", "a@coresight.com", "State set to live"]]
 
 
 def test_publish_keeps_one_line_per_survey_and_the_latest_archiving(tmp_path, monkeypatch):
@@ -54,10 +57,17 @@ def test_a_hibernated_survey_is_not_woken_and_a_failure_never_stops_the_run(tmp_
             return {}
         def survey_dropouts(self, path): return {}
         def survey_warnings(self, path): return {}
+        def warnings_summary(self): return []
+        def companies(self): return [{"id": 86}]
+        def retention(self, company): return {"server_delete_days": 365}
+
+        def __getattr__(self, name):   # the other record calls (quota, terms, audit log…) answer empty
+            return lambda path: {}
 
     assert fieldwork.collect(Forsta(), ["asleep", "broken", "fine"]) == ["asleep", "fine"]
     assert asked == ["broken", "fine"]                                       # the hibernated one is never asked
     assert fieldwork.read(fieldwork.file_of("asleep"))["hibernated"] is True
+    assert fieldwork.read(tmp_path / "retention.json.gz") == [{"server_delete_days": 365, "company": 86}]
 
 
 def test_the_home_pages_figures_are_counts_and_dates_only(tmp_path):
@@ -71,3 +81,18 @@ def test_the_home_pages_figures_are_counts_and_dates_only(tmp_path):
     assert (facts["waves"], facts["responses"], facts["trackers"], facts["annual"]) == (3, 2804, 2, 1)
     assert facts["latestLabel"] == "Week of October 26, 2026" and facts["latestN"] == 404 and facts["questions"] == 3
     assert facts["trackerDates"] == ["2026-10-19", "2026-10-26"] and facts["latestTopics"] == ["Holiday tracker"]
+
+
+def test_cip_only_ever_reads_from_forsta():
+    """Forsta stays read-only for CIP: its one client sends GET and nothing else (no POST, PUT, PATCH or DELETE), and
+    every Forsta call in the code goes through that client. Fails if anyone adds a call that could change a survey."""
+    import re
+    root = Path(__file__).resolve().parents[1]
+    client = (root / "etl/forsta_client.py").read_text()
+    assert re.findall(r"session\.(\w+)\(", client) == ["get"]
+    assert not re.search(r"\.(post|put|patch|delete)\(|method\s*=", client)
+    for source in [*root.glob("etl/*.py"), *root.glob("api/*.py"), *root.glob("scripts/*.py"), *root.glob("shared/**/*.py")]:
+        text = source.read_text()
+        calls_http = any(lib in text for lib in ("import requests", "httpx", "urllib.request", "http.client"))
+        if calls_http and ("decipherinc" in text or "x-apikey" in text.lower()):
+            assert source.name in ("forsta_client.py", "config.py"), f"{source} talks to Forsta outside the client"

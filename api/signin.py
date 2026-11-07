@@ -117,7 +117,7 @@ def user(request: Request) -> dict:
 
 
 def admin(request: Request, who: dict = Depends(user)) -> dict:
-    if who["role"] != "admin":
+    if not access.is_admin(who):
         raise HTTPException(403, "Only an admin can do that")
     # the demo sign-in takes any email at its word, so anyone could type an admin's: admin pages (logs, audit,
     # session revocation) then also need CIP_ADMIN_TOKEN (32+ characters) in the X-CIP-Admin-Token header

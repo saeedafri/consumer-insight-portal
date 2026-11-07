@@ -892,3 +892,7 @@ table.data tbody tr:nth-child(n+8), .xt tbody tr:nth-child(n+8), .wave-row:nth-c
                text-underline-offset: 2px; text-decoration-color: var(--line-strong); }
 .link-button:hover { color: var(--red-text); }
 .fieldwork-table th .chip { margin-left: 8px; }
+.timeline, .terms { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-height: 360px; overflow-y: auto; }
+.timeline li { display: grid; gap: 2px; font-size: 13px; border-left: 2px solid var(--line); padding-left: 12px; }
+.timeline time { font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 12px; }
+.terms li { font-size: 13.5px; }

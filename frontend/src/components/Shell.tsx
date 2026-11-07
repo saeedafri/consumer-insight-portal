@@ -62,6 +62,7 @@ export default function Shell() {
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
   const waves = useWaves();
   const me = useMe().data;
+  const isAdmin = me?.role === "admin" || me?.role === "super_admin";   // the admin pages (shared/core/access.py is_admin)
   const wave = waves.data?.find(w => String(w.survey_id) === id);
   const reportWaves = useReportWaves().data;   // the waves with a weekly report (since Jul 2025: etl/weekly_report.py)
   const hasReport = !!wave && !!reportWaves?.includes(wave.survey_id);
@@ -123,8 +124,8 @@ export default function Shell() {
         <NavLink to="/sectors"><Icon d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z" />Sector databank</NavLink>
         <NavLink to="/expectations"><Icon d="M4 20V10h4v10zm6 0V4h4v16zm6 0v-7h4v7z" />Expected vs actual</NavLink>
         <NavLink to="/methodology"><Icon d="M12 2a10 10 0 110 20 10 10 0 010-20zm-1 15h2v-6h-2zm0-8h2V7h-2z" />Methodology</NavLink>
-        {me?.role === "admin" && <NavLink to="/logs"><Icon d="M4 4h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm0 5h16v2H4z" />Logs</NavLink>}
-        {me?.role === "admin" && <NavLink to="/fieldwork"><Icon d="M3 4h18l-7 8v6l-4 2v-8z" />Fieldwork</NavLink>}
+        {isAdmin && <NavLink to="/logs"><Icon d="M4 4h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm0 5h16v2H4z" />Logs</NavLink>}
+        {isAdmin && <NavLink to="/fieldwork"><Icon d="M3 4h18l-7 8v6l-4 2v-8z" />Fieldwork</NavLink>}
         <NavLink to="/whats-new"><Icon d="M12 2l2.4 6.9H22l-6 4.4 2.3 7-6.3-4.5L5.7 20.3 8 13.3 2 8.9h7.6z" />What's new</NavLink>
       </nav>
       {wave && <nav aria-label="This wave">

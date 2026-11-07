@@ -363,3 +363,16 @@ def test_the_home_pages_figures_need_no_sign_in(portal):
     put(portal, "public/facts", {"waves": 2, "latestDate": "2026-10-19"})
     status, _, body = call("/api/v1/public/facts")                                     # no cookie
     assert status == 200 and json.loads(body)["latestDate"] == "2026-10-19"
+
+
+def test_the_super_admin_has_every_feature_every_admin_page_and_no_rate_limit(portal, monkeypatch):
+    monkeypatch.setitem(RULES["staff"], "super_admins", ["owner@coresight.com"])
+    monkeypatch.setitem(RULES["tiers"], "staff", {"features": ["dashboards"], "study_types": ["tracker"]})
+    monkeypatch.setitem(RULES["staff"], "tier", "staff")                      # even if staff get a small package
+    me = access.profile("owner@coresight.com")
+    assert me["role"] == "super_admin" and set(me["features"]) == set(RULES["features"]) and me["study_types"] == "*"
+    assert access.is_admin(me) and access.scope(me) == access.EVERYTHING
+    assert all(access.spend("owner@coresight.com", "ask") for _ in range(100))   # limits: ask is 2 a minute here
+    put(portal, "admin/fieldwork", {"surveys": [], "archive": []})
+    assert call("/api/v1/admin/fieldwork", signed("owner@coresight.com"))[0] == 200
+    assert access.profile("ana@coresight.com")["role"] == "analyst"           # everyone else as before

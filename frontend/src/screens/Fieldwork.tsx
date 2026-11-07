@@ -34,6 +34,7 @@ export default function Fieldwork() {
     <Archive record={data} />
     <Surveys surveys={data.surveys} shown={shown} pick={path => setParams({ survey: path }, { replace: true })} />
     {shown && <Dropouts survey={shown} />}
+    {shown && <Timeline survey={shown} />}
   </div>;
 }
 
@@ -42,12 +43,14 @@ function Archive({ record }: { record: FieldworkRecord }) {
   const list = record.archive;
   if (!list.length) return null;
   const missing = list.filter(a => !a.held);
+  const days = record.retention?.find(r => r.server_delete_days)?.server_delete_days;   // the company's rule in Forsta
   const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, "Forsta deletion schedule",
     ["Survey", "Forsta path", "Archived", "Deleted by Forsta", "Respondents held in CIP"],
     list.map(a => [a.name, a.path, a.archived_at?.slice(0, 10), a.delete_at?.slice(0, 10), a.held ? "yes" : "no"]), ["Forsta's archived surveys", SOURCE]);
   return <Card title="Forsta's deletion schedule"
                sub={`${list.length} archived surveys, deleted by Forsta between ${day(list[0].delete_at)} and ${day(list.at(-1)!.delete_at)}. ` +
-                 (missing.length ? `${list.length - missing.length} are held in CIP; ${missing.length} are not (listed first).` : "Every one is held in CIP.")}
+                 (missing.length ? `${list.length - missing.length} are held in CIP; ${missing.length} are not (listed first).` : "Every one is held in CIP.") +
+                 (days ? ` Forsta's retention rule for the company: deleted ${days} days after archiving.` : "")}
                aside={<ExportButtons onExport={exportTable} />}>
     <div className="table-wrap fieldwork-scroll"><table className="data report-table">
       <thead><tr><th>Survey</th><th>Forsta path</th><th className="num">Archived</th><th className="num">Deleted by Forsta</th><th>In CIP</th></tr></thead>
@@ -107,4 +110,21 @@ function Dropouts({ survey }: { survey: FieldworkSurvey }) {
       </tr>)}</tbody>
     </table></div>
   </Card>;
+}
+
+/** What happened to the survey, from Forsta's audit log (launched, closed, edited, permissions; not the reads), and the
+ *  screen-out rules behind its "terminated" count. */
+function Timeline({ survey }: { survey: FieldworkSurvey }) {
+  const events = survey.timeline ?? [], terms = survey.terms ?? [];
+  if (!events.length && !terms.length) return null;
+  return <div className="grid g2">
+    {events.length > 0 && <Card title="Fieldwork timeline" sub="From Forsta's audit log: launches, closes, edits and permission changes (reads left out).">
+      <ol className="timeline">{events.map(([when, who, what], i) => <li key={i}>
+        <time dateTime={when}>{when.slice(0, 16).replace("T", " ")} UTC</time><span>{what}</span>{who && <span className="muted">{who}</span>}
+      </li>)}</ol>
+    </Card>}
+    {terms.length > 0 && <Card title="Screen-out rules" sub="The terms in the questionnaire: a respondent who meets one is terminated.">
+      <ul className="terms">{terms.map(([label, description], i) => <li key={i}><b>{label}</b> {description}</li>)}</ul>
+    </Card>}
+  </div>;
 }

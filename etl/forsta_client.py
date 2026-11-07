@@ -221,6 +221,41 @@ class ForstaClient:
         """'restored' or 'hibernated': a hibernated survey answers 428 until woken in Forsta (CIP never wakes one)."""
         return self._get("hibernation/status", survey=path.strip('/')).json().get("status", "")
 
+    def survey_audit_log(self, path: str) -> dict:
+        """Who did what to the survey and when: launched, closed, edited, permissions, data views, API reads."""
+        return self._get(f"rh/surveys/{path.strip('/')}/audit-log").json()
+
+    def survey_terms(self, path: str) -> list[dict]:
+        """The screen-out rules (terms): each one's label, description and condition."""
+        return self._get(f"surveys/{path.strip('/')}/terms").json()
+
+    def survey_splits(self, path: str) -> list[dict]:
+        """The fieldwork summary's splits (by sample source and the like), as Forsta's report defines them."""
+        return self._get(f"surveys/{path.strip('/')}/summary/splits").json()
+
+    def survey_banners(self, path: str) -> dict:
+        """The research team's cross-tab banners and weight, as set up in Forsta's crosstabs."""
+        return self._get(f"surveys/{path.strip('/')}/crosstabs/configuration").json()
+
+    def survey_launch_warnings(self, path: str) -> dict:
+        """Forsta's launch checks (tasks, translations, simulated data, project parameters)."""
+        return self._get(f"surveys/{path.strip('/')}/state/live/warnings").json()
+
+    def survey_files(self, path: str) -> list[dict]:
+        """The survey's files (survey.xml and its assets): name, size, last change."""
+        return self._get(f"surveys/{path.strip('/')}/files").json()
+
+    def warnings_summary(self) -> list[dict]:
+        """Every survey's warning counts (blocks, server errors, exceptions, missing resources) in one call."""
+        return self._get("rh/warnings/summary").json()
+
+    def retention(self, company: int) -> dict:
+        """The company's data retention: days to archive, to clear data, and to delete from the server."""
+        return self._get(f"rh/companies/{company}/retention").json()
+
+    def companies(self) -> list[dict]:
+        return self._get("rh/companies").json()
+
     def archived_surveys(self) -> list[dict]:
         """Every archived survey, with when Forsta archived it and when it deletes it for good (a year on)."""
         return self._get("rh/surveys/archived").json()

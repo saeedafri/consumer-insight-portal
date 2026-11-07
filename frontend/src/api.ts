@@ -312,10 +312,12 @@ export interface FieldworkSurvey {
   launched: string | null; closed: string | null; questions: number | null; opened: number | null; partial: number | null;
   terminated: number | null; overquota: number | null; qualified: number | null; incidence: number | null; median_minutes: number | null;
   warnings: Record<string, number>; pages: [string, string, number, number, number, number | null][]; fetched_at: string;
+  timeline?: [string, string | null, string][]; terms?: [string | null, string | null][];
 }
 export interface FieldworkRecord {
   surveys: FieldworkSurvey[];
   archive: { path: string; name: string | null; archived_at: string | null; delete_at: string | null; held: boolean }[];
+  retention?: { server_delete_days?: number | null; archive_days?: number | null; company?: number }[];
 }
 export const useFieldwork = () => useQuery({ queryKey: ["fieldwork"], ...forever, retry: false, queryFn: async () => {
   // while sign-in is the demo, admin pages also need the admin token the Logs page keeps in this browser

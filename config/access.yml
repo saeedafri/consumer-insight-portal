@@ -1,7 +1,8 @@
 # Who may use the portal and what they see (shared/core/access.py). Read once per API process; restart to apply.
 #
 #   tiers     a package: the features it includes and the study types it opens ("*" = all)
-#   roles     admin (everything, the audit log, others' team items), analyst (Coresight staff), client (external)
+#   roles     super_admin (the portal's owner: every feature and survey whatever the tier, every admin page, never rate-
+#             limited), admin (the admin pages, the audit log, others' team items), analyst (Coresight staff), client (external)
 #   staff     Coresight's own sign-in domains and the admins among them: staff are analysts of no client
 #   clients   an organisation: its sign-in email domains, its tier, and (for a client-commissioned study) the families it owns
 #   surveys   who owns a study and who sees it: visibility "all" (every signed-in user), "client" (its owner and staff),
@@ -20,11 +21,12 @@ tiers:
                  study_types: [tracker, annual, adhoc]}
   enterprise:   {features: "*", study_types: "*"}
 
-roles: [admin, analyst, client]
+roles: [super_admin, admin, analyst, client]
 
 staff:
   domains: [coresight.com, cip]   # cip: the pipeline's own service sessions (publish@cip warms nginx's cache)
-  admins: [dataautomation@coresight.com, analyst@coresight.com, mohdsaeedafri@coresight.com]
+  super_admins: [mohdsaeedafri@coresight.com]   # Mohd Saeed Afri: the main admin
+  admins: [dataautomation@coresight.com, analyst@coresight.com]
   tier: enterprise
 
 clients: {}

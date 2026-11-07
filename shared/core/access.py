@@ -1,5 +1,5 @@
-"""Who a signed-in person is to the portal and what they may see, from config/access.yml: a role (admin, analyst,
-client), a client organisation (None for Coresight staff), a tier (a package of features and study types), and each
+"""Who a signed-in person is to the portal and what they may see, from config/access.yml: a role (super_admin, admin,
+analyst, client), a client organisation (None for Coresight staff), a tier (a package of features and study types), and each
 survey's owner and visibility. The API asks here on every request (dictionary lookups, no database), and the session
 cookie carries the person's scope so nginx can tell a person who sees everything from one who must be filtered."""
 from __future__ import annotations
@@ -27,7 +27,9 @@ def profile(email: str) -> dict | None:
     r = rules()
     staff = r.get("staff") or {}
     client = next((cid for cid, c in (r.get("clients") or {}).items() if domain in (c.get("domains") or [])), None)
-    if domain in (staff.get("domains") or []):
+    if email in (staff.get("super_admins") or []):   # every feature, every survey, every admin page, no rate limit
+        role, tier, client = "super_admin", "enterprise", None
+    elif domain in (staff.get("domains") or []):
         role, tier, client = ("admin" if email in (staff.get("admins") or []) else "analyst"), staff.get("tier", "core"), None
     elif client:
         role, tier = "client", r["clients"][client].get("tier", "core")
@@ -41,8 +43,13 @@ def profile(email: str) -> dict | None:
             "study_types": package["study_types"]}
 
 
+def is_admin(person: dict) -> bool:
+    """May this person open the admin pages (logs, fieldwork, audit) and manage others' team items."""
+    return person["role"] in ("super_admin", "admin")
+
+
 def internal(person: dict) -> bool:
-    return person["client"] is None and person["role"] in ("admin", "analyst")
+    return person["client"] is None and person["role"] in ("super_admin", "admin", "analyst")
 
 
 def scope(person: dict) -> str:
@@ -80,6 +87,8 @@ BUCKETS: dict[tuple[str, str], tuple[float, float]] = {}   # (email, kind) → (
 def spend(email: str, kind: str) -> bool:
     """One request from a per-person token bucket of `limits[kind]` a minute; False when it is empty.
     ponytail: per worker (2 workers allow twice the rate); a shared store if the limit must be exact."""
+    if email in ((rules().get("staff") or {}).get("super_admins") or []):   # the super admin is never throttled
+        return True
     rate = float((rules().get("limits") or {}).get(kind, 60))
     now = time.monotonic()
     tokens, at = BUCKETS.get((email, kind), (rate, now))

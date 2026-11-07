@@ -60,7 +60,10 @@ def snapshot(client, path: str) -> dict:
               "survey": client.survey_info(path), "hibernated": client.hibernation(path) == "hibernated"}
     if not record["hibernated"]:
         record.update(completions=client.survey_completions(path), dropouts=client.survey_dropouts(path),
-                      warnings=client.survey_warnings(path))
+                      warnings=client.survey_warnings(path), quota=client.survey_quota(path), splits=client.survey_splits(path),
+                      terms=client.survey_terms(path), banners=client.survey_banners(path),
+                      launch_warnings=client.survey_launch_warnings(path), files=client.survey_files(path),
+                      audit_log=client.survey_audit_log(path))
     return record
 
 
@@ -80,10 +83,12 @@ def collect(client, loaded: list[str]) -> list[str]:
     """Keep the fieldwork record of the surveys due this run and Forsta's archive schedule; returns the paths kept.
     A survey that fails is logged and left for the next run: this never stops the load."""
     kept = []
-    try:
-        save(ROOT / "archived.json.gz", client.archived_surveys())
-    except Exception as exc:   # noqa: BLE001
-        log.warning("Forsta archive schedule not read: %s", exc)
+    for name, read_it in (("archived", lambda: client.archived_surveys()), ("warnings", lambda: client.warnings_summary()),
+                          ("retention", lambda: [client.retention(c["id"]) | {"company": c["id"]} for c in client.companies()])):
+        try:   # the company-wide records: the archive schedule, every survey's warnings, the retention rules
+            save(ROOT / f"{name}.json.gz", read_it())
+        except Exception as exc:   # noqa: BLE001
+            log.warning("Forsta %s not read: %s", name, exc)
     try:
         paths = due(loaded)
     except Exception as exc:   # noqa: BLE001   the database out of reach: the surveys just loaded still count
@@ -109,6 +114,10 @@ def summary(record: dict, wave: dict | None) -> dict:
     info, completions = record.get("survey") or {}, record.get("completions") or {}
     opened, qualified = number(completions, "clickthrough"), number(completions, "qualified")
     median = number(completions, "completionTimeMedian")
+    # what happened to the survey, not who read it: Forsta also logs every API call and data view
+    timeline = [[e.get("created_on"), e.get("user_email"), e.get("event")] for e in (record.get("audit_log") or {}).get("data", [])
+                if e.get("event") and not e["event"].startswith(("API:", "View Responses", "Crosstabs: viewed", "Response summary:"))]
+    terms = [[t.get("label"), t.get("description")] for t in record.get("terms") or []]
     pages = [[row.get("qlabel") or "", row.get("title") or "", split.get("started"), split.get("submitted"),
               split.get("dropped"), split.get("average_seconds")]
              for row in (record.get("dropouts") or {}).get("rows", []) for split in row.get("splits", [])[:1]
@@ -120,7 +129,8 @@ def summary(record: dict, wave: dict | None) -> dict:
             "overquota": number(completions, "overquota"), "qualified": qualified,
             "incidence": round(100 * qualified / opened, 1) if opened and qualified is not None else None,
             "median_minutes": round(median / 60, 1) if median else None,
-            "warnings": (record.get("warnings") or {}).get("counts") or {}, "pages": pages, "fetched_at": record.get("fetched_at")}
+            "warnings": (record.get("warnings") or {}).get("counts") or {}, "pages": pages, "fetched_at": record.get("fetched_at"),
+            "timeline": sorted(timeline), "terms": terms}
 
 
 def publish(out: Path, write) -> int:
@@ -129,7 +139,8 @@ def publish(out: Path, write) -> int:
     if not ROOT.is_dir():
         return 0
     waves = {w.get("source_ref"): w for w in json.loads(gzip.decompress((out / "api/v1/waves.json.gz").read_bytes()))}
-    records = [read(f) for f in sorted(ROOT.glob("*.json.gz")) if f.name != "archived.json.gz"]
+    company = {"archived.json.gz", "warnings.json.gz", "retention.json.gz"}   # not a survey's record
+    records = [read(f) for f in sorted(ROOT.glob("*.json.gz")) if f.name not in company]
     surveys = [summary(r, waves.get(r["path"])) for r in records if r and r.get("path")]
     surveys.sort(key=lambda s: s.get("launched") or "", reverse=True)
     latest = {}   # Forsta lists a survey once per archiving: its latest one decides when it goes
@@ -137,4 +148,4 @@ def publish(out: Path, write) -> int:
         latest[a.get("survey_path")] = a
     archive = sorted(({"path": path, "name": a.get("name"), "archived_at": a.get("archived_at"), "delete_at": a.get("delete_at"),
                        "held": path in waves} for path, a in latest.items()), key=lambda a: a["delete_at"] or "")
-    return write(out / "api/v1/admin/fieldwork", {"surveys": surveys, "archive": archive})
+    return write(out / "api/v1/admin/fieldwork", {"surveys": surveys, "archive": archive, "retention": read(ROOT / "retention.json.gz") or []})

@@ -9,7 +9,7 @@ import { setTheme, useTheme } from "../theme";
 const FEATURES: [string, string][] = [["dashboards", "Dashboards"], ["explorer", "Question explorer"], ["crosstab", "Cross-tabs"],
   ["trends", "Trends"], ["search", "Search"], ["ask", "Ask CIP"], ["export", "Export"], ["boards", "Boards"],
   ["audiences", "Audiences"], ["alerts", "Alerts"], ["saved_views", "Saved views"], ["schedule", "Launch schedule"]];
-const ROLES: Record<string, string> = { admin: "Administrator", analyst: "Analyst", client: "Client" };
+const ROLES: Record<string, string> = { super_admin: "Super administrator", admin: "Administrator", analyst: "Analyst", client: "Client" };
 
 export default function Account() {
   const me = useMe().data;
