@@ -119,33 +119,51 @@ export function Empty({ children }: { children: ReactNode }) {
   return <div className="state">{children}</div>;
 }
 
-/** A time in US Eastern with its zone (EDT or EST): the portal's clients read US time. */
-export const eastern = (at: Date, parts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) =>
-  at.toLocaleString("en-US", { timeZone: "America/New_York", timeZoneName: "short", ...parts });
 
 /** A count as people read it ("1,193"), or "–" when there is none. */
 export const count = (value: number | null | undefined) => value == null ? "–" : value.toLocaleString("en-US");
 /** The date part of a time or date ("Nov 2, 2026"), or "–". */
 export const day = (iso: string | null | undefined) => iso ? fmtDate(iso.slice(0, 10)) : "–";
 
-/** A server time (always UTC: "2026-11-07 09:05:11", "2026-11-07T08:52", "…Z") in Indian Standard Time, as the admin
- *  team reads it: "7 Nov 2026, 2:35 PM IST". Logs, Fieldwork and the Forsta screens show every time this way. */
-export const ist = (utc: string | null | undefined, withYear = true) => {
-  if (!utc) return "–";
-  const at = new Date(/Z$|[+-]\d\d:?\d\d$/.test(utc) ? utc : `${utc.replace(" ", "T")}Z`);
-  // a 12-hour clock with AM/PM, as people say it: 20:20 is "8:20 PM" (the same as api/metrics.ist in the Excel download)
-  return Number.isNaN(at.getTime()) ? utc : `${at.toLocaleString("en-GB", { timeZone: "Asia/Kolkata", day: "numeric", month: "short",
-    ...(withYear ? { year: "numeric" } : {}), hour: "numeric", minute: "2-digit", hour12: true }).replace(/\b(am|pm)\b/, x => x.toUpperCase())} IST`;
-};
+// ---- Times: a 12-hour clock with AM/PM and the zone's name ----------------------------------------------------------
+// The Logs page shows India time (ist); every other page the viewer's own zone, which their browser already knows
+// (local): no address lookup, nothing sent to the server. Server times are UTC ("2026-11-07 09:05:11", "…T08:52", "…Z").
+const FULL: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" };
+const NO_YEAR: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" };
+const zoneNames = new Map<string, string>();
+
+/** "IST", "EST", "CET", else "GMT+4": each English names different zones (only Indian English says IST). */
+function zoneName(at: Date, zone?: string) {
+  const key = `${zone}|${at.getUTCFullYear()}-${at.getUTCMonth()}`;   // summer and winter time differ by month
+  let name = zoneNames.get(key);
+  if (name == null) {
+    const named = ["en-US", "en-IN", "en-GB"].map(language => new Intl.DateTimeFormat(language, { timeZone: zone, timeZoneName: "short" })
+      .formatToParts(at).find(part => part.type === "timeZoneName")?.value ?? "");
+    name = named.find(n => !/^GMT[+-]/.test(n)) ?? named[0];
+    zoneNames.set(key, name);
+  }
+  return name;
+}
+
+/** A time as people say it, in `zone` (undefined: the viewer's own): "7 Nov 2026, 8:20 PM IST". */
+export function clock(when: string | null | undefined, zone?: string, parts: Intl.DateTimeFormatOptions = FULL) {
+  if (!when) return "–";
+  const at = new Date(/Z$|[+-]\d\d:?\d\d$/.test(when) ? when : `${when.replace(" ", "T")}Z`);
+  if (Number.isNaN(at.getTime())) return when;
+  return `${at.toLocaleString("en-GB", { timeZone: zone, hour12: true, ...parts }).replace(/\b(am|pm)\b/, x => x.toUpperCase())} ${zoneName(at, zone)}`;
+}
+/** India time, for the Logs page (the admin team works in India): "7 Nov 2026, 2:35 PM IST". */
+export const ist = (utc: string | null | undefined, withYear = true) => clock(utc, "Asia/Kolkata", withYear ? FULL : NO_YEAR);
+/** The viewer's own time, for every other page: "7 Nov 2026, 9:05 AM EST" in New York, "… 7:35 PM IST" in India. */
+export const local = (utc: string | null | undefined, parts: Intl.DateTimeFormatOptions = FULL) => clock(utc, undefined, parts);
 
 /** The line competitors put under every chart (YouGov, OWID, Civiqs): who, when, how many, how tested. */
 const PLATFORM = { forsta: "Forsta", qualtrics: "Qualtrics", surveymonkey: "SurveyMonkey" };
-const utc = (at: string) => new Date(at.replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(at) ? "" : "Z"));
 
 /** Where a wave came from: platform, its source reference, and the fielding window when the platform recorded one. */
 export function provenance(w?: Wave | null): string {
   if (!w?.platform) return "";
-  const window = w.field_start && w.field_end ? ` · in field ${eastern(utc(w.field_start))} – ${eastern(utc(w.field_end))}` : "";
+  const window = w.field_start && w.field_end ? ` · in field ${local(w.field_start)} – ${local(w.field_end)}` : "";
   return `${PLATFORM[w.platform]} ${w.source_ref ?? ""}${window}`.trim();
 }
 

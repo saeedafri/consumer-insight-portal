@@ -17,7 +17,7 @@ import type { ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { downloadForstaReport, useForsta, useForstaSurvey } from "../api";
 import type { ForstaLine, ForstaOverview, ForstaReport, ForstaSurvey } from "../api";
-import { Card, count, day, Empty, Failure, ist, SkeletonScreen } from "../components/bits";
+import { Card, count, day, Empty, Failure, local, SkeletonScreen } from "../components/bits";
 import { SECTIONS } from "../forstaSections";
 
 const size = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
@@ -227,9 +227,9 @@ function SurveyWarnings({ survey }: { survey: ForstaSurvey }) {
   return <div className="grid g2">
     <Card title="Warning events" sub={WARNING_KINDS.map(([k, label]) => `${label} ${count(survey.warnings.counts[k] ?? 0)}`).join(" · ")}>
       {survey.warnings.events.length ? <div className="table-wrap fieldwork-scroll"><table className="data report-table">
-        <thead><tr><th>When (IST)</th><th>Kind</th><th>What Forsta said</th></tr></thead>
+        <thead><tr><th>When (your time)</th><th>Kind</th><th>What Forsta said</th></tr></thead>
         <tbody>{survey.warnings.events.map(([when, kind, reason, message], i) => <tr key={i}>
-          <td className="num">{ist(when)}</td><td>{kind}{reason ? ` · ${reason}` : ""}</td><td>{message}</td></tr>)}</tbody>
+          <td className="num">{local(when)}</td><td>{kind}{reason ? ` · ${reason}` : ""}</td><td>{message}</td></tr>)}</tbody>
       </table></div> : <p className="muted">No warning events.</p>}
     </Card>
     <Card title="Launch checks" sub="What Forsta checks before a survey goes live: tasks, imports, translations, offline mode and more.">
@@ -243,9 +243,9 @@ function Files({ survey }: { survey: ForstaSurvey }) {
   const files = [...survey.files].sort((a, b) => b.modified.localeCompare(a.modified));
   return <Card title="Files in Forsta" sub={`${files.length} files, ${size(files.reduce((t, f) => t + f.size, 0))} in all, newest first. CIP keeps survey.xml (the questionnaire's logic).`}>
     <div className="table-wrap fieldwork-scroll tall"><table className="data report-table">
-      <thead><tr><th>File</th><th className="num">Size</th><th className="num">Changed (IST)</th></tr></thead>
+      <thead><tr><th>File</th><th className="num">Size</th><th className="num">Changed (your time)</th></tr></thead>
       <tbody>{files.map(f => <tr key={f.filename}><th scope="row">{f.filename}</th><td className="num">{size(f.size)}</td>
-        <td className="num">{ist(f.modified)}</td></tr>)}</tbody>
+        <td className="num">{local(f.modified)}</td></tr>)}</tbody>
     </table></div>
   </Card>;
 }

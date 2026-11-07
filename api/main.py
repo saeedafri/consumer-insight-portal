@@ -263,6 +263,9 @@ async def lifespan(app: FastAPI):
     audit.start()
     task = asyncio.get_running_loop().create_task(_refresh_forever())
     asyncio.get_running_loop().run_in_executor(None, metrics.measure_storage)   # the Logs page's storage table, at start
+    # the first read of the request log (up to 64 MB) at start, in the background: on 7 Nov 2026 the first Logs visit
+    # after a deploy did it and waited 5.4 s
+    asyncio.get_running_loop().run_in_executor(None, metrics.read_traffic)
     try:
         yield
     finally:

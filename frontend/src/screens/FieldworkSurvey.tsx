@@ -5,7 +5,7 @@
 // list (etl/fieldwork.py: summary and explain); this screen only draws. Every table scrolls inside its card.
 import { Link, useParams } from "react-router";
 import type { FieldworkSurvey as Survey } from "../api";
-import { Card, count, day, Empty, ExportButtons, ist } from "../components/bits";
+import { Card, count, day, Empty, ExportButtons, local } from "../components/bits";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import { downloadTable } from "../csv";
 import { C } from "../theme";
@@ -147,7 +147,7 @@ function Timeline({ survey, full }: { survey: Survey; full: boolean }) {
   return <div className="grid g2">
     {events.length > 0 && <Card title="Survey timeline" sub={`From Forsta's audit log: launches, closes, edits${full ? ", permission changes and who made them" : " and permission changes"} (reads left out).`}>
       <ol className="timeline">{events.map(([when, who, what], i) => <li key={i}>
-        <time dateTime={when}>{ist(when)}</time><span>{what}</span>{who && <span className="muted">{who}</span>}
+        <time dateTime={when}>{local(when)}</time><span>{what}</span>{who && <span className="muted">{who}</span>}
       </li>)}</ol>
     </Card>}
     {terms.length > 0 && <Card title="Screen-out rules" sub="The terms in the questionnaire: a respondent who meets one is terminated.">

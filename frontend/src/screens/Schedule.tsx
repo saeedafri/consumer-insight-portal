@@ -4,7 +4,7 @@ import CountUp from "../components/CountUp";
 import { useState } from "react";
 import { Link } from "react-router";
 import { LaunchWeek, useSchedule } from "../api";
-import { Card, eastern, Failure, Loading } from "../components/bits";
+import { Card, Failure, Loading, local } from "../components/bits";
 import { fmtDate } from "../stats";
 import { Button } from "@/components/ui/button";
 
@@ -14,7 +14,7 @@ const STATUS: Record<LaunchWeek["status"], [string, string]> = {
   not_found: ["No survey found", "sig"],
 };
 const DAY = 86_400_000;
-const et = (iso: string) => eastern(new Date(iso), { weekday: "short", hour: "numeric", minute: "2-digit" });   // "Mon 8:30 AM EDT"
+const et = (iso: string) => local(iso, { weekday: "short", hour: "numeric", minute: "2-digit" });   // "Mon 8:30 AM EDT" in New York, "Mon 6:00 PM IST" in India
 
 function Quota({ w }: { w: LaunchWeek }) {
   if (w.qualified == null || !["in_field", "closed", "loaded", "load_failed"].includes(w.status)) return <span className="muted">—</span>;

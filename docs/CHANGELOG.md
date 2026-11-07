@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 7 November 2026
 
+### Times in your own time zone, and India time on the Logs page
+
+Every time in the portal is on a 12-hour clock with AM or PM and the zone's name. Pages show your own time, from your computer's setting (8:26 AM EDT in New York, 5:56 PM IST in India, 1:26 PM CET in Berlin); nothing is looked up or sent to the server. The Logs page always shows India time, now also in the raw log lines and in what Show opens (the log files keep the servers' UTC). The Logs page's first visit after a deploy no longer waits about 5 seconds, and each refresh reads each log once instead of eight times.
+
 ### For admins: the Logs page for any dates, every visitor, and one download
 
 The Logs page now shows any time range: the last hour or day minute by minute, and 7 days, 30 days, 17 weeks, a year or any two dates hour by hour (hours are kept from 7 November 2026 on). Choose a visitor to see each request they made, where they came from, and whether they are a person, a bot or Azure's own health check. Show on a problem opens the lines around it in its log, such as an error's full traceback. Download everything saves the range as one Excel file: requests, server time, errors, CPU, memory, bandwidth with their charts, response times, how requests were answered, caches, storage, busiest pages, every visitor, sign-ins, problems, restarts and the requests themselves. Every time in the portal is on a 12-hour clock in India time (8:20 PM IST), the admin-token box appears only when the server asks for it, and the page refreshes once a minute, only while it is open on screen.

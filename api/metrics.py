@@ -435,15 +435,14 @@ def etl_runs(since: str) -> list[dict]:
 def problems(since: str) -> list[dict]:
     """Error lines from the API, nginx and the ETL in the chosen time range, newest first, each with what it means."""
     found = []
-    for source, word in (("api", " error "), ("api", " critical "), ("api", "[error]"), ("nginx-error", "[error]"), ("nginx-error", "[crit]"),
-                         ("nginx-error", "[alert]"), ("etl", " error "), ("etl", "warning")):
+    for source, words in (("api", (" error ", " critical ", "[error]")), ("nginx-error", ("[error]", "[crit]", "[alert]")),
+                          ("etl", (" error ", "warning"))):
         path = path_of(source)
-        if path and path.exists():
+        if path and path.exists():   # each file read once for all its words: 8 reads of 4 MB made a refresh 0.3 s (7 Nov 2026)
             found += [{"source": source, "minute": minute_of(line), "line": line[:400],
                        "meaning": next((m for k, m in PROBLEM_MEANINGS if k in line.lower()), "")}
-                      for line in tail(path, 30, word) if minute_of(line) >= since and "[PERF-SLOW]" not in line]
-    unique = {(p["source"], p["line"]): p for p in found}   # the same line can match two words
-    return sorted(unique.values(), key=lambda p: p["minute"], reverse=True)[:30]
+                      for line in tail(path, 30, words) if minute_of(line) >= since and "[PERF-SLOW]" not in line]
+    return sorted(found, key=lambda p: p["minute"], reverse=True)[:30]
 
 
 def sign_ins(since: str) -> list[dict]:

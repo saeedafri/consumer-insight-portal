@@ -51,14 +51,15 @@ def path_of(source: str) -> Path | None:
     return LOGS / name if name else None
 
 
-def tail(path: Path, lines: int, needle: str) -> list[str]:
-    """The newest `lines` lines containing `needle` (any case), newest first."""
+def tail(path: Path, lines: int, needle: str | tuple[str, ...]) -> list[str]:
+    """The newest `lines` lines containing `needle` (any case; a tuple: any of its words), newest first."""
+    needles = (needle,) if isinstance(needle, str) else needle
     with path.open("rb") as f:
         f.seek(max(0, f.seek(0, os.SEEK_END) - TAIL_BYTES))
         found = deque(maxlen=lines)
         for raw in f:
             line = raw.decode("utf-8", errors="replace").rstrip("\n")
-            if line and (not needle or needle in line.lower()):
+            if line and (not any(needles) or any(n in line.lower() for n in needles)):
                 found.append(line)
     return list(reversed(found))
 

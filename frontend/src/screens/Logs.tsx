@@ -6,12 +6,14 @@
 //   requests, server time, pages, visitors       nginx's request log, counted per minute
 //   caches, storage, database size               api/metrics.py (storage every 5 min) and api/main.py (the API's caches)
 // The raw logs come from GET /api/v1/admin/logs, one page of 200 lines at a time, newest first.
+// Every time on this page is India time on a 12-hour clock (ist, istLine), raw log lines included; other pages use the
+// viewer's own zone (bits.tsx local).
 // While sign-in is the demo, the server also asks for the admin token: the box shows only when the server asks for it.
 // "Download everything" saves the range as one Excel file (GET /api/v1/admin/metrics/download).
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useMe } from "../api";
-import { Card, ist } from "../components/bits";
+import { Card, clock, ist } from "../components/bits";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import { C, LIGHT, useTheme } from "../theme";
 
@@ -71,6 +73,16 @@ function useEvery(ms: number, on: boolean, tick: () => void) {
     return () => clearInterval(every);
   }, [ms, on]);   // eslint-disable-line react-hooks/exhaustive-deps
 }
+// A logged line's own time (UTC, in each writer's style: the API "2026-11-07 15:33:29,510", gunicorn "[… +0000]", nginx
+// "2026/11/07 08:52:58", start.sh "…Z", the request and machine logs' "time" field) shown in India time with seconds, like
+// the rest of this page. Only what is shown changes: the files and their downloads keep the servers' UTC.
+const STAMP = /^(\[?)(\d{4})[-/](\d\d)[-/](\d\d)[ T](\d\d:\d\d:\d\d)(?:[,.]\d+)?(?: ?(?:Z|[+-]\d\d:?\d\d))?(\]?)/;
+const SECONDS: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" };
+const istLine = (line: string) => {
+  const m = line.match(STAMP);
+  return m ? `${m[1]}${clock(`${m[2]}-${m[3]}-${m[4]}T${m[5]}Z`, "Asia/Kolkata", SECONDS)}${m[6]}${line.slice(m[0].length)}`
+    : line.replace(/"time":"([^"]+)"/, (_, t: string) => `"time":"${clock(t, "Asia/Kolkata", SECONDS)}"`);
+};
 const save = (blob: Blob, name: string) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href); };
 const NO_SAMPLES = "Machine samples start a minute after the server starts (deploy/machine-log.sh).";
 const PER_PAGE = 200;
@@ -370,7 +382,7 @@ function Dashboard({ m, headers }: { m: Metrics; headers: Record<string, string>
     <Card title="Problems in this range" sub="Error and warning lines from the API, nginx and the ETL, each with what it means."
           aside={<span className={`chip ${m.problems.length ? "sig" : "flat"}`}>{m.problems.length} problems</span>}>
       {m.problems.length ? <div className="table-wrap"><table className="data">
-        <thead><tr><th>When (IST)</th><th>From</th><th>What it means</th><th>The line (server time, UTC)</th></tr></thead>
+        <thead><tr><th>When (IST)</th><th>From</th><th>What it means</th><th>The line</th></tr></thead>
         <tbody>{m.problems.map((p, i) => <tr key={i}>
           <td style={{ whiteSpace: "nowrap" }}>{ist(p.minute)}</td><td><span className="chip sig">{p.source}</span></td>
           <td style={{ minWidth: 220 }}>{p.meaning || <span className="muted">See the line.</span>}</td>
@@ -439,12 +451,12 @@ function ProblemLine({ source, line, headers }: { source: string; line: string; 
   };
   return <>
     <button className="btn-chip" onClick={open}>{shown ? "Hide" : "Show"}</button>
-    {!shown ? <div style={{ ...mono, ...small, marginTop: 4 }}>{line.slice(0, 160)}{line.length > 160 ? "…" : ""}</div>
-      : typeof shown === "string" ? <div style={{ ...mono, marginTop: 4 }}>{line}<div style={small}>{shown}</div></div>
+    {!shown ? <div style={{ ...mono, ...small, marginTop: 4 }}>{istLine(line).slice(0, 170)}{line.length > 160 ? "…" : ""}</div>
+      : typeof shown === "string" ? <div style={{ ...mono, marginTop: 4 }}>{istLine(line)}<div style={small}>{shown}</div></div>
       : <div style={{ marginTop: 6 }}>
           <div style={small}>In {shown.file}: the 10 lines before, the line itself (highlighted), and the 40 after it (an error's traceback follows it).</div>
           <pre style={{ ...mono, whiteSpace: "pre-wrap", maxHeight: 360, overflow: "auto", margin: "6px 0 0" }}>
-            {shown.before.join("\n")}{shown.before.length ? "\n" : ""}<mark>{shown.found}</mark>{"\n"}{shown.after.join("\n")}
+            {shown.before.map(istLine).join("\n")}{shown.before.length ? "\n" : ""}<mark>{istLine(shown.found)}</mark>{"\n"}{shown.after.map(istLine).join("\n")}
           </pre>
         </div>}
   </>;
@@ -488,7 +500,7 @@ function RawLogs({ headers, token }: { headers: Record<string, string>; token: s
     <button className="btn" disabled={!answer.more} onClick={() => setPage(p => p + 1)}>Older ›</button>
   </div>;
 
-  return <Card title="Raw logs" sub={`Newest first, ${PER_PAGE} lines a page, the whole current file page by page; the newest page refreshes every minute while this tab is in view. Older files: Older logs, below.`}>
+  return <Card title="Raw logs" sub={`Newest first, ${PER_PAGE} lines a page, the whole current file page by page, times in India time (the files themselves keep the servers' UTC); the newest page refreshes every minute while this tab is in view. Older files: Older logs, below.`}>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end" }}>
       <label>Log<br />
         <select value={source} onChange={e => setSource(e.target.value)}>
@@ -502,7 +514,7 @@ function RawLogs({ headers, token }: { headers: Record<string, string>; token: s
     {problem && <p role="alert" style={{ color: "var(--red)", marginTop: 12 }}>{problem}</p>}
     <div style={{ marginTop: 14 }}>{pager}</div>
     <pre style={{ marginTop: 10, maxHeight: "65vh", overflow: "auto", fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-      {answer?.lines.length ? answer.lines.join("\n") : answer ? "Nothing logged here yet." : "Loading…"}
+      {answer?.lines.length ? answer.lines.map(istLine).join("\n") : answer ? "Nothing logged here yet." : "Loading…"}
     </pre>
     <div style={{ marginTop: 10 }}>{pager}</div>
   </Card>;
