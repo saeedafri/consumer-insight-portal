@@ -5,14 +5,13 @@ import { BarChart, LineChart, PieChart } from "echarts/charts";
 import { AriaComponent, GridComponent, LegendPlainComponent, LegendScrollComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsCoreOption } from "echarts/core";
-import { C, DARK, inLight, LIGHT, REDUCED_MOTION, savedTheme, useTheme } from "../theme";
+import { DARK, FONT, inLight, LIGHT, REDUCED_MOTION, savedTheme, useTheme } from "../theme";
 import { perf } from "../perf";
 
 // MarkLine: the news and retail events on the weekly report's charts; LegendScroll: a report table's many answers
 echarts.use([AriaComponent, BarChart, LineChart, PieChart, GridComponent, LegendPlainComponent, LegendScrollComponent, MarkLineComponent,
   TooltipComponent, CanvasRenderer]);
 
-const FONT = "Roboto Variable, Roboto, sans-serif";   // data text; headings stay Montserrat
 // The house chart look, registered once per theme: 12 px axes (category in ink-2, values in ink-3), dashed
 // horizontal grid only, the solid series ramp. Screens set only what is particular to their chart.
 const look = (t: typeof LIGHT) => ({
@@ -30,15 +29,7 @@ echarts.registerTheme("cip-light", look(LIGHT));
 echarts.registerTheme("cip-dark", look(DARK));
 const themeName = () => (savedTheme() === "dark" ? "cip-dark" : "cip-light");
 
-// Read at render time (functions, not constants): screens build options with the current theme's colours.
-export const tooltip = () => ({
-  trigger: "item", confine: true, backgroundColor: C.raised, borderColor: C.line, borderWidth: 1, padding: [10, 12],
-  textStyle: { color: C.ink, fontFamily: FONT, fontSize: 12 },
-  extraCssText: `box-shadow: ${C.shadow2}; border-radius: 8px; max-width: 320px; white-space: normal;`,
-});
-/** Category labels; value axes use `valueText`. */
-export const axisText = () => ({ color: C.ink2, fontFamily: FONT, fontSize: 12 });
-export const valueText = () => ({ color: C.ink3, fontFamily: FONT, fontSize: 12 });
+export { axisText, tooltip, valueText } from "../theme";   // kept here too: the chart screens import them with EChart
 
 export type Chart = echarts.ECharts;
 

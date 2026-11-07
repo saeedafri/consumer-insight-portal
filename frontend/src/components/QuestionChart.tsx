@@ -1,14 +1,17 @@
 // One question as a chart, following the Coresight chart rules: light-blue bars with one red highlight,
 // horizontal bars for long labels (never angled), an ombre of blues for several series, data labels in ink.
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import type { Column, Group, Question, Row } from "../api";
 import { isFiller } from "../api";
-import { C, blues, labelOn, scaleColours, useTheme } from "../theme";
+import { axisText, C, blues, labelOn, scaleColours, tooltip, useTheme, valueText } from "../theme";
 import { count, HIDDEN_BASE, HIDDEN_NOTE, moe, pct, pts, SMALL_BASE } from "../stats";
 import { moveOf } from "../moves";
-import EChart, { axisText, tooltip, valueText } from "./EChart";
 import type { Chart } from "./EChart";
 import Profiled from "./Profiled";
+
+// The chart library (≈190 KB gzipped) loads when a chart is drawn, so a screen's words and figures show first: on a
+// 200 kbit/s line that is about 8 s sooner (8 Nov 2026). The space is kept at the chart's height meanwhile.
+const EChart = lazy(() => import("./EChart"));
 
 export type View = "bars" | "columns" | "stacked" | "donut" | "table";
 export const VIEWS: { key: View; label: string }[] = [
@@ -66,7 +69,9 @@ export default function QuestionChart({ question, group = 0, view, columns, sort
     : view === "stacked" ? Math.max(160, (question.groups.length > 1 ? question.groups.length : 1) * 46 + 80) : 340);
   return (
     <Profiled id={`Chart:${question.id}`}>
-      <EChart option={option} build={make} height={h} label={`${question.number}: ${question.text}`} onReady={onReady} />
+      <Suspense fallback={<div style={{ height: h }} aria-busy="true" />}>
+        <EChart option={option} build={make} height={h} label={`${question.number}: ${question.text}`} onReady={onReady} />
+      </Suspense>
     </Profiled>
   );
 }

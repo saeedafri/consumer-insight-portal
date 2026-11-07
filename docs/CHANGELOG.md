@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 8 November 2026
 
+### Faster from far away and on slow connections
+
+A wave's pages ask for their figures as soon as the page starts loading, and the portal's code downloads in one go instead of in steps. The words and figures show first and the charts follow, so a slow connection no longer waits for the chart library before showing anything. From India a first visit to a wave's overview shows its figures in 1.5 s instead of 2.0 s; on a 200 kbit/s connection in 16 s instead of 28 s, and on 100 kbit/s in 31 s instead of 54 s. A second visit takes about 1 s even at 100 kbit/s, as the portal's files stay in the browser.
+
 ### Uptime checks see the portal as up
 
 Uptime checks that ask the portal whether it is up with a HEAD request (as many monitors do) now get "up" instead of "Page not found".

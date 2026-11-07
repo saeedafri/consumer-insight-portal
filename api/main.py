@@ -40,11 +40,13 @@ from collections import OrderedDict, defaultdict
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.staticfiles import NotModifiedResponse
 
 from shared.core import access, api_keys, audit
 from shared.core.database import apply_sql, get_engine
@@ -989,8 +991,25 @@ async def every_request(request: Request, call_next):
 
 class SinglePageApp(StaticFiles):
     """WEB as files. A deep link into the app (/app/w/412/crosstab; /w/412/crosstab in the Vite build) gets the app's
-    page and its router picks the screen; anything else unknown gets the 404 page when the build has one."""
+    page and its router picks the screen; anything else unknown gets the 404 page when the build has one.
+    A file the build also gzipped (frontend/package.json postbuild) goes out gzipped, as nginx's gzip_static does on
+    Azure: a wave's first visit was 1,539 KB without it, 3x the bytes (8 Nov 2026), on this server's own links."""
     async def get_response(self, path: str, scope):
+        """The file or page for a path (file_or_page), swapped for its gzipped copy when the browser accepts gzip."""
+        response = await self.file_or_page(path, scope)
+        packed = Path(f"{getattr(response, 'path', '')}.gz")
+        request_headers = Headers(scope=scope)
+        if response.status_code != 200 or not packed.is_file():
+            return response
+        if "gzip" not in request_headers.get("accept-encoding", ""):
+            response.headers["Vary"] = "Accept-Encoding"   # a shared cache keeps the plain and gzipped copies apart
+            return response
+        response = FileResponse(packed, media_type=response.media_type, stat_result=os.stat(packed),
+                                headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
+        return NotModifiedResponse(response.headers) if self.is_not_modified(response.headers, request_headers) else response
+
+    async def file_or_page(self, path: str, scope):
+        """The file at a path; else the app's page for an /app/ deep link, the site's page, or its 404 page."""
         try:
             response = await super().get_response(path, scope)   # a build with 404.html gets it here, as a 404
         except StarletteHTTPException as exc:   # StaticFiles raises Starlette's 404, not FastAPI's

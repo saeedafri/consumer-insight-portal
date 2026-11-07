@@ -1,5 +1,6 @@
 // The colours of every screen and chart, light and dark (Coresight's palette), and the light/dark switch.
-// Read by components/EChart.tsx (charts) and styles.css (as CSS variables). The choice is kept in localStorage cip-theme.
+// Read by components/EChart.tsx (charts), styles.css (as CSS variables), and every chart screen for its text and
+// tooltips (tooltip, axisText, valueText). The choice is kept in localStorage cip-theme.
 import { useSyncExternalStore } from "react";
 
 /** The visitor asked for less motion: charts draw without animation and counters show their value at once. */
@@ -56,6 +57,18 @@ export function setTheme(theme: Theme) {
   listeners.forEach(run => run());
 }
 export const savedTheme = (): Theme => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+export const FONT = "Roboto Variable, Roboto, sans-serif";   // chart text; headings stay Montserrat
+// Chart text and tooltips, read at render time (functions, not constants) so options take the current theme's colours.
+// Here, not in components/EChart.tsx, so a screen can build a chart's option without waiting for the chart library.
+export const tooltip = () => ({
+  trigger: "item", confine: true, backgroundColor: C.raised, borderColor: C.line, borderWidth: 1, padding: [10, 12],
+  textStyle: { color: C.ink, fontFamily: FONT, fontSize: 12 },
+  extraCssText: `box-shadow: ${C.shadow2}; border-radius: 8px; max-width: 320px; white-space: normal;`,
+});
+/** Category labels; value axes use `valueText`. */
+export const axisText = () => ({ color: C.ink2, fontFamily: FONT, fontSize: 12 });
+export const valueText = () => ({ color: C.ink3, fontFamily: FONT, fontSize: 12 });
+
 /** The theme as React state: charts and heat cells re-colour in place on a switch, nothing remounts. */
 export const useTheme = () => useSyncExternalStore(run => { listeners.add(run); return () => listeners.delete(run); }, savedTheme);
 

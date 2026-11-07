@@ -5,7 +5,6 @@ import { allowed as hasFeature, COLUMNS, isFiller, present, useBook, useMe } fro
 import type { Column } from "../api";
 import { BaseNote, Card, Change, compared, copyLink, Empty, Failure, IconLink, Menu, SkeletonScreen, SourceLine, sourceText, ExportButtons , QuestionCode } from "../components/bits";
 import { moveOf } from "../moves";
-import { downloadPng } from "../components/EChart";
 import type { Chart } from "../components/EChart";
 import QuestionChart, { sharesOfMentions, VIEWS } from "../components/QuestionChart";
 import type { View } from "../components/QuestionChart";
@@ -95,8 +94,8 @@ export default function Explorer() {
             {question.groups.map((x, i) => <option key={x.label} value={i}>{x.label}</option>)}
           </select>}
           <span className="toolbar-gap" />
-          <ExportButtons onExport={exportAs} png={view === "table" ? undefined : () => chart.current && downloadPng(chart.current, `${question.number}: ${question.text}`,
-            sourceText(book.wave, wave, `base n=${g.base}`), `${question.number}-${book.wave.wave_date}`)} />
+          <ExportButtons onExport={exportAs} png={view === "table" ? undefined : () => chart.current && import("../components/EChart").then(m => m.downloadPng(chart.current!, `${question.number}: ${question.text}`,
+            sourceText(book.wave, wave, `base n=${g.base}`), `${question.number}-${book.wave.wave_date}`))} />
           <Menu label="" icon={<span aria-hidden>⋯</span>} keep>
             <label className="check"><input type="checkbox" checked={sort} onChange={e => { const p = new URLSearchParams(params); perf.startFilterChange("sort", String(e.target.checked)); e.target.checked ? p.delete("sort") : p.set("sort", "0"); setParams(p, { replace: true }); }} /> Sort by value</label>
             <button onClick={e => copyLink(e.currentTarget)}><IconLink /> <span>Copy link</span></button>

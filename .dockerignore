@@ -14,6 +14,7 @@
 !frontend/app/**
 !frontend/src/**
 !frontend/public/**
+!frontend/scripts/**
 !deploy/**
 !DigiCertGlobalRootG2.crt.pem
 !data/coded/**
