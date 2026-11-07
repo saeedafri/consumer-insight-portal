@@ -6,6 +6,8 @@ type Entry = { title: string; body: string; shot?: string; alt?: string; link?: 
 const RELEASES: { date: string; entries: Entry[] }[] = [{
   date: "7 November 2026",
   entries: [
+    { title: "For admins: the Logs page for any dates, every visitor, and one download",
+      body: "The Logs page now shows any time range: the last hour or day minute by minute, and 7 days, 30 days, 17 weeks, a year or any two dates hour by hour (hours are kept from 7 November 2026 on). Choose a visitor to see each request they made, where they came from, and whether they are a person, a bot or Azure's own health check. Show on a problem opens the lines around it in its log, such as an error's full traceback. Download everything saves the range as one Excel file: requests, server time, errors, CPU, memory, bandwidth with their charts, response times, how requests were answered, caches, storage, busiest pages, every visitor, sign-ins, problems, restarts and the requests themselves. Every time in the portal is on a 12-hour clock in India time (8:20 PM IST), the admin-token box appears only when the server asks for it, and the page refreshes once a minute, only while it is open on screen." },
     { title: "Audiences, stacked charts and older wordings",
       body: "Changing an audience (adding or removing an answer, opening a saved one) now clears the last figures until you show them again, instead of leaving the previous audience's numbers on screen. A stacked chart with many answers keeps its legend on one scrolling line instead of writing over the bar. Older wordings no longer show HTML codes such as &#39; or &amp;. A wave built since the last publish is listed at once instead of \"No such wave\"." },
     { title: "The wave switcher works again",

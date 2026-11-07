@@ -1,11 +1,13 @@
 // The Logs page (/app/logs), admins only: a monitoring dashboard on top, the raw logs below.
 //
-// Where the numbers come from (all from GET /api/v1/admin/metrics, api/metrics.py; every 15 s while "Live" is on):
+// Where the numbers come from (all from GET /api/v1/admin/metrics, api/metrics.py; once a minute while "Live" is on, the
+// tab is in view and the range ends now; per minute for the last day, per hour beyond it):
 //   CPU, memory, bandwidth, memory per process   deploy/machine-log.sh, one sample every 15 s
 //   requests, server time, pages, visitors       nginx's request log, counted per minute
 //   caches, storage, database size               api/metrics.py (storage every 5 min) and api/main.py (the API's caches)
 // The raw logs come from GET /api/v1/admin/logs, one page of 200 lines at a time, newest first.
-// While sign-in is the demo, the server also asks for the admin token (typed below, kept for this tab only).
+// While sign-in is the demo, the server also asks for the admin token: the box shows only when the server asks for it.
+// "Download everything" saves the range as one Excel file (GET /api/v1/admin/metrics/download).
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useMe } from "../api";
@@ -16,7 +18,7 @@ import { C, LIGHT, useTheme } from "../theme";
 // ---- What the server sends (api/metrics.py and api/logs.py) ----------------------------------------------------------
 interface Source { id: string; label: string; bytes: number | null }
 interface LogPage { sources: Source[]; source: string; page: number; per_page: number; lines: string[]; more: boolean }
-interface Sample { time: string; cpu_pct: number; cores_used: number; working_set_mb: number; anon_mb: number; file_mb: number;
+interface Sample { time: string; cpu_pct: number; cpu_peak?: number; memory_peak?: number; cores_used: number; working_set_mb: number; anon_mb: number; file_mb: number;
   limit_mb: number; machine_used_mb: number; machine_total_mb: number; net_in_kbs: number; net_out_kbs: number; load_1m: number;
   cpus: number; processes_mb: Record<string, number>; source: string }
 interface Counts { requests: number; "2xx": number; "3xx": number; "4xx": number; "5xx": number; bytes: number; hit: number;
@@ -26,7 +28,7 @@ interface CacheLayer { name: string; where: string; meaning: string; answered?: 
 interface Disk { name: string; path: string; meaning: string; used_mb: number; total_mb: number; used_pct: number; ours_mb?: number | null }
 interface Folder { name: string; path: string; meaning: string; mb: number | null }
 interface Metrics {
-  since: string; now: string; machine: Sample[]; traffic: (Counts & { minute: string })[];
+  since: string; until: string; step: "minute" | "hour"; now: string; machine: Sample[]; traffic: (Counts & { minute: string })[];
   totals: Counts & { under_1ms: number; slowest_ms: number }; caches: CacheLayer[];
   storage: { measured: string | null; disks: Disk[]; folders: Folder[]; database: { name: string; mb: number; tables: number } | null;
     home?: { path: string; mb: number | null }[] };
@@ -54,7 +56,22 @@ const rate = (n: number) => num(n, n < 1 ? 2 : 1);
 const CACHE_STATES: Record<string, string> = { HIT: "sent from the cache", MISS: "not in the cache yet (the API answered, then it was kept)",
   EXPIRED: "kept too long, asked the API again", STALE: "an older copy sent while the API was busy", UPDATING: "an older copy sent while it was refreshed",
   REVALIDATED: "checked with the API, still current", BYPASS: "not cacheable, the API answered" };
-const RANGES = [{ minutes: 15, label: "15 min" }, { minutes: 60, label: "1 h" }, { minutes: 360, label: "6 h" }, { minutes: 1440, label: "24 h" }];
+const DAY = 1440;
+const RANGES = [{ minutes: 60, label: "1 h" }, { minutes: 360, label: "6 h" }, { minutes: DAY, label: "24 h" }, { minutes: 7 * DAY, label: "7 days" },
+  { minutes: 30 * DAY, label: "30 days" }, { minutes: 17 * 7 * DAY, label: "17 weeks" }, { minutes: 365 * DAY, label: "1 year" }];
+type Range = { minutes: number } | { start: string; end: string };   // start and end: the browser's local time, as typed
+const query = (r: Range) => "minutes" in r ? `minutes=${r.minutes}`
+  : `start=${new Date(r.start).toISOString()}&end=${new Date(r.end).toISOString()}`;
+const LIVE_EVERY = 60000;   // a minute: the numbers are per minute; each refresh costs the server ~0.1-0.3 s of its one CPU
+/** Calls `tick` every `ms` while the tab is in view: a hidden tab or a minimised window asks the server nothing. */
+function useEvery(ms: number, on: boolean, tick: () => void) {
+  useEffect(() => {
+    if (!on) return;
+    const every = setInterval(() => { if (document.visibilityState === "visible") tick(); }, ms);
+    return () => clearInterval(every);
+  }, [ms, on]);   // eslint-disable-line react-hooks/exhaustive-deps
+}
+const save = (blob: Blob, name: string) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href); };
 const NO_SAMPLES = "Machine samples start a minute after the server starts (deploy/machine-log.sh).";
 const PER_PAGE = 200;
 const grid = (min: number): CSSProperties => ({ display: "grid", gap: 16, gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${min}px), 1fr))` });
@@ -63,8 +80,10 @@ const small: CSSProperties = { fontSize: 12, color: "var(--ink-2)" };
 
 export default function Logs() {
   const [token, setToken] = useState(readToken);
-  const [minutes, setMinutes] = useState(60);
+  const [range, setRange] = useState<Range>({ minutes: 60 });
+  const [custom, setCustom] = useState({ start: "", end: "" });
   const [live, setLive] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [denied, setDenied] = useState("");
@@ -72,11 +91,11 @@ export default function Logs() {
   const [beat, setBeat] = useState(0);
   const headers: Record<string, string> = token ? { "X-CIP-Admin-Token": token } : {};
 
-  // the dashboard's numbers: on open, on a new range or token, and every 15 s while live
+  // the dashboard's numbers: on open, on a new range or token, and every minute while live (see useEvery)
   useEffect(() => {
     const ask = new AbortController();
     const get = { credentials: "same-origin" as const, signal: ask.signal, headers };
-    fetch(`/api/v1/admin/metrics?minutes=${minutes}`, get)
+    fetch(`/api/v1/admin/metrics?${query(range)}`, get)
       .then(async r => {
         if (r.ok) { setMetrics(await r.json()); setDenied(""); setUpdated(new Date()); return; }
         const detail = (await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`;
@@ -88,13 +107,18 @@ export default function Logs() {
       .catch(e => { if (e.name !== "AbortError") setDenied(String(e)); });
     fetch("/api/v1/admin/health", get).then(r => r.ok ? r.json() : null).then(h => h && setHealth(h)).catch(() => { /* the build id is a nicety */ });
     return () => ask.abort();
-  }, [minutes, token, beat]);
-
-  useEffect(() => {
-    if (!live) return;
-    const every = setInterval(() => setBeat(b => b + 1), 15000);
-    return () => clearInterval(every);
-  }, [live]);
+  }, [range, token, beat]);
+  // only a range that ends now and is held per minute changes from one minute to the next
+  const moving = "minutes" in range && range.minutes <= DAY;
+  useEvery(LIVE_EVERY, live && moving, () => setBeat(b => b + 1));
+  const downloadAll = () => {
+    setSaving(true);
+    fetch(`/api/v1/admin/metrics/download?${query(range)}`, { credentials: "same-origin", headers })
+      .then(r => r.ok ? r.blob() : Promise.reject(new Error(`${r.status}`)))
+      .then(blob => save(blob, `cip-logs-${new Date().toISOString().slice(0, 10)}.xlsx`))
+      .catch(e => setDenied(`The download failed (${e.message}); try a shorter range.`))
+      .finally(() => setSaving(false));
+  };
 
   // trimmed: a token pasted with a space or line break around it would otherwise never match
   const keepToken = (value: string) => { const clean = value.trim(); setToken(clean); try { if (clean) localStorage.setItem(TOKEN, clean); else localStorage.removeItem(TOKEN); } catch { /* private window */ } };
@@ -110,16 +134,24 @@ export default function Logs() {
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end" }}>
           <div className="seg" role="group" aria-label="Time range">
-            {RANGES.map(r => <button key={r.minutes} aria-pressed={minutes === r.minutes} onClick={() => setMinutes(r.minutes)}>{r.label}</button>)}
+            {RANGES.map(r => <button key={r.minutes} aria-pressed={"minutes" in range && range.minutes === r.minutes} onClick={() => setRange({ minutes: r.minutes })}>{r.label}</button>)}
           </div>
-          <button className="btn" onClick={() => setLive(!live)}>{live ? "Pause" : "Resume"} auto-refresh</button>
+          <form style={{ display: "flex", gap: 6, alignItems: "end", flexWrap: "wrap" }}
+                onSubmit={e => { e.preventDefault(); if (custom.start && custom.end) setRange({ ...custom }); }}>
+            <label style={small}>From (your time)<br /><input type="datetime-local" value={custom.start} onChange={e => setCustom(c => ({ ...c, start: e.target.value }))} /></label>
+            <label style={small}>To<br /><input type="datetime-local" value={custom.end} onChange={e => setCustom(c => ({ ...c, end: e.target.value }))} /></label>
+            <button className="btn" type="submit" disabled={!custom.start || !custom.end}>Show these dates</button>
+          </form>
+          {moving && <button className="btn" onClick={() => setLive(!live)}>{live ? "Pause" : "Resume"} auto-refresh</button>}
+          <button className="btn primary" onClick={downloadAll} disabled={saving}>{saving ? "Preparing…" : "Download everything (Excel)"}</button>
           {/* only a demo sign-in is asked for the token: a sign-in through the identity provider opens this page as it is */}
-          {(token || (denied && denied !== "notAdmin")) && <label>Admin token<br /><input type="password" value={token}
+          {denied && denied !== "notAdmin" && <label>Admin token<br /><input type="password" value={token}
             onChange={e => keepToken(e.target.value)} placeholder="demo sign-in only" autoComplete="off" /></label>}
         </div>
       </div>
       <p className="muted" style={{ margin: "-6px 0 0", fontSize: 12 }}>
-        {live && <span className="chip live" style={{ marginRight: 8 }}>Live, every 15 s</span>}
+        {live && moving && <span className="chip live" style={{ marginRight: 8 }}>Live, every minute while this tab is open</span>}
+        {metrics && `${ist(metrics.since)} to ${ist(metrics.until)}, figures per ${metrics.step} · `}
         {updated ? `updated ${ist(updated.toISOString(), false)}` : "loading…"}
         {health?.build && ` · build ${health.build}`}
       </p>
@@ -128,7 +160,7 @@ export default function Logs() {
         {denied === "notAdmin"
           ? <>You are signed in as <b>{me?.email ?? "an account"}</b>, which is not an admin, so this page stays closed whatever the token. Only the super admin opens it (config/access.yml people: super_admin).</>
           : denied}</p></Card>}
-      {metrics && <Dashboard m={metrics} minutes={minutes} />}
+      {metrics && <Dashboard m={metrics} headers={headers} />}
       <RawLogs headers={headers} token={token} />
       <Archives headers={headers} token={token} />
     </div>
@@ -144,14 +176,18 @@ function Tile({ label, value, note, style }: { label: string; value: ReactNode; 
   </div>;
 }
 
-function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
+function Dashboard({ m, headers }: { m: Metrics; headers: Record<string, string> }) {
   const theme = useTheme();
+  const [address, setAddress] = useState("");   // the visitor opened below Top visitors
+  const minutes = Math.max(1, (Date.parse(`${m.until}Z`) - Date.parse(`${m.since}Z`)) / 60000);
+  const per = m.step;
   const t = m.totals;
   const last = m.machine.at(-1);
   const errorPct = t.requests ? (100 * t["5xx"]) / t.requests : 0;
-  const peakCpu = Math.max(0, ...m.machine.map(s => s.cpu_pct).filter(Number.isFinite));   // older samples carry no CPU
-  const peakMemory = Math.max(0, ...m.machine.map(s => s.working_set_mb).filter(Number.isFinite));
-  const range: [number, number] = [Date.parse(`${m.since}Z`), Date.parse(m.now)];
+  // an hour's sample is its average, and carries the hour's peak; older samples carry no CPU
+  const peakCpu = Math.max(0, ...m.machine.map(s => s.cpu_peak ?? s.cpu_pct).filter(Number.isFinite));
+  const peakMemory = Math.max(0, ...m.machine.map(s => s.memory_peak ?? s.working_set_mb).filter(Number.isFinite));
+  const range: [number, number] = [Date.parse(`${m.since}Z`), Math.min(Date.parse(`${m.until}Z`), Date.parse(m.now))];
   const pale = { background: "var(--tag)", borderColor: "transparent" };
   const processes = Object.entries(last?.processes_mb ?? {}).sort((a, b) => a[1] - b[1]);
 
@@ -218,13 +254,13 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
 
     {/* ---- over time ---- */}
     <div style={grid(440)}>
-      <Card title="Requests per minute" sub="By answer type. Server errors (5xx) are the ones to worry about.">
-        {m.traffic.length ? <EChart option={charts.requests} height={260} label="Requests per minute by answer type" /> : <p className="muted">No requests in this range.</p>}
+      <Card title={`Requests per ${per}`} sub="By answer type. Server errors (5xx) are the ones to worry about.">
+        {m.traffic.length ? <EChart option={charts.requests} height={260} label={`Requests per ${per} by answer type`} /> : <p className="muted">No requests in this range.</p>}
       </Card>
-      <Card title="Server time per minute" sub="Time inside our server, from the request arriving to the answer leaving: the internet's travel time is not included. Log scale.">
-        {m.traffic.length ? <EChart option={charts.times} height={260} label="Server time percentiles per minute in milliseconds" /> : <p className="muted">No requests in this range.</p>}
+      <Card title={`Server time per ${per}`} sub="Time inside our server, from the request arriving to the answer leaving: the internet's travel time is not included. Log scale.">
+        {m.traffic.length ? <EChart option={charts.times} height={260} label={`Server time percentiles per ${per} in milliseconds`} /> : <p className="muted">No requests in this range.</p>}
       </Card>
-      <Card title="CPU" sub="Share of the 2 CPUs the container may use (100 % = both fully busy).">
+      <Card title="CPU" sub={`Share of the 2 CPUs the container may use (100 % = both fully busy)${per === "hour" ? "; each point is an hour's average" : ""}.`}>
         {m.machine.length ? <EChart option={charts.cpu} height={240} label="CPU percent over time" /> : <p className="muted">{NO_SAMPLES}</p>}
       </Card>
       <Card title="Memory" sub="Our container as Azure's memory metric counts it, and the part that is our processes' own (the rest is file cache).">
@@ -305,11 +341,11 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
       </table></div>
       {!m.pages.length && <p className="muted">No requests in this range.</p>}
     </Card>
-    <Card title="Top visitors" sub="Signed-in person (from their session), approximate place of their internet address, and how many requests. The server's own checks are left out.">
+    <Card title="Top visitors" sub="Signed-in person (from their session), approximate place of their internet address, and how many requests. The server's own checks are left out. Choose an address to see what it asked for and whether it is a person or a program.">
       <div className="table-wrap"><table className="data">
         <thead><tr><th>Who</th><th>Where (approximate)</th><th>Address</th><th className="num">Requests</th></tr></thead>
-        <tbody>{m.clients.map(c => <tr key={c.client}>
-          <th scope="row">{c.user || <span className="muted">not signed in</span>}</th>
+        <tbody>{m.clients.map(c => <tr key={c.client} aria-selected={address === c.client}>
+          <th scope="row"><button className="btn-chip" onClick={() => setAddress(address === c.client ? "" : c.client)}>{c.user || "not signed in"}</button></th>
           <td>{c.place || <span className="muted">unknown</span>}</td><td style={mono}>{c.client}</td>
           <td className="num"><span className="quota" style={{ justifyContent: "flex-end" }}>
             <span className="bar" style={{ width: 80 }}><i style={{ width: `${(100 * c.requests) / m.clients[0].requests}%`, background: C.s1 }} /></span>
@@ -317,6 +353,7 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
         </tr>)}</tbody>
       </table></div>
       {!m.clients.length && <p className="muted">No visitors in this range.</p>}
+      {address && <Visitor address={address} headers={headers} />}
       <p className="muted" style={{ fontSize: 11, marginTop: 8 }}>Places are city-level guesses from the address (an office or a phone network's location, not a person's). <a href="https://db-ip.com" target="_blank" rel="noreferrer">IP Geolocation by DB-IP</a>.</p>
     </Card>
 
@@ -337,7 +374,7 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
         <tbody>{m.problems.map((p, i) => <tr key={i}>
           <td style={{ whiteSpace: "nowrap" }}>{ist(p.minute)}</td><td><span className="chip sig">{p.source}</span></td>
           <td style={{ minWidth: 220 }}>{p.meaning || <span className="muted">See the line.</span>}</td>
-          <td><details><summary style={small}>show</summary><span style={mono}>{p.line}</span></details></td>
+          <td><ProblemLine source={p.source} line={p.line} headers={headers} /></td>
         </tr>)}</tbody>
       </table></div> : <p className="muted">No errors logged in this range.</p>}
     </Card>
@@ -358,6 +395,58 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
         </table></div> : <p className="muted">No ETL runs in this range. The loads run daily at 09:00 IST (03:30 UTC) and Mondays at 17:30 IST (12:00 UTC).</p>}
       </Card>
     </div>
+  </>;
+}
+
+// ---- One visitor: every request of theirs in the current log, and what they are ----------------------------------------
+interface VisitorAnswer { address: string; place: string; kind: string; agents: string[]; came_from: string[];
+  requests: { time: string; method: string; path: string; status: number; ms: number; bytes: number; user: string; agent: string; from: string; served: string }[] }
+function Visitor({ address, headers }: { address: string; headers: Record<string, string> }) {
+  const [v, setV] = useState<VisitorAnswer | null>(null);
+  const [problem, setProblem] = useState("");
+  useEffect(() => {
+    setV(null);
+    fetch(`/api/v1/admin/visitor?address=${encodeURIComponent(address)}`, { credentials: "same-origin", headers })
+      .then(async r => r.ok ? setV(await r.json()) : setProblem((await r.json().catch(() => ({}))).detail ?? `${r.status}`))
+      .catch(e => setProblem(String(e)));
+  }, [address]);   // eslint-disable-line react-hooks/exhaustive-deps
+  if (problem) return <p role="alert" style={{ color: "var(--red-text)" }}>{problem}</p>;
+  if (!v) return <p className="muted">Loading {address}…</p>;
+  return <div style={{ marginTop: 16 }}>
+    <h3 style={{ margin: "0 0 4px" }}>{v.address} · {v.place || "place unknown"}</h3>
+    <p style={{ margin: "0 0 6px" }}><b>{v.kind}</b></p>
+    <p style={{ ...small, margin: "0 0 10px" }}>Browser or program: {v.agents.join(" · ") || "not given"}
+      {" · "}came from: {v.came_from.length ? v.came_from.join(", ") : "no other site (typed, a bookmark, or a program; sites recorded from the 7 Nov 2026 build on)"}</p>
+    <div className="table-wrap" style={{ maxHeight: 420, overflow: "auto" }}><table className="data">
+      <thead><tr><th>When (IST)</th><th>Request</th><th className="num">Answer</th><th className="num">Server time</th><th>Answered by</th><th>Signed in as</th></tr></thead>
+      <tbody>{v.requests.map((r, i) => <tr key={i}>
+        <td style={{ whiteSpace: "nowrap" }}>{ist(r.time)}</td><td style={mono}>{r.method} {r.path}</td>
+        <td className="num">{r.status}</td><td className="num">{ms(r.ms)}</td><td>{r.served}</td><td>{r.user || <span className="muted">–</span>}</td>
+      </tr>)}</tbody>
+    </table></div>
+    <p className="muted" style={{ fontSize: 11 }}>The newest {v.requests.length} requests of this address in the current request log (older ones: Older logs, or Download everything).</p>
+  </div>;
+}
+
+// ---- "Show": an error with the lines around it, from its log ---------------------------------------------------------
+function ProblemLine({ source, line, headers }: { source: string; line: string; headers: Record<string, string> }) {
+  const [shown, setShown] = useState<{ file: string; before: string[]; found: string; after: string[] } | string | null>(null);
+  const open = () => {
+    if (shown) return setShown(null);
+    fetch(`/api/v1/admin/logs/context?${new URLSearchParams({ source, line })}`, { credentials: "same-origin", headers })
+      .then(async r => setShown(r.ok ? await r.json() : (await r.json().catch(() => ({}))).detail ?? `${r.status}`))
+      .catch(e => setShown(String(e)));
+  };
+  return <>
+    <button className="btn-chip" onClick={open}>{shown ? "Hide" : "Show"}</button>
+    {!shown ? <div style={{ ...mono, ...small, marginTop: 4 }}>{line.slice(0, 160)}{line.length > 160 ? "…" : ""}</div>
+      : typeof shown === "string" ? <div style={{ ...mono, marginTop: 4 }}>{line}<div style={small}>{shown}</div></div>
+      : <div style={{ marginTop: 6 }}>
+          <div style={small}>In {shown.file}: the 10 lines before, the line itself (highlighted), and the 40 after it (an error's traceback follows it).</div>
+          <pre style={{ ...mono, whiteSpace: "pre-wrap", maxHeight: 360, overflow: "auto", margin: "6px 0 0" }}>
+            {shown.before.join("\n")}{shown.before.length ? "\n" : ""}<mark>{shown.found}</mark>{"\n"}{shown.after.join("\n")}
+          </pre>
+        </div>}
   </>;
 }
 
@@ -382,13 +471,13 @@ function RawLogs({ headers, token }: { headers: Record<string, string>; token: s
       .catch(e => { if (e.name !== "AbortError") setProblem(String(e)); });
     return () => ask.abort();
   }, [source, q, page, token, tick]);
-  // only the newest page refreshes itself: an older page stays still while it is being read
-  useEffect(() => { if (page !== 1) return; const every = setInterval(() => setTick(t => t + 1), 10000); return () => clearInterval(every); }, [page]);
+  // only the newest page refreshes itself, once a minute while the tab is in view: an older page stays still while read
+  useEvery(LIVE_EVERY, page === 1, () => setTick(t => t + 1));
 
   const download = () => {
     void fetch(`/api/v1/admin/logs/download?source=${source}`, { credentials: "same-origin", headers })
       .then(r => r.ok ? r.blob() : Promise.reject(new Error(`${r.status}`)))
-      .then(blob => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `cip-${source}.log`; a.click(); URL.revokeObjectURL(a.href); })
+      .then(blob => save(blob, `cip-${source}.log`))
       .catch(() => setProblem("This log has no file to download yet"));
   };
   const from = (page - 1) * PER_PAGE + 1;
@@ -399,7 +488,7 @@ function RawLogs({ headers, token }: { headers: Record<string, string>; token: s
     <button className="btn" disabled={!answer.more} onClick={() => setPage(p => p + 1)}>Older ›</button>
   </div>;
 
-  return <Card title="Raw logs" sub={`Newest first, ${PER_PAGE} lines a page; the newest page refreshes every 10 seconds.`}>
+  return <Card title="Raw logs" sub={`Newest first, ${PER_PAGE} lines a page, the whole current file page by page; the newest page refreshes every minute while this tab is in view. Older files: Older logs, below.`}>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end" }}>
       <label>Log<br />
         <select value={source} onChange={e => setSource(e.target.value)}>
@@ -426,15 +515,15 @@ function Archives({ headers, token }: { headers: Record<string, string>; token: 
     fetch("/api/v1/admin/logs/archives", { credentials: "same-origin", headers })
       .then(r => r.ok ? r.json() : []).then(setList).catch(() => setList([]));
   }, [token]);
-  const save = (name: string) => void fetch(`/api/v1/admin/logs/archive?name=${encodeURIComponent(name)}`, { credentials: "same-origin", headers })
+  const fetchArchive = (name: string) => void fetch(`/api/v1/admin/logs/archive?name=${encodeURIComponent(name)}`, { credentials: "same-origin", headers })
     .then(r => r.ok ? r.blob() : Promise.reject(new Error(`${r.status}`)))
-    .then(blob => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href); })
+    .then(blob => save(blob, name))
     .catch(() => { /* the list is refreshed on the next visit */ });
   return <Card title="Older logs (packed)" sub="Every log that reached 20 MB, packed as a .zip and kept for good, newest first. Any laptop or phone opens a .zip.">
     {list?.length ? <div className="table-wrap"><table className="data">
       <thead><tr><th>File</th><th>Packed (IST)</th><th className="num">Size</th><th /></tr></thead>
       <tbody>{list.map(a => <tr key={a.name}><th scope="row" style={mono}>{a.name}</th><td>{ist(a.time)}</td>
-        <td className="num">{bytes(a.bytes)}</td><td className="num"><button className="btn" onClick={() => save(a.name)}>Download</button></td></tr>)}</tbody>
+        <td className="num">{bytes(a.bytes)}</td><td className="num"><button className="btn" onClick={() => fetchArchive(a.name)}>Download</button></td></tr>)}</tbody>
     </table></div> : <p className="muted">{list ? "None yet: a log is packed when it reaches 20 MB." : "Loading…"}</p>}
   </Card>;
 }

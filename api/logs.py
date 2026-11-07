@@ -124,3 +124,20 @@ def download(source: str, who: dict = Depends(admin)) -> FileResponse:
     if not path or not path.exists():
         raise HTTPException(404, "No such log file")
     return FileResponse(path, media_type="text/plain", filename=f"cip-{source}-{path.name}")
+
+
+@router.get("/logs/context")
+def context(source: str, line: str = Query(..., max_length=2000), who: dict = Depends(admin)) -> dict:
+    """A logged line with the 10 before and 40 after it (an error's traceback, the request before it), from the newest
+    4 MB of its log: what the Logs page's "Show" opens, so a problem is read where it happened."""
+    path = path_of(source)
+    if not path or not path.exists():
+        raise HTTPException(404, "No such log")
+    with path.open("rb") as f:
+        f.seek(max(0, f.seek(0, os.SEEK_END) - TAIL_BYTES))
+        lines = [raw.decode("utf-8", errors="replace").rstrip("\n") for raw in f]
+    at = max((i for i, text in enumerate(lines) if text.startswith(line[:300])), default=None)
+    if at is None:
+        raise HTTPException(404, "That line is no longer in the newest part of the log: see Older logs")
+    return {"source": source, "file": str(path), "line": at, "before": lines[max(0, at - 10):at], "found": lines[at],
+            "after": lines[at + 1:at + 41]}

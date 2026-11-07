@@ -29,6 +29,7 @@ The one place every agent (Claude, Gemini, Codex, others) and every person reads
 
 | Item | Status | Where | Note |
 |---|---|---|---|
+| Logs page: any dates (hourly beyond a day), visitor details, Show with context, Excel download of everything, 12-hour IST, token box only when asked, refresh once a minute while in view | Waiting for deploy | api/metrics.py, api/logs.py context, deploy/cip_logs.conf (referer), Logs.tsx, bits.tsx ist | Hours kept in logs/traffic-hours.jsonl (/home, ~22 MB a year) from the deploy on; a refresh costs ~50 ms here, ~0.2 s on staging |
 | Audiences clear stale figures; stacked legend on one line; HTML codes out of wordings; new waves listed before publish | Waiting for deploy | Audience.tsx, QuestionChart.tsx, etl/records.py clean_text, api/main.py all_waves | 106 staging wordings repaired in cip_stg 7 Nov 20:05 IST (originals kept by Claude); they show after staging's next publish. all_waves fallback was Gemini's, kept with a test |
 | Wave switcher (Previous, Next, the list, [ and ]) | Waiting for deploy | frontend/src/components/Shell.tsx TopBar | Used the browser's path (/app/w/…) with the router's navigate, so every switch opened /app/app/w/… ("Page not found") since 29 Oct; found by Gemini's 7 Nov screen test, checked in a browser after the fix |
 

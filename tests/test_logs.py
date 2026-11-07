@@ -152,3 +152,64 @@ def test_an_old_traceback_is_not_counted_as_a_problem_in_every_time_range(tmp_pa
     assert metrics.minute_of("Traceback (most recent call last):") == "" and metrics.minute_of(f"[{old} +0000] x") == old[:16].replace(" ", "T")
     found = metrics.problems(now.strftime("%Y-%m-%dT%H:%M")[:-2] + "00")
     assert [p["line"][-14:] for p in found] == ["Worker timeout"]
+
+
+def access_line(when, client="1.2.3.4", user="", agent="Mozilla/5.0 (Macintosh)", path="/api/v1/me", status=200):
+    import json as js
+    return js.dumps({"time": when.strftime("%Y-%m-%dT%H:%M:01+00:00"), "client": client, "method": "GET", "path": path,
+                     "status": status, "bytes": 10, "seconds": 0.002, "api_seconds": "", "cache": "", "user": user,
+                     "agent": agent, "referer": ""}) + "\n"
+
+
+def test_finished_hours_are_saved_once_and_long_ranges_read_them(tmp_path, monkeypatch):
+    """A day is kept per minute in memory; each finished hour is also saved (logs/traffic-hours.jsonl, on /home), so
+    7 days, 17 weeks or any dates can be shown, and a restart (a new process reading the log again) adds no copy."""
+    monkeypatch.setattr(logs, "LOGS", tmp_path)
+    now = metrics.datetime.now(metrics.timezone.utc)
+    hours_ago = lambda n: now - metrics.timedelta(hours=n)
+    (tmp_path / "nginx-access.log").write_text(access_line(hours_ago(3)) * 2 + access_line(hours_ago(2)) + access_line(now))
+    for _ in range(2):   # the second process re-reads the same log
+        monkeypatch.setattr(metrics, "TRAFFIC", metrics.Traffic())
+        metrics.read_traffic()
+    saved = (tmp_path / metrics.HOURS_FILE).read_text().splitlines()
+    assert [metrics.json.loads(h)["requests"] for h in saved] == [2, 1]
+    month = metrics.metrics(60, ADMIN, start=(now - metrics.timedelta(days=30)).strftime("%Y-%m-%dT%H:%MZ"))
+    assert month["step"] == "hour" and month["totals"]["requests"] == 4   # the saved hours and the hour still in memory
+    assert metrics.metrics(60, ADMIN)["step"] == "minute"
+
+
+def test_a_visitor_is_told_apart_from_a_bot_and_from_azure(tmp_path, monkeypatch):
+    monkeypatch.setattr(logs, "LOGS", tmp_path)
+    now = metrics.datetime.now(metrics.timezone.utc)
+    (tmp_path / "nginx-access.log").write_text(
+        access_line(now, "1.2.3.4", "ana@coresight.com") + access_line(now, "3.224.234.70", agent="Mozilla/5.0 (compatible)", path="/")
+        + access_line(now, "169.254.129.1", agent="HealthCheck/1.0", path="/robots933456.txt"))
+    assert metrics.visitor("1.2.3.4", ADMIN)["kind"] == "Signed in as ana@coresight.com."
+    bot = metrics.visitor("3.224.234.70", ADMIN)
+    assert bot["kind"].startswith("An automated program") and bot["requests"][0]["path"] == "/"
+    assert metrics.visitor("169.254.129.1", ADMIN)["kind"].startswith("Azure's own health check")
+    with pytest.raises(metrics.HTTPException):
+        metrics.visitor('1.2.3.4","x', ADMIN)
+
+
+def test_show_opens_an_error_with_its_traceback(tmp_path, monkeypatch):
+    monkeypatch.setattr(logs, "LOGS", tmp_path)
+    (tmp_path / "api.log").write_text("2026-11-07 14:00:00,1 INFO    cip.api | GET /x\n"
+                                      "2026-11-07 14:00:01,2 ERROR   cip.api | Unhandled error on GET /api/v1/waves/1/book\n"
+                                      "Traceback (most recent call last):\n  File \"api/main.py\", line 9\nKeyError: 'wave'\n")
+    shown = logs.context("api", "2026-11-07 14:00:01,2 ERROR   cip.api | Unhandled error", ADMIN)
+    assert shown["before"] == ["2026-11-07 14:00:00,1 INFO    cip.api | GET /x"] and shown["after"][-1] == "KeyError: 'wave'"
+
+
+def test_the_whole_page_downloads_as_one_workbook_in_india_time(tmp_path, monkeypatch):
+    import io
+    from openpyxl import load_workbook
+    monkeypatch.setattr(logs, "LOGS", tmp_path)
+    monkeypatch.setattr(metrics, "TRAFFIC", metrics.Traffic())
+    now = metrics.datetime.now(metrics.timezone.utc)
+    (tmp_path / "nginx-access.log").write_text(access_line(now, user="ana@coresight.com"))
+    book = load_workbook(io.BytesIO(metrics.download(60, ADMIN).body))
+    assert {"Summary", "Requests per minute", "CPU, memory, bandwidth", "Response times", "How requests were answered", "Storage",
+            "Busiest pages", "Visitors", "Sign-ins", "Problems", "Requests (newest 50,000)"} <= set(book.sheetnames)
+    assert book["Requests (newest 50,000)"]["C2"].value == "ana@coresight.com"
+    assert metrics.ist("2026-11-07T14:50:00Z") == "7 Nov 2026, 8:20 PM"
