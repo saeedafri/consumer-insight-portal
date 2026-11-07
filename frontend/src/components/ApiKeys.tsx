@@ -29,7 +29,7 @@ export default function ApiKeys() {
       <p><b>{made.name}</b>: copy this key now. It is shown once; CIP keeps only its fingerprint.</p>
       <code className="key">{made.key}</code>
       <p className="muted small">Claude Code: <code>claude mcp add --transport http cip {portal}/mcp --header "Authorization: Bearer {made.key.slice(0, 8)}…"</code> (with the whole key). Other tools: send <code>Authorization: Bearer &lt;key&gt;</code> to {portal}/api/v1/… or {portal}/mcp.</p>
-      <button className="btn" type="button" onClick={() => { void navigator.clipboard?.writeText(made.key); setNote("Copied."); }}>Copy key</button>{" "}
+      <button className="btn" type="button" onClick={() => (navigator.clipboard?.writeText(made.key) ?? Promise.reject()).then(() => setNote("Copied."), () => setNote("The browser blocked copying: select the key and copy it."))}>Copy key</button>{" "}
       <button className="btn" type="button" onClick={() => setMade(null)}>Done</button>
     </div>}
     {data && data.keys.length > 0 && <div className="table-wrap"><table className="data">

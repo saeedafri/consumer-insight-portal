@@ -29,9 +29,7 @@ The one place every agent (Claude, Gemini, Codex, others) and every person reads
 
 | Item | Status | Where | Note |
 |---|---|---|---|
-| Demo sign-in off wherever company sign-in is set up | Waiting for deploy | api/signin.py demo, tests/test_access.py | Staging's CIP_DEMO_LOGIN=1 is then ignored; IT can remove the setting on Monday. Check: /auth/dev-login answers 404 |
-| Question codes in any case on cross-tabs (API, MCP) | Waiting for deploy | api/main.py crosstab_payload, tests/test_api_speed.py | `q=Q1` was 404 where /results answered (Azure's disk is case-sensitive); found by Gemini's 7 Nov probe, its `lower()` fix would have broken XM3 |
-| Cache warm-up sees every answer | Waiting for deploy | config/access.yml (role `service`: publish@cip) | The 1 h cookie fix was not enough: the warmer was an analyst, and analysts' menus on staging have no cross-tab, so 885d7fa6 still warmed 0 of 1,740. Check: Publish log "1740 of 1740" |
+| Wave switcher (Previous, Next, the list, [ and ]) | Waiting for deploy | frontend/src/components/Shell.tsx TopBar | Used the browser's path (/app/w/…) with the router's navigate, so every switch opened /app/app/w/… ("Page not found") since 29 Oct; found by Gemini's 7 Nov screen test, checked in a browser after the fix |
 
 ## Pending
 
@@ -48,7 +46,8 @@ The one place every agent (Claude, Gemini, Codex, others) and every person reads
 
 | Item | Status | Where | Note |
 |---|---|---|---|
-| Remove CIP_DEMO_LOGIN from the staging App Service settings | Stuck: IT (Monday) | Azure, csr-awa-cip-portal-stg | The code ignores it once the deploy above is out; removing it keeps the settings honest |
+| The live link (:8000) shows data published on 2 Nov | Stuck: the user decides | data/published/current on this Mac | Newest wave 530 (staging has 532); Weekly reports, Sector databank, Expected vs actual answer 404. This Mac runs no ETL loop: one `python -m etl.publish` refreshes it (reads cip_stg a few minutes) |
+| Remove CIP_DEMO_LOGIN from the staging App Service settings | Stuck: IT (Monday), no longer urgent | Azure, csr-awa-cip-portal-stg | The code ignores it once the deploy above is out; removing it keeps the settings honest |
 | `cip-stg.coresight.com` does not resolve on the office network | Stuck: IT | office DNS 10.2.21.4 | Public DNS points it to the Azure app; until IT adds it, use the azurewebsites address |
 | PDF export of very wide team reports | Stuck: Forsta | e.g. "Full cross" (41 columns) | Forsta's own PDF layout error; the Excel and PowerPoint of the same report work |
 | Old Azure images filling the worker disk | Stuck: IT / Azure | App Service plan csr-awa-cip-portal-stg | Azure clears old images itself; IT can confirm the clean-up or move the app to a plan with more local disk |
@@ -57,7 +56,9 @@ The one place every agent (Claude, Gemini, Codex, others) and every person reads
 
 | Item | Status | Where | Note |
 |---|---|---|---|
+| Demo sign-in off, cache warm-up, question codes in any case | Done (staging ad9a9d57, 7 Nov 19:10 IST) | api/signin.py, config/access.yml, api/main.py | /auth/dev-login 404; warmed 1,740 of 1,740 cross-tabs; crosstab?q=Q1 200 |
 | Keys survive a redeploy | Done | /home/cip/api_keys.yml | The staging MCP key still worked after the 885d7fa6 deploy (7 Nov 18:15 IST) |
+| Gemini's local screen test (7 Nov) reviewed | Done | this board | Right: wave switcher, key copy error. Its local data gaps are the live :8000's published files (2 Nov); its admin-token bypass and reports-as-empty fixes would be wrong |
 | Gemini's staging investigation (7 Nov) reviewed | Done | this board | Right: case bug, HEAD /healthz, team LIMIT 500, logout URL join, demo sign-in. Wrong or not a bug: its case fix, analyst menus (your Access choice, 15:18 IST), admin token under demo (by design), 228 RPS "brick wall" (a model, not measured) |
 | Second Gemini Forsta research reviewed | Done | docs/FORSTA_API_REVIEW.md section 5 | 7 endpoints do not exist, statuses unmeasured, all six proposed menus would be empty or not apply: none built |
 | Checked on staging after the 7 Nov deploy (443c3ef0) | Done | staging | 17 API routes and 5 MCP tools with a key; a key cannot make keys; a trial ended at 17:23:53 IST was refused 10 s later in the same session; no errors since the deploy |

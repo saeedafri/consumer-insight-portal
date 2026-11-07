@@ -355,11 +355,12 @@ function SaveButton({ wave }: { wave: Wave }) {
 /** The wave bar: the wave switcher ([ and ] step through the waves) and Save view. */
 function TopBar({ waves, wave }: { waves: Wave[]; wave?: Wave }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();   // the router's path (/w/530/…), not the browser's (/app/w/530/…): that doubled /app
   const me = useMe().data;
   const family = wave ? waves.filter(w => w.survey_family === wave.survey_family && w.study_type === wave.study_type
                                      && (w.rows_built !== 0 || w.survey_id === wave.survey_id)) : [];
   const at = family.findIndex(w => w.survey_id === wave?.survey_id);   // newest first
-  const go = (w?: Wave) => w && navigate(location.pathname.replace(/^\/w\/\d+/, `/w/${w.survey_id}`));
+  const go = (w?: Wave) => w && navigate(pathname.replace(/^\/w\/\d+/, `/w/${w.survey_id}`));
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {

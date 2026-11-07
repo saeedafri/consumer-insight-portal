@@ -6,6 +6,8 @@ type Entry = { title: string; body: string; shot?: string; alt?: string; link?: 
 const RELEASES: { date: string; entries: Entry[] }[] = [{
   date: "7 November 2026",
   entries: [
+    { title: "The wave switcher works again",
+      body: "Previous wave, Next wave, the wave list and the [ and ] keys on a wave's screens now open the chosen wave on the same screen; since 29 October they opened a \"Page not found\". Copying a new API key also says when the browser blocks it." },
     { title: "Question codes in any case",
       body: "The API and the Claude connector now find a question whatever the case of its code (q1 or Q1, XM3 or xm3): cross-tabs answer as results already did, instead of saying the question is not in the wave." },
     { title: "Company sign-in only, wherever it is set up",
