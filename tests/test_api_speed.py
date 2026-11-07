@@ -123,3 +123,13 @@ def test_a_question_missing_from_a_published_wave_is_404_without_the_database(cl
     # the wave's cuts folder is its complete question list (etl/publish.py cut_inventory); the fixture fails on any
     # database call, which under load took 1-5 s per "other, please specify" question and starved the build slots
     assert client.get("/api/v1/waves/415/crosstab?q=Q9r3oe&by=gender,generation").status_code == 404
+
+
+def test_a_question_code_typed_in_another_case_gives_the_same_cross_tab(client, monkeypatch):
+    """Azure's disk is case-sensitive (this Mac's is not), so read files the way it does: xm1a must find XM1A's cuts, as
+    /results already does, without lower-casing codes that are upper-case (52 of 58 in a wave, e.g. XM3)."""
+    real = api.published_file
+    monkeypatch.setattr(api, "published_file", lambda *parts: real(*parts) if parts[-1] + ".json.gz" in
+                        {p.name for p in api.PUBLISHED.joinpath("api", "v1", *parts[:-1]).glob("*")} else None)
+    response = client.get("/api/v1/waves/415/crosstab?q=xm1a&by=gender,generation")
+    assert response.status_code == 200 and json.loads(response.body)["qcode"] == "XM1A"

@@ -560,3 +560,22 @@ def test_the_api_refuses_exactly_what_the_menus_hide(portal, monkeypatch):
     assert call("/api/v1/questions/CSI-US/tracker/q1", ana)[0] != 403          # Compare waves still reads it
     menus("trends", "compare", "audiences")
     assert call("/api/v1/questions/CSI-US/tracker/q1", ana)[0] == 403
+
+
+def test_the_demo_sign_in_is_off_wherever_company_sign_in_is_set_up(monkeypatch):
+    """On a public address with the identity provider configured, the demo sign-in would let anyone type anyone's
+    email (staging, 7 Nov 2026): the provider always wins, whatever CIP_DEMO_LOGIN says."""
+    monkeypatch.setenv("CIP_DEMO_LOGIN", "1")
+    monkeypatch.delenv("CIP_OIDC_ISSUER", raising=False)
+    assert signin.demo()
+    monkeypatch.setenv("CIP_OIDC_ISSUER", "https://idp.example.com")
+    monkeypatch.setenv("CIP_OIDC_CLIENT_ID", "cip")
+    assert not signin.demo()
+
+
+def test_the_cache_warmer_sees_every_feature_whatever_the_analysts_menus():
+    """nginx shares one cached answer among everyone who sees everything, so the session that fills it (publish@cip)
+    must see every feature even when the analysts' menus are trimmed; it gets no admin page."""
+    warmer = access.profile("publish@cip")
+    assert set(warmer["features"]) == set(access.rules()["features"])
+    assert not access.can(warmer, "admin_pages")

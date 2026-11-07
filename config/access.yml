@@ -53,12 +53,14 @@ roles:
   super_admin: {permissions: "*"}   # the portal's owner: everything
   analyst:     {permissions: []}    # Coresight staff: the analysis screens of the staff tier
   client:      {permissions: []}    # an external organisation: its tier, its own and public studies (none set up yet)
+  service:     {permissions: [all_features]}   # the pipeline's own sessions: every answer, no admin pages
 
 people:
   super_admin: [mohdsaeedafri@coresight.com]   # Mohd Saeed Afri
+  service: [publish@cip]   # warms nginx's shared cache, so must see what everyone may (etl/publish.py ask_nginx)
 
 staff:
-  domains: [coresight.com, cip]   # cip: the pipeline's own service sessions (publish@cip warms nginx's cache)
+  domains: [coresight.com]
   tier: enterprise
 
 clients: {}

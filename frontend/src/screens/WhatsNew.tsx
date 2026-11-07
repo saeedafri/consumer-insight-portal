@@ -6,6 +6,10 @@ type Entry = { title: string; body: string; shot?: string; alt?: string; link?: 
 const RELEASES: { date: string; entries: Entry[] }[] = [{
   date: "7 November 2026",
   entries: [
+    { title: "Question codes in any case",
+      body: "The API and the Claude connector now find a question whatever the case of its code (q1 or Q1, XM3 or xm3): cross-tabs answer as results already did, instead of saying the question is not in the wave." },
+    { title: "Company sign-in only, wherever it is set up",
+      body: "Where Coresight's company sign-in is set up, the portal no longer offers the demo sign-in (any email, no password), whatever its settings say: everyone signs in with their own company account. API keys and the MCP connector keep working as before." },
     { title: "Your own API keys, and Claude through the portal",
       body: "Anyone signed in can now make their own API keys on the Account page and use the portal from their own programs, or from Claude and other AI assistants through the portal's MCP connector: search questions, read a wave's results, a trend or a cross-tab. A key acts as you and reads only what your menus show; if a menu is taken away, your keys lose it at the same moment. A key is shown once, and you can revoke it at any time. The new API guide lists every address, the connector's tools and the rules a key follows.",
       link: ["/api-guide", "Read the API guide"] },

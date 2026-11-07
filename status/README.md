@@ -29,13 +29,14 @@ The one place every agent (Claude, Gemini, Codex, others) and every person reads
 
 | Item | Status | Where | Note |
 |---|---|---|---|
-| Cache warm-up after a deploy | Waiting for deploy | etl/publish.py ask_nginx, tests/test_publish.py | Its 1 h cookie fell before nginx's access cut-off, so the 7 Nov 16:21 IST deploy warmed 0 of 1,740 cross-tabs; now a full-length cookie. After the deploy the Publish log must say "1740 of 1740" |
+| Demo sign-in off wherever company sign-in is set up | Waiting for deploy | api/signin.py demo, tests/test_access.py | Staging's CIP_DEMO_LOGIN=1 is then ignored; IT can remove the setting on Monday. Check: /auth/dev-login answers 404 |
+| Question codes in any case on cross-tabs (API, MCP) | Waiting for deploy | api/main.py crosstab_payload, tests/test_api_speed.py | `q=Q1` was 404 where /results answered (Azure's disk is case-sensitive); found by Gemini's 7 Nov probe, its `lower()` fix would have broken XM3 |
+| Cache warm-up sees every answer | Waiting for deploy | config/access.yml (role `service`: publish@cip) | The 1 h cookie fix was not enough: the warmer was an analyst, and analysts' menus on staging have no cross-tab, so 885d7fa6 still warmed 0 of 1,740. Check: Publish log "1740 of 1740" |
 
 ## Pending
 
 | Item | Status | Where | Note |
 |---|---|---|---|
-| Keys survive a redeploy | Pending | staging, /home/cip/api_keys.yml | Check at the next deploy: `claude mcp list` must still show cip-stg Connected |
 | Schema changes are applied by hand | Pending (known limit) | scripts/init_db.py, docs/technical/08-operations-runbook.md | No deploy step runs it: after a deploy that changes sql/ or schema_upgrade.py, run `python scripts/init_db.py` (role column 255 done by hand 7 Nov 17:15 IST) |
 | More MCP tools: weekly report, sector databank, expected vs actual | Pending | api/mcp.py | Same rules as the screens; needs the published files' shapes |
 | Disk alerts before the Azure worker disk fills | Pending | api/metrics.py, Teams webhook | The disk is Azure's (old deploy images fill it); CIP's own files are about 0.2 GB |
@@ -47,7 +48,7 @@ The one place every agent (Claude, Gemini, Codex, others) and every person reads
 
 | Item | Status | Where | Note |
 |---|---|---|---|
-| Demo sign-in is on in staging: anyone can sign in as any email, no password | Stuck: the user / IT (urgent) | App Service setting CIP_DEMO_LOGIN | Checked 7 Nov 17:20 IST: a stranger's email reads every wave; your email gets the super admin's menus (admin pages still need the token). Company sign-in works, so set CIP_DEMO_LOGIN=0 |
+| Remove CIP_DEMO_LOGIN from the staging App Service settings | Stuck: IT (Monday) | Azure, csr-awa-cip-portal-stg | The code ignores it once the deploy above is out; removing it keeps the settings honest |
 | `cip-stg.coresight.com` does not resolve on the office network | Stuck: IT | office DNS 10.2.21.4 | Public DNS points it to the Azure app; until IT adds it, use the azurewebsites address |
 | PDF export of very wide team reports | Stuck: Forsta | e.g. "Full cross" (41 columns) | Forsta's own PDF layout error; the Excel and PowerPoint of the same report work |
 | Old Azure images filling the worker disk | Stuck: IT / Azure | App Service plan csr-awa-cip-portal-stg | Azure clears old images itself; IT can confirm the clean-up or move the app to a plan with more local disk |
@@ -56,6 +57,9 @@ The one place every agent (Claude, Gemini, Codex, others) and every person reads
 
 | Item | Status | Where | Note |
 |---|---|---|---|
+| Keys survive a redeploy | Done | /home/cip/api_keys.yml | The staging MCP key still worked after the 885d7fa6 deploy (7 Nov 18:15 IST) |
+| Gemini's staging investigation (7 Nov) reviewed | Done | this board | Right: case bug, HEAD /healthz, team LIMIT 500, logout URL join, demo sign-in. Wrong or not a bug: its case fix, analyst menus (your Access choice, 15:18 IST), admin token under demo (by design), 228 RPS "brick wall" (a model, not measured) |
+| Second Gemini Forsta research reviewed | Done | docs/FORSTA_API_REVIEW.md section 5 | 7 endpoints do not exist, statuses unmeasured, all six proposed menus would be empty or not apply: none built |
 | Checked on staging after the 7 Nov deploy (443c3ef0) | Done | staging | 17 API routes and 5 MCP tools with a key; a key cannot make keys; a trial ended at 17:23:53 IST was refused 10 s later in the same session; no errors since the deploy |
 | Hibernated surveys (8) | Done: decided not to wake them | etl/fieldwork.py | The user's decision, 7 Nov 2026: only their summary is kept |
 | Review fixes: role column 255 characters, dropped menus seen by every worker, key file only where writable, blank answers paired by code, Survey preview logic gated, Logs fully in IST | Done (staging, 7 Nov) | sql/010, api/main.py, etl/fieldwork.py | |

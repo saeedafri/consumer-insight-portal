@@ -28,7 +28,7 @@ Of the 57 POST operations, these compute or read and change nothing in the surve
 | `POST /surveys/{survey}/crosstabs/execute` | Forsta's own cross-tab: any tables, segments, filters, significance letters, in memory | Live: 200, 1.5 s, survey unchanged; q4 matches CIP to the person (Walmart 272, Dollar General 134, Sam's Club 68) | An independent check of every loaded wave: Forsta's totals against CIP's cube, shown as "Forsta agrees" on the Fieldwork screen | A new kind (`crosstab_check`) in `cip_forsta_record` beside the survey's other Forsta answers, published with the Fieldwork file |
 | `POST /surveys/{survey}/crosstabs/saved/{saved}/execute` | Runs a report the research team saved in Forsta (261003 has 5) | From the specification | The team's own saved tables, reproduced in CIP next to each wave | `cip_forsta_record`, kind `saved_report:<id>` |
 | `POST /surveys/{survey}/crosstabs/saved/{saved}/export/{format}` | Converts a saved report to Excel, PowerPoint or PDF and returns the file | From the specification | "Forsta's report" download for admins | `cip_forsta_record`, kind `saved_export:<id>` (the file, gzip-compressed) |
-| `POST /bulk/bounced` | Checks a list of emails against known bounce-backs | From the specification | None: CIP sends no survey invitations | — |
+| `POST /bulk/bounced` | Checks a list of emails against known bounce-backs | From the specification only: its arguments (pairs of strings, Forsta's `meta`) may also record bounces, so never send it | None: CIP sends no survey invitations | — |
 | `POST /surveys/{survey}/samplesources/{listId}/verify` | Verifies signed survey links | From the specification | None: CIP does not build survey links | — |
 | `POST /globalsearch/emails` | Finds participants who were sent a bulk email | From the specification | None: personal data, no analytical use | — |
 | `POST /globalsearch/evars` | Finds participants by extra-variable values | From the specification | None: personal data, no analytical use | — |
@@ -215,3 +215,23 @@ the 73 archived surveys, hibernated surveys answering 428 (260402 confirmed; the
 | 19 | Unarchiving the hibernated surveys resolves the ticket | It does wake them, but it changes Forsta and is a paid action: excluded by the read-only decision | Specification |
 
 Not checked here: the research's timings for a full 109-table cross-tab (2.01 s) and for the ETL phases (17.5 s).
+
+## 5. The second Gemini research (7 Nov 2026): what holds and what to build
+
+`docs/FORSTA_COMPLETE_READONLY_API_REFERENCE_AND_MENU_BLUEPRINT.md` lists 125 "read-only" operations and proposes six
+new admin menus. Checked against Forsta's own endpoint list (`GET /meta`, 462 method-and-endpoint pairs, stored as kind
+`meta`) and against what CIP already collected for 78 surveys:
+
+| Claim | Finding |
+|---|---|
+| 125 read-only operations, each with a live status | Gemini called no Forsta endpoint (its log only reads files and runs tests): the status column is not measured. 89 of the 97 endpoint rows exist as written; not in Forsta's API at all: `state/warnings`, `/search`, `surveys/{survey}/simulated`, `surveys/{survey}/panels/{panel}/data`, the three `dqapi/{label}/…` (mxd, hitrate, tricked). `rh/users/self` is Forsta's `rh/users/{user}` and works |
+| 8 read-only POSTs | The same 8 as section 2; CIP still sends only the 3 cross-tab ones, and `bulk/bounced` must never be sent |
+| Menu A, layouts; Menu B, datasources | Already read for every survey (`layouts`, `datasources` in `SURVEY_READS`): empty in all 78. A screen would be blank |
+| Menu C, MaxDiff and conjoint | No CIP survey has a choice exercise; the `dqapi` endpoints do not exist |
+| Menu D, translations | Every wave is English-only |
+| Menu E, video vault ("transcripts, sentiment tags") | No survey collects video; Forsta returns no transcripts or sentiment, that part is invented |
+| Menu F, live data feed | A feed is set up in Forsta (a write) and acknowledging it (`datafeed/{feed}/ack`) moves it on; CIP refreshes through the pipeline by design (low CPU, low IOPS) |
+
+Decision: build none of the six menus now. If a survey ever has layouts, datasources, a choice exercise, other
+languages or videos, the daily records show it first (the counts on Forsta → Account), and that screen is built then.
+The document is kept out of the repository; this section is its reviewed summary.

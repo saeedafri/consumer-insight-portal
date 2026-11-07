@@ -568,7 +568,14 @@ def crosstab_payload(survey_id: int, qcode: str, cuts: tuple, weeks: int) -> Pay
         return to_payload(payloads.crosstab_from(survey_id, qcode, cuts, pool, parts))
     # a published wave's cuts folder lists every question it has (etl/publish.py): one missing from it (an "other,
     # please specify" text) is not in the wave, so say so now instead of a 1–5 s database round trip to the same 404
-    if survey_id not in parts and (PUBLISHED / "api" / "v1" / "waves" / str(survey_id) / "cuts").is_dir():
+    folder = PUBLISHED / "api" / "v1" / "waves" / str(survey_id) / "cuts"
+    if survey_id not in parts and folder.is_dir():
+        # q1 or XM3 typed in another case (an API key, the MCP connector): the files are named as the wave spells the
+        # code, and a case-sensitive disk would say 404 where /results answers; no two codes of a wave differ by case
+        spelt = next((p.name.removesuffix(".json.gz") for p in folder.iterdir()
+                      if p.name.lower() == f"{qcode.lower()}.json.gz" and p.name != f"{qcode}.json.gz"), None)
+        if spelt:
+            return crosstab_payload(survey_id, spelt, cuts, weeks)
         raise LookupError("That question is not in that wave")
     return to_payload(payloads.crosstab(survey_id, qcode, cuts, weeks))
 

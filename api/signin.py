@@ -6,7 +6,7 @@
                     and nonce checked, the email mapped to a role, client and tier (shared/core/access.py)
   /auth/logout      the session revoked (sql/008_access.sql), the cookie dropped, the provider's session ended
                     (CIP_OIDC_LOGOUT_URL, with the ID token as id_token_hint), then the home page
-  /auth/dev-login   the demo sign-in as any email: only with CIP_DEMO_LOGIN=1, never implied by APP_ENV
+  /auth/dev-login   the demo sign-in as any email: only with CIP_DEMO_LOGIN=1 and no provider, never implied by APP_ENV
   /auth/check       nginx's auth_request (deploy/nginx.conf)
 
 Provider settings: CIP_OIDC_ISSUER (e.g. https://login.microsoftonline.com/<tenant>/v2.0), CIP_OIDC_CLIENT_ID,
@@ -51,7 +51,9 @@ ID_TOKEN = "cip_id_token"    # the provider's ID token, kept for /auth/logout: c
 
 
 def demo() -> bool:
-    return os.environ.get("CIP_DEMO_LOGIN") == "1"
+    """The demo sign-in (any email, no password): only with CIP_DEMO_LOGIN=1 and no identity provider configured. With
+    one, anyone could type anyone's email on a public address (staging, 7 Nov 2026), so the provider always wins."""
+    return os.environ.get("CIP_DEMO_LOGIN") == "1" and provider() is None
 
 
 def provider() -> dict | None:

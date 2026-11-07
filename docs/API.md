@@ -89,7 +89,7 @@ what you made.
 
 The full machine-readable description is at `GET /api/v1/openapi.json`.
 
-**Answers.** JSON, gzip-compressed when you accept it. Errors are `{"detail": "…", "status": n}`: `401` no or revoked
+**Question codes** may be written in any case (`XM3` or `xm3`). **Answers.** JSON, gzip-compressed when you accept it. Errors are `{"detail": "…", "status": n}`: `401` no or revoked
 key, `403` not on your menu ("Not included in your subscription") or a survey you may not see, `404` not found, `429`
 too many requests, `503` busy (retry after the seconds in `Retry-After`).
 
