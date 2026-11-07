@@ -119,6 +119,7 @@ async def list_waves(who: dict, family: str = "", limit: int = 20) -> list[dict]
 
 async def question_results(who: dict, survey_id: int, qcode: str, weighted: bool = False) -> dict:
     from api import main
+    main.require_feature(who, "explorer")   # the Question explorer's own rule, as on the screen and the API
     wave = await main.visible(who, int(survey_id))
     book = await run_in_threadpool(main.book_data, int(survey_id))
     question = next((q for q in (book or {}).get("questions", []) if q["id"].lower() == str(qcode).lower()), None)

@@ -111,6 +111,8 @@ def user(request: Request) -> dict:
     who = session and access.profile(session["email"])
     if not who:
         raise HTTPException(401, "Sign in required")
+    if session["scope"] != access.scope(who) or session["expires"] < stale_before():   # access changed since sign-in
+        request.state.cookie = issue(who["email"], ",".join(session["products"]), sid=session["sid"], scope=access.scope(who))
     person = {**who, "products": session["products"], "sid": session["sid"]}
     request.state.email, request.state.person = who["email"], person   # the team routes record who did what
     return person
@@ -303,13 +305,25 @@ async def dev_login(request: Request, email: str = "analyst@coresight.com", next
     return await signed_in(request, who, "demo", next) if who else refused(request, email)
 
 
+STARTED = time.time()
+
+
+def stale_before() -> int:
+    """A sign-in cookie expiring before this was issued before access last changed (the Access page, or this server's
+    start, which may follow a config change): its scope may say "sees everything" for someone who no longer does. nginx
+    then stops serving files to it directly and the API, which checks access on every request, answers and re-issues
+    the cookie (user()). This is how a trial that ends mid-session closes at once, without a database read per file."""
+    return int(max(STARTED, access.MANAGED.get("changed", 0)) + SESSION_HOURS * 3600)
+
+
 def share_revoked() -> None:
-    """The revoked hashes for nginx (CIP_REVOKED_FILE, read by deploy/cip_auth.js), when nginx serves files itself."""
+    """For nginx (CIP_REVOKED_FILE, read by deploy/cip_auth.js), when nginx serves files itself: the revoked session
+    hashes, and the line "access-before <time>" (stale_before)."""
     path = os.environ.get("CIP_REVOKED_FILE")
     if path:
         part = f"{path}.{os.getpid()}"
         with open(part, "w") as f:
-            f.write("\n".join(sorted(REVOKED)))
+            f.write("\n".join([f"access-before {stale_before()}", *sorted(REVOKED)]))
         os.replace(part, path)
 
 

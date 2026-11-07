@@ -29,5 +29,7 @@ what it does, why it exists, and who calls it, without anyone explaining.
   opens a page; what people open is a prebuilt file nginx sends in milliseconds.
 - Every calculation leaves one test behind that fails if it breaks; numbers that reproduce a report are checked against
   that report (tests/test_weekly_report.py checks Figure 6 of the 3 Nov 2026 PDF).
-- Before finishing: run the ponytail audit on what you wrote (/ponytail-review), review it as a second reader
-  (/code-review), run the full test suite and the frontend type-check, and look at any screen you touched in a browser.
+- Every time you write code: review it with ponytail at ultra level (/ponytail ultra, then /ponytail-review on the
+  diff) and apply what it finds, so no unnecessary line stays; say in the report what it cut.
+- Before finishing: review it as a second reader (/code-review), run the full test suite and the frontend type-check,
+  and look at any screen you touched in a browser.

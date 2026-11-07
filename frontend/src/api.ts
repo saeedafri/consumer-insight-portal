@@ -1,5 +1,5 @@
 // The FastAPI contract (api/main.py) and one cached hook per endpoint.
-import { QueryClient, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, QueryClient, useQuery } from "@tanstack/react-query";
 import { perf } from "./perf";
 import { moves } from "./moves";
 import { useWeighted, weigh } from "./weight";
@@ -123,6 +123,7 @@ async function get<T>(url: string): Promise<T> {
     });
 
     if (r.status === 401) signIn();
+    if (r.status === 403 && url !== "/api/v1/me") void queries.invalidateQueries({ queryKey: ["me"] });   // access may have changed: redraw the menu
     if (r.status === 503) throw new Busy();   // admission control: the query client waits and retries
     // the status rides on the error, so a screen can tell "not there" (404) from a failure without reading the wording
     if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`), { status: r.status });
@@ -259,6 +260,10 @@ export async function send<T>(method: "POST" | "DELETE", url: string, body?: unk
   return (r.status === 204 ? null : r.json()) as T;
 }
 
+/** The signed-in person's API keys (Account page): never the key itself, which is shown once when made. */
+export interface ApiKey { shown: string; name: string; created: string }
+export const useKeys = () => useQuery({ queryKey: ["keys"], queryFn: () => get<{ keys: ApiKey[] }>("/api/v1/keys") });
+
 export interface TeamView { view_id: number; name: string; url: string; note: string | null; saved_by: string; created_at: string }
 export interface Alert { alert_id: number; name: string; qcode: string; answer_label: string; dim: string; dim_value: string; against: "prior" | "ly";
                          created_by: string; created_at: string; last_fired: number | null }
@@ -285,7 +290,10 @@ export const useAudiences = () => useQuery({ queryKey: ["audiences"], queryFn: (
 /** The signed-in person (api /me). null before the API serves it: every screen then shows every feature. */
 export interface Me { email: string; name: string | null; role: string | null; tier: string | null; client: string | null; features: string[] | "*" | null; permissions?: string[] }
 const loadMe = () => get<Me>("/api/v1/me").catch(() => null);
-export const useMe = () => useQuery({ queryKey: ["me"], queryFn: loadMe, staleTime: Infinity, gcTime: Infinity });
+/** Who is signed in and what they may open. Re-read when the tab comes back into view, every 5 minutes, and at once after
+ *  any refusal (get), so a menu taken away (a trial ended) disappears without a page refresh; the data itself is
+ *  refused by the server at once either way (api/signin.py user, deploy/cip_auth.js). */
+export const useMe = () => useQuery({ queryKey: ["me"], queryFn: loadMe, staleTime: 60_000, refetchInterval: 300_000, gcTime: Infinity });
 /** A feature (config/access.yml: explorer, crosstab, trends, search, ask, export, boards, audiences, alerts, saved_views…)
  *  is shown unless the session lists features and this one is not among them ("*" = all). */
 export const allowed = (me: Me | null | undefined, feature: string) => {
@@ -354,7 +362,8 @@ export const useFieldwork = (full: boolean) => useQuery({ queryKey: ["fieldwork"
 
 /** The Forsta admin screens (screens/Forsta.tsx), built by etl/fieldwork.py publish_forsta from what Forsta gave. */
 export interface ForstaLine { key: string; path: string; title: string | null; launched: string | null; state: string | null; hibernated: boolean;
-  survey_id: number | null; reports: number; banners: number; files: number; splits: string[]; launch_warnings: number; warnings: Record<string, number> }
+  survey_id: number | null; reports: number; banners: number; files: number; splits: string[]; launch_warnings: number; warnings: Record<string, number>;
+  check: { tables: number; cells: number; equal: number; differs: number } | null }
 export interface ForstaOverview {
   surveys: ForstaLine[]; warnings_summary: Record<string, string | number | null>[];
   deletion: { path: string; title: string; date_of_deletion: string; days_until_deletion: number; created_on: string; created_by: string;
@@ -364,26 +373,37 @@ export interface ForstaOverview {
   endpoints: [string, string, string | null][]; not_loaded: { path: string; title: string | null; state: string | null }[]; collected: string | null;
 }
 export interface ForstaReport { id: string; title: string | null; description: string | null; access: string | null; updated: number | null; ran: boolean;
+  exports: ("excel" | "pdf" | "pptx")[]; error: string | null; export_errors: Record<string, string>;
   columns: string[]; banner: string | null; tables: { label: string; title: string | null; rows: (string | number)[][] }[] }
 export interface ForstaSurvey {
   path: string; title: string | null; hibernated: boolean; files: { filename: string; size: number; modified: string }[];
   banners: { title: string | null; segments: [string | null, string | null][] }[]; reports: ForstaReport[];
   splits: Record<string, { segments: string[]; rows: Record<string, (number | null)[]> }>;
   launch_warnings: Record<string, unknown[]>; warnings: { counts: Record<string, number>; events: [string, string, string | null, string | null][] };
+  /** Forsta's own cross-tab against CIP's figures (etl/fieldwork.py check): [question, answer, Forsta, CIP] for each difference */
+  check: { tables: number; cells: number; equal: number; differs: [string, string, number, number | null][]; not_compared: string[]; cip_only: string[] } | null;
+  check_error: string | null;
 }
 export const useForsta = () => useQuery({ queryKey: ["forsta"], ...forever, retry: false, queryFn: () => admin<ForstaOverview>("/api/v1/admin/forsta") });
 export const useForstaSurvey = (key: string) => useQuery({ queryKey: ["forsta", key], ...forever, retry: false, enabled: !!key,
   queryFn: () => admin<ForstaSurvey>(`/api/v1/admin/forsta/${key}`) });
-/** A saved report's Excel file as Forsta exported it, saved to the person's computer. */
-export async function downloadForstaReport(key: string, report: string, name: string) {
-  const r = await fetch(`/api/v1/admin/forsta/${key}/export/${report}`, { credentials: "same-origin", headers: adminToken() });
+const EXTENSION = { excel: "xlsx", pdf: "pdf", pptx: "pptx" };
+/** A saved report's file (Excel, PDF or PowerPoint) as Forsta exported it, saved to the person's computer. */
+export async function downloadForstaReport(key: string, report: string, name: string, format: keyof typeof EXTENSION) {
+  const r = await fetch(`/api/v1/admin/forsta/${key}/export/${report}?format=${format}`, { credentials: "same-origin", headers: adminToken() });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`);
-  const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await r.blob()), download: `${name}.xlsx` });
+  const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await r.blob()), download: `${name}.${EXTENSION[format]}` });
   link.click();
   URL.revokeObjectURL(link.href);
 }
 
 /** The Access screen (super admin): every switchable menu, and each role's current choice (api/main.py roles). */
-export interface RoleMenus { features: { key: string; label: string }[]; roles: { role: string; features: string[]; chosen: boolean }[] }
-export const useRoles = () => useQuery({ queryKey: ["roles"], retry: false, queryFn: () => admin<RoleMenus>("/api/v1/admin/roles") });
-export const saveRole = (role: string, features: string[]) => admin<{ role: string; features: string[] }>(`/api/v1/admin/roles/${role}`, "PUT", { features });
+/** A role ("analyst"), a client ("client:acme") or one person ("person:ana@acme.com"), with their menus. */
+export interface RoleMenus { features: { key: string; label: string }[];
+  roles: { role: string; kind: "role" | "client" | "person"; label: string; features: string[]; chosen: boolean }[] }
+export const useRoles = (person = "") => useQuery({ queryKey: ["roles", person], retry: false, placeholderData: keepPreviousData,
+  queryFn: () => admin<RoleMenus>(`/api/v1/admin/roles${person ? `?person=${encodeURIComponent(person)}` : ""}`) });
+export const saveRole = (role: string, features: string[]) =>
+  admin<{ role: string; features: string[] }>(`/api/v1/admin/roles/${encodeURIComponent(role)}`, "PUT", { features });
+/** A client or person back to the menus they inherit (their role's, or their client's). */
+export const forgetRole = (role: string) => admin<{ role: string }>(`/api/v1/admin/roles/${encodeURIComponent(role)}`, "DELETE");

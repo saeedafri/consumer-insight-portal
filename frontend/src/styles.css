@@ -951,3 +951,16 @@ code.cond { font-size: 12px; color: var(--ink-2); word-break: break-word; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
 .muted.small { font-size: 12px; margin-top: 8px; }
 @media (max-width: 860px) { .report-split { grid-template-columns: 1fr; } .report-list ul { max-height: 220px; } }
+.downloads { display: flex; flex-wrap: wrap; gap: 6px; }   /* a team report's Excel, PDF and PowerPoint buttons */
+/* the Access page's targets: roles, clients, people, and the box to add a person (screens/Access.tsx) */
+.access-targets { display: grid; gap: 12px; margin: 14px 0; }
+.access-group { display: grid; gap: 6px; }
+.access-group .rail-label { padding: 0; color: var(--ink-2); font-weight: 600; }
+.access-add { display: flex; flex-wrap: wrap; gap: 8px; }
+.access-add input { flex: 1 1 260px; max-width: 420px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+.access-who { margin: 8px 0 0; font: var(--t-h3); font-weight: 700; }
+.access-who .sub { font-weight: 400; font-size: 13px; color: var(--ink-2); }
+/* the Account page's new key, shown once (components/ApiKeys.tsx) */
+.key-made { border: 1px solid var(--red); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; background: var(--red-wash); }
+.key-made p { margin: 0 0 8px; }
+code.key { display: block; padding: 8px 10px; margin-bottom: 8px; background: var(--surface); border-radius: 6px; word-break: break-all; font-size: 13px; }

@@ -46,7 +46,7 @@ from sqlalchemy import inspect, text
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from shared.core import access, audit
+from shared.core import access, api_keys, audit
 from shared.core.database import apply_sql, get_engine
 from shared.data import payloads
 from api import assistant, exports, logs, mcp, metrics, signin, team
@@ -327,8 +327,10 @@ async def visible(who: dict, survey_id: int) -> dict:
     return wave
 
 
-def require_feature(who: dict, feature: str) -> None:
-    if not access.allows(who, feature):
+def require_feature(who: dict, *features: str) -> None:
+    """403 unless the person's menus include one of `features`: the same rule as their left menu (components/Shell.tsx),
+    their API keys and the MCP connector (api/mcp.py), so no way in shows more than the screens do."""
+    if not any(access.allows(who, feature) for feature in features):
         raise HTTPException(403, "Not included in your subscription")
 
 
@@ -408,6 +410,7 @@ def _boards() -> dict:
 @app.get("/api/v1/waves/{survey_id}/results")
 async def results(survey_id: int, request: Request, q: str, dim: str = "total", who: dict = Depends(user)) -> Response:
     """Finished rows for any questions × cuts of one wave, e.g. ?q=XM3,XM1&dim=total,generation."""
+    require_feature(who, "explorer")   # as the MCP connector's question_results
     await visible(who, survey_id)
     qcodes, dims = tuple(sorted(set(q.split(",")))[:20]), tuple(sorted(set(dim.split(",")))[:8])
     return send_payload(request, await cached_payload((SERVING, survey_id, qcodes, dims), lambda: to_payload(payloads.results(survey_id, qcodes, dims))))
@@ -416,6 +419,7 @@ async def results(survey_id: int, request: Request, q: str, dim: str = "total", 
 @app.get("/api/v1/schedule")
 async def schedule(request: Request, who: dict = Depends(user)) -> Response:
     """The data team's launch plan, week by week, against what Forsta fielded (etl/launch_schedule.py)."""
+    require_feature(who, "schedule")
     if SCHEDULE is None:
         raise HTTPException(503, "The schedule is loading", headers={"Retry-After": "3"})
     return send_payload(request, SCHEDULE)
@@ -573,7 +577,7 @@ async def question(family: str, study_type: str, qcode: str, request: Request, w
     """One question across every wave of its family and every cut, in compact columns: Compare and Trends pick waves
     and cuts from it on screen. The ETL publishes one per question (a static read); others are built once and cached.
     Someone who may not see every wave of the family gets the file without those waves."""
-    require_feature(who, "trends")
+    require_feature(who, "trends", "compare", "audiences")   # the three screens that read a question across waves
     scope = access.scope(who)
     def build() -> Payload:
         found = published_file("questions", family, study_type, qcode)
@@ -692,21 +696,27 @@ async def forsta_survey(key: str, request: Request, who: dict = Depends(admin)) 
     return send_payload(request, found)
 
 
+FORSTA_FILES = {"excel": ("saved_export", "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                "pdf": ("saved_pdf", "pdf", "application/pdf"),
+                "pptx": ("saved_pptx", "pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation")}
+
+
 @app.get("/api/v1/admin/forsta/{key}/export/{report}")
-async def forsta_export(key: str, report: str, who: dict = Depends(admin)) -> Response:
-    """A saved report as the Excel file Forsta exported (a read-only POST, kept by the ETL in cip_forsta_record).
-    Read from the database: an admin's rare download, not worth a file in every published version."""
-    if not report.isalnum():
+async def forsta_export(key: str, report: str, format: str = "excel", who: dict = Depends(admin)) -> Response:
+    """A saved report as the file Forsta exported (Excel, PDF or PowerPoint: read-only POSTs, kept by the ETL in
+    cip_forsta_record). Read from the database: an admin's rare download, not worth a file in every published version."""
+    if not report.isalnum() or format not in FORSTA_FILES:
         raise HTTPException(404)
+    kind, extension, media = FORSTA_FILES[format]
     def read() -> bytes | None:
         with get_engine("app").connect() as conn:
             return conn.execute(text("SELECT payload FROM cip_forsta_record WHERE forsta_path = :p AND kind = :k"),
-                                {"p": key.replace(".", "/"), "k": f"saved_export:{report}"}).scalar()
+                                {"p": key.replace(".", "/"), "k": f"{kind}:{report}"}).scalar()
     payload = await run_in_threadpool(read)
     if payload is None:
-        raise HTTPException(404, "Forsta has not exported this report yet")
-    return Response(gzip.decompress(payload), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    headers={"Content-Disposition": f'attachment; filename="{key}-{report}.xlsx"', "Cache-Control": "private, no-store"})
+        raise HTTPException(404, f"Forsta has not exported this report as {format.upper()}")
+    return Response(gzip.decompress(payload), media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{key}-{report}.{extension}"', "Cache-Control": "private, no-store"})
 
 
 @app.get("/api/v1/fieldwork")
@@ -723,35 +733,70 @@ async def fieldwork_shared(request: Request, who: dict = Depends(user)) -> Respo
 ROLE_SAVE_FAILED = "The menus were not saved: the database did not accept it. Nothing changed; try again in a minute."
 
 
+@app.get("/api/v1/keys")
+async def my_keys(who: dict = Depends(user)) -> dict:
+    """The signed-in person's API keys (the Account page): name, first characters and date, never the key."""
+    return {"keys": await run_in_threadpool(api_keys.mine, who["email"])}
+
+
+@app.post("/api/v1/keys")
+async def make_key(request: Request, who: dict = Depends(user)) -> dict:
+    """Make an API key for the signed-in person (the Account page). It acts as them, with their access as it is at each
+    request, for the API and the MCP connector. Shown once, here; only its SHA-256 is kept. A key cannot make keys."""
+    if who["sid"] == "api-key":
+        raise HTTPException(403, "Sign in to the portal to make API keys")
+    name = " ".join(str((await team.json_body(request)).get("name") or "").split())[:60]
+    if not name:
+        raise HTTPException(422, "Give the key a name, such as the tool it is for")
+    if len(await run_in_threadpool(api_keys.mine, who["email"])) >= api_keys.MOST:
+        raise HTTPException(409, f"You have {api_keys.MOST} keys: revoke one first")
+    token = await run_in_threadpool(api_keys.new, who["email"], name)
+    audit.record(request, "api_key_made", who=who, detail={"name": name, "shown": token[:8]})
+    return {"key": token, "name": name}
+
+
+@app.delete("/api/v1/keys/{shown}")
+async def revoke_key(shown: str, request: Request, who: dict = Depends(user)) -> dict:
+    """Revoke one of the signed-in person's own keys: it stops working at once."""
+    if who["sid"] == "api-key":
+        raise HTTPException(403, "Sign in to the portal to revoke API keys")
+    if not await run_in_threadpool(api_keys.revoke, who["email"], shown):
+        raise HTTPException(404, "No such key of yours")
+    audit.record(request, "api_key_revoked", who=who, detail={"shown": shown})
+    return {"revoked": shown}
+
+
 @app.get("/api/v1/admin/roles")
-async def roles(who: dict = Depends(admin)) -> dict:
-    """The Access screen: every switchable feature (its name), and each role's current menus (the super admin's choice
-    in cip_role_access, else its package's). The super admin is not listed: they always have everything."""
+async def roles(person: str = "", who: dict = Depends(admin)) -> dict:
+    """The Access screen: every switchable feature (its name), and the menus of each role, each client in
+    config/access.yml, and each person given menus of their own (the super admin's choice in cip_role_access, else
+    what they inherit: shared/core/access.py inherited), plus `person` (an email typed on the screen) with what they
+    inherit now. The super admin is not listed: they always have everything."""
     if not access.can(who, "manage_roles"):
         raise HTTPException(403, "Only the super admin manages roles")
     rules = access.rules()
     labels = rules.get("feature_labels") or {}
     chosen = await run_in_threadpool(access.managed_features)
-    listed = [role for role, said in (rules.get("roles") or {}).items() if said.get("permissions") != access.EVERYTHING]
-    def package(role: str) -> list[str]:   # what the role gets without a choice: staff's tier for analysts
-        said = rules.get("staff") if role == "analyst" else rules.get("unknown")   # `unknown` may be the word "refuse"
-        tier = said.get("tier", "core") if isinstance(said, dict) else "core"
-        features = rules["tiers"][tier]["features"]
-        features = rules["features"] if features == access.EVERYTHING else features
-        return [f for f in features if f not in rules.get("chosen_only", [])]
+    targets = [(role, "role", role) for role, said in (rules.get("roles") or {}).items() if said.get("permissions") != access.EVERYTHING]
+    targets += [(f"client:{cid}", "client", c.get("name") or cid) for cid, c in (rules.get("clients") or {}).items()]
+    people = {key for key in chosen if key.startswith("person:")} | ({f"person:{person.strip().lower()}"} if person else set())
+    targets += [(key, "person", key[7:]) for key in sorted(people)]
     return {"features": [{"key": f, "label": labels.get(f, f)} for f in rules["features"]],
-            "roles": [{"role": role, "features": chosen.get(role, package(role)), "chosen": role in chosen} for role in listed]}
+            "roles": [{"role": key, "kind": kind, "label": label, "features": got, "chosen": key in chosen} for key, kind, label in targets
+                      if (got := chosen[key] if key in chosen else access.inherited(key)) is not None]}
 
 
 @app.put("/api/v1/admin/roles/{role}")
 async def save_role(role: str, request: Request, who: dict = Depends(admin)) -> dict:
-    """Save one role's menus from the Access screen (cip_role_access, created on the first save). Every API worker
-    reads it within 30 s; an analyst's left menu follows on their next page load. Recorded in the access log."""
+    """Save the menus of a role ("analyst"), a client ("client:acme") or one person ("person:ana@acme.com") from the
+    Access screen (cip_role_access, created on the first save). A person's choice beats their client's, which beats
+    their role's (access.menus). Applies at once to the portal, the API and the MCP connector (signin.stale_before).
+    Recorded in the access log."""
     if not access.can(who, "manage_roles"):
         raise HTTPException(403, "Only the super admin manages roles")
-    said = (access.rules().get("roles") or {}).get(role)
-    if said is None or said.get("permissions") == access.EVERYTHING:
-        raise HTTPException(404, "No such role to manage")
+    role = role.strip().lower()
+    if access.inherited(role) is None:
+        raise HTTPException(404, "No such role, client or person to manage")
     body = await team.json_body(request)
     known = access.rules()["features"]
     features = [f for f in known if f in (body.get("features") or [])]   # only real features, in the catalogue's order
@@ -768,9 +813,34 @@ async def save_role(role: str, request: Request, who: dict = Depends(admin)) -> 
     except Exception as exc:   # noqa: BLE001
         log.warning("Role %s not saved: %s", role, exc)
         raise HTTPException(503, ROLE_SAVE_FAILED)
-    access.MANAGED["at"] = -1e9   # this worker reads it again at once
+    return applied(request, who, role, features)
+
+
+def applied(request: Request, who: dict, role: str, features: list[str] | None) -> dict:
+    """After the Access screen saved or dropped menus: this worker re-reads them at once, nginx stops trusting older
+    "sees everything" cookies now (signin.stale_before), and the change is recorded in the access log."""
+    access.MANAGED["at"], access.MANAGED["changed"] = -1e9, time.time()
+    signin.share_revoked()
     audit.record(request, "role_change", who=who, target=role, detail={"features": features})
-    return {"role": role, "features": features}
+    return {"role": role, "features": features if features is not None else access.inherited(role)}
+
+
+@app.delete("/api/v1/admin/roles/{role}")
+async def forget_role(role: str, request: Request, who: dict = Depends(admin)) -> dict:
+    """Drop a client's or a person's own menus (the Access screen's "Use the inherited menus"): they get their
+    role's, or their client's, again at once."""
+    if not access.can(who, "manage_roles"):
+        raise HTTPException(403, "Only the super admin manages roles")
+    role = role.strip().lower()
+    def drop() -> None:
+        with get_engine("api_write").begin() as conn:
+            conn.execute(text("DELETE FROM cip_role_access WHERE role = :r"), {"r": role})
+    try:
+        await run_in_threadpool(drop)
+    except Exception as exc:   # noqa: BLE001
+        log.warning("Role %s not dropped: %s", role, exc)
+        raise HTTPException(503, ROLE_SAVE_FAILED)
+    return applied(request, who, role, None)
 
 
 @app.get("/api/v1/admin/health")
@@ -872,6 +942,9 @@ async def every_request(request: Request, call_next):
             return failed(413, f"The request body is larger than {MAX_BODY // 1024} KB")
     start = time.perf_counter()
     response = await call_next(request)
+    if fresh := getattr(request.state, "cookie", None):   # signin.user(): access changed since sign-in, same session
+        response.set_cookie(signin.COOKIE, fresh, httponly=True, samesite="lax", secure=signin.https(request),
+                            max_age=signin.SESSION_HOURS * 3600)
     duration_ms = (time.perf_counter() - start) * 1000.0
     headers = response.headers
     headers["Server-Timing"] = f"total;dur={duration_ms:.2f}"

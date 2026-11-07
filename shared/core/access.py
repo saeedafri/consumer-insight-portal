@@ -14,6 +14,7 @@ cookie carries the person's scope so nginx can tell a person who sees everything
 from __future__ import annotations
 
 import json
+from datetime import timezone
 import time
 from functools import lru_cache
 
@@ -53,13 +54,42 @@ def profile(email: str) -> dict | None:
         tier = "enterprise"
     package = r["tiers"][tier]
     features = r["features"] if package["features"] == EVERYTHING else list(package["features"])
-    chosen = managed_features().get(role) if "all_features" not in permissions_of(role) else None
-    if chosen is not None:                             # the super admin's choice on the Access screen wins
-        features = [f for f in r["features"] if f in chosen]
-    elif "all_features" not in permissions_of(role):   # until chosen, no package includes a chosen_only feature
-        features = [f for f in features if f not in r.get("chosen_only", [])]
+    if "all_features" not in permissions_of(role):     # the super admin's choice on the Access screen, else the package
+        features = menus([f"person:{email}", f"client:{client}", role], tier)
     return {"email": email, "role": role, "tier": tier, "client": client, "features": features,
             "study_types": package["study_types"]}
+
+
+def menus(choosers: list[str], tier: str) -> list[str]:
+    """The features of the first of `choosers` the super admin chose menus for on the Access screen (cip_role_access:
+    a person, then their client, then their role), else the tier's package without the chosen_only features. The one
+    rule for the portal, the API and the MCP connector: all of them call profile()."""
+    r, managed = rules(), managed_features()
+    chosen = next((managed[c] for c in choosers if c in managed), None)
+    if chosen is not None:
+        return [f for f in r["features"] if f in chosen]
+    package = r["tiers"][tier]["features"]
+    return [f for f in (r["features"] if package == EVERYTHING else package) if f not in r.get("chosen_only", [])]
+
+
+def inherited(target: str) -> list[str] | None:
+    """What a target of the Access screen ("analyst", "client:acme", "person:ana@x.com") gets with no choice of its
+    own: a person their client's or role's menus, a client the client role's, a role its package. None: no such target."""
+    r = rules()
+    kind, _, name = target.partition(":")
+    if kind == "person":
+        who = profile(name)
+        if not who or "all_features" in permissions_of(who["role"]):
+            return None
+        return menus([f"client:{who['client']}", who["role"]], who["tier"])
+    if kind == "client":
+        found = (r.get("clients") or {}).get(name)
+        return menus(["client"], found.get("tier", "core")) if found else None
+    said = (r.get("roles") or {}).get(target)
+    if said is None or said.get("permissions") == EVERYTHING:
+        return None
+    default = r.get("staff") if target == "analyst" else r.get("unknown")   # `unknown` may be the word "refuse"
+    return menus([], default.get("tier", "core") if isinstance(default, dict) else "core")
 
 
 def permissions_of(role: str) -> set[str]:
@@ -80,8 +110,10 @@ def managed_features() -> dict[str, list[str]]:
         try:
             from shared.core.database import get_engine   # here, not on top: the ETL reads access without the API's tables
             with get_engine("app").connect() as conn:
-                rows = conn.execute(text("SELECT role, features FROM cip_role_access")).all()
-            MANAGED["roles"] = {role: json.loads(features) for role, features in rows}
+                rows = conn.execute(text("SELECT role, features, updated_at FROM cip_role_access")).all()
+            MANAGED["roles"] = {role: json.loads(features) for role, features, _ in rows}
+            # when access last changed (UTC): sign-in cookies older than this are re-checked (api/signin.stale_before)
+            MANAGED["changed"] = max([MANAGED.get("changed", 0)] + [when.replace(tzinfo=timezone.utc).timestamp() for *_, when in rows if when])
         except Exception:   # noqa: BLE001   no table yet, or the database out of reach: keep what was read last
             pass
         MANAGED["at"] = time.monotonic()

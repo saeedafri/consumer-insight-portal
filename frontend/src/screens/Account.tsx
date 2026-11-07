@@ -2,6 +2,7 @@
 // signed in, what their access includes, their saved items, and the theme. A first, simple draft.
 import { Link } from "react-router";
 import { allowed, useAlerts, useMe, useTeamViews } from "../api";
+import ApiKeys from "../components/ApiKeys";
 import { Card } from "../components/bits";
 import { savedViews } from "../saved";
 import { setTheme, useTheme } from "../theme";
@@ -46,6 +47,8 @@ export default function Account() {
       {row("Alerts", `${alerts.length} watching for changes`)}
       {row("Boards", <Link to="/boards">Open your boards</Link>)}
     </Card>
+
+    <ApiKeys />
 
     <Card title="Preferences">
       {row("Theme", <span className="seg" role="group" aria-label="Theme">

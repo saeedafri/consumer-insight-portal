@@ -138,3 +138,17 @@ def test_packed_logs_are_listed_and_only_they_can_be_downloaded(tmp_path, monkey
         with pytest.raises(HTTPException) as refused:
             logs.archive(name, ADMIN)
         assert refused.value.status_code == 404
+
+
+def test_an_old_traceback_is_not_counted_as_a_problem_in_every_time_range(tmp_path, monkeypatch):
+    """Gunicorn writes "[2026-11-06 19:21:15 +0000] [ERROR] …" and then an undated traceback; the traceback once read as
+    minute "TracebackT(mostT", which sorts after every date, so a day-old error showed in every range (7 Nov 2026)."""
+    monkeypatch.setattr(logs, "LOGS", tmp_path)
+    now = metrics.datetime.now(metrics.timezone.utc)
+    old = (now - metrics.timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+    fresh = now.strftime("%Y-%m-%d %H:%M:%S")
+    (tmp_path / "api.log").write_text(f"[{old} +0000] [62] [ERROR] Exception in ASGI application\nTraceback (most recent call last):\n"
+                                      f"  File \"api/signin.py\", line 70, in discovery\n[{fresh} +0000] [63] [ERROR] Worker timeout\n")
+    assert metrics.minute_of("Traceback (most recent call last):") == "" and metrics.minute_of(f"[{old} +0000] x") == old[:16].replace(" ", "T")
+    found = metrics.problems(now.strftime("%Y-%m-%dT%H:%M")[:-2] + "00")
+    assert [p["line"][-14:] for p in found] == ["Worker timeout"]

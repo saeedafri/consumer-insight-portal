@@ -123,6 +123,15 @@ export function Empty({ children }: { children: ReactNode }) {
 export const eastern = (at: Date, parts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) =>
   at.toLocaleString("en-US", { timeZone: "America/New_York", timeZoneName: "short", ...parts });
 
+/** A server time (always UTC: "2026-11-07 09:05:11", "2026-11-07T08:52", "…Z") in Indian Standard Time, as the admin
+ *  team reads it: "7 Nov 2026, 14:35 IST". Logs, Fieldwork and the Forsta screens show every time this way. */
+export const ist = (utc: string | null | undefined, withYear = true) => {
+  if (!utc) return "–";
+  const at = new Date(/Z$|[+-]\d\d:?\d\d$/.test(utc) ? utc : `${utc.replace(" ", "T")}Z`);
+  return Number.isNaN(at.getTime()) ? utc : `${at.toLocaleString("en-GB", { timeZone: "Asia/Kolkata", day: "numeric", month: "short",
+    ...(withYear ? { year: "numeric" } : {}), hour: "2-digit", minute: "2-digit", hour12: false })} IST`;
+};
+
 /** The line competitors put under every chart (YouGov, OWID, Civiqs): who, when, how many, how tested. */
 const PLATFORM = { forsta: "Forsta", qualtrics: "Qualtrics", surveymonkey: "SurveyMonkey" };
 const utc = (at: string) => new Date(at.replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(at) ? "" : "Z"));

@@ -152,7 +152,9 @@ class ForstaClient:
     @retry(
         retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout, ForstaBusy)),
         wait=wait_exponential(multiplier=2, min=2, max=60),
-        stop=lambda state: state.attempt_number >= state.args[0].max_retries,   # FORSTA_MAX_RETRIES (default 4)
+        # FORSTA_MAX_RETRIES (default 4); a read-only POST once: Forsta's errors there repeat (a report too wide for a
+        # PDF page), and the next run asks again
+        stop=lambda state: state.attempt_number >= (1 if state.kwargs.get("_body") is not None else state.args[0].max_retries),
         reraise=True,
     )
     def _get(self, endpoint: str, *, _stream: bool = False, _body: dict | None = None, **params: Any) -> requests.Response:

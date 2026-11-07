@@ -1,8 +1,11 @@
 """API keys for the public API and the MCP connector: `Authorization: Bearer cip_…` instead of a sign-in cookie.
 
-A key acts as the person it was issued to, with their access (config/access.yml): the same surveys, features and
-rate limits. Only a SHA-256 of each key is kept, in CIP_API_KEYS (default ~/.config/cip/api_keys.yml, outside the
-repository); the key itself is shown once, when it is made.
+A key acts as the person it was issued to, with their access as it is at each request (shared/core/access.py
+profile: the same surveys, features, menus chosen on the Access page and rate limits as their sign-in): taking a
+feature away from someone takes it from their keys at once. Each person makes and revokes their own keys on the
+Account page (api/main.py /api/v1/keys); a key cannot make keys. Only a SHA-256 of each key is kept, in a file:
+CIP_API_KEYS, else /home/cip/api_keys.yml on Azure (permanent storage: survives deploys), else
+~/.config/cip/api_keys.yml. No database read per request: the file is re-read only when it changes.
 
     python -m shared.core.api_keys new ana@coresight.com "Ana's Claude"
     python -m shared.core.api_keys list
@@ -20,13 +23,19 @@ import yaml
 
 from shared.core.session import digest   # the same SHA-256 the session ids are kept as
 
-FILE = Path(os.environ.get("CIP_API_KEYS") or Path.home() / ".config/cip/api_keys.yml")
+FILE = Path(os.environ.get("CIP_API_KEYS") or ("/home/cip/api_keys.yml" if Path("/home/cip").is_dir() else Path.home() / ".config/cip/api_keys.yml"))
+MOST = 10   # keys per person: enough for a few tools, few enough to keep track of
 PREFIX = "cip_"
-_cache: dict = {"mtime": None, "keys": {}}
+_cache: dict = {"mtime": None, "keys": {}, "checked": -1e9}
+CHECK_EVERY = 5   # seconds between looks at the file: /home is network storage on Azure, a look per request costs
 
 
 def keys() -> dict:
-    """{sha256: {email, name, shown, created}}, re-read when the file changes."""
+    """{sha256: {email, name, shown, created}}, re-read when the file changes (looked at every CHECK_EVERY seconds;
+    this process's own saves apply at once)."""
+    if time.monotonic() - _cache["checked"] < CHECK_EVERY:
+        return _cache["keys"]
+    _cache["checked"] = time.monotonic()
     try:
         mtime = FILE.stat().st_mtime
     except OSError:
@@ -50,6 +59,24 @@ def save(found: dict) -> None:
     tmp.write_text(yaml.safe_dump(found, sort_keys=False))
     os.chmod(tmp, 0o600)
     tmp.replace(FILE)
+    _cache.update(mtime=FILE.stat().st_mtime, keys=found, checked=time.monotonic())   # a revoked key stops at once
+
+
+def mine(email: str) -> list[dict]:
+    """One person's keys, newest first, as the Account page lists them (never the key itself)."""
+    email = email.strip().lower()
+    return sorted(({"shown": k["shown"], "name": k["name"], "created": k["created"]} for k in keys().values() if k["email"] == email),
+                  key=lambda k: k["created"], reverse=True)
+
+
+def revoke(email: str, shown: str) -> bool:
+    """Revoke one of this person's own keys, by the first characters the list shows. False: no such key of theirs."""
+    email = email.strip().lower()
+    found = {h: k for h, k in keys().items() if not (k["email"] == email and k["shown"] == shown)}
+    if len(found) == len(keys()):
+        return False
+    save(found)
+    return True
 
 
 def new(email: str, name: str) -> str:

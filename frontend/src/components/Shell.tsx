@@ -31,6 +31,7 @@ const FEATURE: Record<string, string> = { questions: "explorer", crosstab: "cros
 const FORSTA_ICONS: Record<string, string> = {   // the Forsta group's icons (forstaSections.ts names the pages)
   reports: "M5 3h14v18H5zm3 4h8v2H8zm0 4h8v2H8zm0 4h5v2H8z",
   crosstab: "M3 3h18v18H3zm2 2v4h4V5zm6 0v4h8V5zM5 11v8h4v-8zm6 0v8h8v-8z",
+  check: "M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z",
   samples: "M7 2h10v20H7zm2 2v14h6V4zm2 15h2v1h-2z",
   warnings: "M12 2l10 18H2zm-1 7v5h2V9zm0 7v2h2v-2z",
   files: "M6 2h8l6 6v14H6zm7 1v6h6",

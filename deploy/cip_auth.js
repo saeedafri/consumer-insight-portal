@@ -1,7 +1,8 @@
 // The sign-in check nginx runs before every data file (deploy/nginx.conf, location /_auth): the same rule as
 // app/core/session.read — an HMAC-SHA256 signed "email|products|expires|session id|scope" cookie that has not expired
 // and was not revoked — so a burst of thousands of people never queues on the Python API just to prove who they are.
-//   204  signed in, and sees every survey and feature (scope "*"): nginx may serve the shared published file
+//   204  signed in, and sees every survey and feature (scope "*") with a cookie issued after access last changed:
+//        nginx may serve the shared published file
 //   403  signed in, but filtered (a client, or a smaller tier): nginx hands the request to the API (error_page 403 = @api)
 //   401  not signed in
 import crypto from 'crypto';
@@ -10,15 +11,15 @@ import fs from 'fs';
 const SECRET = process.env.CIP_SESSION_SECRET || '';
 const REVOKED = process.env.CIP_REVOKED_FILE || '';   // hashes of revoked session ids, one per line, written by the API
 
-function revoked(sid) {
+// The API's file: "access-before <time>" (api/signin.stale_before), then the revoked session hashes
+function shared() {
     if (!REVOKED) {
-        return false;
+        return '';
     }
     try {
-        const hash = crypto.createHash('sha256').update(sid).digest('hex');
-        return fs.readFileSync(REVOKED, 'utf8').indexOf(hash) !== -1;
+        return fs.readFileSync(REVOKED, 'utf8');
     } catch (e) {
-        return false;   // no file yet: nothing revoked
+        return '';   // no file yet: nothing revoked
     }
 }
 
@@ -42,11 +43,15 @@ function status(raw) {
     const value = Buffer.from(raw.slice(0, dot), 'base64url').toString();
     const expected = crypto.createHmac('sha256', SECRET).update(value).digest('base64url');
     const parts = value.split('|');
-    if (!same(raw.slice(dot + 1), expected) || parts.length !== 5
-            || Number(parts[2]) < Date.now() / 1000 || revoked(parts[3])) {
+    const file = shared();
+    if (!same(raw.slice(dot + 1), expected) || parts.length !== 5 || Number(parts[2]) < Date.now() / 1000
+            || file.indexOf(crypto.createHash('sha256').update(parts[3]).digest('hex')) !== -1) {
         return 401;
     }
-    return parts[4] === '*' ? 204 : 403;
+    // a "sees everything" cookie issued before access last changed (a trial ended, a menu removed) is not trusted:
+    // the API answers with the person's access now and re-issues the cookie (api/signin.py user)
+    const changed = Number((file.match(/^access-before (\d+)/m) || [0, 0])[1]);
+    return parts[4] === '*' && Number(parts[2]) >= changed ? 204 : 403;
 }
 
 // Each cookie's answer is remembered for 60 s (the "sessions" zone, deploy/nginx.conf): the check above with its

@@ -3,6 +3,11 @@ shape, security headers and the audit log (api/signin.py, shared/core/access.py,
 import asyncio
 import gzip
 import json
+import os
+import shutil
+import subprocess
+import time
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
@@ -442,3 +447,116 @@ def test_fieldwork_stays_with_admins_until_the_super_admin_turns_it_on_for_a_rol
     status, _, _ = call("/api/v1/admin/roles/analyst", boss, "PUT", json.dumps({"features": roles["analyst"]["features"] + ["fieldwork"]}).encode())
     assert status == 200 and call("/api/v1/fieldwork", ana)[0] == 200                          # the shared file: no emails
     assert call("/api/v1/admin/fieldwork", ana)[0] == 403                                      # the deletion schedule stays with admins
+
+
+
+def test_a_trial_that_ends_closes_at_once_without_a_page_refresh(portal, monkeypatch, tmp_path):
+    """An analyst signed in an hour ago with a "sees everything" cookie; the super admin takes the Sector databank away.
+    The API refuses at once (it checks access on every request), hands back a cookie that no longer says "sees
+    everything", and tells nginx that older such cookies are stale, so nginx stops serving files to it directly."""
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
+    monkeypatch.setenv("CIP_REVOKED_FILE", str(tmp_path / "revoked"))
+    boss, ana = signed("boss@coresight.com"), session.issue("ana@coresight.com", hours=11, scope="*")
+    put(portal, "sectors", {"sectors": []})
+    assert call("/api/v1/sectors", ana)[0] == 200
+    roles = {r["role"]: r for r in json.loads(call("/api/v1/admin/roles", boss)[2])["roles"]}
+    keep = [f for f in roles["analyst"]["features"] if f != "sectors"]
+    assert call("/api/v1/admin/roles/analyst", boss, "PUT", json.dumps({"features": keep}).encode())[0] == 200
+    status, headers, _ = call("/api/v1/sectors", ana)
+    fresh = next(c for c in headers["set-cookie"] if c.startswith(signin.COOKIE)).split("=", 1)[1].split(";")[0]
+    assert status == 403 and session.read(fresh)["scope"] != "*" and session.read(fresh)["sid"] == session.read(ana)["sid"]
+    cutoff = int((tmp_path / "revoked").read_text().splitlines()[0].split()[1])
+    assert session.read(ana)["expires"] < cutoff <= session.read(fresh)["expires"]   # nginx: the old cookie goes to the API
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not installed")
+def test_nginx_trusts_a_sees_everything_cookie_only_if_it_was_issued_after_access_last_changed(tmp_path, monkeypatch):
+    """deploy/cip_auth.js itself, run by node with nginx's two objects stubbed: 204 serve the file, 403 ask the API."""
+    secret, now = "test-secret", int(time.time())
+    (tmp_path / "revoked").write_text(f"access-before {now + 12 * 3600}\n")
+    monkeypatch.setenv("CIP_SESSION_SECRET", secret)
+    cookies = {"old_everything": session.issue("ana@coresight.com", hours=11, scope="*"),
+               "new_everything": session.issue("ana@coresight.com", hours=13, scope="*"),
+               "new_filtered": session.issue("pat@acme.com", hours=13, scope="acme:core"), "forged": "abc.def"}
+    script = tmp_path / "run.mjs"
+    script.write_text("globalThis.ngx = { shared: { sessions: { get() {}, set() {} } } };\n"
+                      f"const auth = (await import({json.dumps((Path(__file__).resolve().parents[1] / 'deploy/cip_auth.js').as_uri())})).default;\n"
+                      f"const cookies = {json.dumps(cookies)};\n"
+                      "const out = {};\n"
+                      "for (const [name, c] of Object.entries(cookies)) auth.check({ variables: { cookie_cip_session: c }, headersIn: {}, return: s => { out[name] = s; } });\n"
+                      "console.log(JSON.stringify(out));\n")
+    run = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=30,
+                         env={**os.environ, "CIP_SESSION_SECRET": secret, "CIP_REVOKED_FILE": str(tmp_path / "revoked")})
+    assert json.loads(run.stdout) == {"old_everything": 403, "new_everything": 204, "new_filtered": 403, "forged": 401}, run.stderr
+
+
+
+def test_menus_for_one_client_or_one_employee_beat_their_role_everywhere(portal, monkeypatch):
+    """The super admin gives Acme (a client) and then one Acme person their own menus: a person's choice beats their
+    client's, which beats their role's; dropping a person's choice gives them their client's again. The API refuses
+    what the menu hides, so the portal, the API keys and the MCP connector all follow the one rule (access.menus)."""
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
+    boss, pat = signed("boss@coresight.com"), signed("pat@acme.com")
+    put(portal, "sectors", {"sectors": []})
+    targets = {r["role"]: r for r in json.loads(call("/api/v1/admin/roles", boss)[2])["roles"]}
+    assert targets["client:acme"]["kind"] == "client" and "sectors" in targets["client:acme"]["features"]
+    assert call("/api/v1/sectors", pat)[0] == 200
+    acme = [f for f in targets["client:acme"]["features"] if f != "sectors"]
+    assert call("/api/v1/admin/roles/client:acme", boss, "PUT", json.dumps({"features": acme}).encode())[0] == 200
+    assert call("/api/v1/sectors", pat)[0] == 403 and "sectors" not in access.profile("pat@acme.com")["features"]
+    assert call("/api/v1/admin/roles/person:pat@acme.com", boss, "PUT", json.dumps({"features": acme + ["sectors"]}).encode())[0] == 200
+    assert call("/api/v1/sectors", pat)[0] == 200                                     # Pat's own trial
+    assert "sectors" not in access.profile("other@acme.com")["features"]              # the rest of Acme still without
+    people = [r for r in json.loads(call("/api/v1/admin/roles", boss)[2])["roles"] if r["kind"] == "person"]
+    assert [p["role"] for p in people] == ["person:pat@acme.com"] and people[0]["chosen"]
+    assert call("/api/v1/admin/roles/person:pat@acme.com", boss, "DELETE")[0] == 200   # the trial ends
+    assert call("/api/v1/sectors", pat)[0] == 403
+    assert call("/api/v1/admin/roles/person:nobody@unknown.org", boss, "PUT", b'{"features": []}')[0] == 404
+    assert call("/api/v1/admin/roles/person:boss@coresight.com", boss, "PUT", b'{"features": []}')[0] == 404   # the super admin
+    assert call("/api/v1/admin/roles/client:acme", pat, "PUT", b'{"features": []}')[0] == 403
+
+
+
+def test_each_person_makes_their_own_keys_and_a_key_has_exactly_their_access_now(portal, monkeypatch, tmp_path):
+    """Ana makes a key on the Account page; it works for the API and the MCP connector as Ana. When the super admin
+    hides a menu from Ana, her key loses it at the same moment as her screens. A key cannot make keys, nobody can
+    revoke someone else's, and a revoked key stops at once."""
+    from shared.core import api_keys
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
+    monkeypatch.setattr(api_keys, "FILE", tmp_path / "keys.yml")
+    monkeypatch.setitem(api_keys._cache, "checked", -1e9)
+    boss, ana, pat = signed("boss@coresight.com"), signed("ana@coresight.com"), signed("pat@acme.com")
+    status, _, body = call("/api/v1/keys", ana, "POST", b'{"name": "Ana\'s Claude"}')
+    key = json.loads(body)["key"]
+    assert status == 200 and key.startswith("cip_") and key not in (tmp_path / "keys.yml").read_text()
+    listed = json.loads(call("/api/v1/keys", ana)[2])["keys"]
+    assert [k["name"] for k in listed] == ["Ana's Claude"] and "key" not in listed[0]
+    bearer = {"authorization": f"Bearer {key}"}
+    put(portal, "sectors", {"sectors": []})
+    assert call("/api/v1/sectors", headers=bearer)[0] == 200
+    assert call("/api/v1/keys", method="POST", body=b'{"name": "more"}', headers=bearer)[0] == 403   # a key makes no keys
+    hidden = [f for f in access.profile("ana@coresight.com")["features"] if f not in ("sectors", "explorer")]
+    assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": hidden}).encode())[0] == 200
+    assert call("/api/v1/sectors", headers=bearer)[0] == 403 and call("/api/v1/sectors", ana)[0] == 403   # key and screen alike
+    ask = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "question_results", "arguments": {"survey_id": 1, "qcode": "q1"}}})
+    answer = json.loads(call("/mcp", method="POST", body=ask.encode(), headers=bearer)[2])["result"]
+    assert answer["isError"] and "subscription" in answer["content"][0]["text"]         # the MCP connector alike
+    assert call(f"/api/v1/keys/{listed[0]['shown']}", pat, "DELETE")[0] == 404           # not Pat's key
+    assert call(f"/api/v1/keys/{listed[0]['shown']}", ana, "DELETE")[0] == 200
+    assert call("/api/v1/waves", headers=bearer)[0] == 401                                # revoked: stops at once
+
+
+def test_the_api_refuses_exactly_what_the_menus_hide(portal, monkeypatch):
+    """Launch schedule, a wave's results (the Question explorer's, also read by the MCP connector) and a question across
+    waves (Trends, Compare waves and Audiences all read it): each answers only when one of its screens is on the menu."""
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
+    boss, ana = signed("boss@coresight.com"), signed("ana@coresight.com")
+    everything = access.profile("ana@coresight.com")["features"]
+    def menus(*hidden):
+        keep = [f for f in everything if f not in hidden]
+        assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": keep}).encode())[0] == 200
+    menus("schedule", "explorer", "trends")
+    assert call("/api/v1/schedule", ana)[0] == 403 and call("/api/v1/waves/1/results?q=q1", ana)[0] == 403
+    assert call("/api/v1/questions/CSI-US/tracker/q1", ana)[0] != 403          # Compare waves still reads it
+    menus("trends", "compare", "audiences")
+    assert call("/api/v1/questions/CSI-US/tracker/q1", ana)[0] == 403

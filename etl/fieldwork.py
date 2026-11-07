@@ -119,9 +119,65 @@ def question_titles(xml: str | None) -> dict[str, str]:
             for node in root.iter() if node.tag.split("}")[-1] in QUESTION_TAGS and node.get("label") and node.find("title") is not None}
 
 
-def survey_page(record: dict) -> dict:
+def plain_text(label) -> str:
+    """An answer's text as both Forsta and CIP can match it: no HTML or entities, single spaces, any case."""
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", str(label or ""))).split()).casefold()
+
+
+def check(forsta: dict | None, survey_id: int | None) -> dict | None:
+    """Forsta's own cross-tab against CIP's figures, everyone qualified, cell by cell: for each question (each row of
+    a grid) its base and how many gave each answer. Why: CIP recounts every answer from Forsta's raw data export, so an
+    independent count by Forsta itself proves the load lost or doubled nobody. Forsta's internal tables (quota and
+    routing variables CIP does not show) are listed as not compared, never hidden."""
+    if not forsta or not survey_id:
+        return None
+    with get_engine("app").connect() as conn:
+        rows = conn.execute(text(
+            "SELECT r.qcode, r.qtype, i.item_code, r.item_label, r.option_label, r.n, r.base_n FROM srv_result r"
+            " LEFT JOIN cip_item i ON i.item_id = r.item_id WHERE r.survey_id = :s AND r.dim = 'total'"), {"s": survey_id}).all()
+    cip: dict[str, dict] = {}   # Forsta's table name (q1$, AP8$r1) → {answer: people, "(base)": base}
+    for qcode, qtype, item_code, item, option, people, base in rows:
+        grid = qtype.startswith("grid")
+        table = f"{qcode}${item_code[len(qcode):]}" if grid and item_code else f"{qcode}$"
+        counts = cip.setdefault(table, {"(base)": base})
+        counts[plain_text(option if grid or qtype == "single" else item)] = people
+    tables, differs, cells, equal, skipped = 0, [], 0, 0, []
+    for table, answers in forsta.items():
+        if table not in cip:
+            skipped.append(table.rstrip("$"))
+            continue
+        tables += 1
+        mine = cip[table]
+        for i, row in enumerate(answers):
+            label = "(base)" if i == 0 or plain_text(row[0]) == "count" else plain_text(row[0])   # Count: Forsta's "answering", the base again
+            theirs, ours = row[2], mine.get(label)
+            cells += 1
+            if theirs == ours:
+                equal += 1
+            elif not (i and theirs == 0 and ours is None):   # an answer nobody gave: CIP keeps no row for it
+                differs.append([table.rstrip("$"), "Base" if label == "(base)" else row[0], theirs, ours])
+            else:
+                equal += 1
+    return {"tables": tables, "cells": cells, "equal": equal, "differs": differs, "not_compared": sorted(skipped),
+            "cip_only": sorted(t.rstrip("$") for t in cip if t not in forsta)}
+
+
+def exported() -> dict[str, dict[str, list[str]]]:
+    """Which files Forsta exported for each saved report: {survey path: {report id: ["excel", "pdf", "pptx"]}}."""
+    formats = {kind: fmt for fmt, kind in EXPORTS.items()}
+    found: dict[str, dict[str, list[str]]] = {}
+    with get_engine("app").connect() as conn:
+        for path, kind in conn.execute(text("SELECT forsta_path, kind FROM cip_forsta_record WHERE kind LIKE 'saved_%:%'")):
+            prefix, _, rid = kind.partition(":")
+            if prefix in formats:
+                found.setdefault(path, {}).setdefault(rid, []).append(formats[prefix])
+    return found
+
+
+def survey_page(record: dict, survey_id: int | None = None, files: dict | None = None) -> dict:
     """Everything the Forsta admin screens show for one survey (api/v1/admin/forsta/<key>): the team's banners, its
-    saved reports run by Forsta, the funnel by sample source and device, warnings, launch checks and files."""
+    saved reports run by Forsta (with the files Forsta exported, or Forsta's reason it could not), the funnel by
+    sample source and device, warnings, launch checks, files, and Forsta's cross-tab checked against CIP."""
     banners = [{"title": b.get("title"), "segments": [[g.get("title"), g.get("cond")] for g in b.get("segments") or []]}
                for b in (record.get("banners") or {}).get("banners") or []]
     titles = question_titles(record.get("survey_xml"))
@@ -131,7 +187,10 @@ def survey_page(record: dict) -> dict:
         tables = runs.get(report.get("id")) or {}
         width = max((len(row) for rows in tables.values() for row in rows[:1]), default=1) // 2   # columns: a % and a count each
         banner = next((b for b in banners if len(b["segments"]) == width), None)
+        errors = record.get("saved_errors") or {}
         reports.append({"id": report.get("id"), "title": report.get("title"), "description": report.get("description"),
+                        "exports": sorted((files or {}).get(report.get("id"), [])), "error": errors.get(report.get("id")),
+                        "export_errors": {fmt: errors[f"{report.get('id')}:{fmt}"] for fmt in EXPORTS if f"{report.get('id')}:{fmt}" in errors},
                         "access": report.get("access"), "updated": report.get("updated_on"), "ran": bool(tables),
                         "columns": [g[0] for g in banner["segments"]] if banner else [f"Column {i + 1}" for i in range(width)],
                         "banner": banner and banner["title"],
@@ -147,7 +206,9 @@ def survey_page(record: dict) -> dict:
             "warnings": {"counts": warnings.get("counts") or {},
                          "events": [[e.get("timestamp"), e.get("type"), (e.get("details") or {}).get("reason"), (e.get("details") or {}).get("message")]
                                     for e in warnings.get("events") or []]},
-            "hibernated": (record.get("hibernation") or {}).get("status") == "hibernated"}
+            "hibernated": (record.get("hibernation") or {}).get("status") == "hibernated",
+            "check": check(survey_part(record["path"], "crosstab_check"), survey_id),
+            "check_error": (record.get("saved_errors") or {}).get("crosstab")}
 
 
 def ours(company: dict, kind: str):
@@ -159,16 +220,17 @@ def ours(company: dict, kind: str):
 def publish_forsta(out: Path, write, kept: dict, company: dict, waves: dict, not_loaded: list) -> int:
     """The Forsta admin screens (frontend/src/screens/Forsta.tsx): api/v1/admin/forsta (the company's records and one
     line per survey) and api/v1/admin/forsta/<key> per survey (survey_page). Everything Forsta gave, grouped."""
-    size, lines = 0, []
+    size, lines, files = 0, [], exported()
     for path, record in kept.items():
-        page = survey_page(record)
+        page = survey_page(record, (waves.get(path) or {}).get("survey_id"), files.get(path))
         size += write(out / "api/v1/admin/forsta" / page_key(path), page)
         info = record.get("survey") or {}
         lines.append({"key": page_key(path), "path": path, "title": page["title"], "launched": info.get("dateLaunched"),
                       "state": info.get("state"), "hibernated": page["hibernated"], "survey_id": (waves.get(path) or {}).get("survey_id"),
                       "reports": len(page["reports"]), "banners": len(page["banners"]), "files": len(page["files"]),
                       "splits": list(page["splits"]), "launch_warnings": sum(len(v) for v in page["launch_warnings"].values()),
-                      "warnings": page["warnings"]["counts"]})
+                      "warnings": page["warnings"]["counts"],
+                      "check": page["check"] and {k: page["check"][k] for k in ("tables", "cells", "equal")} | {"differs": len(page["check"]["differs"])}})
     lines.sort(key=lambda line: line["launched"] or "", reverse=True)
     return size + write(out / "api/v1/admin/forsta", {
         "surveys": lines, "warnings_summary": company.get("warnings_summary") or [],
@@ -187,7 +249,7 @@ def records() -> dict[str, dict]:
     with get_engine("app").connect() as conn:
         for path, kind, fetched, payload in conn.execute(text(
                 "SELECT forsta_path, kind, fetched_at, payload FROM cip_forsta_record"
-                " WHERE kind <> 'saved_runs' AND kind NOT LIKE 'saved_export:%'")):
+                " WHERE kind NOT IN ('saved_runs', 'crosstab_check') AND kind NOT LIKE 'saved_%:%'")):   # only the files have a colon
             body = gzip.decompress(payload)
             found.setdefault(path, {"path": path})[kind] = body.decode("utf-8", "replace") if kind == "survey_xml" else json.loads(body)
             found[path]["fetched_at"] = max(str(fetched), found[path].get("fetched_at", ""))
@@ -200,7 +262,7 @@ def snapshot(client, path: str) -> dict:
     kinds = {"survey": client.read_json(SURVEY_READS["survey"].format(path=path)),
              "hibernation": client.read_json("hibernation/status", survey=path)}
     if kinds["hibernation"].get("status") == "hibernated":
-        kinds["split_completions"] = None   # marks it read: nothing more can be read until Forsta wakes it
+        kinds["crosstab_check"] = None   # marks it read: nothing more can be read until Forsta wakes it
         return kinds
     for kind, endpoint in SURVEY_READS.items():
         if kind not in kinds:
@@ -218,28 +280,44 @@ def snapshot(client, path: str) -> dict:
             kinds["split_completions"][name] = client.read_json(f"surveys/{path}/summary/completions", split=name)
         except Exception as exc:   # noqa: BLE001
             log.info("Fieldwork: the %s split of %s not read: %s", name, path, str(exc)[:120])
-    kinds.update(saved_reports(client, path, kinds))
+    kinds.update(computations(client, path, kinds))
     return kinds
 
 
-def saved_reports(client, path: str, kinds: dict) -> dict:
-    """The research team's saved Forsta reports, run by Forsta (their tables) and exported (the Excel file), through
-    the read-only POSTs only (etl/forsta_client.py read_post). Then the proof that nothing changed: the survey's last
-    edit is read again and must be the one read before; if it moved, it is logged as an error for the admins."""
-    runs, found = {}, {}
+EXPORTS = {"excel": "saved_export", "pdf": "saved_pdf", "pptx": "saved_pptx"}   # format: kind prefix (saved_export:<id> is the Excel)
+
+
+def computations(client, path: str, kinds: dict) -> dict:
+    """What Forsta computes for CIP, through the read-only POSTs only (etl/forsta_client.py read_post): its own
+    cross-tab of every question for everyone qualified (crosstab_check, compared with CIP's figures in check()), and
+    each of the team's saved reports run (saved_runs) and exported as Excel, PDF and PowerPoint (saved_export:<id>,
+    saved_pdf:<id>, saved_pptx:<id>). A report Forsta cannot run keeps Forsta's reason (saved_errors), e.g. a report
+    copied from another survey that asks about a question this one does not have. Then the proof that nothing
+    changed: the survey's last edit and state are read again and must match; if not, an error for the admins."""
+    found, runs, errors = {}, {}, {}
+    try:
+        found["crosstab_check"] = client.read_post(f"surveys/{path}/crosstabs/execute",
+                                                   {"segments": [{"cond": "(ALL)", "title": "Total"}], "simplified": True}).json()
+    except Exception as exc:   # noqa: BLE001
+        errors["crosstab"] = str(exc)[-300:]
     for report in kinds.get("saved_reports") or []:
         rid = report.get("id")
         try:
             runs[rid] = client.read_post(f"surveys/{path}/crosstabs/saved/{rid}/execute", {"simplified": True}).json()
-            found[f"saved_export:{rid}"] = client.read_post(f"surveys/{path}/crosstabs/saved/{rid}/export/excel", {}).content
         except Exception as exc:   # noqa: BLE001
-            log.info("Fieldwork: saved report %s of %s not run: %s", rid, path, str(exc)[:120])
-    found["saved_runs"] = runs
-    if runs:
-        before, after = kinds["survey"], client.read_json(SURVEY_READS["survey"].format(path=path))
-        if (after.get("lastEdit"), after.get("state")) != (before.get("lastEdit"), before.get("state")):
-            log.error("Fieldwork: %s changed in Forsta while its saved reports were run (last edit %s → %s)",
-                      path, before.get("lastEdit"), after.get("lastEdit"))
+            errors[rid] = str(exc)[-300:]
+            log.info("Fieldwork: saved report %s of %s not run: %s", rid, path, errors[rid])
+            continue
+        for fmt, kind in EXPORTS.items():
+            try:
+                found[f"{kind}:{rid}"] = client.read_post(f"surveys/{path}/crosstabs/saved/{rid}/export/{fmt}", {}).content
+            except Exception as exc:   # noqa: BLE001   e.g. a report too wide for a PDF page (Forsta's layout error)
+                errors[f"{rid}:{fmt}"] = str(exc)[-300:]
+    found["saved_runs"], found["saved_errors"] = runs, errors
+    before, after = kinds["survey"], client.read_json(SURVEY_READS["survey"].format(path=path))
+    if (after.get("lastEdit"), after.get("state")) != (before.get("lastEdit"), before.get("state")):
+        log.error("Fieldwork: %s changed in Forsta while Forsta computed for CIP (last edit %s → %s)",
+                  path, before.get("lastEdit"), after.get("lastEdit"))
     return found
 
 
@@ -263,7 +341,7 @@ def due(loaded: list[str], limit: int | None = PER_RUN) -> list[str]:
         rows = conn.execute(text(
             "SELECT f.forsta_path, f.state FROM cip_forsta_survey f JOIN cip_survey s ON s.source_ref = f.forsta_path"
             " WHERE s.platform = 'forsta' ORDER BY f.launched_at DESC")).all()
-        kept = {p for (p,) in conn.execute(text("SELECT forsta_path FROM cip_forsta_record WHERE kind = 'split_completions'"))}   # the newest kind
+        kept = {p for (p,) in conn.execute(text("SELECT forsta_path FROM cip_forsta_record WHERE kind = 'crosstab_check'"))}   # the newest kind
     live = [path for path, state in rows if state == "live"]
     missing = [path for path, _ in rows if path not in kept][:limit]
     return list(dict.fromkeys([*loaded, *live, *missing]))

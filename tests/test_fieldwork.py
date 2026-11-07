@@ -89,7 +89,7 @@ def test_a_hibernated_survey_is_not_woken_and_a_failure_never_stops_the_run(csi_
     assert fieldwork.collect(Forsta(), ["asleep", "broken", "fine"]) == ["asleep", "fine"]
     assert not any("asleep" in e for e in asked if not e.startswith("rh/surveys/asleep"))     # only its record: not woken
     kept = fieldwork.records()
-    assert set(kept["asleep"]) == {"path", "fetched_at", "survey", "hibernation", "split_completions"}
+    assert set(kept["asleep"]) == {"path", "fetched_at", "survey", "hibernation"}   # crosstab_check (null) is kept, read by survey_part
     assert "survey_xml" in kept["fine"] and "retention" in kept[""]
 
 
@@ -160,31 +160,67 @@ def test_a_post_that_could_change_a_survey_is_refused_before_it_is_sent():
     assert sent == []
 
 
-def test_saved_reports_run_through_the_read_only_posts_and_a_changed_survey_is_flagged(caplog):
+def test_forsta_computes_through_the_read_only_posts_and_a_changed_survey_is_flagged(caplog):
+    """Forsta's cross-tab, each saved report run and exported three ways; a report Forsta cannot run keeps Forsta's
+    reason; and the survey's last edit is read again afterwards."""
     posted, edits = [], iter(["2026-11-02T19:07:59Z", "2026-11-07T10:00:00Z"])
 
     class Answer:
-        def __init__(self, body):
-            self.body, self.content = body, b"PK-excel"
+        def __init__(self, endpoint):
+            self.endpoint, self.content = endpoint, endpoint.rsplit("/", 1)[-1].encode()
 
         def json(self):
-            return self.body
+            return {"q4$": [["Total", 100.0, 403], ["Walmart", 67.5, 272]]}
 
     class Forsta:
         def read_post(self, endpoint, body):
             posted.append(endpoint)
-            return Answer({"q4$": [["Total", 100.0, 403], ["Walmart", 67.5, 272]]})
+            if "/saved/old/" in endpoint:
+                raise RuntimeError('500: CompileError: Unknown question \'CS3\'')
+            if endpoint.endswith("/pdf"):
+                raise RuntimeError("500: LayoutError: too large on page 6")
+            return Answer(endpoint)
 
         def read_json(self, endpoint, **params):
             return {"lastEdit": next(edits), "state": "closed"}
 
-    kinds = {"survey": {"lastEdit": "2026-11-02T19:07:59Z", "state": "closed"}, "saved_reports": [{"id": "abc", "title": "Total"}]}
-    found = fieldwork.saved_reports(Forsta(), "selfserve/58f/261003", kinds)
-    assert posted == ["surveys/selfserve/58f/261003/crosstabs/saved/abc/execute", "surveys/selfserve/58f/261003/crosstabs/saved/abc/export/excel"]
-    assert found["saved_export:abc"] == b"PK-excel" and found["saved_runs"]["abc"]["q4$"][1] == ["Walmart", 67.5, 272]
+    kinds = {"survey": {"lastEdit": "2026-11-02T19:07:59Z", "state": "closed"}, "saved_reports": [{"id": "abc"}, {"id": "old"}]}
+    found = fieldwork.computations(Forsta(), "s/1", kinds)
+    assert posted == ["surveys/s/1/crosstabs/execute", "surveys/s/1/crosstabs/saved/abc/execute", "surveys/s/1/crosstabs/saved/abc/export/excel",
+                      "surveys/s/1/crosstabs/saved/abc/export/pdf", "surveys/s/1/crosstabs/saved/abc/export/pptx", "surveys/s/1/crosstabs/saved/old/execute"]
+    assert found["crosstab_check"]["q4$"][1] == ["Walmart", 67.5, 272] and found["saved_runs"]["abc"]["q4$"][0][2] == 403
+    assert found["saved_export:abc"] == b"excel" and found["saved_pptx:abc"] == b"pptx" and "saved_pdf:abc" not in found
+    assert "CS3" in found["saved_errors"]["old"] and "LayoutError" in found["saved_errors"]["abc:pdf"]
     assert "changed in Forsta" not in caplog.text                     # the first re-read matches
-    fieldwork.saved_reports(Forsta(), "selfserve/58f/261003", kinds)
-    assert "changed in Forsta while its saved reports were run" in caplog.text
+    fieldwork.computations(Forsta(), "s/1", kinds)
+    assert "changed in Forsta while Forsta computed for CIP" in caplog.text
+
+
+def test_forstas_own_cross_tab_is_checked_against_cips_figures_cell_by_cell(monkeypatch):
+    class Rows:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def all(self):
+            return self.rows
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, *args):
+            return Rows([("q4", "multi", None, "Walmart", None, 272, 403), ("q4", "multi", None, "Costco", None, 50, 403),
+                         ("q6", "grid_single", "q6r1", "Utilities", "Notable decrease", 23, 403)])
+
+    monkeypatch.setattr(fieldwork, "get_engine", lambda role: type("E", (), {"connect": lambda self: Conn()})())
+    forsta = {"q4$": [["Total", 100, 403], ["Walmart", 67.5, 272], ["Costco", 12.4, 51], ["Nobody", 0.0, 0], ["Count", 100, 403]],
+              "q6$r1": [["Total", 100, 403], ["Notable <b>decrease</b>", 5.7, 23]], "vterm$": [["Total", 100, 32]]}
+    result = fieldwork.check(forsta, 532)
+    assert (result["tables"], result["cells"], result["equal"]) == (2, 7, 6)
+    assert result["differs"] == [["q4", "Costco", 51, 50]] and result["not_compared"] == ["vterm"] and result["cip_only"] == []
 
 
 def test_a_saved_reports_columns_take_the_names_of_the_banner_it_was_built_on(monkeypatch):

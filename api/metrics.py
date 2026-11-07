@@ -104,8 +104,11 @@ def page_of(path: str) -> str:
 
 def minute_of(line: str) -> str:
     """The UTC minute a log line starts with, as "2026-11-06T04:49", whatever the writer's style:
-    "2026-11-06 04:55:58,312" (the API, the ETL), "2026/11/06 04:56:04" (nginx), "2026-11-06T04:49:00Z" (start.sh)."""
-    return line[:16].replace("/", "-").replace(" ", "T")
+    "2026-11-06 04:55:58,312" (the API, the ETL), "2026/11/06 04:56:04" (nginx), "2026-11-06T04:49:00Z" (start.sh),
+    "[2026-11-06 19:21:15 +0000]" (gunicorn). "" for a line with no time (a traceback's lines), so no time range
+    takes it: as text "TracebackT(mostT" sorted after every date and showed a 6 Nov error in every range."""
+    stamp = line.lstrip("[")[:16].replace("/", "-").replace(" ", "T")
+    return stamp if re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d", stamp) else ""
 
 
 class Traffic:
@@ -267,12 +270,20 @@ def measure_storage(force: bool = False) -> None:
     if not force and measured and (datetime.now(timezone.utc) - measured).total_seconds() < STORAGE_EVERY:
         return
     disks = []
-    for label, path, meaning in (("Container disk", SRV, "The app's own files, published answers, nginx cache and logs. Emptied on every deploy."),
-                                 ("Azure permanent storage (/home)", Path("/home"), "Survives deploys and restarts: the published-files backup lives here.")):
+    # Both disks are Azure's and shared: "used" counts everything on them, CIP's own part is measured on its own (ours_mb).
+    # The container disk is the App Service worker's local disk (its size is Azure's for the plan, 73 GB on P0v3): the
+    # operating system and every image a deploy pulled (Azure clears old images itself) take most of it. 7 Nov 2026:
+    # 36 GB used, of which CIP's files 0.3 GB; it grew with the six deploys of that day, not with visitors.
+    for label, path, ours, meaning in (
+            ("Azure worker disk (container)", SRV, SRV, "The App Service worker's own disk: Azure sizes it for the plan and fills most of it "
+             "with the operating system and the images each deploy pulls (Azure removes old ones). CIP's files on it are counted separately."),
+            ("Azure permanent storage (/home)", Path("/home"), Path("/home/cip"), "Azure Files, shared by the plan: survives deploys and "
+             "restarts. CIP keeps only the published-files backup here.")):
         usage = shutil.disk_usage(path) if path.exists() else None
         if usage and usage.total:   # an empty mount point (a laptop's /home) is not a disk worth showing
             disks.append({"name": label, "path": str(path), "meaning": meaning, "used_mb": round(usage.used / 2**20),
-                          "total_mb": round(usage.total / 2**20), "used_pct": round(100 * usage.used / max(1, usage.total), 1)})
+                          "total_mb": round(usage.total / 2**20), "used_pct": round(100 * usage.used / max(1, usage.total), 1),
+                          "ours_mb": folder_mb(ours)})
     folders = [{"name": name, "path": str(path), "meaning": meaning, "mb": folder_mb(path)} for name, path, meaning in FOLDERS]
     home, home_measured = STORAGE["home"], STORAGE["home_measured"]
     now = datetime.now(timezone.utc)
@@ -350,7 +361,7 @@ def etl_runs(since: str) -> list[dict]:
 def problems(since: str) -> list[dict]:
     """Error lines from the API, nginx and the ETL in the chosen time range, newest first, each with what it means."""
     found = []
-    for source, word in (("api", " error "), ("api", " critical "), ("api", "traceback"), ("nginx-error", "[error]"), ("nginx-error", "[crit]"),
+    for source, word in (("api", " error "), ("api", " critical "), ("api", "[error]"), ("nginx-error", "[error]"), ("nginx-error", "[crit]"),
                          ("nginx-error", "[alert]"), ("etl", " error "), ("etl", "warning")):
         path = path_of(source)
         if path and path.exists():
@@ -407,10 +418,10 @@ def metrics(minutes: int = Query(60, ge=5, le=KEEP_MINUTES), who: dict = Depends
         {"name": "Browser cache", "where": "Each visitor's browser",
          "meaning": "The browser already had the answer and the server only said \"not modified\" (304). Website files are cached by browsers for a year and never re-asked.",
          "answered": totals["browser"], "share_pct": round(100 * totals["browser"] / max(1, asked), 1), "size": "on each visitor's computer"},
-        {"name": "nginx cache", "where": "Container disk", "meaning": "Answers the API computed once, sent again by nginx without Python.",
+        {"name": "nginx cache", "where": "Azure worker disk (container)", "meaning": "Answers the API computed once, sent again by nginx without Python.",
          "answered": cache["HIT"], "share_pct": round(100 * cache["HIT"] / max(1, asked), 1),
          "detail": dict(cache.most_common())},
-        {"name": "Published files", "where": "Container disk", "meaning": "Answers prepared ahead by the publish step, sent by nginx as files.",
+        {"name": "Published files", "where": "Azure worker disk (container)", "meaning": "Answers prepared ahead by the publish step, sent by nginx as files.",
          "answered": totals["file"], "share_pct": round(100 * totals["file"] / max(1, asked), 1)},
     ]
     caches.append({"name": "API (Python), computed", "where": "API process",

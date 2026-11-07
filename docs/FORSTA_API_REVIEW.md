@@ -49,7 +49,10 @@ and `crosstabs/saved/{saved}/export/{excel|pdf|pptx}` (`READ_ONLY_POSTS` in `etl
 refuses any other endpoint before anything is sent, `tests/test_fieldwork.py` fails if a PUT, PATCH, DELETE or another
 POST is added, and after a survey's saved reports are run `etl/fieldwork.py` re-reads the survey and logs an error if
 its last edit or state moved. Checked live on 261003: last edit and audit log unchanged. The saved reports' tables and
-Excel files are on the admin screen Forsta → Team reports. The other read-only POSTs need emails or links CIP does not
+their Excel, PDF and PowerPoint files are on the admin screen Forsta → Team reports (Forsta's own reason is shown when
+it refuses one: a report copied from another survey that names a question this one lacks, or a 41-column report too
+wide for a PDF page). `crosstabs/execute` runs Forsta's cross-tab of every question for everyone qualified, and
+Forsta → Forsta vs CIP compares it cell by cell with CIP's own count from the raw export (261003: 867 of 867 cells). The other read-only POSTs need emails or links CIP does not
 have, and `POST /surveys/{survey}/data` returns what CIP already reads with GET.
 
 ## 3. Every GET operation, and where CIP uses it

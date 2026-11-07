@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useMe } from "../api";
-import { Card } from "../components/bits";
+import { Card, ist } from "../components/bits";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import { C, LIGHT, useTheme } from "../theme";
 
@@ -23,7 +23,7 @@ interface Counts { requests: number; "2xx": number; "3xx": number; "4xx": number
   file: number; api: number; browser: number; p50_ms: number; p95_ms: number; p99_ms: number }
 interface CacheLayer { name: string; where: string; meaning: string; answered?: number; share_pct?: number; size_mb?: number | null;
   size?: string; entries?: number; detail?: Record<string, number> }
-interface Disk { name: string; path: string; meaning: string; used_mb: number; total_mb: number; used_pct: number }
+interface Disk { name: string; path: string; meaning: string; used_mb: number; total_mb: number; used_pct: number; ours_mb?: number | null }
 interface Folder { name: string; path: string; meaning: string; mb: number | null }
 interface Metrics {
   since: string; now: string; machine: Sample[]; traffic: (Counts & { minute: string })[];
@@ -54,8 +54,7 @@ const rate = (n: number) => num(n, n < 1 ? 2 : 1);
 const CACHE_STATES: Record<string, string> = { HIT: "sent from the cache", MISS: "not in the cache yet (the API answered, then it was kept)",
   EXPIRED: "kept too long, asked the API again", STALE: "an older copy sent while the API was busy", UPDATING: "an older copy sent while it was refreshed",
   REVALIDATED: "checked with the API, still current", BYPASS: "not cacheable, the API answered" };
-const when = (iso: string) => new Date(iso.endsWith("Z") || iso.includes("+") ? iso : `${iso.replace(" ", "T")}Z`)
-  .toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const when = (iso: string) => ist(iso, false);
 const RANGES = [{ minutes: 15, label: "15 min" }, { minutes: 60, label: "1 h" }, { minutes: 360, label: "6 h" }, { minutes: 1440, label: "24 h" }];
 const NO_SAMPLES = "Machine samples start a minute after the server starts (deploy/machine-log.sh).";
 const PER_PAGE = 200;
@@ -265,9 +264,10 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
     </Card>
     <Card title="Storage" sub={`Which disk is which, what each folder holds and its size${m.storage.measured ? `; measured ${when(m.storage.measured)} (every 5 minutes)` : ""}.`}>
       <div className="table-wrap"><table className="data">
-        <thead><tr><th>Disk</th><th>What lives there</th><th className="num">Used</th><th className="num">Size</th><th className="num">Full</th></tr></thead>
+        <thead><tr><th>Disk</th><th>What lives there</th><th className="num">CIP's files</th><th className="num">Used (all)</th><th className="num">Size</th><th className="num">Full</th></tr></thead>
         <tbody>{m.storage.disks.map(d => <tr key={d.name}>
           <th scope="row">{d.name}<div style={{ ...mono, ...small }}>{d.path}</div></th><td style={small}>{d.meaning}</td>
+          <td className="num"><b>{d.ours_mb == null ? "–" : mb(d.ours_mb)}</b></td>
           <td className="num">{mb(d.used_mb)}</td><td className="num">{mb(d.total_mb)}</td><td className="num">{num(d.used_pct, 1)} %</td>
         </tr>)}</tbody>
       </table></div>
@@ -321,10 +321,10 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
       <p className="muted" style={{ fontSize: 11, marginTop: 8 }}>Places are city-level guesses from the address (an office or a phone network's location, not a person's). <a href="https://db-ip.com" target="_blank" rel="noreferrer">IP Geolocation by DB-IP</a>.</p>
     </Card>
 
-    <Card title="Sign-ins" sub="Who signed in, when (UTC), how, and from which address and approximate place. Newest first.">
+    <Card title="Sign-ins" sub="Who signed in, when (India time, IST), how, and from which address and approximate place. Newest first.">
       {m.sign_ins?.length ? <div className="table-wrap"><table className="data">
-        <thead><tr><th>When (UTC)</th><th>Who</th><th>Role</th><th>How</th><th>Where (approximate)</th><th>Address</th></tr></thead>
-        <tbody>{m.sign_ins.map((x, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{x.time}</td><th scope="row">{x.email}</th>
+        <thead><tr><th>When (IST)</th><th>Who</th><th>Role</th><th>How</th><th>Where (approximate)</th><th>Address</th></tr></thead>
+        <tbody>{m.sign_ins.map((x, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{ist(x.time)}</td><th scope="row">{x.email}</th>
           <td>{x.role}</td><td>{x.method === "demo" ? "demo sign-in" : x.method}</td><td>{x.place || <span className="muted">unknown</span>}</td>
           <td style={mono}>{x.address || "–"}</td></tr>)}</tbody>
       </table></div> : <p className="muted">No sign-ins in this range. (Sign-ins are listed from this build on.)</p>}
@@ -334,9 +334,9 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
     <Card title="Problems in this range" sub="Error and warning lines from the API, nginx and the ETL, each with what it means."
           aside={<span className={`chip ${m.problems.length ? "sig" : "flat"}`}>{m.problems.length} problems</span>}>
       {m.problems.length ? <div className="table-wrap"><table className="data">
-        <thead><tr><th>When (UTC)</th><th>From</th><th>What it means</th><th>The line</th></tr></thead>
+        <thead><tr><th>When (IST)</th><th>From</th><th>What it means</th><th>The line (server time, UTC)</th></tr></thead>
         <tbody>{m.problems.map((p, i) => <tr key={i}>
-          <td style={{ whiteSpace: "nowrap" }}>{p.minute.replace("T", " ")}</td><td><span className="chip sig">{p.source}</span></td>
+          <td style={{ whiteSpace: "nowrap" }}>{ist(p.minute)}</td><td><span className="chip sig">{p.source}</span></td>
           <td style={{ minWidth: 220 }}>{p.meaning || <span className="muted">See the line.</span>}</td>
           <td><details><summary style={small}>show</summary><span style={mono}>{p.line}</span></details></td>
         </tr>)}</tbody>
@@ -345,18 +345,18 @@ function Dashboard({ m, minutes }: { m: Metrics; minutes: number }) {
     <div style={grid(420)}>
       <Card title="Restarts" sub="Each time the container started (a deploy, or Azure restarting it), newest first.">
         {m.restarts.length ? <div className="table-wrap"><table className="data">
-          <thead><tr><th>When (UTC)</th><th>What happened</th><th>Build</th></tr></thead>
-          <tbody>{m.restarts.map((r, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{r.time.replace("T", " ").replace("Z", "")}</td>
+          <thead><tr><th>When (IST)</th><th>What happened</th><th>Build</th></tr></thead>
+          <tbody>{m.restarts.map((r, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{ist(r.time)}</td>
             <td>{r.what}</td><td style={{ ...mono, whiteSpace: "nowrap" }}>{r.build || "–"}</td></tr>)}</tbody>
         </table></div> : <p className="muted">No restarts in this range.</p>}
       </Card>
       <Card title="ETL (data loads)" sub="What the scheduled loads did, newest first. Warnings are things to look at, not outages.">
         {m.etl.length ? <div className="table-wrap"><table className="data">
-          <thead><tr><th>When (UTC)</th><th>Level</th><th>What happened</th></tr></thead>
-          <tbody>{m.etl.map((e, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{e.time}</td>
+          <thead><tr><th>When (IST)</th><th>Level</th><th>What happened</th></tr></thead>
+          <tbody>{m.etl.map((e, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{ist(e.time)}</td>
             <td><span className={`chip ${e.level === "INFO" ? "flat" : "sig"}`}>{e.level === "INFO" ? "ok" : e.level.toLowerCase()}</span></td>
             <td><span style={mono}>{e.message}</span>{e.meaning && <div style={{ ...small, marginTop: 4 }}>{e.meaning}</div>}</td></tr>)}</tbody>
-        </table></div> : <p className="muted">No ETL runs in this range. The loads run daily at 03:30 UTC and Mondays at 12:00 UTC.</p>}
+        </table></div> : <p className="muted">No ETL runs in this range. The loads run daily at 09:00 IST (03:30 UTC) and Mondays at 17:30 IST (12:00 UTC).</p>}
       </Card>
     </div>
   </>;
@@ -433,8 +433,8 @@ function Archives({ headers, token }: { headers: Record<string, string>; token: 
     .catch(() => { /* the list is refreshed on the next visit */ });
   return <Card title="Older logs (packed)" sub="Every log that reached 20 MB, packed as a .zip and kept for good, newest first. Any laptop or phone opens a .zip.">
     {list?.length ? <div className="table-wrap"><table className="data">
-      <thead><tr><th>File</th><th>Packed (UTC)</th><th className="num">Size</th><th /></tr></thead>
-      <tbody>{list.map(a => <tr key={a.name}><th scope="row" style={mono}>{a.name}</th><td>{a.time.replace("T", " ").slice(0, 16)}</td>
+      <thead><tr><th>File</th><th>Packed (IST)</th><th className="num">Size</th><th /></tr></thead>
+      <tbody>{list.map(a => <tr key={a.name}><th scope="row" style={mono}>{a.name}</th><td>{ist(a.time)}</td>
         <td className="num">{bytes(a.bytes)}</td><td className="num"><button className="btn" onClick={() => save(a.name)}>Download</button></td></tr>)}</tbody>
     </table></div> : <p className="muted">{list ? "None yet: a log is packed when it reaches 20 MB." : "Loading…"}</p>}
   </Card>;

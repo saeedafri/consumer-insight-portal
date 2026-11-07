@@ -1,7 +1,9 @@
 // The Forsta admin screens (/app/forsta/<section>, admins only): everything Forsta gives CIP that is not a survey's
 // answers, grouped the way a research team looks for it. Each section is a link in the left menu's "Forsta" group
 // (components/Shell.tsx, from forstaSections.ts):
-//   reports    the team's saved Forsta reports, run by Forsta (a read-only POST) with the Excel file Forsta exported
+//   reports    the team's saved Forsta reports, run by Forsta (a read-only POST) with the Excel, PDF and PowerPoint
+//              files Forsta exported, or Forsta's reason it could not
+//   check      Forsta's own cross-tab of every question against CIP's figures, cell by cell
 //   crosstab   the team's cross-tab banners and the company's cross-tab defaults
 //   samples    the funnel by sample source, operating system, browser and mobile device
 //   warnings   every survey's warnings, one survey's warning events, and its launch checks
@@ -15,7 +17,7 @@ import type { ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { downloadForstaReport, useForsta, useForstaSurvey } from "../api";
 import type { ForstaLine, ForstaOverview, ForstaReport, ForstaSurvey } from "../api";
-import { Card, Empty, Failure, SkeletonScreen } from "../components/bits";
+import { Card, Empty, Failure, ist, SkeletonScreen } from "../components/bits";
 import { fmtDate } from "../stats";
 import { SECTIONS } from "../forstaSections";
 
@@ -36,6 +38,7 @@ export default function Forsta() {
       <p className="lede">{about[2]}</p>
     </div></div>
     {about[0] === "reports" && <WithSurvey data={data} has={l => l.reports > 0} render={s => <Reports survey={s} />} />}
+    {about[0] === "check" && <><CheckSummary data={data} /><WithSurvey data={data} has={l => !!l.check} render={s => <Check survey={s} />} /></>}
     {about[0] === "crosstab" && <><WithSurvey data={data} has={l => l.banners > 0} render={s => <Banners survey={s} />} /><Defaults data={data} /></>}
     {about[0] === "samples" && <WithSurvey data={data} has={l => l.splits.length > 0} render={s => <Samples survey={s} />} />}
     {about[0] === "warnings" && <><CompanyWarnings data={data} /><WithSurvey data={data} has={() => true} render={s => <SurveyWarnings survey={s} />} /></>}
@@ -85,14 +88,17 @@ function Report({ survey, report }: { survey: ForstaSurvey; report: ForstaReport
   const shown = useMemo(() => report.tables.map((t, i) => [t, i] as const)
     .filter(([t]) => !find || `${t.label} ${t.title ?? ""}`.toLowerCase().includes(find.toLowerCase())), [report, find]);
   const current = report.tables[table];
-  const download = () => downloadForstaReport(survey.path.replace(/\//g, "."), report.id, `${survey.path.split("/").pop()} - ${report.title}`)
-    .then(() => setNote(""), e => setNote((e as Error).message));
+  const download = (format: ForstaReport["exports"][number]) => downloadForstaReport(survey.path.replace(/\//g, "."), report.id,
+    `${survey.path.split("/").pop()} - ${report.title}`, format).then(() => setNote(""), e => setNote((e as Error).message));
+  const missing = Object.entries(report.export_errors).map(([format, why]) => `${FORMAT[format]}: ${forstaReason(why)}`);
   return <Card title={report.title || "Untitled report"}
                sub={[report.description, report.access && `${report.access} in Forsta`, report.updated && `updated ${day(new Date(report.updated).toISOString())}`,
                      report.banner ? `columns: the "${report.banner}" banner` : null, `${report.tables.length} tables`].filter(Boolean).join(" · ")}
-               aside={<button className="btn" type="button" onClick={download}>Download Excel</button>}>
+               aside={report.exports.length ? <div className="downloads">{report.exports.map(f =>
+                 <button key={f} className="btn" type="button" onClick={() => download(f)}>{FORMAT[f]}</button>)}</div> : undefined}>
     {note && <p className="muted" role="status">{note}</p>}
-    {!report.ran ? <Empty>Forsta did not run this report on the last collection.</Empty> : <div className="report-split">
+    {missing.length > 0 && <p className="muted small">Forsta could not export: {missing.join(" · ")}</p>}
+    {!report.ran ? <Empty>{report.error ? <>Forsta could not run this report: {forstaReason(report.error)}</> : "Forsta did not run this report on the last collection."}</Empty> : <div className="report-split">
       <div className="report-list">
         <input type="search" placeholder="Find a question" value={find} onChange={e => setFind(e.target.value)} aria-label="Find a question in this report" />
         <ul>{shown.map(([t, i]) => <li key={t.label}>
@@ -113,6 +119,57 @@ function Report({ survey, report }: { survey: ForstaSurvey; report: ForstaReport
       </div>}
     </div>}
   </Card>;
+}
+
+const FORMAT: Record<string, string> = { excel: "Excel", pdf: "PDF", pptx: "PowerPoint" };
+
+/** Forsta's own words for why it refused, without the address and codes around them ("Unknown question 'CS3'"). */
+function forstaReason(error: string) {
+  const said = error.match(/"(?:error|\$error)":\s*"([^"]+)/)?.[1] ?? error;
+  return said.replace(/^Internal error /, "").replace(/^CompileError: /, "").slice(0, 160);
+}
+
+/** Every survey's check in one table: questions compared, cells, and how many differ. */
+function CheckSummary({ data }: { data: ForstaOverview }) {
+  const checked = data.surveys.filter(l => l.check);
+  const cells = checked.reduce((t, l) => t + l.check!.cells, 0), equal = checked.reduce((t, l) => t + l.check!.equal, 0);
+  return <>
+    <div className="grid g3">
+      <div className="card kpi lead"><div className="k-label">Cells that match Forsta</div><div className="k-value">{cells ? `${(100 * equal / cells).toFixed(2)}%` : "–"}</div>
+        <div className="k-note">{n(equal)} of {n(cells)} answer counts and bases</div></div>
+      <div className="card kpi"><div className="k-label">Surveys checked</div><div className="k-value">{n(checked.length)}</div><div className="k-note">of {n(data.surveys.length)} kept from Forsta</div></div>
+      <div className="card kpi"><div className="k-label">Surveys with a difference</div><div className="k-value">{n(checked.filter(l => l.check!.differs).length)}</div>
+        <div className="k-note">each difference is listed below, per survey</div></div>
+    </div>
+    <Card title="Every survey" sub="Forsta's cross-tab of every question for everyone qualified, against CIP's own count from Forsta's raw data.">
+      <div className="table-wrap fieldwork-scroll"><table className="data report-table">
+        <thead><tr><th>Survey</th><th className="num">Questions</th><th className="num">Cells</th><th className="num">Match</th><th className="num">Differ</th></tr></thead>
+        <tbody>{checked.map(l => <tr key={l.key} className={l.check!.differs ? undefined : "past"}>
+          <th scope="row">{l.title ?? l.path}<br /><small className="muted">{day(l.launched)} · {l.path}</small></th>
+          <td className="num">{n(l.check!.tables)}</td><td className="num">{n(l.check!.cells)}</td><td className="num">{n(l.check!.equal)}</td>
+          <td className="num">{l.check!.differs ? <span className="chip sig">{n(l.check!.differs)}</span> : "0"}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </Card>
+  </>;
+}
+
+/** One survey's check: every difference, and the tables only Forsta has (its own quota and routing variables). */
+function Check({ survey }: { survey: ForstaSurvey }) {
+  const c = survey.check;
+  if (!c) return <Empty>{survey.check_error ? `Forsta could not run its cross-tab: ${forstaReason(survey.check_error)}` : "Not checked: this survey is not loaded in CIP."}</Empty>;
+  return <div className="grid g2">
+    <Card title={c.differs.length ? `${n(c.differs.length)} cells differ` : "Every cell matches"} sub={`${n(c.equal)} of ${n(c.cells)} cells across ${n(c.tables)} questions are the same in Forsta and CIP.`}>
+      {c.differs.length ? <div className="table-wrap fieldwork-scroll"><table className="data report-table">
+        <thead><tr><th>Question</th><th>Answer</th><th className="num">Forsta</th><th className="num">CIP</th></tr></thead>
+        <tbody>{c.differs.map(([q, answer, forsta, cip], i) => <tr key={i}><th scope="row">{q}</th><td>{answer}</td><td className="num">{n(forsta)}</td><td className="num">{cip == null ? "not in CIP" : n(cip)}</td></tr>)}</tbody>
+      </table></div> : <p className="muted">Forsta and CIP agree on every answer count and every base.</p>}
+    </Card>
+    <Card title="Not compared" sub="Tables only Forsta has: its own quota, routing and timing variables (v…, status, qtime), and number questions, where Forsta gives a mean and median instead of counts.">
+      <p className="chips">{c.not_compared.map(t => <span key={t} className="tag">{t}</span>)}</p>
+      {c.cip_only.length > 0 && <p className="muted small">In CIP but not in Forsta's cross-tab: {c.cip_only.join(", ")}</p>}
+    </Card>
+  </div>;
 }
 
 /** Every banner the team built: its columns and the condition behind each. */
@@ -173,9 +230,9 @@ function SurveyWarnings({ survey }: { survey: ForstaSurvey }) {
   return <div className="grid g2">
     <Card title="Warning events" sub={WARNING_KINDS.map(([k, label]) => `${label} ${n(survey.warnings.counts[k] ?? 0)}`).join(" · ")}>
       {survey.warnings.events.length ? <div className="table-wrap fieldwork-scroll"><table className="data report-table">
-        <thead><tr><th>When (UTC)</th><th>Kind</th><th>What Forsta said</th></tr></thead>
+        <thead><tr><th>When (IST)</th><th>Kind</th><th>What Forsta said</th></tr></thead>
         <tbody>{survey.warnings.events.map(([when, kind, reason, message], i) => <tr key={i}>
-          <td className="num">{when?.slice(0, 16).replace("T", " ")}</td><td>{kind}{reason ? ` · ${reason}` : ""}</td><td>{message}</td></tr>)}</tbody>
+          <td className="num">{ist(when)}</td><td>{kind}{reason ? ` · ${reason}` : ""}</td><td>{message}</td></tr>)}</tbody>
       </table></div> : <p className="muted">No warning events.</p>}
     </Card>
     <Card title="Launch checks" sub="What Forsta checks before a survey goes live: tasks, imports, translations, offline mode and more.">
@@ -189,9 +246,9 @@ function Files({ survey }: { survey: ForstaSurvey }) {
   const files = [...survey.files].sort((a, b) => b.modified.localeCompare(a.modified));
   return <Card title="Files in Forsta" sub={`${files.length} files, ${size(files.reduce((t, f) => t + f.size, 0))} in all, newest first. CIP keeps survey.xml (the questionnaire's logic).`}>
     <div className="table-wrap fieldwork-scroll tall"><table className="data report-table">
-      <thead><tr><th>File</th><th className="num">Size</th><th className="num">Changed (UTC)</th></tr></thead>
+      <thead><tr><th>File</th><th className="num">Size</th><th className="num">Changed (IST)</th></tr></thead>
       <tbody>{files.map(f => <tr key={f.filename}><th scope="row">{f.filename}</th><td className="num">{size(f.size)}</td>
-        <td className="num">{f.modified.slice(0, 16).replace("T", " ")}</td></tr>)}</tbody>
+        <td className="num">{ist(f.modified)}</td></tr>)}</tbody>
     </table></div>
   </Card>;
 }
