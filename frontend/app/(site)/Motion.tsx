@@ -14,17 +14,9 @@ export default function Motion() {
     const reveal = new IntersectionObserver((entries) => {
       for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); reveal.unobserve(e.target); }
     }, { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
-    document.querySelectorAll(".reveal, .roll").forEach((el) => reveal.observe(el));
-    // the gian-style active word: whichever list line crosses the middle of the screen brightens
-    const active = new IntersectionObserver((entries) => {
-      for (const e of entries) e.target.classList.toggle("active", e.isIntersecting);
-    }, { rootMargin: "-48% 0px -48% 0px" });
-    document.querySelectorAll(".roll-item").forEach((el) => active.observe(el));
-    // safety net: a heading or block must never stay hidden. If the observer hasn't revealed something a few
-    // seconds in (odd viewport, a capture tool that never scrolls, a missed callback), reveal all that remains.
-    const sweep = () => document.querySelectorAll(".reveal:not(.in), .roll:not(.in)").forEach((el) => el.classList.add("in"));
-    const fallback = window.setTimeout(sweep, 4000);
-    return () => { reveal.disconnect(); active.disconnect(); clearTimeout(fallback); };
+    // a block lifts into place as it enters view; it is never hidden, so nothing waits on this to be read
+    document.querySelectorAll(".reveal").forEach((el) => reveal.observe(el));
+    return () => reveal.disconnect();
   }, [path]);
   return null;
 }

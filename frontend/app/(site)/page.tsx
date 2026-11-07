@@ -1,4 +1,7 @@
-// The public home page (/): what the portal is, this week's real figures (from pipeline.ts at build time) and a sign-in link.
+// The public home page (/): what the portal is, read like the front page of the weekly report. Every figure on it
+// is real and built when the site is built (pipeline.ts reads the published files): the latest wave, its size and
+// topics, and a calendar of the weeks the tracker was fielded. No survey answer appears here: those stay behind
+// sign-in until a finding is cleared for public release (this-week/page.tsx FEATURED).
 import Link from "next/link";
 import { NAME, SITE } from "../site";
 import { siteFacts } from "./pipeline";
@@ -15,121 +18,122 @@ const schema = {
   description: "Explore Coresight Research's weekly US consumer survey data by question, demographic and wave: spending, shopping behavior and sentiment across retail categories.",
 };
 
-const FEATURES = [
-  ["Question explorer", "Any question by generation, gender, income and region — with significance against the previous wave."],
-  ["Trends", "Follow a question across every wave it was asked, with year-on-year comparison."],
-  ["Cross-tabs", "One question by two cuts at once, for a single week or the last four pooled."],
-  ["Audience index", "Pick a group like Gen Z shoppers and see where they over- and under-index."],
-  ["Ask CIP", "Ask in plain words. Answers come only from published figures, every source cited."],
-  ["Boards & exports", "Pin charts, download decks to PowerPoint, tables to CSV and Excel."],
+// What a subscriber opens, in the order they meet it: the screens of the portal.
+const INSIDE = [
+  ["Weekly report", "The US Consumer Survey Insights report for any week: 13-week tables, sentiment by income, three data points to watch."],
+  ["Question explorer", "Every question of every wave, by gender, generation, income and region, tested against the previous wave."],
+  ["Trends", "One question across every wave that asked it, four-week averages and the margin of error drawn in."],
+  ["Cross-tabs", "A question by two cuts at once, for one week or the last four pooled."],
+  ["Sector databank", "Thirteen retail sectors since 2022: who bought, and from which retailers, brands and categories."],
+  ["Expected vs actual", "What shoppers planned before Halloween, Black Friday or Prime Day, against what they did afterwards."],
+  ["Audiences", "Build a group such as Gen Z grocery shoppers and see where it over- and under-indexes."],
+  ["Exports and boards", "Every table to Excel, CSV or PowerPoint; pin charts to a board your team shares."],
 ];
 
 const DEFEND = [
-  ["Unweighted by default", "Census-weighting toggle available; significance always tested on unweighted counts."],
-  ["Reconciled every wave", "Each wave is checked against the survey platform before it's marked verified."],
-  ["Small bases flagged", "Groups under 50 are clearly marked — nothing is hidden."],
-  ["Versioned questions", "A reworded question is a new version. Trends never join two versions."],
+  ["Unweighted by default", "Census weighting is one click away; significance is always tested on the unweighted counts."],
+  ["Reconciled every wave", "Each wave is checked answer by answer against the survey platform before it is marked verified."],
+  ["Small bases flagged", "A group of fewer than 50 respondents is marked, never hidden and never coloured as a change."],
+  ["Versioned questions", "A reworded question is a new version. A trend never joins two versions."],
 ];
 
-const CAN = ["Explore every question", "Compare every wave", "Track every trend", "Ask in plain English"];
 
-// Illustrative sample highlights, shown in the slider.
-const INSIGHTS = [
-  ["Spending", "61% of Gen Z plan to cut non-essential spending — ▲ 3 pts"],
-  ["Grocery", "Still the category shoppers won't trim, 8 waves running"],
-  ["Back to school", "Millennials lift category spend, ▲ 5 pts year on year"],
-  ["Holiday", "Purchase intent ticks up across every income band"],
-  ["Value", "Private label keeps gaining share with Boomers"],
-  ["AI tools", "Curiosity rising fastest among 18–29s"],
-];
+const longDate = (iso: string) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
-const BARS = [41, 44, 46, 45, 48, 50, 49, 52, 54, 53, 56, 59];
+const DAY = 86_400_000;
+
+/** Every week from the tracker's first wave to its latest, one row per year, each week marked when a tracker wave was
+ *  fielded within it (a wave fielded off its Monday still counts for that week). */
+function fieldedYears(dates: string[], first: string, latest: string) {
+  const asked = dates.map((d) => Date.parse(d + "T00:00:00Z"));
+  const years: { year: string; weeks: { day: string; fielded: boolean }[] }[] = [];
+  for (let monday = Date.parse(first + "T00:00:00Z"); monday <= Date.parse(latest + "T00:00:00Z"); monday += 7 * DAY) {
+    const day = new Date(monday).toISOString().slice(0, 10);
+    const week = { day, fielded: asked.some((t) => t >= monday - 3 * DAY && t < monday + 4 * DAY) };
+    const year = day.slice(0, 4);
+    if (years.at(-1)?.year === year) years.at(-1)!.weeks.push(week); else years.push({ year, weeks: [week] });
+  }
+  return years;
+}
 
 export default function Home() {
   const f = siteFacts();
-  const w = 440, h = 150, pad = 8, bw = (w - pad * 2) / BARS.length;
-  const y = (v: number) => h - 10 - ((v - 35) / 30) * (h - 30);
-  const line = BARS.map((v, i) => `${pad + bw * i + bw / 2},${y(v)}`).join(" ");
-  const insightCard = ([k, t]: string[], i: number) => <div className="insight" key={k + i}><b>{k}</b><p>{t}</p></div>;
+  const years = fieldedYears(f.trackerDates, f.firstTracker, f.latestDate);
+  const all = years.flatMap((y) => y.weeks);
+  const fielded = all.filter((w) => w.fielded).length;
+  const thousands = Math.floor(f.responses / 1000).toLocaleString("en-US");
   return <>
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
-    <div className="wrap hero">
-      <div>
-        <p className="eyebrow">Weekly US consumer tracker</p>
-        <h1>Know what consumers did this week — not last quarter.</h1>
-        <p className="lede">Every wave of our US consumer survey since December 2020, ready to explore by audience, compare over time and test for significance in seconds.</p>
-        <p className="kw">Weekly US consumer survey data and retail trends — spending, shopping behavior and sentiment, cut by generation, income and region.</p>
+    <div className="wrap front">
+      <div className="front-copy">
+        <h1>Know what US consumers did this week.</h1>
+        <p className="lede">Every week about 400 US adults answer Coresight Research&apos;s consumer survey. The portal holds every
+          wave since {longDate(f.firstTracker).replace(/ \d+,/, "")}, ready to cut by audience, compare over time and test for
+          significance, the morning the wave closes.</p>
         <div className="actions">
           <Link className="btn primary" href="/sign-in/">Request access</Link>
           <Link className="btn" href="/features/">See what&apos;s inside</Link>
         </div>
       </div>
-      <div className="preview parallax" aria-label="Example tracker chart">
-        <div className="phead"><span>Weekly tracker · preview</span><span>Last 12 waves</span></div>
-        <div className="q"><span>Plan to cut back on non-essential spending</span><span aria-hidden="true">▾</span></div>
-        <div className="pills"><span className="on">Total</span><span>Gen Z</span><span>Millennials</span><span>Gen X</span><span>Boomers</span></div>
-        <div className="big"><b>59%</b><span className="wk">Week 12</span><span className="sig">▲ 3 pts vs prior wave · significant</span></div>
-        <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Rising trend over the last 12 waves, sample data">
-          {BARS.map((v, i) => <rect key={i} x={pad + bw * i + 3} y={y(v)} width={bw - 6} height={h - 10 - y(v)} rx="2" fill="var(--steel)" />)}
-          <polyline points={line} fill="none" stroke="var(--red)" strokeWidth="2.5" />
-          {BARS.map((v, i) => <circle key={i} cx={pad + bw * i + bw / 2} cy={y(v)} r="3" fill="var(--red)" />)}
-        </svg>
-        <p className="cap">Sample data for illustration. Unweighted; base n≈500 per wave.</p>
-      </div>
+
+      <aside className="ledger" aria-labelledby="latest">
+        <h2 id="latest">{f.latestLabel}</h2>
+        <dl className="ledger-facts">
+          <div><dt>Respondents</dt><dd>{f.latestN.toLocaleString("en-US")} US adults 18+</dd></div>
+          <div><dt>Questions</dt><dd>{f.questions}</dd></div>
+        </dl>
+        {f.latestTopics.length > 0 && <ul className="topics" aria-label="Topics this week">
+          {f.latestTopics.map((t) => <li key={t}>{t}</li>)}
+        </ul>}
+        <figure className="calendar">
+          <div className="years" role="img" aria-label={`A survey wave in ${fielded} of the ${all.length} weeks since ${longDate(f.firstTracker)}`}>
+            {years.map((y) => <div className="year" key={y.year}><span className="year-label">{y.year}</span><div className="weeks">
+              {y.weeks.map((w) => <i key={w.day} className={w.fielded ? "on" : undefined} title={`Week of ${longDate(w.day)}${w.fielded ? "" : ": no wave"}`} />)}
+            </div></div>)}
+          </div>
+          <figcaption>A wave in {fielded} of the {all.length} weeks since {longDate(f.firstTracker)}: one row a year, one square a week, this week in red.</figcaption>
+        </figure>
+      </aside>
     </div>
 
-    <section className="stats"><div className="wrap inner">
-      <div className="stat reveal"><b>{f.waves}</b><span>survey waves</span></div>
-      <div className="stat reveal d1"><b>{Math.floor(f.responses / 1000).toLocaleString()},000+</b><span>consumer responses</span></div>
-      <div className="stat reveal d2"><b>Weekly</b><span>since Dec 2020</span></div>
-      <div className="stat reveal d3"><b>~2 ms</b><span>p95 screen load</span></div>
-    </div></section>
+    <div className="wrap">
+      <dl className="facts">
+        <div><dt>Survey waves</dt><dd>{f.waves.toLocaleString("en-US")}</dd></div>
+        <div><dt>Qualified responses</dt><dd>{thousands},000+</dd></div>
+        <div><dt>Weekly tracker waves</dt><dd>{f.trackers.toLocaleString("en-US")}</dd></div>
+        <div><dt>Annual and ad hoc studies</dt><dd>{f.annual + f.adhoc}</dd></div>
+      </dl>
+    </div>
 
-    <section className="wrap section">
-      <h2 className="roll"><span>From question to answer in one place</span></h2>
-      <p className="sub reveal">Search in plain English, slice by any audience, and share what moved. See the <a href="/data/">weekly consumer dataset</a>.</p>
-      <div className="grid3">
-        {FEATURES.map(([t, d], i) => <div className={`cell reveal d${(i % 3) || ""}`} key={t}><h3>{t}</h3><p>{d}</p></div>)}
+    <section className="wrap section inside" aria-labelledby="inside">
+      <div className="inside-head">
+        <h2 id="inside">From question to answer in one place</h2>
+        <p>Search in plain English, slice by any audience, and share what moved. More on the <a href="/data/">weekly consumer dataset</a>.</p>
       </div>
+      <dl className="inside-list">
+        {INSIDE.map(([t, d]) => <div key={t} className="reveal"><dt>{t}</dt><dd>{d}</dd></div>)}
+      </dl>
     </section>
 
-    <section className="wrap section" style={{ paddingTop: 0 }}>
-      <div className="insights-col">
-        <div>
-          <p className="eyebrow">In the data this week</p>
-          <p className="sub reveal" style={{marginBottom:18}}>Fresh highlights every week — see <a href="/this-week/">this week in US consumer data</a>.</p>
-          <div className="roll-list">
-            {CAN.map((c) => <div className="roll-item" key={c}>{c}</div>)}
-          </div>
-          <p className="insights-note">Illustrative sample highlights.</p>
-        </div>
-        <div className="insights-wrap reveal" aria-hidden="true">
-          <div className="insights-track">
-            {INSIGHTS.map(insightCard)}
-            {INSIGHTS.map((x, i) => insightCard(x, i + 100))}
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section className="dark"><div className="wrap inner">
-      <h2 className="roll"><span>Numbers you can defend</span></h2>
+    <section className="dark" aria-labelledby="defend"><div className="wrap inner">
+      <h2 id="defend">Numbers you can defend</h2>
       <div className="defend">
-        {DEFEND.map(([t, d], i) => <div className={`col reveal d${(i % 3) || ""}`} key={t}><h3>{t}</h3><p>{d}</p></div>)}
+        {DEFEND.map(([t, d]) => <div className="col" key={t}><h3>{t}</h3><p>{d}</p></div>)}
       </div>
     </div></section>
 
-    <section className="wrap section api" id="api">
-      <div className="reveal">
-        <h2 className="roll"><span>Plug the data into your tools</span></h2>
-        <p>API keys give programmatic access to the same figures. The MCP connector lets AI assistants query the portal directly — with the same entitlements and audit log.</p>
+    <section className="wrap section api" id="api" aria-labelledby="api-title">
+      <div>
+        <h2 id="api-title">Plug the data into your tools</h2>
+        <p>A personal API key reads the same figures as the screens. The MCP connector lets an AI assistant query the portal
+          directly, with your entitlements and in the audit log.</p>
       </div>
-      <pre className="code parallax reveal d1"><span className="mut">GET</span> /api/trends?question=Q12&amp;cut=generation{"\n"}<span className="k">Authorization</span>: Bearer cip_live_••••{"\n"}{"\n"}{"{ "}<span className="s">&quot;wave&quot;</span>: 372, <span className="s">&quot;gen_z&quot;</span>: 0.61, <span className="s">&quot;sig&quot;</span>: true{" }"}</pre>
+      <pre className="code" aria-label="Example request for one question across every wave"><span className="mut">GET</span> /api/v1/questions/CSI-US/tracker/q4{"\n"}<span className="k">Authorization</span>: Bearer {"<your key>"}{"\n"}{"\n"}{"{ "}<span className="s">&quot;qcode&quot;</span>: <span className="s">&quot;q4&quot;</span>, <span className="s">&quot;waves&quot;</span>: [[{f.latestId || 532}, <span className="s">&quot;{f.latestDate}&quot;</span>, …]], …{" }"}</pre>
     </section>
 
-    <section className="cta"><div className="wrap inner">
-      <h2 className="roll"><span>See this week&apos;s wave for yourself.</span></h2>
-      <Link className="btn primary reveal d1" href="/sign-in/">Sign in with your work account</Link>
+    <section className="cta" aria-labelledby="cta"><div className="wrap inner">
+      <h2 id="cta">See this week&apos;s wave for yourself.</h2>
+      <Link className="btn primary" href="/sign-in/">Sign in with your work account</Link>
     </div></section>
   </>;
 }

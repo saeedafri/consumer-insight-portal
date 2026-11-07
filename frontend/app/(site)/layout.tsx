@@ -4,8 +4,7 @@
 import Link from "next/link";
 // The same fonts as the signed-in portal (src/main.tsx), from the same packages, so both read alike and the browser
 // downloads them once: a visitor who signs in from here already has them. Roboto for text, Montserrat for headings.
-import "@fontsource-variable/montserrat";
-import "@fontsource-variable/roboto";
+import "../../src/fonts.css";
 import "./site.css";
 import ThemeToggle from "./ThemeToggle";
 import Motion from "./Motion";

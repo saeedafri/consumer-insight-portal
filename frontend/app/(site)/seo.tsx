@@ -43,7 +43,7 @@ export function Breadcrumbs({ items }: { items: [string, string][] }) {
 // Visible FAQ + FAQPage schema (wins long-tail and AI Overviews that answer a direct question).
 export function Faq({ items, heading = "Common questions" }: { items: [string, string][]; heading?: string }) {
   return <section className="faq">
-    <h2 className="roll"><span>{heading}</span></h2>
+    <h2>{heading}</h2>
     <dl>
       {items.map(([q, a]) => <div className="qa reveal" key={q}><dt>{q}</dt><dd>{a}</dd></div>)}
     </dl>

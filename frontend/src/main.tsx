@@ -5,8 +5,7 @@
 import { lazy, StrictMode, Suspense } from "react";
 import { createBrowserRouter, Link, Navigate, RouterProvider } from "react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
-import "@fontsource-variable/montserrat";
-import "@fontsource-variable/roboto";
+import "./fonts.css";
 import "./styles.css";
 import Shell from "./components/Shell";
 import Profiled from "./components/Profiled";

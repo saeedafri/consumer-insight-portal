@@ -14,7 +14,8 @@ function readGz<T>(rel: string): T | null {
 
 type Wave = { survey_id: number; wave_date: string; study_type: string; survey_family: string; qualified_n: number | null; prior_survey_id: number | null; modules?: string[] };
 
-const FALLBACK = { waves: 372, responses: 190849, latestDate: "2026-10-26", latestLabel: "Week of October 26, 2026", trackers: 269, annual: 24, adhoc: 79, questions: 66, latestId: 0, priorId: 0 };
+const FALLBACK = { waves: 372, responses: 190849, latestDate: "2026-10-26", latestLabel: "Week of October 26, 2026", trackers: 269, annual: 24, adhoc: 79,
+  questions: 66, latestId: 0, priorId: 0, latestN: 400, latestTopics: [] as string[], trackerDates: [] as string[], firstTracker: "2020-12-28" };
 
 export type Facts = typeof FALLBACK;
 
@@ -36,6 +37,10 @@ export function siteFacts(): Facts {
     questions: book?.questions?.length ?? FALLBACK.questions,
     latestId: latest.survey_id,
     priorId: latest.prior_survey_id ?? 0,
+    latestN: latest.qualified_n ?? FALLBACK.latestN,
+    latestTopics: latest.modules ?? [],                                  // the wave's modules, as its title names them
+    trackerDates: trackers.map((x) => x.wave_date).sort(),               // the home page's calendar of weeks fielded
+    firstTracker: trackers.reduce((a, b) => (b.wave_date < a.wave_date ? b : a), trackers[0]).wave_date,
   };
 }
 

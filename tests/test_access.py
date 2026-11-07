@@ -119,7 +119,7 @@ def test_demo_sign_in_needs_cip_demo_login_and_the_cookie_is_secure_behind_https
 def test_sign_out_revokes_the_session_and_is_audited(portal):
     cookie = signed("ana@coresight.com")
     assert call("/api/v1/me", cookie)[0] == 200
-    assert call("/auth/logout", cookie)[0] == 200
+    assert call("/auth/logout", cookie)[0] == 303
     assert call("/api/v1/me", cookie)[0] == 401
     assert audit.write_pending() == 1
     with api.get_engine("app").connect() as conn:
@@ -263,8 +263,8 @@ def test_sign_in_through_coresights_own_identity_provider(portal, monkeypatch):
     assert status in (302, 303) and any(c.startswith(signin.COOKIE + "=") for c in head["set-cookie"])
 
 
-def test_sign_in_through_stage3_coresight_idp(portal, monkeypatch):
-    """stage3.coresight.com with cip-staging client configuration."""
+def test_sign_in_through_stage3_coresight_idp(portal, monkeypatch, caplog):
+    """stage3.coresight.com with cip-staging client configuration; CIP_OIDC_LOG_CLAIMS=1 logs the claims, never the tokens."""
     import base64
     import time
     from urllib.parse import parse_qs
@@ -272,23 +272,28 @@ def test_sign_in_through_stage3_coresight_idp(portal, monkeypatch):
     for key, value in {"CIP_OIDC_ISSUER": "https://stage3.coresight.com", "CIP_OIDC_CLIENT_ID": "cip-staging",
                        "CIP_OIDC_CLIENT_SECRET": "test-secret",
                        "CIP_OIDC_AUTHORIZE_URL": "https://stage3.coresight.com/csr-idp/authorize",
-                       "CIP_OIDC_TOKEN_URL": "https://stage3.coresight.com/csr-idp/token", "CIP_OIDC_PKCE": "plain"}.items():
+                       "CIP_OIDC_TOKEN_URL": "https://stage3.coresight.com/csr-idp/token", "CIP_OIDC_PKCE": "plain",
+                       "CIP_OIDC_LOG_CLAIMS": "1"}.items():
         monkeypatch.setenv(key, value)
+    caplog.set_level("INFO", logger="cip.signin")
     status, head, _ = call("/auth/login?next=/app/explore")
     sent = parse_qs(urlsplit(head["location"][0]).query)
     assert status == 303 and head["location"][0].startswith("https://stage3.coresight.com/csr-idp/authorize?")
     assert sent["code_challenge_method"] == ["plain"] and sent["client_id"] == ["cip-staging"]
     login = head["set-cookie"][0].split(";")[0]
     token = {"iss": "https://stage3.coresight.com", "aud": "cip-staging", "exp": time.time() + 60,
-             "data": {"wp_user": {"user_email": "dataautomation@coresight.com"}}}
+             "data": {"wp_user": {"user_email": "dataautomation@coresight.com", "roles": ["administrator"]}}}
     body = "x." + base64.urlsafe_b64encode(json.dumps(token).encode()).decode().rstrip("=") + ".x"
 
     class Answer:
         def raise_for_status(self): pass
-        def json(self): return {"id_token": body, "access_token": "a"}
+        def json(self): return {"id_token": body, "access_token": "secret-access", "scope": "openid email"}
     monkeypatch.setattr(requests, "post", lambda url, **kw: Answer() if url.endswith("/csr-idp/token") else None)
     status, head, _ = call(f"/auth/callback?code=c&state={sent['state'][0]}", headers={"cookie": login})
     assert status in (302, 303) and any(c.startswith(signin.COOKIE + "=") for c in head["set-cookie"])
+    assert "administrator" in caplog.text and '"scope": "openid email"' in caplog.text
+    assert "secret-access" not in caplog.text and body not in caplog.text
+    assert any(c.startswith(f"{signin.ID_TOKEN}={body}") for c in head["set-cookie"])   # kept for /auth/logout
 
 
 def test_logout_never_500s_when_idp_has_no_discovery(portal, monkeypatch):
@@ -298,6 +303,47 @@ def test_logout_never_500s_when_idp_has_no_discovery(portal, monkeypatch):
                        "CIP_OIDC_TOKEN_URL": "https://stage3.coresight.com/csr-idp/token"}.items():
         monkeypatch.setenv(key, value)
     status, head, body = call("/auth/logout", signed("dataautomation@coresight.com"))
-    assert status == 200
-    assert b"Signed out" in body
+    assert status == 303 and head["location"] == ["/"]                        # the home page
     assert any(c.startswith(signin.COOKIE + "=;") or "Max-Age=0" in c for c in head.get("set-cookie", []))
+
+
+def test_logout_ends_the_providers_session_with_the_id_token_then_lands_home(portal, monkeypatch):
+    """csr-idp ends its own session only with id_token_hint; without it "Sign in" lets the same person straight back in."""
+    from urllib.parse import parse_qs
+    for key, value in {"CIP_OIDC_ISSUER": "https://stage3.coresight.com", "CIP_OIDC_CLIENT_ID": "cip-staging",
+                       "CIP_OIDC_AUTHORIZE_URL": "https://stage3.coresight.com/csr-idp/authorize",
+                       "CIP_OIDC_LOGOUT_URL": "https://stage3.coresight.com/csr-idp/logout/",
+                       "CIP_OIDC_REDIRECT_URI": "http://192.168.1.38:8001/auth/callback"}.items():
+        monkeypatch.setenv(key, value)
+    status, head, _ = call("/auth/logout", signed("dataautomation@coresight.com") + f"; {signin.ID_TOKEN}=h.p.s")
+    sent = parse_qs(urlsplit(head["location"][0]).query)
+    assert status == 303 and head["location"][0].startswith("https://stage3.coresight.com/csr-idp/logout/?")
+    assert sent == {"id_token_hint": ["h.p.s"], "post_logout_redirect_uri": ["http://192.168.1.38:8001/"]}
+
+
+def test_a_token_from_another_issuer_is_refused_unless_named(portal, monkeypatch):
+    """Only the configured issuer's tokens sign in; CIP_OIDC_TOKEN_ISSUER names a different iss the provider really uses."""
+    import base64
+    import time
+    from urllib.parse import parse_qs
+    import requests
+    for key, value in {"CIP_OIDC_ISSUER": "https://stage3.coresight.com", "CIP_OIDC_CLIENT_ID": "cip-staging",
+                       "CIP_OIDC_AUTHORIZE_URL": "https://stage3.coresight.com/csr-idp/authorize",
+                       "CIP_OIDC_TOKEN_URL": "https://stage3.coresight.com/csr-idp/token", "CIP_OIDC_PKCE": "plain"}.items():
+        monkeypatch.setenv(key, value)
+    token = {"iss": "https://coresight.com", "aud": "cip-staging", "exp": time.time() + 60,
+             "data": {"wp_user": {"user_email": "dataautomation@coresight.com"}}}
+    body = "x." + base64.urlsafe_b64encode(json.dumps(token).encode()).decode().rstrip("=") + ".x"
+
+    class Answer:
+        def raise_for_status(self): pass
+        def json(self): return {"id_token": body}
+    monkeypatch.setattr(requests, "post", lambda url, **kw: Answer())
+
+    def sign_in() -> int:
+        _, head, _ = call("/auth/login")
+        state = parse_qs(urlsplit(head["location"][0]).query)["state"][0]
+        return call(f"/auth/callback?code=c&state={state}", headers={"cookie": head["set-cookie"][0].split(";")[0]})[0]
+    assert sign_in() == 400
+    monkeypatch.setenv("CIP_OIDC_TOKEN_ISSUER", "https://coresight.com")
+    assert sign_in() in (302, 303)

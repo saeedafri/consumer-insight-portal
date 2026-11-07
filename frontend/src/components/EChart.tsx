@@ -2,13 +2,15 @@
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart } from "echarts/charts";
-import { AriaComponent, GridComponent, LegendPlainComponent, TooltipComponent } from "echarts/components";
+import { AriaComponent, GridComponent, LegendPlainComponent, LegendScrollComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsCoreOption } from "echarts/core";
-import { C, DARK, inLight, LIGHT, savedTheme, useTheme } from "../theme";
+import { C, DARK, inLight, LIGHT, REDUCED_MOTION, savedTheme, useTheme } from "../theme";
 import { perf } from "../perf";
 
-echarts.use([AriaComponent, BarChart, LineChart, PieChart, GridComponent, LegendPlainComponent, TooltipComponent, CanvasRenderer]);
+// MarkLine: the news and retail events on the weekly report's charts; LegendScroll: a report table's many answers
+echarts.use([AriaComponent, BarChart, LineChart, PieChart, GridComponent, LegendPlainComponent, LegendScrollComponent, MarkLineComponent,
+  TooltipComponent, CanvasRenderer]);
 
 const FONT = "Roboto Variable, Roboto, sans-serif";   // data text; headings stay Montserrat
 // The house chart look, registered once per theme: 12 px axes (category in ink-2, values in ink-3), dashed
@@ -39,7 +41,6 @@ export const axisText = () => ({ color: C.ink2, fontFamily: FONT, fontSize: 12 }
 export const valueText = () => ({ color: C.ink3, fontFamily: FONT, fontSize: 12 });
 
 export type Chart = echarts.ECharts;
-export const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** A PNG a reader can paste into a deck: the question on top, the chart, the source and base underneath. */
 export async function downloadPng(chart: Chart, title: string, source: string, file: string) {

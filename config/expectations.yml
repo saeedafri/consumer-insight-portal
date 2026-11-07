@@ -21,6 +21,19 @@ us_adults_millions: 270   # US adults 18+. Reproduces the 4Q26 report's Hallowee
 
 # In the calendar's order. Days that move each year: the earliest one (the surveys around them are weeks away)
 events:
+  - name: Valentine's Day
+    day: "02-14"
+    mentions: valentine
+    questions: {V1: VR1, V2: VR2, V3: VR3, V4: VR4}
+    net: [V2]
+    spenders: {question: V1, codes: [1]}   # "Do you expect to spend money": yes
+    spend: {V5: VR5}
+  - name: Mother's Day
+    day: "05-08"              # second Sunday of May (8-14)
+    mentions: mother
+    questions: {MD1: MDR1, MD2: MDR2, MD5: MDR5, MD6: MDR6, MD7: MDR7}
+    net: [MD2]
+    spend: {MD4: MDR4}        # no market size: MD1 is "spend on or celebrate"
   - name: Memorial Day
     day: "05-25"              # last Monday of May (25-31)
     mentions: memorial day
@@ -28,6 +41,12 @@ events:
     net: [M2]
     spenders: {question: M1, codes: [1]}
     spend: {M4: C7}
+  - name: Father's Day
+    day: "06-15"              # third Sunday of June (15-21)
+    mentions: father
+    questions: {FD1: FDR1, FD2: FDR2, FD5: FDR5, FD6: FDR6, FD7: FDR7}
+    net: [FD2]
+    spend: {FD4: FDR4}        # no market size: FD1 is "spend on or celebrate"
   - name: Prime Day
     day: "06-23"              # Jun 23-26 in 2026, Jul 8-11 in 2025: the surveys are in May and after it
     mentions: prime day

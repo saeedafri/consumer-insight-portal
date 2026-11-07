@@ -75,9 +75,10 @@ export const queries = new QueryClient({ defaultOptions: { queries: {
   retryDelay: (_, error) => (error instanceof Busy ? 3000 : 800),
 } } });
 
-/** The session ended: sign in again and come back to this exact view. */
+/** Not signed in (never was, or the session ended): the home page, whose Sign in leads to /sign-in/ and the provider.
+ *  Straight to the provider instead would skip the home page and look like a jump to another site. */
 export function signIn(): never {
-  location.href = "/auth/login?next=" + encodeURIComponent(location.pathname + location.search);
+  location.replace("/");
   throw new Error("Sign in required");
 }
 

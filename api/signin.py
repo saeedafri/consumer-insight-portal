@@ -4,14 +4,19 @@
                     is configured and CIP_DEMO_LOGIN=1, the demo sign-in; else a page that says sign-in is not set up
   /auth/callback    the provider's answer: the code exchanged for an ID token, the token's issuer, audience, expiry
                     and nonce checked, the email mapped to a role, client and tier (shared/core/access.py)
-  /auth/logout      the session revoked (sql/008_access.sql) and the cookie dropped
+  /auth/logout      the session revoked (sql/008_access.sql), the cookie dropped, the provider's session ended
+                    (CIP_OIDC_LOGOUT_URL, with the ID token as id_token_hint), then the home page
   /auth/dev-login   the demo sign-in as any email: only with CIP_DEMO_LOGIN=1, never implied by APP_ENV
   /auth/check       nginx's auth_request (deploy/nginx.conf)
 
 Provider settings: CIP_OIDC_ISSUER (e.g. https://login.microsoftonline.com/<tenant>/v2.0), CIP_OIDC_CLIENT_ID,
 CIP_OIDC_CLIENT_SECRET, and optionally CIP_OIDC_REDIRECT_URI (default: this host's /auth/callback).
 Coresight's own identity provider (coresight.com/csr-idp, the one SIP signs in with) publishes no discovery document:
-for it also set CIP_OIDC_AUTHORIZE_URL and CIP_OIDC_TOKEN_URL, and CIP_OIDC_PKCE=plain (what it is proven with).
+for it also set CIP_OIDC_AUTHORIZE_URL, CIP_OIDC_TOKEN_URL, CIP_OIDC_LOGOUT_URL (<host>/csr-idp/logout/) and
+CIP_OIDC_PKCE=plain (what it is proven with).
+CIP_OIDC_TOKEN_ISSUER: the iss the ID token carries, only if it differs from CIP_OIDC_ISSUER.
+CIP_OIDC_LOG_CLAIMS=1 (test instances only) logs every claim the provider sends, to map roles from them;
+CIP_OIDC_USERINFO_URL adds the userinfo answer to that log.
 """
 from __future__ import annotations
 
@@ -42,6 +47,7 @@ log = logging.getLogger("cip.signin")
 router = APIRouter()
 COOKIE = "cip_session"
 LOGIN = "cip_login"          # the OIDC round trip's state, nonce, PKCE verifier and next page, signed, for 10 minutes
+ID_TOKEN = "cip_id_token"    # the provider's ID token, kept for /auth/logout: csr-idp ends its own session only with id_token_hint
 
 
 def demo() -> bool:
@@ -132,7 +138,7 @@ def remember(sid: str, who: dict, how: str) -> None:
         log.warning("Session not recorded: %s", type(exc).__name__)
 
 
-async def signed_in(request: Request, who: dict, how: str, target: str) -> Response:
+async def signed_in(request: Request, who: dict, how: str, target: str, id_token: str = "") -> Response:
     sid = secrets.token_urlsafe(18)
     await run_in_threadpool(remember, sid, who, how)
     audit.record(request, "sign_in", who=who, detail={"provider": how})
@@ -144,6 +150,9 @@ async def signed_in(request: Request, who: dict, how: str, target: str) -> Respo
     response.set_cookie(COOKIE, issue(who["email"], sid=sid, scope=access.scope(who)), httponly=True, samesite="lax",
                         secure=https(request), max_age=SESSION_HOURS * 3600)
     response.delete_cookie(LOGIN, path="/auth")
+    if id_token:
+        response.set_cookie(ID_TOKEN, id_token, path="/auth", httponly=True, samesite="lax", secure=https(request),
+                            max_age=SESSION_HOURS * 3600)
     return response
 
 
@@ -183,6 +192,22 @@ def claims(token: str) -> dict:
     return json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
 
 
+def log_claims(meta: dict, answer: dict, said: dict) -> None:
+    """Everything the provider says about the person (ID token claims, the token answer minus its tokens, and the
+    userinfo answer when there is one), so roles and permissions can be mapped to what it really sends.
+    Only with CIP_OIDC_LOG_CLAIMS=1 (a test instance): the lines hold personal data. Called by /auth/callback."""
+    import requests
+    log.info("OIDC token answer (tokens removed): %s", json.dumps({k: v for k, v in answer.items() if not k.endswith("token")}))
+    log.info("OIDC id_token claims: %s", json.dumps(said, default=str))
+    url = os.environ.get("CIP_OIDC_USERINFO_URL") or meta.get("userinfo_endpoint")
+    if url and answer.get("access_token"):
+        try:
+            found = requests.get(url, timeout=10, headers={"Authorization": f"Bearer {answer['access_token']}"})
+            log.info("OIDC userinfo %s: %s", found.status_code, found.text[:4000])
+        except Exception as exc:   # noqa: BLE001 — a missing userinfo must not stop the sign-in
+            log.info("OIDC userinfo failed: %s", type(exc).__name__)
+
+
 @router.get("/auth/callback")
 async def callback(request: Request, code: str = "", state: str = "", error: str = "") -> Response:
     found = provider()
@@ -209,14 +234,17 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
     try:
         # ponytail: the ID token comes straight from the token endpoint over TLS, so its signature is not re-checked
         # (OIDC Core 3.1.3.7 allows this); check it against the provider's JWKS if tokens ever arrive another way
-        said = claims((await run_in_threadpool(exchange))["id_token"])
+        answer = await run_in_threadpool(exchange)
+        said = claims(answer["id_token"])
+        if os.environ.get("CIP_OIDC_LOG_CLAIMS") == "1":
+            await run_in_threadpool(log_claims, meta, answer, said)
     except Exception as exc:   # noqa: BLE001
         log.warning("OIDC token exchange failed: %s", type(exc).__name__)
         return page(502, "Sign-in failed", "The identity provider did not answer. Please <a href='/auth/login'>try again</a>.")
     audience = said.get("aud") if isinstance(said.get("aud"), list) else [said.get("aud")]
-    valid_issuers = {meta.get("issuer"), "https://coresight.com", "https://stage3.coresight.com"}
+    issuer = os.environ.get("CIP_OIDC_TOKEN_ISSUER") or meta.get("issuer")   # set it when the token's iss differs from CIP_OIDC_ISSUER
     # a provider that does not echo the nonce (csr-idp) is still held by the state and the PKCE verifier
-    if (said.get("iss") not in valid_issuers) or found["client_id"] not in audience or float(said.get("exp", 0)) < time.time() \
+    if said.get("iss") != issuer or found["client_id"] not in audience or float(said.get("exp", 0)) < time.time() \
             or ("nonce" in said and not secrets.compare_digest(str(said["nonce"]), nonce)):
         log.warning("OIDC token refused: iss %s, aud %s", said.get("iss"), said.get("aud"))   # names, never the token
         return page(400, "Sign-in failed", "The identity token did not check out. Please <a href='/auth/login'>try again</a>.")
@@ -227,7 +255,8 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
     who = access.profile(email) if "@" in email else None
     if not who:
         return refused(email or "This account")
-    return await signed_in(request, {**who, "name": said.get("name") or ""}, "oidc", target)
+    return await signed_in(request, {**who, "name": said.get("name") or wordpress.get("name") or ""}, "oidc", target,
+                           answer["id_token"])
 
 
 @router.get("/auth/dev-login")
@@ -289,12 +318,17 @@ async def logout(request: Request) -> Response:
             meta = await run_in_threadpool(endpoints, found["issuer"])
         except Exception:
             meta = None
-    if meta and meta.get("end_session_endpoint"):
-        home = callback_url(request).rsplit("/auth/", 1)[0] + "/"
-        response: Response = RedirectResponse(meta["end_session_endpoint"] + "?" + urlencode({"post_logout_redirect_uri": home}), status_code=303)
+    # the provider's session ends too, or the next "Sign in" lets the same person straight back in without a password;
+    # either way the browser lands on the home page
+    home = callback_url(request).rsplit("/auth/", 1)[0] + "/"
+    id_token = request.cookies.get(ID_TOKEN, "")
+    if meta and meta.get("end_session_endpoint") and id_token:
+        target = meta["end_session_endpoint"] + "?" + urlencode({"id_token_hint": id_token, "post_logout_redirect_uri": home})
     else:
-        response = page(200, "Signed out", "You are signed out of the Consumer Insight Portal. <a href='/auth/login'>Sign in again</a>.")
+        target = "/"
+    response = RedirectResponse(target, status_code=303)
     response.delete_cookie(COOKIE)
+    response.delete_cookie(ID_TOKEN, path="/auth")
     return response
 
 

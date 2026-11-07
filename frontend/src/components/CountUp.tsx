@@ -1,7 +1,7 @@
 // A headline figure counts up to its value once (450 ms, decelerating), keeping its own format: "62.9%", "190k",
 // "+3.5 pts". Text without a number, and readers who asked for reduced motion, get the final value at once.
 import { useEffect, useRef, useState } from "react";
-import { REDUCED_MOTION } from "./EChart";
+import { REDUCED_MOTION } from "../theme";   // not from EChart: that would load the charts with the Library page
 
 const NUMBER = /-?\d[\d,]*(\.\d+)?/;
 

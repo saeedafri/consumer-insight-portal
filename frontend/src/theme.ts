@@ -1,6 +1,9 @@
 // The colours of every screen and chart, light and dark (Coresight's palette), and the light/dark switch.
 // Read by components/EChart.tsx (charts) and styles.css (as CSS variables). The choice is kept in localStorage cip-theme.
 import { useSyncExternalStore } from "react";
+
+/** The visitor asked for less motion: charts draw without animation and counters show their value at once. */
+export const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
 // Coresight 2026 palette (Color Palette and Style Guide). Primary first; accents only where the guide allows.
 // Two themes share the brand colours; dark swaps the surfaces and moves blue text and series to light blue.
 const LIGHT = {

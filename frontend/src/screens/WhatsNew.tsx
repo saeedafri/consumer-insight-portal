@@ -4,6 +4,25 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "7 November 2026",
+  entries: [
+    { title: "The weekly report, in the portal",
+      body: "Every weekly tracker wave since July 2025 now has its US Consumer Survey Insights report under Weekly report in the wave's menu, in the order of the PDF: three data points to watch, net better for personal finances and the economy with the news events marked and split by income, the 13-week tables of retailers, categories and activities with their one-week and three-month changes (coloured only when significant), each with a year's chart of its biggest answers, retailers' shopper profiles, the methodology and margins of error. The figures were checked against the 27 October and 3 November reports.",
+      shot: "report-1107.webp", alt: "The food retailers chart with retail events marked, above its 13-week table" },
+    { title: "The report's appendix, and an Export on every table",
+      body: "The appendix gives % worse, % better and net better for 28 weeks, for everyone, each income group or single weeks, with the one-week and four-week changes. Every table on the report, the sector databank and expected vs actual now has the Export menu: CSV, Excel, PowerPoint, or Pin to a board.",
+      shot: "appendix-1107.webp", alt: "The appendix tables for personal finances and the economy with Export and Pin buttons" },
+    { title: "Sector databank",
+      body: "Thirteen retail sectors, from clothing to off-price, as the Databank lays them out: the share who bought in the category, then its retailers, brands and categories, one column per survey back to 2022. The Department stores figures match the Databank page exactly from August 2024 on.",
+      shot: "sectors-1107.webp", alt: "The Clothing sector table with its purchase rate and retailers by survey", link: ["/sectors", "Open the sector databank"] },
+    { title: "Expected vs actual for eleven retail events",
+      body: "Valentine's Day to Black Friday: what consumers said before an event they would do, against what they said afterwards, with the difference and whether it is significant. Where the survey asks how much, the median spend and the market size it implies (Halloween 2026: $100, about $14.7 billion, as the seasonal report gives). Below, the holiday spending and finance outlook across every survey that asked it.",
+      shot: "expectations-1107.webp", alt: "Halloween expected spend against last year's actual, with median spend and market size", link: ["/expectations", "Open expected vs actual"] },
+    { title: "A new front page, and faster first loads",
+      body: "The public home page now shows only real facts: the latest wave, its size and topics, and a calendar of every week the tracker was fielded since December 2020. Pages load less on the way in: the survey library no longer waits for the charts, and only the latin fonts are downloaded.",
+      shot: "home-1107.webp", alt: "The public home page with the latest wave and the calendar of weeks fielded" },
+  ],
+}, {
   date: "24 October 2026",
   entries: [
     { title: "Census-weighted figures, one click away",
