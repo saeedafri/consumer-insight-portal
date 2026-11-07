@@ -6,7 +6,9 @@ import gzip
 import json
 from pathlib import Path
 
-from etl import fieldwork, publish
+import pytest
+
+from etl import fieldwork, forsta_client, publish
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "fieldwork_261003.json").read_text())
 
@@ -87,7 +89,7 @@ def test_a_hibernated_survey_is_not_woken_and_a_failure_never_stops_the_run(csi_
     assert fieldwork.collect(Forsta(), ["asleep", "broken", "fine"]) == ["asleep", "fine"]
     assert not any("asleep" in e for e in asked if not e.startswith("rh/surveys/asleep"))     # only its record: not woken
     kept = fieldwork.records()
-    assert set(kept["asleep"]) == {"path", "fetched_at", "survey", "hibernation"}
+    assert set(kept["asleep"]) == {"path", "fetched_at", "survey", "hibernation", "split_completions"}
     assert "survey_xml" in kept["fine"] and "retention" in kept[""]
 
 
@@ -105,13 +107,17 @@ def test_the_home_pages_figures_are_counts_and_dates_only(tmp_path):
 
 
 def test_cip_only_ever_reads_from_forsta():
-    """Forsta stays read-only for CIP: its one client sends GET and nothing else (no POST, PUT, PATCH or DELETE), and
-    every Forsta call in the code goes through that client. Fails if anyone adds a call that could change a survey."""
+    """Forsta stays read-only for CIP: its one client sends GETs and, through read_post() only, the three POSTs that
+    compute without changing a survey (no PUT, PATCH, DELETE or other POST), and every Forsta call in the code goes
+    through that client. Fails if anyone adds a call that could change a survey."""
     import re
     root = Path(__file__).resolve().parents[1]
     client = (root / "etl/forsta_client.py").read_text()
-    assert re.findall(r"session\.(\w+)\(", client) == ["get"]
-    assert not re.search(r"\.(post|put|patch|delete)\(|method\s*=", client)
+    assert re.findall(r"session\.(\w+)\(", client) == ["get", "post"]
+    assert not re.search(r"\.(put|patch|delete)\(|method\s*=", client)
+    assert client.count("_body=") == 1 and "_body=body" in client.split("def read_post")[1]   # POST only from read_post
+    assert [rule.pattern[len(forsta_client.SURVEY):] for rule in forsta_client.READ_ONLY_POSTS] == [
+        "/crosstabs/execute", "/crosstabs/saved/\\w+/execute", "/crosstabs/saved/\\w+/export/(?:excel|pdf|pptx)"]
     for source in [*root.glob("etl/*.py"), *root.glob("api/*.py"), *root.glob("scripts/*.py"), *root.glob("shared/**/*.py")]:
         text = source.read_text()
         calls_http = any(lib in text for lib in ("import requests", "httpx", "urllib.request", "http.client"))
@@ -132,3 +138,64 @@ def test_each_respondent_who_did_not_qualify_is_explained_by_the_cause_forsta_re
     assert causes[1] == ["Terminated", "Speeder (te1): timeSpent() < 25", "the whole interview (time taken)", 22, 0.3]
     assert causes[2][1] == "Not recorded by Forsta" and sum(c[3] for c in causes) == 304
     assert hours == [["2026-11-02T13:00", 317, 31, 582]]
+
+
+
+def test_a_post_that_could_change_a_survey_is_refused_before_it_is_sent():
+    sent = []
+
+    class Session:
+        headers: dict = {}
+
+        def post(self, *args, **kwargs):
+            sent.append(args)
+
+    client = forsta_client.ForstaClient("se1.decipherinc.com", "k" * 64)
+    client.session = Session()
+    for endpoint in ("surveys/selfserve/58f/261003/state/live", "surveys/selfserve/58f/261003/evaluate",
+                     "surveys/selfserve/58f/261003/data/edit", "surveys/selfserve/58f/261003/summary/share_link",
+                     "surveys/../rh/users/crosstabs/execute", "surveys/selfserve/58f/261003/crosstabs/execute/x", "rh/apikeys"):
+        with pytest.raises(forsta_client.ForstaError, match="Refused"):
+            client.read_post(endpoint, {})
+    assert sent == []
+
+
+def test_saved_reports_run_through_the_read_only_posts_and_a_changed_survey_is_flagged(caplog):
+    posted, edits = [], iter(["2026-11-02T19:07:59Z", "2026-11-07T10:00:00Z"])
+
+    class Answer:
+        def __init__(self, body):
+            self.body, self.content = body, b"PK-excel"
+
+        def json(self):
+            return self.body
+
+    class Forsta:
+        def read_post(self, endpoint, body):
+            posted.append(endpoint)
+            return Answer({"q4$": [["Total", 100.0, 403], ["Walmart", 67.5, 272]]})
+
+        def read_json(self, endpoint, **params):
+            return {"lastEdit": next(edits), "state": "closed"}
+
+    kinds = {"survey": {"lastEdit": "2026-11-02T19:07:59Z", "state": "closed"}, "saved_reports": [{"id": "abc", "title": "Total"}]}
+    found = fieldwork.saved_reports(Forsta(), "selfserve/58f/261003", kinds)
+    assert posted == ["surveys/selfserve/58f/261003/crosstabs/saved/abc/execute", "surveys/selfserve/58f/261003/crosstabs/saved/abc/export/excel"]
+    assert found["saved_export:abc"] == b"PK-excel" and found["saved_runs"]["abc"]["q4$"][1] == ["Walmart", 67.5, 272]
+    assert "changed in Forsta" not in caplog.text                     # the first re-read matches
+    fieldwork.saved_reports(Forsta(), "selfserve/58f/261003", kinds)
+    assert "changed in Forsta while its saved reports were run" in caplog.text
+
+
+def test_a_saved_reports_columns_take_the_names_of_the_banner_it_was_built_on(monkeypatch):
+    monkeypatch.setattr(fieldwork, "survey_part", lambda path, kind: {"abc": {"q4$": [["Total", 100.0, 403, 100.0, 200], ["Walmart", 67.5, 272, 70.0, 140]]}})
+    record = {"path": "p/1", "survey": {"title": "Wave"}, "saved_reports": [{"id": "abc", "title": "By gender"}],
+              "banners": {"banners": [{"title": "Total", "segments": [{"title": "Total"}]},
+                                      {"title": "Gender", "segments": [{"title": "Total", "cond": "(ALL)"}, {"title": "Male", "cond": "(D1.r1)"}]}]},
+              "survey_xml": '<survey><radio label="q4"><title>Where did you &lt;span style="color: red"&gt;shop&lt;/span&gt;&amp;nbsp;<b>now</b>?</title></radio></survey>',
+              "split_completions": {"list": {"segments": ["Total", "Cint"], "rows": [{"formula": "clickthrough", "cells": [{"raw": 9}, {"raw": 9}]}]}}}
+    page = fieldwork.survey_page(record)
+    report = page["reports"][0]
+    assert report["columns"] == ["Total", "Male"] and report["banner"] == "Gender"
+    assert report["tables"][0] == {"label": "q4", "title": "Where did you shop now?", "rows": [["Total", 100.0, 403, 100.0, 200], ["Walmart", 67.5, 272, 70.0, 140]]}
+    assert page["splits"]["list"]["rows"]["clickthrough"] == [9, 9]

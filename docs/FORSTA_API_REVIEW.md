@@ -44,9 +44,13 @@ Of the 57 POST operations, these compute or read and change nothing in the surve
 - Everything else (launch, close, archive, unarchive, data edits, campaigns, users, keys, translations, sections)
   writes, as its name says.
 
-Today CIP calls none of the POSTs: its code is GET-only (section 1). Using `crosstabs/execute` for the "Forsta
-agrees" check is the first one worth adding; it needs a POST method added to the client, which the guard test would
-then list explicitly.
+Since 7 Nov 2026 CIP sends three of these POSTs, and no other: `crosstabs/execute`, `crosstabs/saved/{saved}/execute`
+and `crosstabs/saved/{saved}/export/{excel|pdf|pptx}` (`READ_ONLY_POSTS` in `etl/forsta_client.py`). `read_post()`
+refuses any other endpoint before anything is sent, `tests/test_fieldwork.py` fails if a PUT, PATCH, DELETE or another
+POST is added, and after a survey's saved reports are run `etl/fieldwork.py` re-reads the survey and logs an error if
+its last edit or state moved. Checked live on 261003: last edit and audit log unchanged. The saved reports' tables and
+Excel files are on the admin screen Forsta → Team reports. The other read-only POSTs need emails or links CIP does not
+have, and `POST /surveys/{survey}/data` returns what CIP already reads with GET.
 
 ## 3. Every GET operation, and where CIP uses it
 

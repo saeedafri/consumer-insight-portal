@@ -55,6 +55,7 @@ const router = createBrowserRouter([{
     { path: "/fieldwork", element: page("Page:Fieldwork", () => import("./screens/Fieldwork")) },
     { path: "/fieldwork/:survey", element: page("Page:FieldworkSurvey", () => import("./screens/FieldworkSurvey")) },
     { path: "/access", element: page("Page:Access", () => import("./screens/Access")) },
+    { path: "/forsta/:section?", element: page("Page:Forsta", () => import("./screens/Forsta")) },
     { path: "/w/:id/changes", element: page("Page:Changes", () => import("./screens/Changes")) },
     { path: "/w/:id/report", element: page("Page:Report", () => import("./screens/Report")) },
     { path: "/w/:id/survey/:q?", element: page("Page:Survey", () => import("./screens/Survey")) },

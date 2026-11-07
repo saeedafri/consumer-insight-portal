@@ -674,6 +674,41 @@ async def fieldwork_record(request: Request, who: dict = Depends(admin)) -> Resp
     return send_payload(request, found)
 
 
+@app.get("/api/v1/admin/forsta")
+async def forsta_overview(request: Request, who: dict = Depends(admin)) -> Response:
+    """The Forsta admin screens' company records and one line per survey (etl/fieldwork.py publish_forsta)."""
+    found = published_file("admin", "forsta")
+    if found is None:
+        raise HTTPException(404, "No Forsta record yet: the next Forsta run collects it")
+    return send_payload(request, found)
+
+
+@app.get("/api/v1/admin/forsta/{key}")
+async def forsta_survey(key: str, request: Request, who: dict = Depends(admin)) -> Response:
+    """One survey on the Forsta admin screens: banners, saved reports' tables, funnel by split, warnings, files."""
+    found = published_file("admin", "forsta", key)
+    if found is None:
+        raise HTTPException(404, "No Forsta record for this survey yet")
+    return send_payload(request, found)
+
+
+@app.get("/api/v1/admin/forsta/{key}/export/{report}")
+async def forsta_export(key: str, report: str, who: dict = Depends(admin)) -> Response:
+    """A saved report as the Excel file Forsta exported (a read-only POST, kept by the ETL in cip_forsta_record).
+    Read from the database: an admin's rare download, not worth a file in every published version."""
+    if not report.isalnum():
+        raise HTTPException(404)
+    def read() -> bytes | None:
+        with get_engine("app").connect() as conn:
+            return conn.execute(text("SELECT payload FROM cip_forsta_record WHERE forsta_path = :p AND kind = :k"),
+                                {"p": key.replace(".", "/"), "k": f"saved_export:{report}"}).scalar()
+    payload = await run_in_threadpool(read)
+    if payload is None:
+        raise HTTPException(404, "Forsta has not exported this report yet")
+    return Response(gzip.decompress(payload), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{key}-{report}.xlsx"', "Cache-Control": "private, no-store"})
+
+
 @app.get("/api/v1/fieldwork")
 async def fieldwork_shared(request: Request, who: dict = Depends(user)) -> Response:
     """The Fieldwork screens for a role the super admin turned the "fieldwork" feature on for (the Access page): the

@@ -6,6 +6,7 @@ import { setWeighted, useWeighted } from "../weight";
 import type { Theme } from "../theme";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from "react-router";
 import { allowed, useMe, useReportWaves, useWaves } from "../api";
+import { SECTIONS } from "../forstaSections";
 import PinDialog from "./PinDialog";
 import { Menu, UndoBar } from "./bits";
 import type { Me, Wave } from "../api";
@@ -27,6 +28,15 @@ const showPerf = (() => {
 // [path, label, icon]; FEATURE names the /me feature a screen needs (config/access.yml): unlisted screens always show
 const FEATURE: Record<string, string> = { questions: "explorer", crosstab: "crosstab", trends: "trends", compare: "compare", audience: "audiences",
                                           changes: "changes", report: "report", survey: "survey" };
+const FORSTA_ICONS: Record<string, string> = {   // the Forsta group's icons (forstaSections.ts names the pages)
+  reports: "M5 3h14v18H5zm3 4h8v2H8zm0 4h8v2H8zm0 4h5v2H8z",
+  crosstab: "M3 3h18v18H3zm2 2v4h4V5zm6 0v4h8V5zM5 11v8h4v-8zm6 0v8h8v-8z",
+  samples: "M7 2h10v20H7zm2 2v14h6V4zm2 15h2v1h-2z",
+  warnings: "M12 2l10 18H2zm-1 7v5h2V9zm0 7v2h2v-2z",
+  files: "M6 2h8l6 6v14H6zm7 1v6h6",
+  deletion: "M9 3h6l1 2h4v2H4V5h4zm-3 6h12l-1 12H7z",
+  account: "M12 12a5 5 0 110-10 5 5 0 010 10zm-9 10c0-4.4 4-7 9-7s9 2.6 9 7z",
+};
 const SCREENS = [
   ["", "Overview", "M3 13h8V3H3zm10 8h8V11h-8zM3 21h8v-6H3zm10-18v6h8V3z"],
   ["questions", "Question explorer", "M4 20h4V10H4zm6 0h4V4h-4zm6 0h4v-7h-4z"],
@@ -125,11 +135,18 @@ export default function Shell() {
         {allowed(me, "sectors") && <NavLink to="/sectors"><Icon d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z" />Sector databank</NavLink>}
         {allowed(me, "expectations") && <NavLink to="/expectations"><Icon d="M4 20V10h4v10zm6 0V4h4v16zm6 0v-7h4v7z" />Expected vs actual</NavLink>}
         <NavLink to="/methodology"><Icon d="M12 2a10 10 0 110 20 10 10 0 010-20zm-1 15h2v-6h-2zm0-8h2V7h-2z" />Methodology</NavLink>
-        {isAdmin && <NavLink to="/logs"><Icon d="M4 4h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm0 5h16v2H4z" />Logs</NavLink>}
-        {me?.permissions?.includes("manage_roles") && <NavLink to="/access"><Icon d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5zm0 6a2 2 0 100 4 2 2 0 000-4zm-3 8h6c0-1.7-1.3-3-3-3s-3 1.3-3 3z" />Access</NavLink>}
-        {(isAdmin || me?.features?.includes("fieldwork")) && <NavLink to="/fieldwork"><Icon d="M3 4h18l-7 8v6l-4 2v-8z" />Fieldwork</NavLink>}
         <NavLink to="/whats-new"><Icon d="M12 2l2.4 6.9H22l-6 4.4 2.3 7-6.3-4.5L5.7 20.3 8 13.3 2 8.9h7.6z" />What's new</NavLink>
       </nav>
+      {(isAdmin || me?.features?.includes("fieldwork")) && <nav aria-label="Forsta">
+        <p className="rail-label">Forsta{isAdmin ? " · admins" : ""}</p>
+        <NavLink to="/fieldwork"><Icon d="M3 4h18l-7 8v6l-4 2v-8z" />Fieldwork</NavLink>
+        {isAdmin && SECTIONS.map(([path, label]) => <NavLink key={path} to={`/forsta/${path}`}><Icon d={FORSTA_ICONS[path]} />{label}</NavLink>)}
+      </nav>}
+      {isAdmin && <nav aria-label="Admin">
+        <p className="rail-label">Admin</p>
+        <NavLink to="/logs"><Icon d="M4 4h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm0 5h16v2H4z" />Logs</NavLink>
+        {me?.permissions?.includes("manage_roles") && <NavLink to="/access"><Icon d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5zm0 6a2 2 0 100 4 2 2 0 000-4zm-3 8h6c0-1.7-1.3-3-3-3s-3 1.3-3 3z" />Access</NavLink>}
+      </nav>}
       {wave && <nav aria-label="This wave">
         <p className="rail-label">{wave.survey_family === "CSI-US" ? "Weekly tracker" : "Survey"} · {fmtDate(wave.wave_date)}</p>
         {SCREENS.filter(([path]) => (!FEATURE[path] || allowed(me, FEATURE[path])) && (path !== "report" || hasReport)).map(([path, label, d]) =>

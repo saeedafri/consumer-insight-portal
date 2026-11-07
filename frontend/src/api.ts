@@ -338,17 +338,50 @@ export const useLogic = (id: number) =>
   useQuery({ queryKey: ["logic", id], queryFn: () => get<WaveLogic>(`/api/v1/waves/${id}/logic`), ...forever, enabled: id > 0, retry: false });
 /** An admin page's request (Fieldwork, Access). A demo sign-in also needs the admin token the Logs page keeps in this
  *  browser; an identity-provider sign-in does not (api/signin.py admin). */
+function adminToken(): Record<string, string> {
+  try { const token = localStorage.getItem("cip_admin_token"); return token ? { "X-CIP-Admin-Token": token } : {}; }
+  catch { return {}; }   // a private window: no token
+}
 async function admin<T>(url: string, method = "GET", body?: unknown): Promise<T> {
-  let token = "";
-  try { token = localStorage.getItem("cip_admin_token") ?? ""; } catch { /* a private window: no token */ }
   const r = await fetch(url, { method, credentials: "same-origin", body: body == null ? undefined : JSON.stringify(body),
-                               headers: { "Content-Type": "application/json", ...(token ? { "X-CIP-Admin-Token": token } : {}) } });
+                               headers: { "Content-Type": "application/json", ...adminToken() } });
   if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`), { status: r.status });
   return r.json() as Promise<T>;
 }
 /** Admins get everything; a role the super admin let see Fieldwork gets it without the deletion schedule or emails. */
 export const useFieldwork = (full: boolean) => useQuery({ queryKey: ["fieldwork", full], ...forever, retry: false,
   queryFn: () => full ? admin<FieldworkRecord>("/api/v1/admin/fieldwork") : get<FieldworkRecord>("/api/v1/fieldwork") });
+
+/** The Forsta admin screens (screens/Forsta.tsx), built by etl/fieldwork.py publish_forsta from what Forsta gave. */
+export interface ForstaLine { key: string; path: string; title: string | null; launched: string | null; state: string | null; hibernated: boolean;
+  survey_id: number | null; reports: number; banners: number; files: number; splits: string[]; launch_warnings: number; warnings: Record<string, number> }
+export interface ForstaOverview {
+  surveys: ForstaLine[]; warnings_summary: Record<string, string | number | null>[];
+  deletion: { path: string; title: string; date_of_deletion: string; days_until_deletion: number; created_on: string; created_by: string;
+              last_access: string | null; risk_level: string | null }[];
+  deletion_data: unknown[]; deleted: unknown[]; scheduled: unknown[]; planned: { autoclose: unknown[]; archives: unknown[] };
+  retention: Record<string, number | null> | null; crosstab_defaults: Record<string, unknown> | null; categories: { text: string; key: string }[];
+  endpoints: [string, string, string | null][]; not_loaded: { path: string; title: string | null; state: string | null }[]; collected: string | null;
+}
+export interface ForstaReport { id: string; title: string | null; description: string | null; access: string | null; updated: number | null; ran: boolean;
+  columns: string[]; banner: string | null; tables: { label: string; title: string | null; rows: (string | number)[][] }[] }
+export interface ForstaSurvey {
+  path: string; title: string | null; hibernated: boolean; files: { filename: string; size: number; modified: string }[];
+  banners: { title: string | null; segments: [string | null, string | null][] }[]; reports: ForstaReport[];
+  splits: Record<string, { segments: string[]; rows: Record<string, (number | null)[]> }>;
+  launch_warnings: Record<string, unknown[]>; warnings: { counts: Record<string, number>; events: [string, string, string | null, string | null][] };
+}
+export const useForsta = () => useQuery({ queryKey: ["forsta"], ...forever, retry: false, queryFn: () => admin<ForstaOverview>("/api/v1/admin/forsta") });
+export const useForstaSurvey = (key: string) => useQuery({ queryKey: ["forsta", key], ...forever, retry: false, enabled: !!key,
+  queryFn: () => admin<ForstaSurvey>(`/api/v1/admin/forsta/${key}`) });
+/** A saved report's Excel file as Forsta exported it, saved to the person's computer. */
+export async function downloadForstaReport(key: string, report: string, name: string) {
+  const r = await fetch(`/api/v1/admin/forsta/${key}/export/${report}`, { credentials: "same-origin", headers: adminToken() });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`);
+  const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await r.blob()), download: `${name}.xlsx` });
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
 
 /** The Access screen (super admin): every switchable menu, and each role's current choice (api/main.py roles). */
 export interface RoleMenus { features: { key: string; label: string }[]; roles: { role: string; features: string[]; chosen: boolean }[] }
