@@ -1,5 +1,14 @@
-"""Who a signed-in person is to the portal and what they may see, from config/access.yml: a role (super_admin, admin,
-analyst, client), a client organisation (None for Coresight staff), a tier (a package of features and study types), and each
+"""Who a signed-in person is to the portal and what they may do and see, from config/access.yml (role-based access):
+
+  role         who they are: super_admin (the portal's owner), analyst (Coresight staff), client (an external
+               organisation). Each role has a list of permissions (`roles:` in the file); can() is the one check
+  permissions  admin_pages (Logs, Fieldwork, the audit log, revoking sessions), manage_team_items (remove anyone's
+               boards and views), all_features (every feature and survey whatever the tier), unlimited (no rate limit)
+  tier         the package of features and study types the role's people get (staff: `staff.tier`, clients: their own)
+
+Who holds which role: `people:` in the file (the super admin), else staff by their email domain, else a client by
+theirs. Adding a role is a few lines of config: its permissions, then its people. Every sign-in is recorded with the
+role it had (cip_access_session, cip_access_log). Also: a client organisation (None for Coresight staff), a tier (a package of features and study types), and each
 survey's owner and visibility. The API asks here on every request (dictionary lookups, no database), and the session
 cookie carries the person's scope so nginx can tell a person who sees everything from one who must be filtered."""
 from __future__ import annotations
@@ -27,29 +36,41 @@ def profile(email: str) -> dict | None:
     r = rules()
     staff = r.get("staff") or {}
     client = next((cid for cid, c in (r.get("clients") or {}).items() if domain in (c.get("domains") or [])), None)
-    if email in (staff.get("super_admins") or []):   # every feature, every survey, every admin page, no rate limit
-        role, tier, client = "super_admin", "enterprise", None
+    named = next((role for role, emails in (r.get("people") or {}).items() if email in (emails or [])), None)
+    if named:                                          # a role given by name (config `people:`): the super admin
+        role, tier, client = named, staff.get("tier", "core"), None
     elif domain in (staff.get("domains") or []):
-        role, tier, client = ("admin" if email in (staff.get("admins") or []) else "analyst"), staff.get("tier", "core"), None
+        role, tier, client = "analyst", staff.get("tier", "core"), None
     elif client:
         role, tier = "client", r["clients"][client].get("tier", "core")
     elif r.get("unknown", "refuse") == "refuse":
         return None
     else:
         role, tier = r["unknown"].get("role", "client"), r["unknown"].get("tier", "demo")
+    if "all_features" in permissions_of(role):        # every feature and study type, whatever the tier
+        tier = "enterprise"
     package = r["tiers"][tier]
     features = r["features"] if package["features"] == EVERYTHING else list(package["features"])
     return {"email": email, "role": role, "tier": tier, "client": client, "features": features,
             "study_types": package["study_types"]}
 
 
-def is_admin(person: dict) -> bool:
-    """May this person open the admin pages (logs, fieldwork, audit) and manage others' team items."""
-    return person["role"] in ("super_admin", "admin")
+def permissions_of(role: str) -> set[str]:
+    """A role's permissions from config/access.yml `roles:` ("*" = all of them)."""
+    granted = ((rules().get("roles") or {}).get(role) or {}).get("permissions") or []
+    return set(PERMISSIONS) if granted == EVERYTHING else set(granted)
+
+
+PERMISSIONS = ("admin_pages", "manage_team_items", "all_features", "unlimited")
+
+
+def can(person: dict, permission: str) -> bool:
+    """The one role check: may this person do `permission` (one of PERMISSIONS)."""
+    return permission in permissions_of(person["role"])
 
 
 def internal(person: dict) -> bool:
-    return person["client"] is None and person["role"] in ("super_admin", "admin", "analyst")
+    return person["client"] is None and person["role"] != "client"
 
 
 def scope(person: dict) -> str:
@@ -87,7 +108,8 @@ BUCKETS: dict[tuple[str, str], tuple[float, float]] = {}   # (email, kind) → (
 def spend(email: str, kind: str) -> bool:
     """One request from a per-person token bucket of `limits[kind]` a minute; False when it is empty.
     ponytail: per worker (2 workers allow twice the rate); a shared store if the limit must be exact."""
-    if email in ((rules().get("staff") or {}).get("super_admins") or []):   # the super admin is never throttled
+    person = profile(email) if "@" in email else None
+    if person and can(person, "unlimited"):           # the super admin is never throttled
         return True
     rate = float((rules().get("limits") or {}).get(kind, 60))
     now = time.monotonic()

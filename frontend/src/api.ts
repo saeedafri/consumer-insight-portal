@@ -283,7 +283,7 @@ export const useAlerts = () => useQuery({ queryKey: ["alerts"], queryFn: () => g
 export const useAudiences = () => useQuery({ queryKey: ["audiences"], queryFn: () => get<Audience[]>("/api/v1/audiences"), ...team });
 
 /** The signed-in person (api /me). null before the API serves it: every screen then shows every feature. */
-export interface Me { email: string; name: string | null; role: string | null; tier: string | null; client: string | null; features: string[] | "*" | null }
+export interface Me { email: string; name: string | null; role: string | null; tier: string | null; client: string | null; features: string[] | "*" | null; permissions?: string[] }
 const loadMe = () => get<Me>("/api/v1/me").catch(() => null);
 export const useMe = () => useQuery({ queryKey: ["me"], queryFn: loadMe, staleTime: Infinity, gcTime: Infinity });
 /** A feature (config/access.yml: explorer, crosstab, trends, search, ask, export, boards, audiences, alerts, saved_views…)
@@ -313,12 +313,23 @@ export interface FieldworkSurvey {
   terminated: number | null; overquota: number | null; qualified: number | null; incidence: number | null; median_minutes: number | null;
   warnings: Record<string, number>; pages: [string, string, number, number, number, number | null][]; fetched_at: string;
   timeline?: [string, string | null, string][]; terms?: [string | null, string | null][];
+  saved_reports?: [string | null, string | null, string | null][]; category?: string | null; can_archive?: string | null;
+  tasks?: number; layouts?: number; datasources?: number; conditions?: number | null;
 }
 export interface FieldworkRecord {
   surveys: FieldworkSurvey[];
   archive: { path: string; name: string | null; archived_at: string | null; delete_at: string | null; held: boolean }[];
   retention?: { server_delete_days?: number | null; archive_days?: number | null; company?: number }[];
+  not_loaded?: { path: string; title: string | null; state: string | null }[];
+  planned?: { kind: string; items: unknown[] }[];
+  collected?: string | null;
 }
+
+/** A wave's questionnaire logic from its survey.xml in Forsta (etl/fieldwork.py logic → /api/v1/waves/<id>/logic):
+ *  when each question was shown, and the screen-out rules. Forsta waves only; 404 elsewhere. */
+export interface WaveLogic { questions: Record<string, string>; terms: [string | null, string, string][] }
+export const useLogic = (id: number) =>
+  useQuery({ queryKey: ["logic", id], queryFn: () => get<WaveLogic>(`/api/v1/waves/${id}/logic`), ...forever, enabled: id > 0, retry: false });
 export const useFieldwork = () => useQuery({ queryKey: ["fieldwork"], ...forever, retry: false, queryFn: async () => {
   // while sign-in is the demo, admin pages also need the admin token the Logs page keeps in this browser
   let token = "";

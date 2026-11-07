@@ -1,6 +1,7 @@
-"""Forsta's fieldwork record (etl/fieldwork.py): what the admins' Fieldwork screen shows, checked against Forsta's own
-answer for survey 261003 (the 2 Nov 2026 wave; tests/fixtures/fieldwork_261003.json, its warning events left out),
-and the rules that keep collecting from ever stopping a load."""
+"""Forsta's own record of each survey (etl/fieldwork.py): what the admins' Fieldwork screen and the Survey preview show,
+checked against Forsta's answer for survey 261003 (the 2 Nov 2026 wave; tests/fixtures/fieldwork_261003.json, its
+warning events left out); that it is kept in the database (cip_forsta_record); the rules that keep collecting from
+ever stopping a load; and that CIP only ever reads from Forsta."""
 import gzip
 import json
 from pathlib import Path
@@ -21,14 +22,33 @@ def test_the_survey_line_reads_forstas_funnel():
     assert fieldwork.summary({**FIXTURE, **timeline}, None)["timeline"] == [["2026-11-02T13:25:06Z", "a@coresight.com", "State set to live"]]
 
 
-def test_publish_keeps_one_line_per_survey_and_the_latest_archiving(tmp_path, monkeypatch):
-    kept = tmp_path / "kept"
-    monkeypatch.setattr(fieldwork, "ROOT", kept)
-    fieldwork.save(fieldwork.file_of(FIXTURE["path"]), FIXTURE)
-    fieldwork.save(kept / "archived.json.gz", [
+XML = """<survey xmlns:ss="http://decipherinc.com/ss" name="Survey">
+  <term label="te1" cond="timeSpent() &lt; 25">Speeder</term>
+  <radio label="XM1"><title>Holiday shopping?</title><row label="r1" cond="1">Yes</row></radio>
+  <block label="holiday" cond="XM1.r1">
+    <checkbox label="XM1A" cond="not(G5.r14)"><title>Which categories?</title></checkbox>
+    <text label="XM9"><title>Why?</title></text>
+  </block>
+</survey>"""
+
+
+def test_the_questionnaires_conditions_come_from_survey_xml_with_their_blocks():
+    found = fieldwork.logic(XML)
+    assert found["questions"] == {"XM1A": "(XM1.r1) and (not(G5.r14))", "XM9": "XM1.r1"}   # XM1 always shown
+    assert found["terms"] == [["te1", "timeSpent() < 25", "Speeder"]]
+
+
+def test_records_are_kept_in_the_database_and_published_for_the_screens(csi_db, tmp_path):
+    fieldwork.store("selfserve/58f/261003", {**{k: FIXTURE[k] for k in ("survey", "completions", "dropouts", "warnings")},
+                                             "survey_xml": XML.encode()})
+    fieldwork.store("", {"archived": [
         {"survey_path": "selfserve/58f/250600", "name": "Old", "archived_at": "2026-01-01T00:00:00Z", "delete_at": "2027-01-01T00:00:00Z"},
         {"survey_path": "selfserve/58f/250600", "name": "Old", "archived_at": "2026-02-05T00:00:00Z", "delete_at": "2027-02-05T00:00:00Z"},
-        {"survey_path": "selfserve/58f/test", "name": "Test", "archived_at": "2026-03-01T00:00:00Z", "delete_at": "2027-03-01T00:00:00Z"}])
+        {"survey_path": "selfserve/58f/test", "name": "Test", "archived_at": "2026-03-01T00:00:00Z", "delete_at": "2027-03-01T00:00:00Z"}],
+        "historical": ["selfserve/58f/261003", "selfserve/58f/unloaded"], "autoclose_planned": [{"survey": "x"}],
+        "retention": {"86": {"server_delete_days": 365}}})
+    kept = fieldwork.records()
+    assert kept["selfserve/58f/261003"]["survey_xml"] == XML and kept[""]["historical"][1] == "selfserve/58f/unloaded"
     out = tmp_path / "out"
     (out / "api/v1").mkdir(parents=True)
     (out / "api/v1/waves.json.gz").write_bytes(gzip.compress(json.dumps([
@@ -36,38 +56,39 @@ def test_publish_keeps_one_line_per_survey_and_the_latest_archiving(tmp_path, mo
         {"survey_id": 90, "source_ref": "selfserve/58f/250600", "wave_date": "2025-06-02", "title": "Old"}]).encode()))
     assert fieldwork.publish(out, publish.write) > 0
     data = json.loads(gzip.decompress((out / "api/v1/admin/fieldwork.json.gz").read_bytes()))
-    assert [s["survey_id"] for s in data["surveys"]] == [532]
+    line = data["surveys"][0]
+    assert line["survey_id"] == 532 and line["qualified"] == 403 and line["conditions"] == 2
     assert [(a["path"], a["delete_at"][:10], a["held"]) for a in data["archive"]] == [
         ("selfserve/58f/250600", "2027-02-05", True), ("selfserve/58f/test", "2027-03-01", False)]
+    assert [n["path"] for n in data["not_loaded"]] == ["selfserve/58f/unloaded"]
+    assert data["planned"] == [{"kind": "autoclose_planned", "items": [{"survey": "x"}]}] and data["retention"] == [{"server_delete_days": 365}]
+    logic = json.loads(gzip.decompress((out / "api/v1/waves/532/logic.json.gz").read_bytes()))
+    assert logic["questions"]["XM9"] == "XM1.r1"
 
 
-def test_a_hibernated_survey_is_not_woken_and_a_failure_never_stops_the_run(tmp_path, monkeypatch):
-    monkeypatch.setattr(fieldwork, "ROOT", tmp_path)
+def test_a_hibernated_survey_is_not_woken_and_a_failure_never_stops_the_run(csi_db, monkeypatch):
     monkeypatch.setattr(fieldwork, "due", lambda loaded: loaded)
     asked = []
 
     class Forsta:
-        def archived_surveys(self): return []
-        def survey_info(self, path): return {"title": path}
-        def hibernation(self, path): return "hibernated" if path == "asleep" else "restored"
-        def survey_completions(self, path):
-            asked.append(path)
-            if path == "broken":
+        def read_json(self, endpoint, **params):
+            if endpoint == "rh/companies":
+                return [{"id": 86}]
+            if endpoint == "hibernation/status":
+                return {"status": "hibernated" if params["survey"] == "asleep" else "restored"}
+            asked.append(endpoint)
+            if endpoint.startswith("rh/surveys/broken"):
                 raise RuntimeError("Forsta 500")
             return {}
-        def survey_dropouts(self, path): return {}
-        def survey_warnings(self, path): return {}
-        def warnings_summary(self): return []
-        def companies(self): return [{"id": 86}]
-        def retention(self, company): return {"server_delete_days": 365}
 
-        def __getattr__(self, name):   # the other record calls (quota, terms, audit log…) answer empty
-            return lambda path: {}
+        def survey_file(self, path, name):
+            return b"<survey/>"
 
     assert fieldwork.collect(Forsta(), ["asleep", "broken", "fine"]) == ["asleep", "fine"]
-    assert asked == ["broken", "fine"]                                       # the hibernated one is never asked
-    assert fieldwork.read(fieldwork.file_of("asleep"))["hibernated"] is True
-    assert fieldwork.read(tmp_path / "retention.json.gz") == [{"server_delete_days": 365, "company": 86}]
+    assert not any("asleep" in e for e in asked if not e.startswith("rh/surveys/asleep"))     # only its record: not woken
+    kept = fieldwork.records()
+    assert set(kept["asleep"]) == {"path", "fetched_at", "survey", "hibernation"}
+    assert "survey_xml" in kept["fine"] and "retention" in kept[""]
 
 
 def test_the_home_pages_figures_are_counts_and_dates_only(tmp_path):

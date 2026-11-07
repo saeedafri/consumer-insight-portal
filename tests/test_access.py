@@ -47,7 +47,9 @@ RULES = {
     "features": ["dashboards", "explorer", "crosstab", "trends", "search", "ask", "export", "boards", "audiences", "alerts", "saved_views"],
     "tiers": {"core": {"features": ["dashboards", "explorer", "trends", "search", "export", "boards"], "study_types": ["tracker", "adhoc"]},
               "enterprise": {"features": "*", "study_types": "*"}},
-    "staff": {"domains": ["coresight.com"], "admins": ["boss@coresight.com"], "tier": "enterprise"},
+    "roles": {"super_admin": {"permissions": "*"}, "analyst": {"permissions": []}, "client": {"permissions": []}},
+    "people": {"super_admin": ["boss@coresight.com"]},
+    "staff": {"domains": ["coresight.com"], "tier": "enterprise"},
     "clients": {"acme": {"name": "Acme", "domains": ["acme.com"], "tier": "core"},
                 "zeta": {"name": "Zeta", "domains": ["zeta.com"], "tier": "core"}},
     "surveys": {"default_visibility": "all", "families": {"ACME_STUDY": {"client": "acme", "visibility": "client"}}, "ids": {}},
@@ -129,7 +131,7 @@ def test_sign_out_revokes_the_session_and_is_audited(portal):
 def test_me_and_methodology_have_the_agreed_shapes_and_openapi_needs_a_session(portal):
     status, _, body = call("/api/v1/me", signed("boss@coresight.com"))
     me = json.loads(body)
-    assert status == 200 and set(me) == {"email", "name", "role", "tier", "client", "features"} and me["role"] == "admin"
+    assert status == 200 and set(me) == {"email", "name", "role", "tier", "client", "features", "permissions"} and me["role"] == "super_admin"
     assert json.loads(call("/api/v1/me", signed("pat@acme.com"))[2])["client"] == "acme"
     method = json.loads(call("/api/v1/methodology", signed("pat@acme.com"))[2])
     assert method["weighting"] == "none" and "small_cells" in method and "significance" in method
@@ -365,14 +367,27 @@ def test_the_home_pages_figures_need_no_sign_in(portal):
     assert status == 200 and json.loads(body)["latestDate"] == "2026-10-19"
 
 
-def test_the_super_admin_has_every_feature_every_admin_page_and_no_rate_limit(portal, monkeypatch):
-    monkeypatch.setitem(RULES["staff"], "super_admins", ["owner@coresight.com"])
+def test_the_super_admin_has_every_permission_and_feature_and_no_rate_limit(portal, monkeypatch):
+    monkeypatch.setitem(RULES["people"], "super_admin", ["owner@coresight.com"])
     monkeypatch.setitem(RULES["tiers"], "staff", {"features": ["dashboards"], "study_types": ["tracker"]})
     monkeypatch.setitem(RULES["staff"], "tier", "staff")                      # even if staff get a small package
     me = access.profile("owner@coresight.com")
     assert me["role"] == "super_admin" and set(me["features"]) == set(RULES["features"]) and me["study_types"] == "*"
-    assert access.is_admin(me) and access.scope(me) == access.EVERYTHING
+    assert all(access.can(me, p) for p in access.PERMISSIONS) and access.scope(me) == access.EVERYTHING
     assert all(access.spend("owner@coresight.com", "ask") for _ in range(100))   # limits: ask is 2 a minute here
     put(portal, "admin/fieldwork", {"surveys": [], "archive": []})
     assert call("/api/v1/admin/fieldwork", signed("owner@coresight.com"))[0] == 200
-    assert access.profile("ana@coresight.com")["role"] == "analyst"           # everyone else as before
+    said = json.loads(call("/api/v1/me", signed("owner@coresight.com"))[2])
+    assert said["role"] == "super_admin" and "admin_pages" in said["permissions"]
+    analyst = access.profile("ana@coresight.com")                            # staff: analysts, no admin pages
+    assert analyst["role"] == "analyst" and not any(access.can(analyst, p) for p in access.PERMISSIONS)
+    assert json.loads(call("/api/v1/me", signed("ana@coresight.com"))[2])["permissions"] == []
+    assert call("/api/v1/admin/fieldwork", signed("ana@coresight.com"))[0] == 403
+
+
+def test_a_refused_sign_in_is_recorded_with_who_tried(portal, monkeypatch):
+    monkeypatch.setenv("CIP_DEMO_LOGIN", "1")
+    recorded = []
+    monkeypatch.setattr(audit, "record", lambda request, action, **kw: recorded.append((action, kw["who"]["email"], kw.get("detail"))))
+    assert call("/auth/dev-login?email=stranger@unknown.org")[0] == 403                # RULES: unknown emails refused
+    assert recorded == [("sign_in_failed", "stranger@unknown.org", {"reason": "not entitled"})]

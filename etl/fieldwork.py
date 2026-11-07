@@ -1,106 +1,178 @@
-"""Forsta's fieldwork record of every survey, kept by CIP and published for the admins' Fieldwork screen.
+"""Forsta's own record of every survey and of the company, kept by CIP in its database and shown where it helps.
 
-Why: the respondents of every loaded survey are in CIP's database, but how the fieldwork went lived only in Forsta:
-how many opened the survey, terminated, went over quota or dropped out (and on which page), how long the interview
-took, and the warnings Forsta logged. Forsta deletes an archived survey a year after archiving it (the 101 archived
-surveys of 7 Nov 2026 go between Feb and Nov 2027), and that record with it.
+Why: the respondents of every loaded survey are in CIP's database, but how the fieldwork went, how the questionnaire
+was built and when Forsta will delete a survey lived only in Forsta. Forsta deletes an archived survey a year after
+archiving it (the 101 archived surveys of 7 Nov 2026 go between Feb and Nov 2027), and all of that with it.
+
+What is kept (read-only GET calls only, etl/forsta_client.py; one row per survey and kind in cip_forsta_record,
+sql/009_forsta_record.sql, Forsta's answer verbatim and gzip-compressed):
+  per survey   SURVEY_READS: its record, hibernation, funnel, drop-outs by page, warnings, quota, splits, screen-out
+               rules, cross-tab banners, launch checks, files, audit log, saved reports, archive check, data layouts,
+               data sources, tasks, and survey.xml (the questionnaire's source)
+  company      COMPANY_READS: the archive and deletion schedule, every survey's warnings, the full survey history,
+               planned auto-closes and archives, deletion reports, retention, categories, cross-tab defaults, and
+               Forsta's own list of its endpoints (meta: to spot new ones)
+Not kept, on purpose (docs/FORSTA_API_REVIEW.md): API keys, translations, campaigns, MaxDiff/conjoint and video.
 
 Who calls it:
   collect()  scripts/weekly_forsta.py run(), every run: the surveys it just loaded, the ones in the field, and a few
-             older ones still missing a record (PER_RUN, so the backfill spreads over runs), plus Forsta's archive
-             schedule. Read-only GETs (etl/forsta_client.py), about 2 s a survey. Forsta's answers are kept verbatim,
-             one gzip file per survey under CIP_FIELDWORK_DIR (/home on the server: it survives deploys).
-  publish()  etl/publish.py write_views: api/v1/admin/fieldwork.json.gz from those files (no Forsta, no database),
-             served to admins only by /api/v1/admin/fieldwork (api/main.py). The screen: frontend/src/screens/Fieldwork.tsx.
-A hibernated survey is not woken (that is a paid action in Forsta): it is marked hibernated and skipped.
+             older ones still missing a record (PER_RUN: the backfill spreads over runs), plus the company records.
+             About 18 GETs (6-8 s) a survey; a failure is logged and never stops the load.
+  publish()  etl/publish.py write_views, from the table (no Forsta call):
+             api/v1/admin/fieldwork.json.gz  the admins' Fieldwork screen (frontend/src/screens/Fieldwork.tsx)
+             api/v1/waves/<id>/logic.json.gz each wave's question conditions and screen-out rules, from its
+                                             survey.xml (the Survey preview, frontend/src/screens/Survey.tsx)
+A hibernated survey is not woken (that changes Forsta and is a paid action): it is marked hibernated and skipped.
 """
 from __future__ import annotations
 
 import gzip
 import json
 import logging
-import os
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
-from shared.core.database import get_engine
+from shared.core.database import apply_sql, get_engine
 
 log = logging.getLogger("cip.fieldwork")
-ROOT = Path(os.environ.get("CIP_FIELDWORK_DIR") or Path(__file__).resolve().parents[1] / "data/fieldwork")
-PER_RUN = 15   # older surveys backfilled per run: ~30 s of Forsta calls, so a daily run stays short
+TABLE = Path(__file__).resolve().parents[1] / "sql" / "009_forsta_record.sql"
+PER_RUN = 10   # older surveys backfilled per run: ~70 s of Forsta calls, so a daily run stays short
+
+# kind: the read-only endpoint for one survey ({path} is its Forsta path)
+SURVEY_READS = {
+    "survey": "rh/surveys/{path}", "completions": "surveys/{path}/summary/completions",
+    "dropouts": "surveys/{path}/summary/dropouts", "warnings": "surveys/{path}/warnings", "quota": "surveys/{path}/quota",
+    "splits": "surveys/{path}/summary/splits", "terms": "surveys/{path}/terms", "banners": "surveys/{path}/crosstabs/configuration",
+    "launch_warnings": "surveys/{path}/state/live/warnings", "files": "surveys/{path}/files", "audit_log": "rh/surveys/{path}/audit-log",
+    "saved_reports": "surveys/{path}/crosstabs/saved", "can_archive": "surveys/{path}/can-archive", "layouts": "surveys/{path}/layouts",
+    "datasources": "surveys/{path}/datasources", "tasks": "surveys/{path}/tasks",
+}
+# kind: the read-only endpoint for the company ({company} is its id; Coresight's is 86)
+COMPANY_READS = {
+    "archived": "rh/surveys/archived", "warnings_summary": "rh/warnings/summary", "historical": "rh/surveys/historical",
+    "autoclose_planned": "autoclose/planned", "archives_planned": "archives/planned", "categories": "rh/surveys/categories",
+    "meta": "meta", "retention": "rh/companies/{company}/retention", "archives_scheduled": "archives/{company}/scheduled",
+    "archives_deleted": "archives/{company}/deleted", "archives_deletion": "archives/{company}/deletion",
+    "archives_deletion_data": "archives/{company}/deletion/data", "crosstab_defaults": "rh/companies/{company}/crosstab-report-defaults",
+}
+QUESTION_TAGS = {"radio", "checkbox", "select", "text", "textarea", "number", "float", "autosum", "autofill"}
 
 
-def file_of(path: str) -> Path:
-    """Where one survey's record is kept: its Forsta path with the slashes as double underscores."""
-    return ROOT / (path.strip("/").replace("/", "__") + ".json.gz")
+def ensure_table() -> None:
+    """Create cip_forsta_record the first time (sql/009_forsta_record.sql), so a server needs no manual step."""
+    engine = get_engine("etl")
+    if "cip_forsta_record" not in inspect(engine).get_table_names():
+        apply_sql(TABLE, engine)
 
 
-def save(target: Path, data) -> None:
-    """Write gzip JSON in one step (a reader never sees half a file)."""
-    target.parent.mkdir(parents=True, exist_ok=True)
-    partial = target.with_name(target.name + ".part")
-    partial.write_bytes(gzip.compress(json.dumps(data).encode(), 6))
-    partial.replace(target)
+def store(path: str, kinds: dict) -> None:
+    """Keep one survey's (or, with path '', the company's) answers, replacing the last ones of the same kinds."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    rows = [{"p": path, "k": kind, "t": now, "b": gzip.compress(data if isinstance(data, bytes) else json.dumps(data).encode(), 6)}
+            for kind, data in kinds.items()]
+    with get_engine("etl").begin() as conn:
+        conn.execute(text("REPLACE INTO cip_forsta_record (forsta_path, kind, fetched_at, payload) VALUES (:p, :k, :t, :b)"), rows)
 
 
-def read(target: Path):
-    """A kept file, or None when it is missing or unreadable."""
-    try:
-        return json.loads(gzip.decompress(target.read_bytes()))
-    except (OSError, ValueError):
-        return None
+def records() -> dict[str, dict]:
+    """Every kept answer, as {forsta path ('' for the company): {kind: data, 'fetched_at': when}}."""
+    found: dict[str, dict] = {}
+    with get_engine("app").connect() as conn:
+        for path, kind, fetched, payload in conn.execute(text("SELECT forsta_path, kind, fetched_at, payload FROM cip_forsta_record")):
+            body = gzip.decompress(payload)
+            found.setdefault(path, {"path": path})[kind] = body.decode("utf-8", "replace") if kind == "survey_xml" else json.loads(body)
+            found[path]["fetched_at"] = max(str(fetched), found[path].get("fetched_at", ""))
+    return found
 
 
 def snapshot(client, path: str) -> dict:
-    """Forsta's fieldwork record of one survey, verbatim: its survey record, and unless hibernated the funnel, the
-    page-by-page drop-outs and the warnings."""
-    record = {"path": path, "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-              "survey": client.survey_info(path), "hibernated": client.hibernation(path) == "hibernated"}
-    if not record["hibernated"]:
-        record.update(completions=client.survey_completions(path), dropouts=client.survey_dropouts(path),
-                      warnings=client.survey_warnings(path), quota=client.survey_quota(path), splits=client.survey_splits(path),
-                      terms=client.survey_terms(path), banners=client.survey_banners(path),
-                      launch_warnings=client.survey_launch_warnings(path), files=client.survey_files(path),
-                      audit_log=client.survey_audit_log(path))
-    return record
+    """Forsta's record of one survey: its survey record and hibernation state, and unless hibernated every
+    SURVEY_READS answer and its survey.xml. An endpoint Forsta refuses for this survey is left out, the rest kept."""
+    kinds = {"survey": client.read_json(SURVEY_READS["survey"].format(path=path)),
+             "hibernation": client.read_json("hibernation/status", survey=path)}
+    if kinds["hibernation"].get("status") == "hibernated":
+        return kinds
+    for kind, endpoint in SURVEY_READS.items():
+        if kind not in kinds:
+            try:
+                kinds[kind] = client.read_json(endpoint.format(path=path))
+            except Exception as exc:   # noqa: BLE001   e.g. 404 for an endpoint this survey does not use
+                log.info("Fieldwork: %s of %s not read: %s", kind, path, str(exc)[:120])
+    try:
+        kinds["survey_xml"] = client.survey_file(path, "survey.xml")
+    except Exception as exc:   # noqa: BLE001
+        log.info("Fieldwork: survey.xml of %s not read: %s", path, str(exc)[:120])
+    return kinds
+
+
+def company_snapshot(client) -> dict:
+    """The company-wide answers (COMPANY_READS), each company's under its id; one that fails is left out."""
+    kinds = {}
+    companies = [c["id"] for c in client.read_json("rh/companies")]
+    for kind, endpoint in COMPANY_READS.items():
+        try:
+            kinds[kind] = ({c: client.read_json(endpoint.format(company=c)) for c in companies} if "{company}" in endpoint
+                           else client.read_json(endpoint))
+        except Exception as exc:   # noqa: BLE001   e.g. 403: our key may not read it
+            log.info("Fieldwork: %s not read: %s", kind, str(exc)[:120])
+    return kinds
 
 
 def due(loaded: list[str]) -> list[str]:
-    """The surveys to fetch this run: those just loaded, those in the field (their funnel moves), and up to PER_RUN
+    """The surveys to read this run: those just loaded, those in the field (their funnel moves), and up to PER_RUN
     loaded ones with no record yet, newest first."""
     with get_engine("etl").connect() as conn:
         rows = conn.execute(text(
             "SELECT f.forsta_path, f.state FROM cip_forsta_survey f JOIN cip_survey s ON s.source_ref = f.forsta_path"
             " WHERE s.platform = 'forsta' ORDER BY f.launched_at DESC")).all()
+        kept = {p for (p,) in conn.execute(text("SELECT forsta_path FROM cip_forsta_record WHERE kind = 'survey'"))}
     live = [path for path, state in rows if state == "live"]
-    missing = [path for path, _ in rows if not file_of(path).exists()][:PER_RUN]
+    missing = [path for path, _ in rows if path not in kept][:PER_RUN]
     return list(dict.fromkeys([*loaded, *live, *missing]))
 
 
 def collect(client, loaded: list[str]) -> list[str]:
-    """Keep the fieldwork record of the surveys due this run and Forsta's archive schedule; returns the paths kept.
-    A survey that fails is logged and left for the next run: this never stops the load."""
-    kept = []
-    for name, read_it in (("archived", lambda: client.archived_surveys()), ("warnings", lambda: client.warnings_summary()),
-                          ("retention", lambda: [client.retention(c["id"]) | {"company": c["id"]} for c in client.companies()])):
-        try:   # the company-wide records: the archive schedule, every survey's warnings, the retention rules
-            save(ROOT / f"{name}.json.gz", read_it())
-        except Exception as exc:   # noqa: BLE001
-            log.warning("Forsta %s not read: %s", name, exc)
+    """Keep the company's records and those of the surveys due this run; returns the survey paths kept. Anything
+    that fails is logged and left for the next run: this never stops the load."""
     try:
+        ensure_table()
+        store("", company_snapshot(client))
         paths = due(loaded)
-    except Exception as exc:   # noqa: BLE001   the database out of reach: the surveys just loaded still count
-        log.warning("Fieldwork: the register was not read: %s", exc)
+    except Exception as exc:   # noqa: BLE001   the database or Forsta out of reach: the surveys just loaded still count
+        log.warning("Fieldwork: the company records or the register were not read: %s", exc)
         paths = loaded
+    kept = []
     for path in paths:
         try:
-            save(file_of(path), snapshot(client, path))
+            store(path, snapshot(client, path))
             kept.append(path)
         except Exception as exc:   # noqa: BLE001
             log.warning("Fieldwork record of %s not read: %s", path, exc)
     return kept
+
+
+def logic(xml: str) -> dict:
+    """The questionnaire's conditions from survey.xml: when each question is shown (its own condition and those of the
+    blocks around it, joined with "and"), and the screen-out rules (terms) with their conditions."""
+    questions, terms = {}, []
+
+    def walk(node, around: list[str]) -> None:
+        tag, own = node.tag.split("}")[-1], node.get("cond")
+        conditions = around + ([own] if own and own != "1" else [])
+        if tag in QUESTION_TAGS and node.get("label"):
+            if conditions:
+                questions[node.get("label")] = " and ".join(f"({c})" if len(conditions) > 1 else c for c in conditions)
+            return                                     # a question's rows and columns carry their own conditions
+        if tag == "term":
+            terms.append([node.get("label"), " and ".join(conditions), (node.text or "").strip()])
+            return
+        for child in node:
+            walk(child, conditions)
+    walk(ET.fromstring(xml.encode("utf-8")), [])
+    return {"questions": questions, "terms": terms}
 
 
 def number(completions: dict, formula: str):
@@ -110,7 +182,7 @@ def number(completions: dict, formula: str):
 
 
 def summary(record: dict, wave: dict | None) -> dict:
-    """One survey's line on the Fieldwork screen, and its pages for the drop-out funnel."""
+    """One survey's line on the Fieldwork screen, its drop-out pages, its timeline and its Forsta details."""
     info, completions = record.get("survey") or {}, record.get("completions") or {}
     opened, qualified = number(completions, "clickthrough"), number(completions, "qualified")
     median = number(completions, "completionTimeMedian")
@@ -122,30 +194,55 @@ def summary(record: dict, wave: dict | None) -> dict:
               split.get("dropped"), split.get("average_seconds")]
              for row in (record.get("dropouts") or {}).get("rows", []) for split in row.get("splits", [])[:1]
              if split.get("started")]
+    saved = [[r.get("title"), datetime.fromtimestamp(r["updated_on"] / 1000, timezone.utc).date().isoformat() if r.get("updated_on") else None,
+              r.get("access")] for r in record.get("saved_reports") or []]
     return {"path": record["path"], "survey_id": wave and wave["survey_id"], "title": info.get("title") or (wave or {}).get("title"),
-            "wave_date": (wave or {}).get("wave_date"), "state": info.get("state"), "hibernated": record.get("hibernated", False),
+            "wave_date": (wave or {}).get("wave_date"), "state": info.get("state"),
+            "hibernated": (record.get("hibernation") or {}).get("status") == "hibernated",
             "launched": info.get("dateLaunched"), "closed": info.get("closedDate"), "questions": info.get("questions"),
             "opened": opened, "partial": number(completions, "partial"), "terminated": number(completions, "terminates"),
             "overquota": number(completions, "overquota"), "qualified": qualified,
             "incidence": round(100 * qualified / opened, 1) if opened and qualified is not None else None,
             "median_minutes": round(median / 60, 1) if median else None,
             "warnings": (record.get("warnings") or {}).get("counts") or {}, "pages": pages, "fetched_at": record.get("fetched_at"),
-            "timeline": sorted(timeline), "terms": terms}
+            "timeline": sorted(timeline), "terms": terms, "saved_reports": saved, "category": info.get("category"),
+            "can_archive": (record.get("can_archive") or {}).get("message"), "tasks": len(record.get("tasks") or []),
+            "layouts": len(record.get("layouts") or []), "datasources": len(record.get("datasources") or []),
+            "conditions": len(logic(record["survey_xml"])["questions"]) if record.get("survey_xml") else None}
 
 
 def publish(out: Path, write) -> int:
-    """Called by etl/publish.py write_views: api/v1/admin/fieldwork.json.gz from the kept records and the published
-    waves (to name each survey's wave). Returns the bytes written; nothing when no record is kept yet."""
-    if not ROOT.is_dir():
+    """Called by etl/publish.py write_views: the admins' Fieldwork file and each wave's logic file, from the kept
+    records and the published waves (to name each survey's wave). Returns the bytes written; nothing before the
+    first collection (no table yet)."""
+    engine = get_engine("app")
+    if "cip_forsta_record" not in inspect(engine).get_table_names():
         return 0
+    kept = records()
+    company = kept.pop("", {})
     waves = {w.get("source_ref"): w for w in json.loads(gzip.decompress((out / "api/v1/waves.json.gz").read_bytes()))}
-    company = {"archived.json.gz", "warnings.json.gz", "retention.json.gz"}   # not a survey's record
-    records = [read(f) for f in sorted(ROOT.glob("*.json.gz")) if f.name not in company]
-    surveys = [summary(r, waves.get(r["path"])) for r in records if r and r.get("path")]
-    surveys.sort(key=lambda s: s.get("launched") or "", reverse=True)
+    size = 0
+    for path, record in kept.items():   # the Survey preview's conditions, for every wave whose survey.xml is kept
+        wave = waves.get(path)
+        if wave and record.get("survey_xml"):
+            try:
+                size += write(out / "api/v1/waves" / str(wave["survey_id"]) / "logic", logic(record["survey_xml"]))
+            except ET.ParseError as exc:
+                log.warning("survey.xml of %s does not parse: %s", path, exc)
+    surveys = sorted((summary(r, waves.get(p)) for p, r in kept.items()), key=lambda s: s.get("launched") or "", reverse=True)
     latest = {}   # Forsta lists a survey once per archiving: its latest one decides when it goes
-    for a in sorted(read(ROOT / "archived.json.gz") or [], key=lambda a: a.get("archived_at") or ""):
+    for a in sorted(company.get("archived") or [], key=lambda a: a.get("archived_at") or ""):
         latest[a.get("survey_path")] = a
     archive = sorted(({"path": path, "name": a.get("name"), "archived_at": a.get("archived_at"), "delete_at": a.get("delete_at"),
                        "held": path in waves} for path, a in latest.items()), key=lambda a: a["delete_at"] or "")
-    return write(out / "api/v1/admin/fieldwork", {"surveys": surveys, "archive": archive, "retention": read(ROOT / "retention.json.gz") or []})
+    with engine.connect() as conn:   # the register's titles and states, for the surveys Forsta has and CIP does not
+        register = {p: (t, s) for p, t, s in conn.execute(text("SELECT forsta_path, title, state FROM cip_forsta_survey"))}
+    not_loaded = [{"path": p, "title": register.get(p, (None, None))[0], "state": register.get(p, (None, None))[1]}
+                  for p in company.get("historical") or [] if p not in waves]
+    planned = [{"kind": kind, "items": items} for kind in ("autoclose_planned", "archives_planned")
+               if (items := company.get(kind))]
+    planned += [{"kind": kind, "items": items} for kind in ("archives_scheduled", "archives_deleted")
+                for items in (company.get(kind) or {}).values() if items]
+    return size + write(out / "api/v1/admin/fieldwork", {
+        "surveys": surveys, "archive": archive, "retention": list((company.get("retention") or {}).values()),
+        "not_loaded": not_loaded, "planned": planned, "collected": company.get("fetched_at")})

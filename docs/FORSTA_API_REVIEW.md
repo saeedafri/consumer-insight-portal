@@ -25,9 +25,9 @@ Of the 57 POST operations, these compute or read and change nothing in the surve
 | Endpoint | What it does | Checked | Use in CIP | Where its results go |
 |---|---|---|---|---|
 | `POST /surveys/{survey}/data` | The data export, with the conditions and field list in the body (for lists too long for a URL) | Live: 200, 1.1 s, survey unchanged | Not needed today: CIP's GET export has no long conditions | The load, as now (`cip_respondent`, `cip_answer`) |
-| `POST /surveys/{survey}/crosstabs/execute` | Forsta's own cross-tab: any tables, segments, filters, significance letters, in memory | Live: 200, 1.5 s, survey unchanged; q4 matches CIP to the person (Walmart 272, Dollar General 134, Sam's Club 68) | An independent check of every loaded wave: Forsta's totals against CIP's cube, shown as "Forsta agrees" on the Fieldwork screen | The survey's fieldwork record (`CIP_FIELDWORK_DIR`, one gzip file per survey on /home), published with the Fieldwork file |
-| `POST /surveys/{survey}/crosstabs/saved/{saved}/execute` | Runs a report the research team saved in Forsta (261003 has 5) | From the specification | The team's own saved tables, reproduced in CIP next to each wave | Same fieldwork record |
-| `POST /surveys/{survey}/crosstabs/saved/{saved}/export/{format}` | Converts a saved report to Excel, PowerPoint or PDF and returns the file | From the specification | "Forsta's report" download for admins | A file beside the fieldwork record |
+| `POST /surveys/{survey}/crosstabs/execute` | Forsta's own cross-tab: any tables, segments, filters, significance letters, in memory | Live: 200, 1.5 s, survey unchanged; q4 matches CIP to the person (Walmart 272, Dollar General 134, Sam's Club 68) | An independent check of every loaded wave: Forsta's totals against CIP's cube, shown as "Forsta agrees" on the Fieldwork screen | A new kind (`crosstab_check`) in `cip_forsta_record` beside the survey's other Forsta answers, published with the Fieldwork file |
+| `POST /surveys/{survey}/crosstabs/saved/{saved}/execute` | Runs a report the research team saved in Forsta (261003 has 5) | From the specification | The team's own saved tables, reproduced in CIP next to each wave | `cip_forsta_record`, kind `saved_report:<id>` |
+| `POST /surveys/{survey}/crosstabs/saved/{saved}/export/{format}` | Converts a saved report to Excel, PowerPoint or PDF and returns the file | From the specification | "Forsta's report" download for admins | `cip_forsta_record`, kind `saved_export:<id>` (the file, gzip-compressed) |
 | `POST /bulk/bounced` | Checks a list of emails against known bounce-backs | From the specification | None: CIP sends no survey invitations | — |
 | `POST /surveys/{survey}/samplesources/{listId}/verify` | Verifies signed survey links | From the specification | None: CIP does not build survey links | — |
 | `POST /globalsearch/emails` | Finds participants who were sent a bulk email | From the specification | None: personal data, no analytical use | — |
@@ -50,27 +50,46 @@ then list explicitly.
 
 ## 3. Every GET operation, and where CIP uses it
 
-Status: **Added 7 Nov**: collected by `etl/fieldwork.py` every run and kept verbatim, shown on the admin Fieldwork
-screen where it says so. **In CIP**: used by the load. **Recommended next**: the most useful next additions.
-**Possible later**: useful if the team starts using that Forsta feature. **Not for CIP**: with the reason.
+Status: **Added 7 Nov**: read every run by `etl/fieldwork.py` and kept verbatim, gzip-compressed, in the database
+(`cip_forsta_record`, one row per survey and kind), shown where it says. **In CIP**: used by the load.
+**Needs an id or a Forsta feature we do not use**: nothing to collect until one exists. **Not for CIP**: with the reason
+(API keys, translations, campaigns, MaxDiff/conjoint and video are left out on purpose).
 
-117 GET endpoints: 15 added 7 nov, 5 in cip, 10 recommended next, 22 possible later, 65 not for cip.
+117 GET endpoints: 31 added 7 nov, 5 in cip, 0 recommended next, 16 needs an id or a forsta feature we do not use, 65 not for cip.
 
 | Endpoint | What Forsta returns | Status | Where CIP uses it, or why not |
 |---|---|---|---|
+| `GET /archives/planned` | Get planned activities | Added 7 Nov | Same |
+| `GET /archives/{company}/deleted` | Get archives deleted report | Added 7 Nov | Same |
+| `GET /archives/{company}/deletion` | Get archives deletion report | Added 7 Nov | Kept: Forsta's deletion report |
+| `GET /archives/{company}/deletion/data` | Get participant data deletion report | Added 7 Nov | Kept: participant data deletion report |
+| `GET /archives/{company}/scheduled` | Get surveys scheduled to be archived | Added 7 Nov | Same |
+| `GET /autoclose/planned` | Get a list of surveys visible to you that are scheduled to be automatically closed
+within the specified number of days.
+ | Added 7 Nov | Fieldwork deletion schedule: 'Planned by Forsta' (none today) |
 | `GET /hibernation/status` | Get hibernation status | Added 7 Nov | Checked before each Fieldwork read: a hibernated survey is skipped, never woken |
+| `GET /meta` | Get API metadata | Added 7 Nov | Kept each run: Forsta's own list of its endpoints, to spot new ones |
 | `GET /rh/companies` | List companies | Added 7 Nov | Finds the company id (86) for the retention rule |
+| `GET /rh/companies/{company}/crosstab-report-defaults` | Get crosstab preferences | Added 7 Nov | Kept: the company's cross-tab defaults |
 | `GET /rh/companies/{company}/retention` | Get company data retention settings. | Added 7 Nov | Fieldwork screen: the company's deletion rule (365 days after archiving) |
 | `GET /rh/surveys/archived` | Get a list of archived surveys | Added 7 Nov | Fieldwork screen: Forsta's deletion schedule, and which archived surveys CIP holds |
+| `GET /rh/surveys/categories` | Get categories | Added 7 Nov | Kept; the survey's category on the 'In Forsta' card |
+| `GET /rh/surveys/historical` | Get historical list | Added 7 Nov | Fieldwork screen: 'In Forsta, not in CIP' (12 surveys, mostly test copies) |
 | `GET /rh/surveys/{survey}` | Get survey information | Added 7 Nov | Fieldwork screen: state, launch and close times, questions, last edit, retention |
 | `GET /rh/surveys/{survey}/audit-log` | Retrieve a survey's audit log | Added 7 Nov | Fieldwork timeline: duplicated, launched, closed, edited, permissions (reads left out) |
 | `GET /rh/warnings/summary` | Get warnings summary | Added 7 Nov | Kept each run: every survey's warning counts in one call |
+| `GET /surveys/{survey}/can-archive` | Check if survey can be archived | Added 7 Nov | Fieldwork 'In Forsta' card: whether and why not it can be archived |
 | `GET /surveys/{survey}/crosstabs/configuration` | Get crosstabs configuration | Added 7 Nov | Kept: the research team's own banners and weight; next: offer them as Cross-tab banners |
+| `GET /surveys/{survey}/crosstabs/saved` | List saved reports | Added 7 Nov | Fieldwork 'In Forsta' card: the research team's saved reports (5 for 261003) |
+| `GET /surveys/{survey}/datasources` | List datasources | Added 7 Nov | Kept; count on the 'In Forsta' card |
 | `GET /surveys/{survey}/files` | List files | Added 7 Nov | Kept: survey.xml and assets, size and last change |
+| `GET /surveys/{survey}/files/{filename}` | Download file | Added 7 Nov | survey.xml kept; each question's display condition and the screen-out rules on the Survey preview |
+| `GET /surveys/{survey}/layouts` | Retrieve all data layouts | Added 7 Nov | Kept; count on the 'In Forsta' card |
 | `GET /surveys/{survey}/state/live/warnings` | Get launch warnings | Added 7 Nov | Kept: Forsta's launch checks; next: show on the Launch schedule for a wave about to launch |
 | `GET /surveys/{survey}/summary/completions` | List completions | Added 7 Nov | Fieldwork screen: opened, partial, terminated, over quota, qualified, incidence, interview length |
 | `GET /surveys/{survey}/summary/dropouts` | List drop-outs | Added 7 Nov | Fieldwork screen: where respondents dropped out, page by page, with seconds per page |
 | `GET /surveys/{survey}/summary/splits` | List splits | Added 7 Nov | Kept in the Fieldwork record (fieldwork by split); to show next to the funnel |
+| `GET /surveys/{survey}/tasks` | Get survey tasks | Added 7 Nov | Kept; open tasks on the 'In Forsta' card |
 | `GET /surveys/{survey}/terms` | Get survey term elements | Added 7 Nov | Fieldwork screen: the screen-out rules behind 'terminated' (261003: two speeder checks) |
 | `GET /surveys/{survey}/warnings` | Get warnings | Added 7 Nov | Fieldwork screen: blocked sessions, server errors, exceptions, quota misses |
 | `GET /rh/companies/{company}/surveys` | Get surveys | In CIP | The survey register, every run (etl/forsta_etl.py discover) |
@@ -78,40 +97,22 @@ screen where it says so. **In CIP**: used by the load. **Recommended next**: the
 | `GET /surveys/{survey}/data` | Download data | In CIP | Every load: all respondents, all statuses (etl/forsta_etl.py), and the re-check against Forsta (_reconcile) |
 | `GET /surveys/{survey}/datamap` | Retrieve datamap | In CIP | Every load: questions, answers, codes, grid labels (etl/forsta_etl.py); the Survey preview screen |
 | `GET /surveys/{survey}/quota` | Get quota | In CIP | Fieldwork end detection and the launch watcher (cip_forsta_survey.quota_json); kept in the Fieldwork record |
-| `GET /archives/planned` | Get planned activities | Recommended next | Planned archive activity: a warning on the Fieldwork screen before Forsta archives a survey (none today) |
-| `GET /archives/{company}/deleted` | Get archives deleted report | Recommended next | Surveys already deleted (none today): same |
-| `GET /archives/{company}/deletion` | Get archives deletion report | Recommended next | Forsta's deletion report: what was deleted, for the Fieldwork deletion schedule |
-| `GET /archives/{company}/deletion/data` | Get participant data deletion report | Recommended next | Participant data deletion report: same |
-| `GET /archives/{company}/scheduled` | Get surveys scheduled to be archived | Recommended next | Surveys scheduled for archiving (none today): same warning |
-| `GET /autoclose/planned` | Get a list of surveys visible to you that are scheduled to be automatically closed
-within the specified number of days.
- | Recommended next | Surveys Forsta will close automatically: a 'closes soon' line on the Launch schedule (none today) |
-| `GET /rh/surveys/historical` | Get historical list | Recommended next | The register's full history (97 surveys): a cross-check that no closed survey was missed |
-| `GET /surveys/{survey}/can-archive` | Check if survey can be archived | Recommended next | Whether a survey can be archived yet: next to its line on the Fieldwork screen |
-| `GET /surveys/{survey}/crosstabs/saved` | List saved reports | Recommended next | The saved reports the research team built in Forsta (5 for 261003): listed per wave, run with the read-only POST |
-| `GET /surveys/{survey}/files/{filename}` | Download file | Recommended next | survey.xml: the questionnaire source, so the Survey preview shows routing and conditions exactly |
-| `GET /datafeed/{feed}` | Get new data | Possible later | Respondents as they finish (needs a feed set up in Forsta): live fieldwork counts instead of the Monday load |
-| `GET /datafeed/{feed}/state` | Get feed state | Possible later | The feed's position: same |
-| `GET /exceptions/search` | Find error | Possible later | Look up a Forsta error by its id, from a warning event |
-| `GET /hello` | Hello there! | Possible later | Liveness: a cheaper key check than rh/users/self |
-| `GET /meta` | Get API metadata | Possible later | Forsta's own list of its 462 endpoints: to spot new ones |
-| `GET /rh/companies/{company}/crosstab-report-defaults` | Get crosstab preferences | Possible later | The company's cross-tab defaults (stat testing, confidence): to match CIP's tests to Forsta's |
-| `GET /rh/surveys/categories` | Get categories | Possible later | Forsta's survey categories (41): could tag studies in the Survey library |
-| `GET /status` | Get task | Possible later | An async task's state: with the saved-report export |
-| `GET /status/content` | Get task content | Possible later | Its result: same |
-| `GET /surveys/{survey}/coverage` | Execute coverage report | Possible later | Question coverage report (needs segments): who saw each question, by segment |
-| `GET /surveys/{survey}/crosstabs/targets/{target}/settings` | Get crosstabs settings for a target | Possible later | Cross-tab settings of a target: with crosstabs/configuration |
-| `GET /surveys/{survey}/crosstabs/validate` | Validate logic | Possible later | Checks a cross-tab condition: useful if Forsta conditions are typed into CIP |
-| `GET /surveys/{survey}/datasources` | List datasources | Possible later | Appended data sources (none for 261003) |
-| `GET /surveys/{survey}/datasources/{datasource}` | Get datasource | Possible later | One data source: same |
-| `GET /surveys/{survey}/datasources/{datasource}/data` | List datasource data | Possible later | Its rows: same |
-| `GET /surveys/{survey}/edits/{edit}` | Get survey response edits | Possible later | One batch of response edits: if the team ever edits responses in Forsta, to reload them |
-| `GET /surveys/{survey}/files/headers` | Get file headers | Possible later | File headers: only with files/{filename} |
-| `GET /surveys/{survey}/layouts` | Retrieve all data layouts | Possible later | Data layouts (none for 261003): only if the team defines export layouts in Forsta |
-| `GET /surveys/{survey}/layouts/{layout_id}` | Retrieve a single data layout | Possible later | One layout: same |
-| `GET /surveys/{survey}/sample/{listId}/links` | Get participant sources | Possible later | Participant sources (sample vendors): fieldwork by vendor, if the team wants it |
-| `GET /surveys/{survey}/tasks` | Get survey tasks | Possible later | Programming tasks in Forsta: an admin view of open tasks on a wave about to launch |
-| `GET /surveys/{survey}/tasks/{task_id}` | Get survey task | Possible later | One task: same |
+| `GET /datafeed/{feed}` | Get new data | Needs an id or a Forsta feature we do not use | Needs a data feed set up in Forsta (a write): none exists |
+| `GET /datafeed/{feed}/state` | Get feed state | Needs an id or a Forsta feature we do not use | Same |
+| `GET /exceptions/search` | Find error | Needs an id or a Forsta feature we do not use | Needs an exception id: none logged (0 exceptions) |
+| `GET /hello` | Hello there! | Needs an id or a Forsta feature we do not use | Liveness only: rh/users/self already checks the key |
+| `GET /status` | Get task | Needs an id or a Forsta feature we do not use | Needs an async task id |
+| `GET /status/content` | Get task content | Needs an id or a Forsta feature we do not use | Same |
+| `GET /surveys/{survey}/coverage` | Execute coverage report | Needs an id or a Forsta feature we do not use | Needs segments chosen per run: a report to run on request, not to keep |
+| `GET /surveys/{survey}/crosstabs/targets/{target}/settings` | Get crosstabs settings for a target | Needs an id or a Forsta feature we do not use | Needs a target id |
+| `GET /surveys/{survey}/crosstabs/validate` | Validate logic | Needs an id or a Forsta feature we do not use | Checks a condition typed in: on request only |
+| `GET /surveys/{survey}/datasources/{datasource}` | Get datasource | Needs an id or a Forsta feature we do not use | Needs a data source: none exist |
+| `GET /surveys/{survey}/datasources/{datasource}/data` | List datasource data | Needs an id or a Forsta feature we do not use | Same |
+| `GET /surveys/{survey}/edits/{edit}` | Get survey response edits | Needs an id or a Forsta feature we do not use | Needs an edit id; the audit log already records each data edit (wave 530: 2 rows deleted) |
+| `GET /surveys/{survey}/files/headers` | Get file headers | Needs an id or a Forsta feature we do not use | Headers of uploaded files: none used |
+| `GET /surveys/{survey}/layouts/{layout_id}` | Retrieve a single data layout | Needs an id or a Forsta feature we do not use | Needs a layout id: none exist for our surveys |
+| `GET /surveys/{survey}/sample/{listId}/links` | Get participant sources | Needs an id or a Forsta feature we do not use | 404 for our sample source (114) |
+| `GET /surveys/{survey}/tasks/{task_id}` | Get survey task | Needs an id or a Forsta feature we do not use | Needs a task id: no tasks |
 | `GET /libraries/{company}/elements` | Get elements | Not for CIP | Same |
 | `GET /libraries/{company}/elements/{eid}` | Get element | Not for CIP | Forsta's question library: programming, not data |
 | `GET /libraries/{company}/surveys/{survey}/elements` | Get survey elements | Not for CIP | Same |

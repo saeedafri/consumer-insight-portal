@@ -1,9 +1,11 @@
 # Who may use the portal and what they see (shared/core/access.py). Read once per API process; restart to apply.
 #
 #   tiers     a package: the features it includes and the study types it opens ("*" = all)
-#   roles     super_admin (the portal's owner: every feature and survey whatever the tier, every admin page, never rate-
-#             limited), admin (the admin pages, the audit log, others' team items), analyst (Coresight staff), client (external)
-#   staff     Coresight's own sign-in domains and the admins among them: staff are analysts of no client
+#   roles     each role and its permissions (shared/core/access.py can()): admin_pages (Logs, Fieldwork, the audit log,
+#             revoking sessions), manage_team_items (remove anyone's boards and views), all_features (every feature and
+#             survey whatever the tier), unlimited (no rate limit). "*" = all of them. A new role: add it here, then its people
+#   people    roles given to named people (the super admin); everyone else is an analyst (staff) or a client (by domain)
+#   staff     Coresight's own sign-in domains and their tier: staff are analysts of no client
 #   clients   an organisation: its sign-in email domains, its tier, and (for a client-commissioned study) the families it owns
 #   surveys   who owns a study and who sees it: visibility "all" (every signed-in user), "client" (its owner and staff),
 #             "staff" (Coresight only). A survey_id entry beats a family entry; anything unlisted is `default_visibility`.
@@ -21,12 +23,16 @@ tiers:
                  study_types: [tracker, annual, adhoc]}
   enterprise:   {features: "*", study_types: "*"}
 
-roles: [super_admin, admin, analyst, client]
+roles:
+  super_admin: {permissions: "*"}   # the portal's owner: everything
+  analyst:     {permissions: []}    # Coresight staff: the analysis screens of the staff tier
+  client:      {permissions: []}    # an external organisation: its tier, its own and public studies (none set up yet)
+
+people:
+  super_admin: [mohdsaeedafri@coresight.com]   # Mohd Saeed Afri
 
 staff:
   domains: [coresight.com, cip]   # cip: the pipeline's own service sessions (publish@cip warms nginx's cache)
-  super_admins: [mohdsaeedafri@coresight.com]   # Mohd Saeed Afri: the main admin
-  admins: [dataautomation@coresight.com, analyst@coresight.com]
   tier: enterprise
 
 clients: {}

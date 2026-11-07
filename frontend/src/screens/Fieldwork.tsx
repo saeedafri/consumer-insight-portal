@@ -3,7 +3,7 @@
 // /api/v1/admin/fieldwork): the funnel (opened, terminated, over quota, dropped out, qualified), the interview length,
 // the warnings, and page by page where respondents dropped out. This screen only draws.
 // Opened from the left menu ("Fieldwork", shown to admins next to Logs); the chosen survey is kept in the address.
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useFieldwork } from "../api";
 import type { FieldworkRecord, FieldworkSurvey } from "../api";
 import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
@@ -13,6 +13,8 @@ import { fmtDate } from "../stats";
 const n = (v: number | null | undefined) => v == null ? "–" : v.toLocaleString("en-US");
 const day = (iso: string | null | undefined) => iso ? fmtDate(iso.slice(0, 10)) : "–";
 const SOURCE = "Source: Forsta (read-only), kept by CIP";
+const PLANNED: Record<string, string> = { autoclose_planned: "automatic closes", archives_planned: "planned archive actions",
+  archives_scheduled: "surveys scheduled for archiving", archives_deleted: "surveys already deleted" };
 
 export default function Fieldwork() {
   const { data, isLoading, error } = useFieldwork();
@@ -32,9 +34,11 @@ export default function Fieldwork() {
         Forsta deletes an archived survey a year after archiving it.</p>
     </div></div>
     <Archive record={data} />
+    <NotLoaded record={data} />
     <Surveys surveys={data.surveys} shown={shown} pick={path => setParams({ survey: path }, { replace: true })} />
     {shown && <Dropouts survey={shown} />}
     {shown && <Timeline survey={shown} />}
+    {shown && <Details survey={shown} />}
   </div>;
 }
 
@@ -52,6 +56,9 @@ function Archive({ record }: { record: FieldworkRecord }) {
                  (missing.length ? `${list.length - missing.length} are held in CIP; ${missing.length} are not (listed first).` : "Every one is held in CIP.") +
                  (days ? ` Forsta's retention rule for the company: deleted ${days} days after archiving.` : "")}
                aside={<ExportButtons onExport={exportTable} />}>
+    <p className="muted" style={{ marginBottom: 12 }}>{record.planned?.length
+      ? `Planned by Forsta: ${record.planned.map(p => `${p.items.length} ${PLANNED[p.kind] ?? p.kind}`).join(", ")}.`
+      : "Nothing planned by Forsta: no automatic closes, archives or deletions are scheduled beyond the dates below."}</p>
     <div className="table-wrap fieldwork-scroll"><table className="data report-table">
       <thead><tr><th>Survey</th><th>Forsta path</th><th className="num">Archived</th><th className="num">Deleted by Forsta</th><th>In CIP</th></tr></thead>
       <tbody>{[...missing, ...list.filter(a => a.held)].map(a => <tr key={a.path}>
@@ -127,4 +134,36 @@ function Timeline({ survey }: { survey: FieldworkSurvey }) {
       <ul className="terms">{terms.map(([label, description], i) => <li key={i}><b>{label}</b> {description}</li>)}</ul>
     </Card>}
   </div>;
+}
+
+/** The surveys Forsta's history has that CIP has not loaded: test surveys, or one the load missed. */
+function NotLoaded({ record }: { record: FieldworkRecord }) {
+  const list = record.not_loaded ?? [];
+  if (!list.length) return null;
+  return <Card title="In Forsta, not in CIP" sub={`${list.length} surveys in Forsta's history that CIP has not loaded: usually test copies; anything else is worth a look.`}>
+    <div className="table-wrap fieldwork-scroll"><table className="data report-table">
+      <thead><tr><th>Survey</th><th>Forsta path</th><th>State in Forsta</th></tr></thead>
+      <tbody>{list.map(n => <tr key={n.path}><th scope="row">{n.title ?? "–"}</th><td>{n.path}</td><td>{n.state ?? "not in the register"}</td></tr>)}</tbody>
+    </table></div>
+  </Card>;
+}
+
+/** What else Forsta holds about the survey: its category, the research team's saved reports, whether it can be archived,
+ *  open tasks, data layouts and sources, and how many questions have a display condition (shown on the Survey preview). */
+function Details({ survey }: { survey: FieldworkSurvey }) {
+  const saved = survey.saved_reports ?? [];
+  return <Card title="In Forsta" sub="Read from Forsta without changing anything.">
+    <dl className="details">
+      <div><dt>Category</dt><dd>{survey.category || "–"}</dd></div>
+      <div><dt>Can be archived</dt><dd>{survey.can_archive || "–"}</dd></div>
+      <div><dt>Open tasks</dt><dd>{n(survey.tasks)}</dd></div>
+      <div><dt>Data layouts · data sources</dt><dd>{n(survey.layouts)} · {n(survey.datasources)}</dd></div>
+      <div><dt>Questions shown on a condition</dt><dd>{survey.conditions == null ? "questionnaire not kept yet" : <>{survey.conditions}
+        {survey.survey_id && <> · <Link to={`/w/${survey.survey_id}/survey`}>see them on the Survey preview</Link></>}</>}</dd></div>
+    </dl>
+    {saved.length > 0 && <>
+      <h3 className="details-head">Saved reports in Forsta</h3>
+      <ul className="terms">{saved.map(([title, updated, access], i) => <li key={i}><b>{title || "Untitled"}</b> <span className="muted">{[updated && `updated ${day(updated)}`, access].filter(Boolean).join(" · ")}</span></li>)}</ul>
+    </>}
+  </Card>;
 }

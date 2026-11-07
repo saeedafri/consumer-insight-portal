@@ -62,7 +62,7 @@ export default function Shell() {
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
   const waves = useWaves();
   const me = useMe().data;
-  const isAdmin = me?.role === "admin" || me?.role === "super_admin";   // the admin pages (shared/core/access.py is_admin)
+  const isAdmin = !!me?.permissions?.includes("admin_pages");   // the role's permission (shared/core/access.py can())
   const wave = waves.data?.find(w => String(w.survey_id) === id);
   const reportWaves = useReportWaves().data;   // the waves with a weekly report (since Jul 2025: etl/weekly_report.py)
   const hasReport = !!wave && !!reportWaves?.includes(wave.survey_id);

@@ -451,6 +451,17 @@ async def weekly_report(survey_id: int, request: Request, who: dict = Depends(us
     return send_payload(request, found)
 
 
+@app.get("/api/v1/waves/{survey_id}/logic")
+async def wave_logic(survey_id: int, request: Request, who: dict = Depends(user)) -> Response:
+    """When each question of the wave was shown and its screen-out rules, from its survey.xml in Forsta (etl/fieldwork.py
+    logic), for the Survey preview. Forsta waves whose questionnaire is kept only; nothing is computed here."""
+    await visible(who, survey_id)
+    found = published_file("waves", str(survey_id), "logic")
+    if found is None:
+        raise HTTPException(404, "No questionnaire logic for this wave (kept for Forsta surveys only)")
+    return send_payload(request, found)
+
+
 async def tracker_view(request: Request, who: dict, name: str) -> Response:
     """A view across the weekly tracker's waves, as the ETL published it (api/v1/<name>.json.gz). nginx sends the file
     itself to most people (deploy/cip_locations.conf); this serves a filtered session and a laptop without nginx.
@@ -677,10 +688,12 @@ async def health(who: dict = Depends(admin)) -> dict:
 
 @app.get("/api/v1/me")
 async def me(who: dict = Depends(user)) -> dict:
-    """{email, name, role, tier, client, features[]}: role is admin, analyst or client; client is the organisation's id
-    in config/access.yml (null for Coresight staff); features are what the tier includes (config/access.yml)."""
+    """{email, name, role, tier, client, features[], permissions[]}: role is super_admin, analyst or client; client is
+    the organisation's id in config/access.yml (null for Coresight staff); features are what the tier includes;
+    permissions what the role may do (shared/core/access.py can()), so the screens show the admin pages only to it."""
     return {"email": who["email"], "name": who["email"].split("@")[0].replace(".", " ").title(), "role": who["role"],
-            "tier": who["tier"], "client": who["client"], "features": who["features"]}
+            "tier": who["tier"], "client": who["client"], "features": who["features"],
+            "permissions": sorted(access.permissions_of(who["role"]))}
 
 
 @lru_cache(maxsize=1)

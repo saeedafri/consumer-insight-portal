@@ -57,7 +57,7 @@ def email_of(request: Request) -> str:
     return getattr(request.state, "email", "") or "unknown"
 
 
-EVERYONE = {"email": "pipeline", "role": "admin", "client": None, "features": [], "study_types": "*"}
+EVERYONE = {"email": "pipeline", "role": "super_admin", "client": None, "features": [], "study_types": "*"}
 
 
 def person_of(request: Request | None) -> dict:
@@ -79,7 +79,7 @@ def who_may_use(request: Request | None, feature: str) -> dict:
 
 def owned_by(who: dict, owner: str | None) -> bool:
     """Is a thing owned by `owner` (an email, or None for one saved before owners were recorded) in this person's team."""
-    if access.is_admin(who):
+    if access.can(who, "manage_team_items"):
         return True
     found = access.profile(owner) if owner else None
     return (found["client"] if found else None) == who["client"]
@@ -113,7 +113,7 @@ def remove(table: str, key_column: str, owner_column: str, key: int, request: Re
     """Only whoever made a thing (or an admin) removes it; one saved with no owner, only an admin. One round trip when
     it is yours; a second only to say why not."""
     who = person_of(request)
-    admin = access.is_admin(who)
+    admin = access.can(who, "manage_team_items")
     with get_engine("api_write").begin() as conn:
         gone = conn.execute(text(f"DELETE FROM {table} WHERE {key_column} = :k" + ("" if admin else f" AND {owner_column} = :me")),
                             {"k": key, "me": who["email"]}).rowcount

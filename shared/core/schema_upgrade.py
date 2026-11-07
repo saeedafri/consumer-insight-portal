@@ -19,7 +19,8 @@ from shared.core.database import apply_sql
 SQL_DIR = Path(__file__).resolve().parents[2] / "sql"
 SQL_FILES = [SQL_DIR / "001_schema.sql", SQL_DIR / "002_views.sql",
              SQL_DIR / "003_seed_topics.sql", SQL_DIR / "005_serving.sql",
-             SQL_DIR / "006_dashboards.sql", SQL_DIR / "007_team.sql", SQL_DIR / "008_access.sql"]
+             SQL_DIR / "006_dashboards.sql", SQL_DIR / "007_team.sql", SQL_DIR / "008_access.sql",
+             SQL_DIR / "009_forsta_record.sql"]
 
 # NOT NULL: MySQL lets repeated NULLs through a unique key, and source_ref is
 # part of the wave identity (uq_survey_source).

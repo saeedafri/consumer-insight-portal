@@ -117,7 +117,7 @@ def user(request: Request) -> dict:
 
 
 def admin(request: Request, who: dict = Depends(user)) -> dict:
-    if not access.is_admin(who):
+    if not access.can(who, "admin_pages"):
         raise HTTPException(403, "Only an admin can do that")
     # the demo sign-in takes any email at its word, so anyone could type an admin's: admin pages (logs, audit,
     # session revocation) then also need CIP_ADMIN_TOKEN (32+ characters) in the X-CIP-Admin-Token header
@@ -156,7 +156,16 @@ async def signed_in(request: Request, who: dict, how: str, target: str, id_token
     return response
 
 
-def refused(email: str) -> HTMLResponse:
+def attempt_failed(request: Request, reason: str, email: str = "") -> None:
+    """A sign-in that did not get in, in the access log (cip_access_log, action sign_in_failed) beside the successful
+    ones: who tried (when the token named them), when, why, the hashed address and the browser. The Logs page lists it."""
+    audit.record(request, "sign_in_failed", who={"email": email or "unknown", "role": "", "client": None}, detail={"reason": reason})
+    where = re.sub(r"^(\d+\.\d+\.\d+\.\d+):\d+$", r"\1", audit.address(request))
+    log.info("sign-in: %s role=failed via %s from %s", email or "unknown", re.sub(r"\W+", "-", reason)[:40], where)   # the Logs page's sign-ins
+
+
+def refused(request: Request, email: str) -> HTMLResponse:
+    attempt_failed(request, "not entitled", email)
     return page(403, "No access to the portal", f"{html.escape(email)} is not entitled to the Consumer Insight Portal. "
                 "Ask your Coresight contact to add your organisation.")
 
@@ -217,9 +226,11 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
         value = base64.urlsafe_b64decode(encoded.encode()).decode()
         mine, nonce, verifier, target, expires = value.split("|")
     except ValueError:
+        attempt_failed(request, "sign-in expired or no sign-in cookie")
         return page(400, "Sign-in expired", "Please <a href='/auth/login'>sign in again</a>.")
     if not found or error or not code or not secrets.compare_digest(signature, sign(value)) \
             or not secrets.compare_digest(state, mine) or int(expires) < time.time():
+        attempt_failed(request, f"provider error {error}" if error else "state or code did not check out")
         return page(400, "Sign-in failed", f"{html.escape(error or 'The sign-in could not be checked.')} "
                     "Please <a href='/auth/login'>try again</a>.")
     meta = await run_in_threadpool(endpoints, found["issuer"])
@@ -240,6 +251,7 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
             await run_in_threadpool(log_claims, meta, answer, said)
     except Exception as exc:   # noqa: BLE001
         log.warning("OIDC token exchange failed: %s", type(exc).__name__)
+        attempt_failed(request, f"token exchange failed ({type(exc).__name__})")
         return page(502, "Sign-in failed", "The identity provider did not answer. Please <a href='/auth/login'>try again</a>.")
     audience = said.get("aud") if isinstance(said.get("aud"), list) else [said.get("aud")]
     issuer = os.environ.get("CIP_OIDC_TOKEN_ISSUER") or meta.get("issuer")   # set it when the token's iss differs from CIP_OIDC_ISSUER
@@ -247,6 +259,7 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
     if said.get("iss") != issuer or found["client_id"] not in audience or float(said.get("exp", 0)) < time.time() \
             or ("nonce" in said and not secrets.compare_digest(str(said["nonce"]), nonce)):
         log.warning("OIDC token refused: iss %s, aud %s", said.get("iss"), said.get("aud"))   # names, never the token
+        attempt_failed(request, "identity token did not check out")
         return page(400, "Sign-in failed", "The identity token did not check out. Please <a href='/auth/login'>try again</a>.")
     wordpress = (said.get("data") or {}).get("wp_user") if isinstance(said.get("data"), dict) else None   # csr-idp's
     wordpress = wordpress if isinstance(wordpress, dict) else {}
@@ -254,7 +267,7 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
                 or said.get("preferred_username") or said.get("upn") or "").lower()
     who = access.profile(email) if "@" in email else None
     if not who:
-        return refused(email or "This account")
+        return refused(request, email or "This account")
     return await signed_in(request, {**who, "name": said.get("name") or wordpress.get("name") or ""}, "oidc", target,
                            answer["id_token"])
 
@@ -265,7 +278,7 @@ async def dev_login(request: Request, email: str = "analyst@coresight.com", next
     if not demo():
         raise HTTPException(404)
     who = access.profile(email)
-    return await signed_in(request, who, "demo", next) if who else refused(email)
+    return await signed_in(request, who, "demo", next) if who else refused(request, email)
 
 
 def share_revoked() -> None:

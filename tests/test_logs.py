@@ -4,7 +4,7 @@ from fastapi import HTTPException
 
 from api import logs, metrics, signin
 
-ADMIN = {"role": "admin", "email": "dataautomation@coresight.com"}
+ADMIN = {"role": "super_admin", "email": "mohdsaeedafri@coresight.com"}   # the one role with admin_pages (config/access.yml)
 
 
 class Asking:   # the request's headers are all admin() reads

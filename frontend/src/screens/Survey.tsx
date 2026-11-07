@@ -1,7 +1,8 @@
-// The questionnaire as a respondent saw it, one question at a time, with the live result beside it.
+// The questionnaire as a respondent saw it, one question at a time, with the live result beside it. For a Forsta wave,
+// when each question was shown and the screen-out rules, from its survey.xml (useLogic: etl/fieldwork.py logic).
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { useBook } from "../api";
+import { useBook, useLogic } from "../api";
 import { BaseNote, Card, Empty, Failure, Loading, QuestionCode } from "../components/bits";
 import QuestionChart from "../components/QuestionChart";
 import { fmtDate, pct } from "../stats";
@@ -12,6 +13,7 @@ export default function Survey() {
   const id = Number(raw);
   const navigate = useNavigate();
   const { data: book, isLoading, error } = useBook(id);
+  const logic = useLogic(id).data;   // none for a wave not loaded from Forsta: the screen is as before
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const at = useMemo(() => Math.max(0, book?.questions.findIndex(x => x.id === code) ?? 0), [book, code]);
   useEffect(() => {
@@ -47,6 +49,8 @@ export default function Survey() {
     <div className="page-head"><div>
       <h1>What respondents were asked</h1>
       <p className="lede">Wave of {fmtDate(book.wave.wave_date)} · {book.questions.length} questions in {sections.length} sections. Answer for yourself to see where you sit against {book.wave.qualified_n.toLocaleString("en-US")} qualified respondents.</p>
+      {logic?.terms.length ? <p className="logic-line">Screened out: {logic.terms.map(([label, cond, said]) =>
+        <span key={label ?? cond}><b>{said || label}</b> <code title="The condition in Forsta's questionnaire (survey.xml)">{cond}</code></span>)}</p> : null}
     </div></div>
     <div className="grid g3" style={{ marginBottom: 18 }}>
       <div className="span2">
@@ -54,6 +58,7 @@ export default function Survey() {
           <div className="qhead"><span style={{ color: "var(--ink)", fontWeight: 700 }}>{q.section}</span><span>· Question {at + 1} of {book.questions.length}</span><QuestionCode q={q} /></div>
           <h2>{q.text}</h2>
           <p className="muted">{multi ? "Select all that apply." : "Select one."}{q.base_desc ? ` Asked of: ${q.base_desc}.` : ""}</p>
+          {logic?.questions[q.id] && <p className="logic-line">Shown only when <code title="The condition in Forsta's questionnaire (survey.xml), with the blocks around it">{logic.questions[q.id]}</code></p>}
           {q.groups.length > 1 ? <div className="table-wrap"><table className="data">
             <thead><tr><th />{q.groups[0].rows.map(r => <th key={r.label} className="num" style={{ whiteSpace: "normal" }}>{r.label}</th>)}</tr></thead>
             <tbody>{q.groups.map(g => <tr key={g.label}><th scope="row">{g.label}</th>{g.rows.map(r => {
