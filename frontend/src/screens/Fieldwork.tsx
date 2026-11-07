@@ -23,7 +23,7 @@ export default function Fieldwork() {
   if ((error as { status?: number } | null)?.status === 404)
     return <Empty>No fieldwork record yet. The next Forsta run collects it, for the surveys it loads and a few older ones each time.</Empty>;
   if ((error as { status?: number } | null)?.status === 403)
-    return <Empty>{String((error as Error).message)}. While sign-in is the demo, enter the admin token on the Logs page first; it is kept for this browser.</Empty>;
+    return <Empty>{String((error as Error).message)}. Sign in with your Coresight account; with the demo sign-in, enter the admin token on the Logs page first.</Empty>;
   if (error || !data) return <Failure error={error} />;
   const shown = data.surveys.find(s => s.path === params.get("survey")) ?? data.surveys[0];
   return <div className="stack">

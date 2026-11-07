@@ -42,12 +42,12 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from shared.core import access, audit
-from shared.core.database import get_engine
+from shared.core.database import apply_sql, get_engine
 from shared.data import payloads
 from api import assistant, exports, logs, mcp, metrics, signin, team
 from api.search import SearchIndex
@@ -444,6 +444,7 @@ async def weekly_report(survey_id: int, request: Request, who: dict = Depends(us
     """The weekly US Consumer Survey Insights report of a recent tracker wave, as the ETL published it
     (etl/weekly_report.py). nginx sends the file itself to most people (deploy/cip_locations.conf); this route serves a
     filtered session and a laptop without nginx. Nothing is computed here."""
+    require_feature(who, "report")
     await visible(who, survey_id)
     found = published_file("waves", str(survey_id), "report")
     if found is None:
@@ -488,6 +489,7 @@ async def public_facts(request: Request) -> Response:
 @app.get("/api/v1/sectors")
 async def sectors(request: Request, who: dict = Depends(user)) -> Response:
     """The Databank's sector tables (etl/sectors.py): purchase rate, retailers, brands and categories per sector wave."""
+    require_feature(who, "sectors")
     return await tracker_view(request, who, "sectors")
 
 
@@ -500,6 +502,7 @@ async def report_waves(request: Request, who: dict = Depends(user)) -> Response:
 @app.get("/api/v1/expectations")
 async def expectations(request: Request, who: dict = Depends(user)) -> Response:
     """Retail events, expected vs actual (etl/expectations.py): answers before and after, median spend, market size."""
+    require_feature(who, "expectations")
     return await tracker_view(request, who, "expectations")
 
 
@@ -669,6 +672,58 @@ async def fieldwork_record(request: Request, who: dict = Depends(admin)) -> Resp
     if found is None:
         raise HTTPException(404, "No fieldwork record yet: the next Forsta run collects it")
     return send_payload(request, found)
+
+
+ROLE_SAVE_FAILED = "The menus were not saved: the database did not accept it. Nothing changed; try again in a minute."
+
+
+@app.get("/api/v1/admin/roles")
+async def roles(who: dict = Depends(admin)) -> dict:
+    """The Access screen: every switchable feature (its name), and each role's current menus (the super admin's choice
+    in cip_role_access, else its package's). The super admin is not listed: they always have everything."""
+    if not access.can(who, "manage_roles"):
+        raise HTTPException(403, "Only the super admin manages roles")
+    rules = access.rules()
+    labels = rules.get("feature_labels") or {}
+    chosen = await run_in_threadpool(access.managed_features)
+    listed = [role for role, said in (rules.get("roles") or {}).items() if said.get("permissions") != access.EVERYTHING]
+    def package(role: str) -> list[str]:   # what the role gets without a choice: staff's tier for analysts
+        said = rules.get("staff") if role == "analyst" else rules.get("unknown")   # `unknown` may be the word "refuse"
+        tier = said.get("tier", "core") if isinstance(said, dict) else "core"
+        features = rules["tiers"][tier]["features"]
+        return list(rules["features"]) if features == access.EVERYTHING else list(features)
+    return {"features": [{"key": f, "label": labels.get(f, f)} for f in rules["features"]],
+            "roles": [{"role": role, "features": chosen.get(role, package(role)), "chosen": role in chosen} for role in listed]}
+
+
+@app.put("/api/v1/admin/roles/{role}")
+async def save_role(role: str, request: Request, who: dict = Depends(admin)) -> dict:
+    """Save one role's menus from the Access screen (cip_role_access, created on the first save). Every API worker
+    reads it within 30 s; an analyst's left menu follows on their next page load. Recorded in the access log."""
+    if not access.can(who, "manage_roles"):
+        raise HTTPException(403, "Only the super admin manages roles")
+    said = (access.rules().get("roles") or {}).get(role)
+    if said is None or said.get("permissions") == access.EVERYTHING:
+        raise HTTPException(404, "No such role to manage")
+    body = await team.json_body(request)
+    known = access.rules()["features"]
+    features = [f for f in known if f in (body.get("features") or [])]   # only real features, in the catalogue's order
+
+    def store() -> None:
+        engine = get_engine("api_write")
+        if "cip_role_access" not in inspect(engine).get_table_names():
+            apply_sql(Path(__file__).resolve().parents[1] / "sql" / "010_role_access.sql", engine)
+        with engine.begin() as conn:
+            conn.execute(text("REPLACE INTO cip_role_access (role, features, updated_by, updated_at) VALUES (:r, :f, :b, :t)"),
+                         {"r": role, "f": json.dumps(features), "b": who["email"], "t": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())})
+    try:
+        await run_in_threadpool(store)
+    except Exception as exc:   # noqa: BLE001
+        log.warning("Role %s not saved: %s", role, exc)
+        raise HTTPException(503, ROLE_SAVE_FAILED)
+    access.MANAGED["at"] = -1e9   # this worker reads it again at once
+    audit.record(request, "role_change", who=who, target=role, detail={"features": features})
+    return {"role": role, "features": features}
 
 
 @app.get("/api/v1/admin/health")

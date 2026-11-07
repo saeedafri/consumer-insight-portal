@@ -13,10 +13,12 @@ survey's owner and visibility. The API asks here on every request (dictionary lo
 cookie carries the person's scope so nginx can tell a person who sees everything from one who must be filtered."""
 from __future__ import annotations
 
+import json
 import time
 from functools import lru_cache
 
 import yaml
+from sqlalchemy import text
 
 from shared.core.config import REPO_ROOT
 
@@ -51,6 +53,9 @@ def profile(email: str) -> dict | None:
         tier = "enterprise"
     package = r["tiers"][tier]
     features = r["features"] if package["features"] == EVERYTHING else list(package["features"])
+    chosen = managed_features().get(role) if "all_features" not in permissions_of(role) else None
+    if chosen is not None:                             # the super admin's choice on the Access screen wins
+        features = [f for f in r["features"] if f in chosen]
     return {"email": email, "role": role, "tier": tier, "client": client, "features": features,
             "study_types": package["study_types"]}
 
@@ -61,7 +66,24 @@ def permissions_of(role: str) -> set[str]:
     return set(PERMISSIONS) if granted == EVERYTHING else set(granted)
 
 
-PERMISSIONS = ("admin_pages", "manage_team_items", "all_features", "unlimited")
+PERMISSIONS = ("admin_pages", "manage_team_items", "all_features", "unlimited", "manage_roles")
+MANAGED = {"at": -1e9, "roles": {}}   # cip_role_access as last read (managed_features)
+MANAGED_SECONDS = 30                  # how stale it may be in another worker after the super admin saves
+
+
+def managed_features() -> dict[str, list[str]]:
+    """Each role's features (menus) as the super admin set them on the Access screen (cip_role_access), read at most
+    every MANAGED_SECONDS. Empty before the first save, or with the database out of reach (then the packages apply)."""
+    if time.monotonic() - MANAGED["at"] > MANAGED_SECONDS:
+        try:
+            from shared.core.database import get_engine   # here, not on top: the ETL reads access without the API's tables
+            with get_engine("app").connect() as conn:
+                rows = conn.execute(text("SELECT role, features FROM cip_role_access")).all()
+            MANAGED["roles"] = {role: json.loads(features) for role, features in rows}
+        except Exception:   # noqa: BLE001   no table yet, or the database out of reach: keep what was read last
+            pass
+        MANAGED["at"] = time.monotonic()
+    return MANAGED["roles"]
 
 
 def can(person: dict, permission: str) -> bool:

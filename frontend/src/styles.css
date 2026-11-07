@@ -902,3 +902,15 @@ table.data tbody tr:nth-child(n+8), .xt tbody tr:nth-child(n+8), .wave-row:nth-c
 .details dt { font-size: 12px; color: var(--ink-2); }
 .details dd { margin: 2px 0 0; font-size: 14px; }
 .details-head { font-size: 14px; margin: 18px 0 8px; }
+
+/* the Access page (screens/Access.tsx): two columns of menus the super admin drags between */
+.access-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin: 16px 0; }
+.access-column { background: var(--surface); border: 1px dashed var(--mist); border-radius: var(--radius); padding: 14px 16px; min-height: 160px; }
+.access-column.over { border-color: var(--red); background: var(--hover); }
+.access-column h2 { margin: 0; font: var(--t-h3); font-weight: 700; }
+.access-column ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.access-menu { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 6px 6px 12px;
+  background: var(--fill); border-radius: 8px; cursor: grab; }
+.access-menu.dragging { opacity: .4; }
+.access-menu .btn { padding: 4px 10px; font-size: 12px; }
+.access-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

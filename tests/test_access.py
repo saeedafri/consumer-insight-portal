@@ -44,8 +44,11 @@ def put(root, rel, data):
 
 
 RULES = {
-    "features": ["dashboards", "explorer", "crosstab", "trends", "search", "ask", "export", "boards", "audiences", "alerts", "saved_views"],
-    "tiers": {"core": {"features": ["dashboards", "explorer", "trends", "search", "export", "boards"], "study_types": ["tracker", "adhoc"]},
+    "features": ["dashboards", "explorer", "crosstab", "trends", "search", "ask", "export", "boards", "audiences", "alerts", "saved_views",
+                 "report", "sectors", "expectations"],
+    "feature_labels": {"sectors": "Sector databank"},
+    "tiers": {"core": {"features": ["dashboards", "explorer", "trends", "search", "export", "boards", "report", "sectors", "expectations"],
+                       "study_types": ["tracker", "adhoc"]},
               "enterprise": {"features": "*", "study_types": "*"}},
     "roles": {"super_admin": {"permissions": "*"}, "analyst": {"permissions": []}, "client": {"permissions": []}},
     "people": {"super_admin": ["boss@coresight.com"]},
@@ -391,3 +394,36 @@ def test_a_refused_sign_in_is_recorded_with_who_tried(portal, monkeypatch):
     monkeypatch.setattr(audit, "record", lambda request, action, **kw: recorded.append((action, kw["who"]["email"], kw.get("detail"))))
     assert call("/auth/dev-login?email=stranger@unknown.org")[0] == 403                # RULES: unknown emails refused
     assert recorded == [("sign_in_failed", "stranger@unknown.org", {"reason": "not entitled"})]
+
+
+
+def test_the_super_admin_chooses_each_roles_menus_and_they_apply_at_once(portal, monkeypatch):
+    """The Access screen: the super admin moves Sector databank off the analysts' menu; analysts lose it (menu and data)
+    within the same request cycle, and only the super admin may see or change the choice."""
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})           # read this test's database
+    boss, ana = signed("boss@coresight.com"), signed("ana@coresight.com")
+    status, _, body = call("/api/v1/admin/roles", boss)
+    roles = {r["role"]: r for r in json.loads(body)["roles"]}
+    assert status == 200 and "super_admin" not in roles and "sectors" in roles["analyst"]["features"] and not roles["analyst"]["chosen"]
+    assert {"key": "sectors", "label": "Sector databank"} in json.loads(body)["features"]
+    keep = [f for f in roles["analyst"]["features"] if f != "sectors"]
+    status, _, body = call("/api/v1/admin/roles/analyst", boss, "PUT", json.dumps({"features": keep + ["not-a-feature"]}).encode())
+    assert status == 200 and json.loads(body)["features"] == keep                 # unknown names dropped
+    assert "sectors" not in access.profile("ana@coresight.com")["features"]
+    put(portal, "sectors", {"sectors": []})
+    assert call("/api/v1/sectors", ana)[0] == 403 and call("/api/v1/sectors", boss)[0] == 200   # the super admin keeps all
+    assert call("/api/v1/admin/roles", ana)[0] == 403                             # analysts never see the Access screen
+    assert call("/api/v1/admin/roles/super_admin", boss, "PUT", b'{"features": []}')[0] == 404
+
+
+def test_an_identity_provider_sign_in_opens_admin_pages_without_the_token(portal, monkeypatch):
+    monkeypatch.setenv("CIP_DEMO_LOGIN", "1")
+    monkeypatch.setenv("CIP_ADMIN_TOKEN", "t" * 40)
+    put(portal, "admin/fieldwork", {"surveys": [], "archive": []})
+    demo = signed("boss@coresight.com")                                            # a session the demo sign-in made
+    assert call("/api/v1/admin/fieldwork", demo)[0] == 403
+    assert call("/api/v1/admin/fieldwork", demo, headers={"x-cip-admin-token": "t" * 40})[0] == 200
+    sid = "proven-session"
+    signin.remember(sid, access.profile("boss@coresight.com"), "oidc")             # what /auth/callback records
+    sso = session.issue("boss@coresight.com", sid=sid, scope="*")
+    assert call("/api/v1/admin/fieldwork", sso)[0] == 200                          # no token: the provider proved the email

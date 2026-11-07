@@ -16,8 +16,10 @@ Not kept, on purpose (docs/FORSTA_API_REVIEW.md): API keys, translations, campai
 
 Who calls it:
   collect()  scripts/weekly_forsta.py run(), every run: the surveys it just loaded, the ones in the field, and a few
-             older ones still missing a record (PER_RUN: the backfill spreads over runs), plus the company records.
-             About 18 GETs (6-8 s) a survey; a failure is logged and never stops the load.
+             older ones still missing a record (PER_RUN), plus the company records. About 18 GETs (6-8 s) a survey;
+             a failure is logged and never stops the load.
+  python -m etl.fieldwork   at each server start (deploy/etl-loop.sh, in the background): every survey still missing
+             a record, then the published files refreshed, so a deploy never shows an empty Fieldwork screen.
   publish()  etl/publish.py write_views, from the table (no Forsta call):
              api/v1/admin/fieldwork.json.gz  the admins' Fieldwork screen (frontend/src/screens/Fieldwork.tsx)
              api/v1/waves/<id>/logic.json.gz each wave's question conditions and screen-out rules, from its
@@ -121,26 +123,26 @@ def company_snapshot(client) -> dict:
     return kinds
 
 
-def due(loaded: list[str]) -> list[str]:
-    """The surveys to read this run: those just loaded, those in the field (their funnel moves), and up to PER_RUN
-    loaded ones with no record yet, newest first."""
+def due(loaded: list[str], limit: int | None = PER_RUN) -> list[str]:
+    """The surveys to read this run: those just loaded, those in the field (their funnel moves), and up to `limit`
+    loaded ones with no record yet, newest first (None: all of them, the catch-up at start)."""
     with get_engine("etl").connect() as conn:
         rows = conn.execute(text(
             "SELECT f.forsta_path, f.state FROM cip_forsta_survey f JOIN cip_survey s ON s.source_ref = f.forsta_path"
             " WHERE s.platform = 'forsta' ORDER BY f.launched_at DESC")).all()
         kept = {p for (p,) in conn.execute(text("SELECT forsta_path FROM cip_forsta_record WHERE kind = 'survey'"))}
     live = [path for path, state in rows if state == "live"]
-    missing = [path for path, _ in rows if path not in kept][:PER_RUN]
+    missing = [path for path, _ in rows if path not in kept][:limit]
     return list(dict.fromkeys([*loaded, *live, *missing]))
 
 
-def collect(client, loaded: list[str]) -> list[str]:
+def collect(client, loaded: list[str], limit: int | None = PER_RUN) -> list[str]:
     """Keep the company's records and those of the surveys due this run; returns the survey paths kept. Anything
     that fails is logged and left for the next run: this never stops the load."""
     try:
         ensure_table()
         store("", company_snapshot(client))
-        paths = due(loaded)
+        paths = due(loaded, limit)
     except Exception as exc:   # noqa: BLE001   the database or Forsta out of reach: the surveys just loaded still count
         log.warning("Fieldwork: the company records or the register were not read: %s", exc)
         paths = loaded
@@ -246,3 +248,20 @@ def publish(out: Path, write) -> int:
     return size + write(out / "api/v1/admin/fieldwork", {
         "surveys": surveys, "archive": archive, "retention": list((company.get("retention") or {}).values()),
         "not_loaded": not_loaded, "planned": planned, "collected": company.get("fetched_at")})
+
+
+def catch_up() -> int:
+    """Every survey still missing a record, and the company's, then the Fieldwork and logic files refreshed in the live
+    version. Run at each server start (deploy/etl-loop.sh); returns the surveys kept."""
+    from etl import publish as publishing   # here, not on top: etl/publish.py imports this module
+    from etl.forsta_etl import open_forsta
+    kept = collect(open_forsta(), [], limit=None)
+    if (publishing.ROOT / "current").exists():
+        size = publish(publishing.ROOT / "current", publishing.write)
+        log.info("Fieldwork: %d surveys kept, %d bytes published", len(kept), size)
+    return len(kept)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
+    catch_up()

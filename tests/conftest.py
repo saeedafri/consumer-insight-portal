@@ -108,3 +108,11 @@ def no_real_messages(monkeypatch, request):
     monkeypatch.setattr(notify, "sent", sent, raising=False)
     monkeypatch.setattr(notify, "send", lambda subject, *a, **k: sent.append(("email", subject)) or True)
     monkeypatch.setattr(notify, "teams", lambda headline: sent.append(("teams", headline)))
+
+
+@pytest.fixture(autouse=True)
+def no_managed_roles(monkeypatch):
+    """The Access screen's role choices (cip_role_access) are never read from a real database in tests: the cache
+    starts fresh and never expires. A test of the Access screen sets MANAGED["at"] to read its own test database."""
+    from shared.core import access
+    monkeypatch.setattr(access, "MANAGED", {"at": float("inf"), "roles": {}})

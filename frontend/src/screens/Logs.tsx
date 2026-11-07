@@ -115,7 +115,9 @@ export default function Logs() {
             {RANGES.map(r => <button key={r.minutes} aria-pressed={minutes === r.minutes} onClick={() => setMinutes(r.minutes)}>{r.label}</button>)}
           </div>
           <button className="btn" onClick={() => setLive(!live)}>{live ? "Pause" : "Resume"} auto-refresh</button>
-          <label>Admin token<br /><input type="password" value={token} onChange={e => keepToken(e.target.value)} placeholder="only while SSO is off" autoComplete="off" /></label>
+          {/* only a demo sign-in is asked for the token: a sign-in through the identity provider opens this page as it is */}
+          {(token || (denied && denied !== "notAdmin")) && <label>Admin token<br /><input type="password" value={token}
+            onChange={e => keepToken(e.target.value)} placeholder="demo sign-in only" autoComplete="off" /></label>}
         </div>
       </div>
       <p className="muted" style={{ margin: "-6px 0 0", fontSize: 12 }}>
@@ -126,7 +128,7 @@ export default function Logs() {
 
       {denied && <Card><p role="alert" style={{ color: "var(--red-text)", margin: 0 }}>
         {denied === "notAdmin"
-          ? <>You are signed in as <b>{me?.email ?? "an account"}</b>, which is not an admin, so this page stays closed whatever the token. Sign out and sign in with an admin account (config/access.yml lists them: dataautomation@coresight.com).</>
+          ? <>You are signed in as <b>{me?.email ?? "an account"}</b>, which is not an admin, so this page stays closed whatever the token. Only the super admin opens it (config/access.yml people: super_admin).</>
           : denied}</p></Card>}
       {metrics && <Dashboard m={metrics} minutes={minutes} />}
       <RawLogs headers={headers} token={token} />

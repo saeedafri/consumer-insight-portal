@@ -330,11 +330,19 @@ export interface FieldworkRecord {
 export interface WaveLogic { questions: Record<string, string>; terms: [string | null, string, string][] }
 export const useLogic = (id: number) =>
   useQuery({ queryKey: ["logic", id], queryFn: () => get<WaveLogic>(`/api/v1/waves/${id}/logic`), ...forever, enabled: id > 0, retry: false });
-export const useFieldwork = () => useQuery({ queryKey: ["fieldwork"], ...forever, retry: false, queryFn: async () => {
-  // while sign-in is the demo, admin pages also need the admin token the Logs page keeps in this browser
+/** An admin page's request (Fieldwork, Access). A demo sign-in also needs the admin token the Logs page keeps in this
+ *  browser; an identity-provider sign-in does not (api/signin.py admin). */
+async function admin<T>(url: string, method = "GET", body?: unknown): Promise<T> {
   let token = "";
   try { token = localStorage.getItem("cip_admin_token") ?? ""; } catch { /* a private window: no token */ }
-  const r = await fetch("/api/v1/admin/fieldwork", { credentials: "same-origin", headers: token ? { "X-CIP-Admin-Token": token } : {} });
+  const r = await fetch(url, { method, credentials: "same-origin", body: body == null ? undefined : JSON.stringify(body),
+                               headers: { "Content-Type": "application/json", ...(token ? { "X-CIP-Admin-Token": token } : {}) } });
   if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`), { status: r.status });
-  return r.json() as Promise<FieldworkRecord>;
-} });
+  return r.json() as Promise<T>;
+}
+export const useFieldwork = () => useQuery({ queryKey: ["fieldwork"], ...forever, retry: false, queryFn: () => admin<FieldworkRecord>("/api/v1/admin/fieldwork") });
+
+/** The Access screen (super admin): every switchable menu, and each role's current choice (api/main.py roles). */
+export interface RoleMenus { features: { key: string; label: string }[]; roles: { role: string; features: string[]; chosen: boolean }[] }
+export const useRoles = () => useQuery({ queryKey: ["roles"], retry: false, queryFn: () => admin<RoleMenus>("/api/v1/admin/roles") });
+export const saveRole = (role: string, features: string[]) => admin<{ role: string; features: string[] }>(`/api/v1/admin/roles/${role}`, "PUT", { features });

@@ -119,12 +119,34 @@ def user(request: Request) -> dict:
 def admin(request: Request, who: dict = Depends(user)) -> dict:
     if not access.can(who, "admin_pages"):
         raise HTTPException(403, "Only an admin can do that")
-    # the demo sign-in takes any email at its word, so anyone could type an admin's: admin pages (logs, audit,
-    # session revocation) then also need CIP_ADMIN_TOKEN (32+ characters) in the X-CIP-Admin-Token header
+    # the demo sign-in takes any email at its word, so anyone could type an admin's: a session that came through it
+    # also needs CIP_ADMIN_TOKEN (32+ characters) in the X-CIP-Admin-Token header. A sign-in the identity provider
+    # proved (csr-idp, Entra) needs nothing more: the email is the person's own
     token = os.environ.get("CIP_ADMIN_TOKEN", "")
-    if demo() and not (len(token) >= 32 and hmac.compare_digest(token, request.headers.get("x-cip-admin-token", ""))):
+    if demo() and not proven(who.get("sid", "")) \
+            and not (len(token) >= 32 and hmac.compare_digest(token, request.headers.get("x-cip-admin-token", ""))):
         raise HTTPException(403, "While sign-in is the demo, admin pages also need the admin token")
     return who
+
+
+PROVEN: set[str] = set()   # sessions known to have signed in through the identity provider (never changes for a session)
+
+
+def proven(sid: str) -> bool:
+    """Did this session sign in through the identity provider (cip_access_session.provider 'oidc'), not the demo sign-in.
+    A yes is remembered; a no is asked again (the database may have been out of reach). An API key is never proven."""
+    if sid in PROVEN:
+        return True
+    if not sid or sid == "api-key":
+        return False
+    try:
+        with get_engine("app").connect() as conn:
+            found = conn.execute(text("SELECT provider FROM cip_access_session WHERE session_hash = :h"), {"h": digest(sid)}).scalar()
+    except Exception:   # noqa: BLE001   the database out of reach: ask for the token, as before
+        return False
+    if found == "oidc":
+        PROVEN.add(sid)
+    return found == "oidc"
 
 
 def remember(sid: str, who: dict, how: str) -> None:

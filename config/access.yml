@@ -3,7 +3,8 @@
 #   tiers     a package: the features it includes and the study types it opens ("*" = all)
 #   roles     each role and its permissions (shared/core/access.py can()): admin_pages (Logs, Fieldwork, the audit log,
 #             revoking sessions), manage_team_items (remove anyone's boards and views), all_features (every feature and
-#             survey whatever the tier), unlimited (no rate limit). "*" = all of them. A new role: add it here, then its people
+#             survey whatever the tier), unlimited (no rate limit), manage_roles (the Access screen: each role's menus).
+#             "*" = all of them. A new role: add it here, then its people
 #   people    roles given to named people (the super admin); everyone else is an analyst (staff) or a client (by domain)
 #   staff     Coresight's own sign-in domains and their tier: staff are analysts of no client
 #   clients   an organisation: its sign-in email domains, its tier, and (for a client-commissioned study) the families it owns
@@ -14,7 +15,30 @@
 # With this file as it is, everyone sees everything (the demo): every study is "all" and unknown emails get `enterprise`.
 # Before external clients: set unknown to refuse, list each client's domains, and give client studies visibility "client".
 
-features: [dashboards, explorer, crosstab, trends, search, ask, export, boards, audiences, alerts, saved_views, schedule]   # schedule: the internal launch plan (staff)
+# Every switchable feature: most are a menu (the super admin turns them on and off per role on the Access screen,
+# stored in cip_role_access); export, alerts and saved_views are actions inside screens. Survey library, a wave's
+# Overview, Methodology, What's new and My account are always there; Logs, Fieldwork and Access are the super admin's.
+features: [dashboards, explorer, crosstab, trends, compare, audiences, changes, report, survey, search, schedule, ask, boards,
+           sectors, expectations, export, alerts, saved_views]
+feature_labels:   # the names the Access screen shows
+  dashboards: Topic dashboards (on a wave's Overview)
+  explorer: Question explorer
+  crosstab: Cross-tab matrix
+  trends: Trends
+  compare: Compare waves
+  audiences: Audiences
+  changes: What changed
+  report: Weekly report
+  survey: Survey preview
+  search: Search questions
+  schedule: Launch schedule
+  ask: Ask CIP
+  boards: Boards
+  sectors: Sector databank
+  expectations: Expected vs actual
+  export: Export (CSV, Excel, PowerPoint)
+  alerts: Alerts
+  saved_views: Saved views
 
 tiers:
   demo:         {features: [dashboards, explorer, trends, search], study_types: [tracker]}

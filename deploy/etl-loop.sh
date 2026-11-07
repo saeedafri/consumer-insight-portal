@@ -5,10 +5,14 @@
 #    fieldwork ends; and 03:30 (09:00 IST) every day, a short run that loads any other survey that closed (annual, ad hoc)
 #    within a day; Friday's also runs the integrity check. Each run takes the ETL lock, so runs never overlap.
 #  - scripts/weekly_forsta.py --watchdog every hour at minute 05: a stuck or missing run is reported (etl/notify.py).
+#  - python -m etl.fieldwork once, two minutes after each start: Forsta's records of every survey still missing one.
 #  - logs/*.log and *.jsonl past 20 MB are packed into logs/archive/ as .zip and kept for good (deploy/archive-log.py).
 set -u
 RUNS=${CIP_ETL_RUNS:-"Mon@12:00 Mon@03:30 Tue@03:30 Wed@03:30 Thu@03:30 Fri@03:30 Sat@03:30 Sun@03:30"}
 cd /srv/cip
+# Forsta's records of every survey (etl/fieldwork.py) caught up once per start, after the published files are restored:
+# a deploy never leaves the Fieldwork screen empty until the next scheduled run. Read-only GETs, lowest priority.
+( sleep 120 && nice -n 15 python -m etl.fieldwork >> logs/fieldwork.log 2>&1 ) &
 while :; do
   now=$(date -u +%a@%H:%M)
   for slot in $RUNS; do
