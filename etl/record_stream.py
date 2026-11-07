@@ -31,13 +31,13 @@ class RecordSnapshot:
 
 @contextmanager
 def source_records(client, path):
-    """A survey's respondents as Forsta sends them (GET .../data), qualified only: every screen, cube and weight uses
-    qualified respondents alone, and the others were 60 % of the download and of the answers stored (survey 261003,
-    7 Nov 2026: 1,044 records and 5.1 MB unfiltered, 403 and 2.0 MB qualified, 3.9 s down to 0.7 s). Used by the
-    load (etl/forsta_etl.py load_wave) and the re-check against Forsta (_reconcile); a reloaded wave drops the
-    respondents Forsta no longer sends, so older waves lose their unqualified rows as they are reloaded."""
+    """A survey's respondents as Forsta sends them (GET .../data): all of them, qualified, terminated, over quota and
+    partial. The screens use qualified respondents only, but nothing Forsta holds is discarded: Forsta deletes
+    archived surveys a year on, and the others are the record of the fieldwork. (Asking for qualified only would
+    cut the download 60 %, 5.1 MB to 2.0 MB for survey 261003; the load runs in the background, users never wait on it.)
+    Used by the load (etl/forsta_etl.py load_wave) and the re-check against Forsta (_reconcile)."""
     reader = getattr(client, 'iter_survey_data', None) or client.survey_data
-    rows = reader(path, cond="qualified")
+    rows = reader(path)
     try:
         yield rows
     finally:

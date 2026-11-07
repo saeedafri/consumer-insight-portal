@@ -41,14 +41,14 @@ import tempfile
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import text
 
 from shared.core.database import get_engine
 from shared.data import payloads
-from etl import expectations, sectors, weekly_report
+from etl import expectations, fieldwork, sectors, weekly_report
 
 log = logging.getLogger("cip.publish")
 ROOT = Path(os.environ.get("CIP_PUBLISH_DIR") or Path(__file__).resolve().parents[1] / "data/published")
@@ -302,12 +302,34 @@ def backup(version: Path) -> None:
 
 
 def write_views(out: Path) -> int:
-    """The views built from a version's files (the weekly reports, the sector tables, expected vs actual): by every
+    """The views built from a version's files (the weekly reports, the sector tables, expected vs actual, the
+    fieldwork record): by every
     publish, and again after a restore, so a new image's views appear at deploy without waiting for new data.
     Returns the bytes written."""
     size = weekly_report.publish(out, write)   # the weekly report of the recent tracker waves, from the question files
     size += sectors.publish(out, write)        # the Databank's sector tables, from the books and question files
+    size += fieldwork.publish(out, write)      # the admins' Fieldwork screen, from Forsta's kept fieldwork records
+    size += write(out / "api/v1/public/facts", site_facts(out))   # the public home page's live figures
     return size + expectations.publish(out, write)   # retail events: expected vs actual, plus the spend answers
+
+
+def site_facts(out: Path) -> dict:
+    """What the public home page shows (frontend/app/(site)/LiveFacts.tsx fetches it; nginx serves it without sign-in):
+    the catalogue's counts, the latest weekly wave (date, size, topics, questions) and every weekly wave's date for its
+    calendar. Counts and dates only: no survey answer is public. The site is built without the data (deploy/Dockerfile),
+    so without this file it would show the figures frozen in pipeline.ts."""
+    waves = json.loads(gzip.decompress((out / "api/v1/waves.json.gz").read_bytes()))
+    trackers = sorted((w for w in waves if w.get("study_type") == "tracker"), key=lambda w: w["wave_date"])
+    if not trackers:
+        return {}
+    latest, when = trackers[-1], date.fromisoformat(trackers[-1]["wave_date"])
+    book = out / "api/v1/waves" / str(latest["survey_id"]) / "book.json.gz"
+    questions = len(json.loads(gzip.decompress(book.read_bytes())).get("questions") or []) if book.exists() else None
+    return {"waves": len(waves), "responses": sum(w.get("qualified_n") or 0 for w in waves), "trackers": len(trackers),
+            "annual": sum(w.get("study_type") == "annual" for w in waves), "adhoc": sum(w.get("study_type") == "adhoc" for w in waves),
+            "latestDate": latest["wave_date"], "latestLabel": f"Week of {when:%B} {when.day}, {when.year}", "latestId": latest["survey_id"],
+            "latestN": latest.get("qualified_n"), "latestTopics": latest.get("modules") or [], "questions": questions,
+            "trackerDates": [w["wave_date"] for w in trackers], "firstTracker": trackers[0]["wave_date"]}
 
 
 def restore_views(version: Path) -> None:

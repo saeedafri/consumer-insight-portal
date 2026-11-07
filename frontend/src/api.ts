@@ -305,3 +305,23 @@ export async function myName(): Promise<string> {
 export type Methodology = { title?: string; updated?: string; sections: { title: string; body: string | string[] }[] };
 export const useMethodology = () => useQuery({ queryKey: ["methodology"], staleTime: Infinity, retry: false,
   queryFn: () => get<Methodology | string>("/api/v1/methodology") });
+
+/** Forsta's fieldwork record of every survey (etl/fieldwork.py → GET /api/v1/admin/fieldwork, admins only). */
+export interface FieldworkSurvey {
+  path: string; survey_id: number | null; title: string | null; wave_date: string | null; state: string | null; hibernated: boolean;
+  launched: string | null; closed: string | null; questions: number | null; opened: number | null; partial: number | null;
+  terminated: number | null; overquota: number | null; qualified: number | null; incidence: number | null; median_minutes: number | null;
+  warnings: Record<string, number>; pages: [string, string, number, number, number, number | null][]; fetched_at: string;
+}
+export interface FieldworkRecord {
+  surveys: FieldworkSurvey[];
+  archive: { path: string; name: string | null; archived_at: string | null; delete_at: string | null; held: boolean }[];
+}
+export const useFieldwork = () => useQuery({ queryKey: ["fieldwork"], ...forever, retry: false, queryFn: async () => {
+  // while sign-in is the demo, admin pages also need the admin token the Logs page keeps in this browser
+  let token = "";
+  try { token = localStorage.getItem("cip_admin_token") ?? ""; } catch { /* a private window: no token */ }
+  const r = await fetch("/api/v1/admin/fieldwork", { credentials: "same-origin", headers: token ? { "X-CIP-Admin-Token": token } : {} });
+  if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`), { status: r.status });
+  return r.json() as Promise<FieldworkRecord>;
+} });

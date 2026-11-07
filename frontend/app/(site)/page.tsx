@@ -1,9 +1,10 @@
 // The public home page (/): what the portal is, read like the front page of the weekly report. Every figure on it
-// is real and built when the site is built (pipeline.ts reads the published files): the latest wave, its size and
-// topics, and a calendar of the weeks the tracker was fielded. No survey answer appears here: those stay behind
+// is real: the latest wave, its size and topics, and a calendar of the weeks the tracker was fielded come from the
+// published data, as built and then as published since (LiveFacts.tsx). No survey answer appears here: those stay behind
 // sign-in until a finding is cleared for public release (this-week/page.tsx FEATURED).
 import Link from "next/link";
 import { NAME, SITE } from "../site";
+import { Counts, Ledger } from "./LiveFacts";
 import { siteFacts } from "./pipeline";
 
 export const metadata = {
@@ -40,28 +41,8 @@ const DEFEND = [
 
 const longDate = (iso: string) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
-const DAY = 86_400_000;
-
-/** Every week from the tracker's first wave to its latest, one row per year, each week marked when a tracker wave was
- *  fielded within it (a wave fielded off its Monday still counts for that week). */
-function fieldedYears(dates: string[], first: string, latest: string) {
-  const asked = dates.map((d) => Date.parse(d + "T00:00:00Z"));
-  const years: { year: string; weeks: { day: string; fielded: boolean }[] }[] = [];
-  for (let monday = Date.parse(first + "T00:00:00Z"); monday <= Date.parse(latest + "T00:00:00Z"); monday += 7 * DAY) {
-    const day = new Date(monday).toISOString().slice(0, 10);
-    const week = { day, fielded: asked.some((t) => t >= monday - 3 * DAY && t < monday + 4 * DAY) };
-    const year = day.slice(0, 4);
-    if (years.at(-1)?.year === year) years.at(-1)!.weeks.push(week); else years.push({ year, weeks: [week] });
-  }
-  return years;
-}
-
 export default function Home() {
   const f = siteFacts();
-  const years = fieldedYears(f.trackerDates, f.firstTracker, f.latestDate);
-  const all = years.flatMap((y) => y.weeks);
-  const fielded = all.filter((w) => w.fielded).length;
-  const thousands = Math.floor(f.responses / 1000).toLocaleString("en-US");
   return <>
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
     <div className="wrap front">
@@ -76,33 +57,11 @@ export default function Home() {
         </div>
       </div>
 
-      <aside className="ledger" aria-labelledby="latest">
-        <h2 id="latest">{f.latestLabel}</h2>
-        <dl className="ledger-facts">
-          <div><dt>Respondents</dt><dd>{f.latestN.toLocaleString("en-US")} US adults 18+</dd></div>
-          <div><dt>Questions</dt><dd>{f.questions}</dd></div>
-        </dl>
-        {f.latestTopics.length > 0 && <ul className="topics" aria-label="Topics this week">
-          {f.latestTopics.map((t) => <li key={t}>{t}</li>)}
-        </ul>}
-        <figure className="calendar">
-          <div className="years" role="img" aria-label={`A survey wave in ${fielded} of the ${all.length} weeks since ${longDate(f.firstTracker)}`}>
-            {years.map((y) => <div className="year" key={y.year}><span className="year-label">{y.year}</span><div className="weeks">
-              {y.weeks.map((w) => <i key={w.day} className={w.fielded ? "on" : undefined} title={`Week of ${longDate(w.day)}${w.fielded ? "" : ": no wave"}`} />)}
-            </div></div>)}
-          </div>
-          <figcaption>A wave in {fielded} of the {all.length} weeks since {longDate(f.firstTracker)}: one row a year, one square a week, this week in red.</figcaption>
-        </figure>
-      </aside>
+      <Ledger built={f} />
     </div>
 
     <div className="wrap">
-      <dl className="facts">
-        <div><dt>Survey waves</dt><dd>{f.waves.toLocaleString("en-US")}</dd></div>
-        <div><dt>Qualified responses</dt><dd>{thousands},000+</dd></div>
-        <div><dt>Weekly tracker waves</dt><dd>{f.trackers.toLocaleString("en-US")}</dd></div>
-        <div><dt>Annual and ad hoc studies</dt><dd>{f.annual + f.adhoc}</dd></div>
-      </dl>
+      <Counts built={f} />
     </div>
 
     <section className="wrap section inside" aria-labelledby="inside">

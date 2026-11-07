@@ -347,3 +347,19 @@ def test_a_token_from_another_issuer_is_refused_unless_named(portal, monkeypatch
     assert sign_in() == 400
     monkeypatch.setenv("CIP_OIDC_TOKEN_ISSUER", "https://coresight.com")
     assert sign_in() in (302, 303)
+
+
+def test_the_fieldwork_record_is_for_admins_only(portal):
+    assert call("/api/v1/admin/fieldwork", signed("boss@coresight.com"))[0] == 404     # not collected yet: says so
+    put(portal, "admin/fieldwork", {"surveys": [], "archive": []})
+    status, _, body = call("/api/v1/admin/fieldwork", signed("boss@coresight.com"))
+    assert status == 200 and json.loads(body) == {"surveys": [], "archive": []}
+    assert call("/api/v1/admin/fieldwork", signed("ana@coresight.com"))[0] == 403      # staff, not an admin
+    assert call("/api/v1/admin/fieldwork", signed("pat@acme.com"))[0] == 403           # a client
+
+
+def test_the_home_pages_figures_need_no_sign_in(portal):
+    assert call("/api/v1/public/facts")[0] == 404                                        # not published yet
+    put(portal, "public/facts", {"waves": 2, "latestDate": "2026-10-19"})
+    status, _, body = call("/api/v1/public/facts")                                     # no cookie
+    assert status == 200 and json.loads(body)["latestDate"] == "2026-10-19"

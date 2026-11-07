@@ -464,6 +464,16 @@ async def tracker_view(request: Request, who: dict, name: str) -> Response:
     return send_payload(request, found)
 
 
+@app.get("/api/v1/public/facts")
+async def public_facts(request: Request) -> Response:
+    """The public home page's live figures (etl/publish.py site_facts): counts and dates only, so no sign-in. nginx
+    sends the file itself; this serves a laptop without nginx."""
+    found = published_file("public", "facts")
+    if found is None:
+        raise HTTPException(404, "Not published yet")
+    return send_payload(request, found)
+
+
 @app.get("/api/v1/sectors")
 async def sectors(request: Request, who: dict = Depends(user)) -> Response:
     """The Databank's sector tables (etl/sectors.py): purchase rate, retailers, brands and categories per sector wave."""
@@ -638,6 +648,16 @@ async def export(kind: str, request: Request, who: dict = Depends(user)) -> Resp
 async def healthz() -> dict:
     """Public: up or not, and which code. The detail is for admins (/api/v1/admin/health)."""
     return {"ok": True, "build": BUILD}
+
+
+@app.get("/api/v1/admin/fieldwork")
+async def fieldwork_record(request: Request, who: dict = Depends(admin)) -> Response:
+    """Forsta's fieldwork record of every survey (etl/fieldwork.py): funnel, drop-outs by page, warnings and Forsta's
+    archive and deletion schedule, as the ETL published it. Admins only; nothing is computed here."""
+    found = published_file("admin", "fieldwork")
+    if found is None:
+        raise HTTPException(404, "No fieldwork record yet: the next Forsta run collects it")
+    return send_payload(request, found)
 
 
 @app.get("/api/v1/admin/health")

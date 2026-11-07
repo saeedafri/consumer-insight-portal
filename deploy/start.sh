@@ -6,16 +6,17 @@
 set -u
 cd /srv/cip
 # What must survive restarts and deploys lives in /home/cip (App Service keeps /home): logs/ (with the ETL heartbeat, so
-# no "no run for a week" alarm after each deploy) and the open-ended answers' coding (CIP_CODED_DIR, read by publish).
+# no "no run for a week" alarm after each deploy), the open-ended answers' coding (CIP_CODED_DIR, read by publish) and
+# Forsta's fieldwork records (CIP_FIELDWORK_DIR, etl/fieldwork.py: kept before Forsta deletes archived surveys).
 # /tmp/cip-keep leads there; a /home this user cannot write: a folder in the container instead, lost at restart
-if mkdir -p /home/cip/logs /home/cip/coded 2>/dev/null && [ -w /home/cip/coded ]; then
+if mkdir -p /home/cip/logs /home/cip/coded /home/cip/fieldwork 2>/dev/null && [ -w /home/cip/coded ]; then
   ln -sfn /home/cip /tmp/cip-keep
   # each publish also keeps one tar of its files here, so a new image restores them in seconds instead of rebuilding
   # every wave (6 min at 100 % CPU on one core, 5 Nov 2026); a Blob URL set in the settings wins
   export CIP_PUBLISH_BACKUP_URL="${CIP_PUBLISH_BACKUP_URL:-/home/cip/published-backup}"
 else
   echo "start.sh: /home is not writable for uid $(id -u): logs and coding kept in the container until it restarts" >&2
-  mkdir -p /tmp/cip-local/logs /tmp/cip-local/coded && ln -sfn /tmp/cip-local /tmp/cip-keep
+  mkdir -p /tmp/cip-local/logs /tmp/cip-local/coded /tmp/cip-local/fieldwork && ln -sfn /tmp/cip-local /tmp/cip-keep
 fi
 cp -n data/coded/*.json /tmp/cip-keep/coded/ 2>/dev/null   # the coding done before this server (in the image), never over newer
 # Published files live on the container's own disk: fast, and App Service's /home share (SMB) cannot hold the hard

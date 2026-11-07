@@ -90,16 +90,16 @@ def test_private_snapshot_replays_native_values_and_closes_on_failure():
     assert closed == [True]
 
 
-def test_only_qualified_respondents_are_downloaded():
-    """Forsta filters before sending (cond=qualified): the others were 60 % of every download and never used."""
+def test_every_respondent_is_downloaded_not_only_the_qualified():
+    """Nothing Forsta holds is discarded: no filter on the data export (terminates and partials are the fieldwork record)."""
     asked = []
 
     class Forsta:
         def iter_survey_data(self, path, **params):
             asked.append(params)
-            yield {"uuid": "a", "status": 3}
+            yield {"uuid": "a", "status": 1}
 
     from etl.record_stream import survey_snapshot
     with survey_snapshot(Forsta(), "selfserve/58f/261003") as records:
         assert len(records) == 1
-    assert asked == [{"cond": "qualified"}]
+    assert asked == [{}]

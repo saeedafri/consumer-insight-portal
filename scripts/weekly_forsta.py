@@ -37,7 +37,7 @@ from sqlalchemy import inspect, text  # noqa: E402
 
 from shared.core.config import config  # noqa: E402
 from shared.core.database import get_engine, healthcheck  # noqa: E402
-from etl import forsta_etl, integrity, launch_schedule, notify, open_ends, publish  # noqa: E402
+from etl import fieldwork, forsta_etl, integrity, launch_schedule, notify, open_ends, publish  # noqa: E402
 from etl.forsta_client import ForstaAuthError, ForstaClient  # noqa: E402
 from etl.loaders import Locked, etl_lock  # noqa: E402
 
@@ -103,12 +103,17 @@ def run(client=None) -> int:
     log.info("Register: %s", forsta_etl.discover(client))
     result = forsta_etl.run_due(client)               # the register and the load log keep the detail
     log.info("Loaded %d: %s", len(result["loaded"]), result["loaded"])
+    # Forsta's fieldwork record (funnel, drop-outs, warnings, archive schedule), kept before Forsta deletes it
+    kept = fieldwork.collect(client, result["loaded"])   # read-only GETs; a failure is logged, never stops the run
+    log.info("Fieldwork records kept: %d", len(kept))
     for path in result["failed"]:
         tell(notify.failure, f"survey {path} did not load", forsta_etl.last_error_of(path))
     if not result["loaded"] and not result["failed"]:
         tell(notify.idle_run)
         if datetime.now().weekday() != FULL_CHECK_DAY:   # nothing changed: the derived rows and published
-            return 0                                     # numbers are as the last full check left them
+            if kept and (publish.ROOT / "current").exists():   # numbers are as the last full check left them;
+                fieldwork.publish(publish.ROOT / "current", publish.write)   # only the Fieldwork file is new
+            return 0
     broken = integrity.run()                        # heals derived rows; reports the rest
     for path in result["loaded"]:                   # verify counted the answers; this compares their values (one GET)
         try:
@@ -145,6 +150,8 @@ def run(client=None) -> int:
             publish.publish()
         except Exception as exc:                    # the previous version stays live; say so
             tell(notify.failure, "publishing the portal files", str(exc))
+    elif kept:                                      # no new version: only the Fieldwork file is refreshed in place
+        fieldwork.publish(publish.ROOT / "current", publish.write)
     for path in result["loaded"]:                   # the team's email last: its dashboards and screens are live by now
         tell(notify.survey_loaded, forsta_etl.survey_id_of(path))
     if broken:   # the count in the subject: a different problem is told at once, not after the 6-hour repeat window

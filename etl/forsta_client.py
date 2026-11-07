@@ -200,6 +200,31 @@ class ForstaClient:
         """Each quota cell's limit and completes; 428 while the survey is hibernated."""
         return self._get(f"surveys/{path.strip('/')}/quota").json()
 
+    # The fieldwork record (etl/fieldwork.py, the admins' Fieldwork screen): read-only GETs, about 0.3-1 s each
+    def survey_completions(self, path: str) -> dict:
+        """The funnel: opened the survey, partial, terminated, over quota, qualified, incidence, interview length."""
+        return self._get(f"surveys/{path.strip('/')}/summary/completions").json()
+
+    def survey_dropouts(self, path: str) -> dict:
+        """Each page: how many started, submitted and dropped out, and the seconds spent on it."""
+        return self._get(f"surveys/{path.strip('/')}/summary/dropouts").json()
+
+    def survey_warnings(self, path: str) -> dict:
+        """Counts and events of blocked sessions, server errors, exceptions and quota misses during fieldwork."""
+        return self._get(f"surveys/{path.strip('/')}/warnings").json()
+
+    def survey_info(self, path: str) -> dict:
+        """The survey's record: state, launch and close times, clickthrough, qualified, questions, last edit, retention."""
+        return self._get(f"rh/surveys/{path.strip('/')}").json()
+
+    def hibernation(self, path: str) -> str:
+        """'restored' or 'hibernated': a hibernated survey answers 428 until woken in Forsta (CIP never wakes one)."""
+        return self._get("hibernation/status", survey=path.strip('/')).json().get("status", "")
+
+    def archived_surveys(self) -> list[dict]:
+        """Every archived survey, with when Forsta archived it and when it deletes it for good (a year on)."""
+        return self._get("rh/surveys/archived").json()
+
     def whoami(self) -> dict:
         """Cheapest call that proves the key works. Use in test_connection.py."""
         return self._get("rh/users/self").json()

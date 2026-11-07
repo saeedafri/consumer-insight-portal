@@ -884,3 +884,11 @@ table.data tbody tr:nth-child(n+8), .xt tbody tr:nth-child(n+8), .wave-row:nth-c
 .report-table tbody th, .report-table tfoot th, .report-table thead th:first-child { box-shadow: 1px 0 0 var(--line); }   /* the sticky column's edge while the rest scrolls under it */
 .vs-bar { display: inline-block; height: 8px; margin-right: 8px; border-radius: 2px; background: var(--ink-2); opacity: .55; vertical-align: middle; }
 .vs-bar.actual { background: var(--red); opacity: .8; }
+
+/* ── fieldwork (screens/Fieldwork.tsx) ── */
+.fieldwork-scroll { max-height: 360px; overflow-y: auto; }
+.report-table tr.picked th, .report-table tr.picked td { background: var(--red-wash); }
+.link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--ink); text-align: left; cursor: pointer; text-decoration: underline;
+               text-underline-offset: 2px; text-decoration-color: var(--line-strong); }
+.link-button:hover { color: var(--red-text); }
+.fieldwork-table th .chip { margin-left: 8px; }

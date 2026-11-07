@@ -27,3 +27,5 @@ logs/notify-state.json
 data/published/
 logs/etl-heartbeat.json
 data/coded/
+# Forsta's fieldwork records (etl/fieldwork.py): kept on the server, never committed
+data/fieldwork/
