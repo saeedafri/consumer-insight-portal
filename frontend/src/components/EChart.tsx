@@ -12,14 +12,14 @@ import { perf } from "../perf";
 echarts.use([AriaComponent, BarChart, LineChart, PieChart, GridComponent, LegendPlainComponent, LegendScrollComponent, MarkLineComponent,
   TooltipComponent, CanvasRenderer]);
 
-// The house chart look, registered once per theme: 12 px axes (category in ink-2, values in ink-3), dashed
-// horizontal grid only, the solid series ramp. Screens set only what is particular to their chart.
+// The house chart look, registered once per theme: 12 px axes (category in ink-2, values in ink-3), no category
+// axis line, a faint solid value grid (the 8 Nov 2026 mockups), the solid series ramp. Screens set only what is particular to their chart.
 const look = (t: typeof LIGHT) => ({
   color: [t.redLine, t.s1, t.s2, t.s3, t.other],
   backgroundColor: "transparent",
   textStyle: { fontFamily: FONT, color: t.ink, fontSize: 12 },
-  categoryAxis: { axisLine: { lineStyle: { color: t.lineStrong } }, axisTick: { show: false }, axisLabel: { color: t.ink2, fontSize: 12 }, splitLine: { show: false } },
-  valueAxis: { axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: t.ink3, fontSize: 12 }, splitLine: { lineStyle: { color: t.line, type: [2, 3] } } },
+  categoryAxis: { axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: t.ink2, fontSize: 12 }, splitLine: { show: false } },
+  valueAxis: { axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: t.ink3, fontSize: 12 }, splitLine: { lineStyle: { color: t.line } } },
   timeAxis: { axisLine: { lineStyle: { color: t.lineStrong } }, axisLabel: { color: t.ink3, fontSize: 12, hideOverlap: true }, splitLine: { show: false } },
   line: { symbol: "circle", symbolSize: 5, lineStyle: { width: 1.5 } },
   legend: { textStyle: { color: t.ink2, fontSize: 12 }, icon: "roundRect", itemWidth: 10, itemHeight: 10 },

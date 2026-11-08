@@ -6,8 +6,9 @@ import { allowed, useMe } from "../api";
 import type { Wave } from "../api";
 import type { Format } from "../csv";
 import type { Move } from "../moves";
-import { fmtDate, pts, SMALL_BASE } from "../stats";
+import { direction, fmtDate, pts, SMALL_BASE } from "../stats";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Inbox } from "lucide-react";
 
 /** A question as people read it: "Q3", its place in the survey. The survey's own code (BD1, LX5RA8OE), which the data
  *  team matches against Forsta, shows on hover. Used wherever a screen names a question. */
@@ -51,7 +52,7 @@ export function Change({ now, before, label, routing, move }:
   const d = now - before;
   const sig = !!move?.sig;
   const chip = (
-    <span className={`chip ${sig ? "sig" : "flat"}`}>
+    <span className={`chip ${sig ? "sig" : "flat"} ${direction(d)}`}>
       {Math.abs(d) < 0.05 ? "no change" : `${d > 0 ? "▲" : "▼"} ${pts(d).replace(/^[+−]/, "")}`} <small>{label}</small>
     </span>
   );
@@ -116,7 +117,7 @@ export function Failure({ error }: { error: unknown }) {
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="state">{children}</div>;
+  return <div className="state empty-hero"><span className="empty-icon" aria-hidden="true"><Inbox size={26} strokeWidth={1.8} /></span><p>{children}</p></div>;
 }
 
 

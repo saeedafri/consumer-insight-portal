@@ -15,7 +15,7 @@ import QuestionNav from "../components/QuestionNav";
 import QuestionTabs from "../components/QuestionTabs";
 import { downloadTable } from "../csv";
 import type { Format } from "../csv";
-import { fmtDate, HIDDEN_BASE as HIDDEN, pct, pts, significant, SMALL_BASE } from "../stats";
+import { direction, fmtDate, HIDDEN_BASE as HIDDEN, pct, pts, significant, SMALL_BASE } from "../stats";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const LAST = [4, 8, 13];
@@ -142,9 +142,9 @@ function Table({ f, cell, dim, current, events, titles, from }: { f: QuestionFil
               const before = cells.slice(0, k).reverse().find(shown);
               const move = before && significant(c.pct, c.base, before.pct, before.base) ? (c.pct > before.pct ? "▲" : "▼") : "";
               return <td key={k} className={`num ${c.base < SMALL_BASE ? "small" : ""}`}>
-                <b>{pct(c.pct)}</b>{move && <span className="sig"> {move}</span>}<small>n={c.base}</small></td>;
+                <b>{pct(c.pct)}</b>{move && <span className={move === "▲" ? "up" : "down"}> {move}</span>}<small>n={c.base}</small></td>;
             })}
-            <td className={`num ${sigAll ? "sig" : "muted"}`}>{first && last && first !== last ? pts(last.pct - first.pct) : "–"}{sigAll ? " ●" : ""}</td>
+            <td className={`num ${first && last && first !== last ? direction(last.pct - first.pct) : "muted"}`}>{first && last && first !== last ? pts(last.pct - first.pct) : "–"}{sigAll ? " ●" : ""}</td>
           </tr>;
         })}</tbody>
       </table></div>}

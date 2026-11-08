@@ -6,7 +6,7 @@ import { CUT_NAMES, myName, queries, send, useAudiences, useBook, useQuestion } 
 import type { AudienceDef, AudienceProfile, AudienceResult, Book, Question } from "../api";
 import { Card, Empty, Failure, Loading } from "../components/bits";
 import QuestionNav from "../components/QuestionNav";
-import { HIDDEN_BASE, HIDDEN_NOTE, pct } from "../stats";
+import { direction, HIDDEN_BASE, HIDDEN_NOTE, pct } from "../stats";
 
 const EMPTY: AudienceDef = { cuts: {}, answers: [] };
 /** The audience from the link (?aud=), so Copy link and a saved view reproduce it; anything malformed is dropped.
@@ -133,7 +133,7 @@ export default function Audience() {
             <th scope="row">{label}</th>
             <td className="num">{share == null ? <span className="muted" title={`Fewer than ${HIDDEN_BASE} respondents on one side`}>{HIDDEN_NOTE}</span> : <><b>{pct(share)}</b><small style={{ display: "block" }} className="muted">n={base}</small></>}</td>
             <td className="num">{rest == null ? "–" : <>{pct(rest)}<small style={{ display: "block" }} className="muted">n={restBase}</small></>}</td>
-            <td className={`num ${sig ? "sig" : "muted"}`}>{share == null || rest == null ? "–" : `${share - rest > 0 ? "+" : ""}${(share - rest).toFixed(1)} pts${sig ? (sig > 0 ? " ▲" : " ▼") : ""}`}</td>
+            <td className={`num ${share == null || rest == null ? "muted" : direction(share - rest)}`}>{share == null || rest == null ? "–" : `${share - rest > 0 ? "+" : ""}${(share - rest).toFixed(1)} pts${sig ? (sig > 0 ? " ▲" : " ▼") : ""}`}</td>
             <td className={`num ${index != null && (index >= 120 || index <= 80) ? "sig" : "muted"}`}>{index ?? "–"}</td>
           </tr>)}</tbody>
         </table></div>
@@ -147,7 +147,7 @@ export default function Audience() {
             <th scope="row">{f.answer}</th>
             <td className="num">{pct(f.pct)}</td>
             <td className="num">{pct(f.everyone)}</td>
-            <td className="num sig">{f.index}{f.index > 100 ? " ▲" : " ▼"}</td>
+            <td className={`num ${f.index > 100 ? "up" : "down"}`}>{f.index}{f.index > 100 ? " ▲" : " ▼"}</td>
           </tr>)}</tbody>
         </table></div>
       </Card>}

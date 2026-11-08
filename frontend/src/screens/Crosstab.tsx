@@ -174,7 +174,7 @@ function Matrix({ g, q, n, cols, refCol, marks, hover, onRef }: { g: Group; q: Q
                          : `Significantly ${m === "▲" ? "higher" : "lower"} than ${refCol === "Total" ? "everyone else" : refCol}`} (95 %)</div>}
                        {base(c) < SMALL_BASE && <div style={{ color: "var(--warn)" }}>Small base: read with caution</div>}
                        <div className="muted" style={{ marginTop: 4 }}><QuestionCode q={q} /></div></>)}>
-            {v.toFixed(0)}{m && <sup>{m}</sup>}</td>;
+            {v.toFixed(0)}{m && <sup className={m === "▲" ? "up" : m === "▼" ? "down" : undefined}>{m}</sup>}</td>;
         })}</tr>)}
       </tbody>
     </table>

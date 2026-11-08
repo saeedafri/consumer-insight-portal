@@ -11,7 +11,7 @@ import type { EventComparison, Outlook, SpendSide } from "../api";
 import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
 import { downloadTable } from "../csv";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { fmtDate } from "../stats";
+import { direction, fmtDate } from "../stats";
 
 /** A gap in percentage points, signed: +4.9, −8.7. */
 const points = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)}`;
@@ -62,7 +62,7 @@ export default function Expectations() {
           <th scope="row" title={r.actual_label !== r.label ? `Afterwards: ${r.actual_label}` : undefined}>{r.label}</th>
           <td className="num"><span className="vs-bar" style={{ width: r.expected * 1.2 }} />{r.expected.toFixed(1)}%</td>
           <td className="num"><span className="vs-bar actual" style={{ width: r.actual * 1.2 }} />{r.actual.toFixed(1)}%</td>
-          <td className={`num ${r.significant ? "change-sig" : ""}`} title={r.significant ? "Statistically significant" : undefined}>{points(r.difference)}</td>
+          <td className={`num ${r.significant && r.difference != null ? direction(r.difference) : ""}`} title={r.significant ? "Statistically significant" : undefined}>{points(r.difference)}</td>
         </tr>)}</tbody>
       </table></div>
     </Card>)}

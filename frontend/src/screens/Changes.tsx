@@ -6,7 +6,7 @@ import { useBook } from "../api";
 import { Card, compared, Failure, Loading, ExportButtons, sourceText } from "../components/bits";
 import { downloadTable } from "../csv";
 import { isProfile, moves } from "../moves";
-import { fmtDate, pct, pts } from "../stats";
+import { direction, fmtDate, pct, pts } from "../stats";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -63,12 +63,12 @@ export default function Changes() {
       </div>
       <div className="card kpi">
         <div className="k-label">Largest significant increase</div>
-        <div className="k-value" style={{ color: topGainer ? "var(--sig)" : undefined }}><CountUp text={topGainer ? `+${topGainer[key]!.toFixed(1)} pts` : "—"} /></div>
+        <div className="k-value" style={{ color: topGainer ? "var(--ok)" : undefined }}><CountUp text={topGainer ? `+${topGainer[key]!.toFixed(1)} pts` : "—"} /></div>
         <div className="k-note clamp"><b>{topGainer ? topGainer.label : "No significant increase"}</b>{topGainer ? ` · now ${pct(topGainer.now)}` : ""}</div>
       </div>
       <div className="card kpi">
         <div className="k-label">Largest significant decrease</div>
-        <div className="k-value" style={{ color: topDecliner ? "var(--blue)" : undefined }}><CountUp text={topDecliner ? `${topDecliner[key]!.toFixed(1)} pts` : "—"} /></div>
+        <div className="k-value" style={{ color: topDecliner ? "var(--red-text)" : undefined }}><CountUp text={topDecliner ? `${topDecliner[key]!.toFixed(1)} pts` : "—"} /></div>
         <div className="k-note clamp"><b>{topDecliner ? topDecliner.label : "No significant decrease"}</b>{topDecliner ? ` · now ${pct(topDecliner.now)}` : ""}</div>
       </div>
       <div className="card kpi">
@@ -91,8 +91,8 @@ export default function Changes() {
         <Tabs value={dir} onValueChange={d => set("dir", d === "all" ? "" : d)}>
           <TabsList>
             <TabsTrigger value="all">All shifts</TabsTrigger>
-            <TabsTrigger value="up">▲ Gainers</TabsTrigger>
-            <TabsTrigger value="down">▼ Decliners</TabsTrigger>
+            <TabsTrigger value="up"><span className="up">▲</span> Gainers</TabsTrigger>
+            <TabsTrigger value="down"><span className="down">▼</span> Decliners</TabsTrigger>
           </TabsList>
         </Tabs>
         <label className="check"><input type="checkbox" checked={onlySig} onChange={e => set("all", e.target.checked ? "" : "1")} /> Significant only</label>
@@ -137,8 +137,8 @@ export default function Changes() {
                 <td><Link to={`/w/${id}/trends/${encodeURIComponent(m.q.id)}`}><code style={{ color: "var(--ink)", fontWeight: 700 }}>{m.q.id}</code></Link> <span className="muted">{qText.length > 88 ? qText.slice(0, 86) + "…" : qText}</span></td>
                 <td className="num"><b>{pct(m.now)}</b></td>
                 <td className="num muted">{pct(against === "ly" ? m.ly : m.prior)}</td>
-                <td className={`num ${sig ? "sig" : "muted"}`}>{pts(d)}</td>
-                <td><div className="bar-delta" aria-hidden><span style={{ [d > 0 ? "left" : "right"]: "50%", width: `${Math.min(50, Math.abs(d) * 2)}%`, background: sig ? "var(--red)" : "var(--silver)" }} /></div></td>
+                <td className={`num ${direction(d)}`}>{pts(d)}</td>
+                <td><div className="bar-delta" aria-hidden><span style={{ [d > 0 ? "left" : "right"]: "50%", width: `${Math.min(50, Math.abs(d) * 2)}%`, background: !sig ? "var(--silver)" : d > 0 ? "var(--green)" : "var(--red)" }} /></div></td>
               </tr>;
             })}</tbody>
           </table></div>

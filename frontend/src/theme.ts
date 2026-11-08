@@ -36,7 +36,7 @@ const LIGHT = {
 };
 const DARK: typeof LIGHT = {
   ...LIGHT, redLine: "#E5484A", ink: "#F2F4F6", ink2: "#B2BCC5", ink3: "#97A3AE", paper: "#13171B", surface: "#20252A", raised: "#2A3037",
-  blue: "#A3C0CE", bar: "#A3C0CE", s1: "#A3C0CE", s2: "#7FA7BC", s3: "#5C8DA8", other: "#8C8785",
+  blue: "#A3C0CE", bar: "#6491A9", s1: "#A3C0CE",   // bar: the mockups' mid blue, 4.5:1 on the cards s2: "#7FA7BC", s3: "#5C8DA8", other: "#8C8785",
   grey: "#97A3AE", silver: "#5A646E", line: "#323A42", lineStrong: "#6B7680", mist: "#323A42", warn: "#FEBC20",
   negStrong: "#C9C5C3", negMild: "#8C8785", posMild: "#D07676", posStrong: "#E5484A",
   heat: ["#2C3134", "#344550", "#41606F", "#5C8DA8", "#86AEC2", "#B9D2DE"],

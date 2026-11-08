@@ -5,10 +5,11 @@ import { Link, useSearchParams } from "react-router";
 import { send } from "../api";
 import type { Answer } from "../api";
 import { Card } from "../components/bits";
+import { ArrowRight, MessageSquare, MessageSquareText } from "lucide-react";
 import { fmtDate } from "../stats";
 
-const EXAMPLES = ["How many people shopped on Cyber Monday?", "Are consumers using GenAI to shop?", "How worried are people about tariffs?",
-                  "What share started holiday shopping?"];
+const EXAMPLES = [["Shopping", "How many people shopped on Cyber Monday?"], ["Technology", "Are consumers using GenAI to shop?"],
+                  ["Prices", "How worried are people about tariffs?"], ["Holidays", "What share started holiday shopping?"]];
 
 export default function Ask() {
   const [params, setParams] = useSearchParams();
@@ -30,19 +31,31 @@ export default function Ask() {
       <p className="lede">Ask in plain words. Answers come only from the portal's own survey figures, and every figure names its survey, wave, question and number of respondents. If no survey answers it, you are told so.</p>
     </div></div>
     <div className="stack">
-      <Card>
-        <form className="toolbar" onSubmit={e => { e.preventDefault(); void ask(text); }}>
-          <label className="sr-only" htmlFor="ask">Your question</label>
-          <input id="ask" className="field" style={{ flex: 1, minWidth: 220 }} value={text} onChange={e => setText(e.target.value)}
-                 placeholder="e.g. How many people shopped on Cyber Monday?" autoFocus />
-          <button className="btn primary" disabled={busy || text.trim().length < 3}>{busy ? "Finding sources…" : "Ask"}</button>
-        </form>
-        {!answer && !busy && <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {EXAMPLES.map(q => <button key={q} type="button" className="chip flat" style={{ cursor: "pointer", padding: "6px 12px", border: "1px solid var(--silver)" }}
-                                     onClick={() => { setText(q); void ask(q); }}>{q}</button>)}
-        </div>}
-        {error && <p className="state error" role="alert">Could not answer: {error}</p>}
-      </Card>
+      <div className="ask-grid">
+        <section className="card ask-panel">
+          <div className="tagrow"><span className="chip sig">Answers from survey figures</span><span className="tag">Every figure cited</span></div>
+          {!answer && !busy && <div className="empty-hero">
+            <span className="empty-icon" aria-hidden="true"><MessageSquareText size={26} strokeWidth={1.8} /></span>
+            <h2>What would you like to know?</h2>
+            <p>Ask about consumers, retailers or shopping trends. Each answer names its survey, wave, question and base.</p>
+          </div>}
+          <form className="ask-box" onSubmit={e => { e.preventDefault(); void ask(text); }}>
+            <MessageSquare size={17} strokeWidth={1.8} aria-hidden="true" />
+            <label className="sr-only" htmlFor="ask">Your question</label>
+            <input id="ask" value={text} onChange={e => setText(e.target.value)} placeholder="e.g. How many people shopped on Cyber Monday?" autoFocus />
+            <button className="btn primary" disabled={busy || text.trim().length < 3}><ArrowRight size={15} aria-hidden="true" />{busy ? "Finding sources…" : "Ask CIP"}</button>
+          </form>
+          {error && <p className="state error" role="alert">Could not answer: {error}</p>}
+        </section>
+        <section className="card">
+          <div className="card-head"><div><h2>Example questions</h2><p className="sub">Choose one to ask it</p></div></div>
+          <div className="stack">
+            {EXAMPLES.map(([topic, q]) => <button key={q} type="button" className="story" onClick={() => { setText(q); void ask(q); }}>
+              <small>{topic}</small><b>{q}</b>
+            </button>)}
+          </div>
+        </section>
+      </div>
       {answer && <Card title={answer.no_source ? "No source answers this" : "Answer"}
                        sub={answer.mode === "claude" ? "Written by Claude from the sources below only" : answer.mode === "figures"
                          ? "The matching survey figures, cited (written answers turn on once the assistant is connected to Claude)" : undefined}>

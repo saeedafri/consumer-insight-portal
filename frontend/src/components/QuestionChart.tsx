@@ -4,7 +4,7 @@ import { lazy, Suspense, useMemo } from "react";
 import type { Column, Group, Question, Row } from "../api";
 import { isFiller } from "../api";
 import { axisText, C, blues, labelOn, scaleColours, tooltip, useTheme, valueText } from "../theme";
-import { count, HIDDEN_BASE, HIDDEN_NOTE, moe, pct, pts, SMALL_BASE } from "../stats";
+import { direction, count, HIDDEN_BASE, HIDDEN_NOTE, moe, pct, pts, SMALL_BASE } from "../stats";
 import { moveOf } from "../moves";
 import type { Chart } from "./EChart";
 import Profiled from "./Profiled";
@@ -13,9 +13,9 @@ import Profiled from "./Profiled";
 // 200 kbit/s line that is about 8 s sooner (8 Nov 2026). The space is kept at the chart's height meanwhile.
 const EChart = lazy(() => import("./EChart"));
 
-export type View = "bars" | "columns" | "stacked" | "donut" | "table";
+export type View = "bars" | "stacked" | "donut" | "table";   // no columns: the same figures as bars, and long answers never fit under them
 export const VIEWS: { key: View; label: string }[] = [
-  { key: "bars", label: "Bars" }, { key: "columns", label: "Columns" }, { key: "stacked", label: "Stacked" },
+  { key: "bars", label: "Bars" }, { key: "stacked", label: "Stacked" },
   { key: "donut", label: "Donut" }, { key: "table", label: "Table" }];
 
 /** Answers that can add up to more than 100% (a person could pick several): the donut and stacked views then show
@@ -39,9 +39,9 @@ export function tip(row: Row, column: Column, group: Group, question: Question, 
     const vsPrior = row.flags.includes("wording_changed_prior") ? `a different question in ${vs} (code reused)`
       : row.flags.includes("base_changed_prior") ? "base changed, not comparable"
       : row.prior == null ? "not available"
-      : `${pts((v ?? 0) - row.prior)} (${pct(row.prior)}) ${verdict(m?.sig, m?.testable)}`;
+      : `<span class="${direction((v ?? 0) - row.prior)}">${pts((v ?? 0) - row.prior)}</span> (${pct(row.prior)}) ${verdict(m?.sig, m?.testable)}`;
     const vsLy = row.flags.includes("wording_changed_ly") ? "a different question last year" : row.ly == null ? "not loaded"
-      : `${pts((v ?? 0) - row.ly)} (${pct(row.ly)}) ${verdict(m?.sigLy, m?.testableLy)}`;
+      : `<span class="${direction((v ?? 0) - row.ly)}">${pts((v ?? 0) - row.ly)}</span> (${pct(row.ly)}) ${verdict(m?.sigLy, m?.testableLy)}`;
     lines.push(`<div style="margin-top:6px;border-top:1px solid ${C.line};padding-top:6px">vs ${vs}: ${vsPrior}<br/>vs last year: ${vsLy}</div>`);
   }
   lines.push(`<div style="color:${C.ink3};margin-top:4px;font-size:12px">${esc(question.id)} · wave of ${wave}</div>`);
@@ -118,7 +118,7 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
       // one scrolling line: 12+ answers wrapped onto the bar and its axis (Q1, 7 Nov 2026)
       legend: { type: "scroll", bottom: 0, textStyle: axisText(), itemWidth: 12, itemHeight: 12, icon: "roundRect" },
       grid: { left: 8, right: 16, top: 8, bottom: 56, containLabel: true },
-      xAxis: { type: "value", max: sharesOfMentions(q) ? undefined : 100, axisLabel: { ...valueText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.line, type: [2, 3] } } },
+      xAxis: { type: "value", max: sharesOfMentions(q) ? undefined : 100, axisLabel: { ...valueText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.line } } },
       yAxis: { type: "category", inverse: true, data: groups.map(x => x.label || "Total"),
                axisLabel: { ...axisText(), width: 200, overflow: "break" }, axisTick: { show: false } },
       series: answers.map((a, i) => ({
@@ -130,21 +130,19 @@ function build(q: Question, g: Group, rows: Row[], view: View, columns: Column[]
     };
   }
 
-  const horizontal = view === "bars";
-  const category = { type: "category", data: labels, inverse: horizontal, axisTick: { show: false },
+  const category = { type: "category", data: labels, inverse: true, axisTick: { show: false },
                      axisLine: { lineStyle: { color: C.lineStrong } },
-                     axisLabel: horizontal ? { ...axisText(), width: innerWidth < 600 ? 130 : 230, overflow: "break", lineHeight: 14 }   // phones: room for the bars
-                                           : { ...axisText(), interval: 0, width: Math.max(60, 640 / Math.max(rows.length, 1)), overflow: "break" } };
+                     axisLabel: { ...axisText(), width: innerWidth < 600 ? 130 : 230, overflow: "break", lineHeight: 14 } };   // phones: room for the bars
   const value = { type: "value", max: (v: { max: number }) => Math.min(100, Math.ceil((v.max + 8) / 10) * 10),
-                  axisLabel: { ...valueText(), formatter: "{value}%" }, axisLine: { show: false }, splitLine: { lineStyle: { color: C.line, type: [2, 3] } } };
+                  axisLabel: { ...valueText(), formatter: "{value}%" }, axisLine: { show: false }, splitLine: { lineStyle: { color: C.line } } };
   return {
     tooltip: hover, legend: multiSeries ? { top: 0, textStyle: axisText(), icon: "roundRect", itemWidth: 12, itemHeight: 12 } : { show: false },
-    grid: { left: 8, right: horizontal ? 48 : 12, top: multiSeries ? 32 : 8, bottom: 8, containLabel: true },
-    xAxis: horizontal ? value : category, yAxis: horizontal ? category : value,
+    grid: { left: 8, right: 48, top: multiSeries ? 32 : 8, bottom: 8, containLabel: true },
+    xAxis: value, yAxis: category,
     series: columns.map((col, si) => ({
-      type: "bar", name: col, barMaxWidth: multiSeries ? 14 : 26, barGap: "15%", color: palette[si],
-      itemStyle: { borderRadius: horizontal ? [0, 3, 3, 0] : [3, 3, 0, 0], color: palette[si] },
-      label: { show: !multiSeries || rows.length <= 8, position: horizontal ? "right" : "top", color: C.ink, fontSize: 12,
+      type: "bar", name: col, barMaxWidth: multiSeries ? 12 : 16, barGap: "15%", color: palette[si],
+      itemStyle: { borderRadius: [2, 4, 4, 2], color: palette[si] },
+      label: { show: !multiSeries || rows.length <= 8, position: "right", color: C.ink, fontSize: 12,
                fontWeight: 600, formatter: (p: { value: number }) => `${p.value.toFixed(multiSeries ? 0 : 1)}%` },
       data: rows.map(r => ({
         value: r[col] ?? null, row: r, group: g,   // null: under HIDDEN_BASE people, no bar
@@ -165,7 +163,7 @@ export function QuestionTable({ question, rows, group, columns, vs }: { question
       return <tr key={r.label}><th scope="row">{r.label}</th>
         {columns.map(c => <td key={c} className={`num ${(group.bases[c] ?? 0) < SMALL_BASE ? "small" : ""}`}>{r[c] == null && (group.bases[c] ?? 0) > 0 ? HIDDEN_NOTE : pct(r[c])}</td>)}
         {columns.includes("Total") && <><td className="num muted">{pct(r.prior)}</td>
-          <td className={`num ${sig ? "sig" : "muted"}`}>{r.flags.includes("wording_changed_prior") ? "question changed" : r.flags.includes("base_changed_prior") ? "base changed" : r.prior == null ? "–" : pts((r.Total ?? 0) - r.prior)}</td></>}
+          <td className={`num ${r.prior == null || r.flags.includes("wording_changed_prior") || r.flags.includes("base_changed_prior") ? "muted" : direction((r.Total ?? 0) - r.prior)}`}>{r.flags.includes("wording_changed_prior") ? "question changed" : r.flags.includes("base_changed_prior") ? "base changed" : r.prior == null ? "–" : pts((r.Total ?? 0) - r.prior)}</td></>}
       </tr>;
     })}</tbody>
   </table></div>;

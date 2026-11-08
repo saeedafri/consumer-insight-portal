@@ -14,7 +14,7 @@ import QuestionTabs from "../components/QuestionTabs";
 import { downloadTable } from "../csv";
 import type { Format } from "../csv";
 import { C, useTheme } from "../theme";
-import { fmtDate, moe, pct, pts, significant } from "../stats";
+import { direction, fmtDate, moe, pct, pts, significant } from "../stats";
 import { perf } from "../perf";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -190,7 +190,7 @@ function TrendView({ t, column, waveId, from }: { t: Trend; column: Column; wave
             const s = t.series.find(x => x.label === p.seriesName)!;
             const v = p.data.value[1]!, base = s.base[i] ?? 0;
             const pi = previous(t, s, i);
-            const change = pi == null ? "" : ` · ${pts(v - s.pct[pi]!)}${s.base[pi] && significant(v, base, s.pct[pi]!, s.base[pi]!) ? " <b>sig. (single test)</b>" : ""}`;
+            const change = pi == null ? "" : ` · <span class="${direction(v - s.pct[pi]!)}">${pts(v - s.pct[pi]!)}</span>${s.base[pi] && significant(v, base, s.pct[pi]!, s.base[pi]!) ? " <b>sig. (single test)</b>" : ""}`;
             return `<div style="margin-top:5px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${p.color};margin-right:6px"></span>${s.label}<br/>` +
                    `<b style="font-size:15px">${pct(v)}</b> ±${moe(v, base).toFixed(1)} · n=${base}${avg ? " · 4-wk avg" : change}</div>`;
           }).join("");
@@ -261,7 +261,7 @@ function TrendView({ t, column, waveId, from }: { t: Trend; column: Column; wave
           const sig = v != null && pi != null && significant(v, b, focus.pct[pi]!, focus.base[pi] ?? 0);
           return <tr key={i} className={i === at ? "picked" : ""}><th scope="row">{fmtDate(t.waves[i].wave_date)}</th>
             <td className="num"><b>{pct(v)}</b></td><td className="num muted">{v == null ? "–" : `±${moe(v, b).toFixed(1)}`}</td><td className="num">{b || "–"}</td>
-            <td className={`num ${sig ? "sig" : "muted"}`}>{v == null || pi == null ? "–" : pts(v - focus.pct[pi]!)}{sig ? " ●" : ""}</td></tr>;
+            <td className={`num ${v == null || pi == null ? "muted" : direction(v - focus.pct[pi]!)}`}>{v == null || pi == null ? "–" : pts(v - focus.pct[pi]!)}{sig ? " ●" : ""}</td></tr>;
         })}</tbody>
       </table></div>
     </Card>}

@@ -105,7 +105,7 @@ export default function Explorer() {
         <QuestionChart question={question} group={group} view={view} columns={view === "donut" || view === "stacked" ? ["Total"] : cut.cols} sort={sort} wave={wave} vs={vs.prior}
           onReady={c => { chart.current = c; }} />
         <div className="legend-line">
-          {(view === "bars" || view === "columns") && cut.cols.length === 1 && <>
+          {view === "bars" && cut.cols.length === 1 && <>
             <span><i style={{ background: "var(--red)" }} />Top answer</span><span><i style={{ background: "var(--bar)" }} />Other answers</span></>}
           <span>Hover or tap any bar for n, base, margin of error and the change vs {vs.prior}; the Table view lists the same figures.</span>
           {(view === "donut" || view === "stacked") && sharesOfMentions(question) &&

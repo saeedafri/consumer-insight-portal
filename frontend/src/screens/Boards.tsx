@@ -6,6 +6,7 @@ import { queries, send, useBoard, useBoards } from "../api";
 import type { Board, BoardItem, BoardSummary } from "../api";
 import { Card, deleteLater, Empty, Failure, IconDownload, Loading } from "../components/bits";
 import { fmtDate } from "../stats";
+import { Pin } from "lucide-react";
 
 const day = (iso: string) => fmtDate(iso.slice(0, 10));
 const tables = (n: number) => `${n} ${n === 1 ? "table" : "tables"}`;
@@ -32,14 +33,29 @@ function AllBoards() {
   return <div className="stack">
     <div className="page-head"><div><h1>Boards</h1>
       <p className="lede">Pin any table with <b>Board</b> next to its downloads. Each board keeps the numbers as pinned, takes comments, and downloads as one deck.</p></div></div>
-    <Card title="New board">
-      <form className="row-form" onSubmit={e => { e.preventDefault(); void create(); }}>
-        <input aria-label="Board name" placeholder="e.g. Holiday read-out" value={name} maxLength={200} onChange={e => setName(e.target.value)} />
-        <button className="btn primary" type="submit" disabled={!name.trim()}>Create</button>
-        {note && <span className="muted" role="status">{note}</span>}
-      </form>
-    </Card>
-    {!data?.length ? <Empty>No boards yet. Name one above, or press <b>Board</b> next to any table's downloads to start one.</Empty> : <Card title={`${data.length} boards`}>
+    <div className="ask-grid">
+      <section className="card ask-panel">
+        {!data?.length && <div className="empty-hero">
+          <span className="empty-icon" aria-hidden="true"><Pin size={26} strokeWidth={1.8} /></span>
+          <h2>Your next board starts here</h2>
+          <p>No boards yet. Name one below, or press <b>Board</b> next to any table's downloads to start one.</p>
+        </div>}
+        <form className="row-form" onSubmit={e => { e.preventDefault(); void create(); }}>
+          <input aria-label="Board name" placeholder="New board, e.g. Holiday read-out" value={name} maxLength={200} onChange={e => setName(e.target.value)} />
+          <button className="btn primary" type="submit" disabled={!name.trim()}>Create board</button>
+          {note && <span className="muted" role="status">{note}</span>}
+        </form>
+      </section>
+      <section className="card">
+        <div className="card-head"><div><h2>How boards work</h2><p className="sub">For a read-out the team builds together</p></div></div>
+        <ol className="steps">
+          <li><b>Pin a table</b><span>Press Board next to any table's downloads; the numbers are kept as they were.</span></li>
+          <li><b>Comment</b><span>Each pinned table takes the team's comments.</span></li>
+          <li><b>Download the deck</b><span>The whole board as one branded PowerPoint.</span></li>
+        </ol>
+      </section>
+    </div>
+    {data?.length ? <Card title={`${data.length} boards`}>
       <div className="table-wrap"><table className="data">
         <thead><tr><th>Board</th><th className="num">Tables</th><th>By</th><th>Created</th></tr></thead>
         <tbody>{data.map(b => <tr key={b.board_id}>
@@ -47,7 +63,7 @@ function AllBoards() {
           <td>{b.created_by}</td><td>{day(b.created_at)}</td></tr>)}</tbody>
       </table></div>
       <button className="btn-chip" onClick={() => void refetch()}>Refresh</button>
-    </Card>}
+    </Card> : null}
   </div>;
 }
 

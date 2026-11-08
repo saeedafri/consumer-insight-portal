@@ -8,13 +8,19 @@ import { Link } from "react-router";
 import { sendSurvey } from "../api";
 import type { SurveyCheck, SurveyLoaded } from "../api";
 import { Card, count, day } from "../components/bits";
+import { FileSpreadsheet, FileText, Info } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-/** One of the two file boxes: what to choose, and the chosen file's name and size. */
-function FilePick({ label, hint, accept, file, pick }: { label: string; hint: string; accept: string; file: File | null; pick: (f: File | null) => void }) {
-  return <label className="card kpi" style={{ cursor: "pointer" }}>
-    <span className="k-label">{label}</span>
-    <input type="file" accept={accept} onChange={e => pick(e.target.files?.[0] ?? null)} style={{ display: "block", margin: "8px 0" }} />
-    <span className="k-note">{file ? `${file.name} · ${Math.ceil(file.size / 1024)} KB` : hint}</span>
+// The four stages (Design 1's tracker); which one you are at follows from what you have done, nothing to click
+const STAGES = [["Select", "Choose both files"], ["Validate", "Count and compare"], ["Review", "Every figure"], ["Publish", "Load the week"]] as const;
+
+/** One of the two file boxes (Design 2's step card): what it is, what to choose, then the chosen file's name and size. */
+function FilePick({ icon: Glyph, label, hint, accept, file, pick }: { icon: LucideIcon; label: string; hint: string; accept: string; file: File | null; pick: (f: File | null) => void }) {
+  return <label className={`card file-pick ${file ? "chosen" : ""}`}>
+    <span className="file-pick-head"><Glyph size={18} strokeWidth={1.8} aria-hidden="true" />{label}</span>
+    <span className="muted">{hint}</span>
+    <input type="file" accept={accept} onChange={e => pick(e.target.files?.[0] ?? null)} />
+    {file && <b>{file.name} · {Math.ceil(file.size / 1024)} KB</b>}
   </label>;
 }
 
@@ -39,20 +45,29 @@ export default function Ingest() {
     finally { setBusy(""); }
   }
   const clean = check && check.problem_count === 0;
+  const stage = loaded ? 4 : clean ? 3 : check ? 2 : raw && topline ? 1 : 0;   // stages done
 
   return <div className="stack" style={{ maxWidth: 1000 }}>
     <div className="page-head"><div>
-      <p className="eyebrow">Admin</p><h1>Upload survey</h1>
+      <h1>Upload survey</h1>
       <p className="lede">One week of the China Consumer Survey from Baidu QSS: its raw export and Baidu's topline. Every count is
         checked against the topline before anything is loaded.</p>
-    </div></div>
+    </div><span className="chip sig">Admin only</span></div>
 
-    <div className="grid g2">
-      <FilePick label="1. Raw export" hint="Baidu's .csv (or .xlsx), one row per respondent" accept=".csv,.xlsx,.aspx" file={raw} pick={choose(setRaw)} />
-      <FilePick label="2. Topline" hint="Baidu's Consumer Tracker .xls (or .xlsx)" accept=".xls,.xlsx,.aspx" file={topline} pick={choose(setTopline)} />
-    </div>
-    <p><button className="btn primary" type="button" disabled={!raw || !topline || !!busy} onClick={() => send("preview")}>
-      {busy === "preview" ? "Checking…" : "Check"}</button></p>
+    <section className="card">
+      <ol className="stages" aria-label="Upload stages">
+        {STAGES.map(([name, note], i) => <li key={name} className={i < stage ? "done" : i === stage ? "now" : ""} aria-current={i === stage ? "step" : undefined}>
+          <b>{i + 1}. {name}</b><span>{note}</span></li>)}
+      </ol>
+      <div className="grid g2">
+        <FilePick icon={FileSpreadsheet} label="Raw export" hint="Baidu's .csv (or .xlsx), one row per respondent" accept=".csv,.xlsx,.aspx" file={raw} pick={choose(setRaw)} />
+        <FilePick icon={FileText} label="Topline" hint="Baidu's Consumer Tracker .xls (or .xlsx)" accept=".xls,.xlsx,.aspx" file={topline} pick={choose(setTopline)} />
+      </div>
+      <p className="callout"><Info size={16} strokeWidth={1.8} aria-hidden="true" /><span><b>Before publishing.</b> Check counts every answer from the raw rows,
+        translates the Chinese through the reviewed codebook, and compares each base and count with Baidu's topline. Nothing is written until every figure matches.</span></p>
+      <button className="btn primary" type="button" disabled={!raw || !topline || !!busy} onClick={() => send("preview")}>
+        {busy === "preview" ? "Checking…" : "Check the files"}</button>
+    </section>
 
     {error && <p role="alert" className="badge-partial" style={{ display: "block", padding: 12, borderRadius: 8 }}>{error}</p>}
 

@@ -55,6 +55,8 @@ export const HIDDEN_NOTE = `n<${HIDDEN_BASE}`;   // what a hidden cell shows, on
 export const TEST_BASE = 30;     // under this on either side a difference is never called significant (too few to test)
 export const pct = (v: number | null | undefined) => (v == null ? "–" : `${v.toFixed(1)}%`);
 export const pts = (d: number) => `${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d).toFixed(1)} pts`;
+/** The class a change is drawn with (styles.css): a rise green, a fall red, both bold; under 0.05 pts shows as no change. */
+export const direction = (d: number) => (d >= 0.05 ? "up" : d <= -0.05 ? "down" : "");
 export const count = (p: number, base: number) => Math.round((p / 100) * base);
 export const fmtDate = (d: string) =>
   new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });

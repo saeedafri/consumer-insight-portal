@@ -11,7 +11,7 @@ import Glance from "../components/Glance";
 import QuestionChart from "../components/QuestionChart";
 import Profiled from "../components/Profiled";
 import { biggest, isProfile, moves } from "../moves";
-import { fmtDate, pct, pts } from "../stats";
+import { direction, fmtDate, pct, pts } from "../stats";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Printer as PrinterIcon } from "lucide-react";
 
@@ -76,7 +76,7 @@ export default function Overview() {
           <tbody>{up.slice(0, 8).map(m => <tr key={m.q.id + m.label}>
             <th scope="row"><Link to={`/w/${id}/trends/${encodeURIComponent(m.q.id)}`}>{m.label}</Link><br /><small className="muted">{m.q.id} · {m.q.short || m.q.text}</small></th>
             <td className="num"><b>{pct(m.now)}</b></td><td className="num muted">{pct(m.prior)}</td>
-            <td className="num sig">{m.d! > 0 ? "▲" : "▼"} {pts(m.d!).replace(/^[+−]/, "")}</td></tr>)}</tbody>
+            <td className={`num ${direction(m.d!)}`}>{m.d! > 0 ? "▲" : "▼"} {pts(m.d!).replace(/^[+−]/, "")}</td></tr>)}</tbody>
         </table></div> : <p className="muted">{w.prior_survey_id
           ? `Nothing moved beyond the margin of error. With ${w.qualified_n} respondents each week, a change needs to be about ±${(196 * Math.sqrt(0.5 / Math.max(w.qualified_n, 1))).toFixed(0)} points to count.`
           : w.study_type === "tracker" ? "This survey has no earlier wave within 14 days to compare against." : "This survey has no earlier wave to compare against."}</p>}

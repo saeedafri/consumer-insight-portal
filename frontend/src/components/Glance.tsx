@@ -3,7 +3,7 @@
 import CountUp from "./CountUp";
 import type { Metric } from "../api";
 import { useDashboard } from "../api";
-import { fmtDate, HIDDEN_BASE } from "../stats";
+import { direction, fmtDate, HIDDEN_BASE } from "../stats";
 import { Failure, Skeleton } from "./bits";
 import Profiled from "./Profiled";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -21,7 +21,7 @@ function Delta({ d, label, flags }: { d: number | null; label: string; flags: st
     );
   }
   if (d == null) return <span className="chip none">{label}: –</span>;
-  return <span className="chip flat"><span className="nowrap">{d > 0 ? "▲" : d < 0 ? "▼" : "±"} {Math.abs(d).toFixed(1)} pts</span> <small>{label}</small></span>;
+  return <span className={`chip flat ${direction(d)}`}><span className="nowrap">{d > 0 ? "▲" : d < 0 ? "▼" : "±"} {Math.abs(d).toFixed(1)} pts</span> <small>{label}</small></span>;
 }
 
 function Tile({ title, m, value, note, prior }: { title: string; m: Metric | null; value?: string; note?: string; prior: string }) {

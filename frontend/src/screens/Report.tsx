@@ -13,7 +13,7 @@ import type { AppendixRow, ReportTable, WeeklyReport } from "../api";
 import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
 import { downloadTable } from "../csv";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
-import { fmtDate } from "../stats";
+import { direction, fmtDate } from "../stats";
 import { C, useTheme } from "../theme";
 
 const shortDate = (iso: string | null) => iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "–";
@@ -60,18 +60,20 @@ export default function Report() {
   </div>;
 }
 
-/** "Three data points to watch this week": the three biggest significant three-month moves, one per table. */
+/** "Three data points to watch this week": the three biggest significant three-month moves, one per table, a card each
+ *  (as the figure cards on other pages): the table it is from, the change in green (rose) or red (fell), then what moved. */
 function ThreePoints({ report }: { report: WeeklyReport }) {
   if (!report.three_points.length) return null;
-  return <Card title="Three data points to watch this week">
-    <ol className="three-points">
-      {report.three_points.map(p => <li key={`${p.section}-${p.label}`}>
-        <span className="three-points-value">{points(p.change)}<small>PPTs</small></span>
-        <span><b>{p.label}</b> <span className="muted">({p.section.toLowerCase()})</span>: the four-week share {p.change > 0 ? "rose" : "fell"} over three
-          months, from {pct(p.from)} on {fmtDate(p.from_date)} to {pct(p.to)} on {fmtDate(p.to_date)}.</span>
+  return <section aria-labelledby="three-points">
+    <h2 className="report-section" id="three-points">Three data points to watch this week</h2>
+    <ol className="grid g3 three-points">
+      {report.three_points.map(p => <li key={`${p.section}-${p.label}`} className={`card kpi ${p.change > 0 ? "rise" : "fall"}`}>
+        <div className="k-label">{p.section}</div>
+        <div className={`k-value ${direction(p.change)}`}>{points(p.change)} <small>PPTs</small></div>
+        <p className="k-note"><b>{p.label}</b>: the four-week share {p.change > 0 ? "rose" : "fell"} over three months, from {pct(p.from)} on {fmtDate(p.from_date)} to {pct(p.to)} on {fmtDate(p.to_date)}.</p>
       </li>)}
     </ol>
-  </Card>;
+  </section>;
 }
 
 /** Net better for personal finances and the economy over the past year, with the news events, then by income group. */
@@ -141,7 +143,7 @@ function TrendChart({ title, table, events }: { title: string; table: ReportTabl
 /** A 13-week table, as in the PDF: four-week rolling averages, then the one-week and three-month changes; its chart above. */
 function WeekTable({ title, table, events }: { title: string; table: ReportTable; events: WeeklyReport["events"] }) {
   const change = (v: number | null, significant: boolean) =>
-    <td className={`num ${significant ? "change-sig" : ""}`} title={significant ? "Statistically significant" : undefined}>{points(v)}</td>;
+    <td className={`num ${significant && v != null ? direction(v) : ""}`} title={significant ? "Statistically significant" : undefined}>{points(v)}</td>;   // coloured only when significant, as in the PDF
   const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, title,
     ["Answer", ...table.dates.map(d => d ?? ""), "1-wk chg", "3-mo chg", "1-wk significant", "3-mo significant"],
     table.rows.map(r => [r.label, ...r.values, r.week_change, r.quarter_change, r.week_significant ? "yes" : "", r.quarter_significant ? "yes" : ""]),

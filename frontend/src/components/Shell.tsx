@@ -1,6 +1,7 @@
 // App frame: the coresight.com header (logo, site links, search, theme, sign-in), a rail with the wave's screens,
 // a wave bar with the wave switcher, and the coresight.com footer.
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { setTheme, useTheme } from "../theme";
 import { setWeighted, useWeighted } from "../weight";
 import type { Theme } from "../theme";
@@ -14,6 +15,8 @@ import { fmtDate } from "../stats";
 import { perf } from "../perf";
 import { isSaved, removeView, saveView } from "../saved";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Info, LayoutDashboard, LibraryBig, MessageSquareText, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 // The perf badge is the developer's: shown only in a browser that opened the portal once with ?perf=1 (?perf=0 hides it again)
 const PerfHUD = lazy(() => import("./PerfHUD"));
@@ -28,26 +31,20 @@ const showPerf = (() => {
 // [path, label, icon]; FEATURE names the /me feature a screen needs (config/access.yml): unlisted screens always show
 const FEATURE: Record<string, string> = { questions: "explorer", crosstab: "crosstab", trends: "trends", compare: "compare", audience: "audiences",
                                           changes: "changes", report: "report", survey: "survey" };
-const FORSTA_ICONS: Record<string, string> = {   // the Forsta group's icons (forstaSections.ts names the pages)
-  reports: "M5 3h14v18H5zm3 4h8v2H8zm0 4h8v2H8zm0 4h5v2H8z",
-  crosstab: "M3 3h18v18H3zm2 2v4h4V5zm6 0v4h8V5zM5 11v8h4v-8zm6 0v8h8v-8z",
-  check: "M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z",
-  samples: "M7 2h10v20H7zm2 2v14h6V4zm2 15h2v1h-2z",
-  warnings: "M12 2l10 18H2zm-1 7v5h2V9zm0 7v2h2v-2z",
-  files: "M6 2h8l6 6v14H6zm7 1v6h6",
-  deletion: "M9 3h6l1 2h4v2H4V5h4zm-3 6h12l-1 12H7z",
-  account: "M12 12a5 5 0 110-10 5 5 0 010 10zm-9 10c0-4.4 4-7 9-7s9 2.6 9 7z",
+const FORSTA_ICONS: Record<string, LucideIcon> = {   // the Forsta group's icons (forstaSections.ts names the pages)
+  reports: FileText,
+  crosstab: Table2,
+  check: CheckCheck,
+  samples: Smartphone,
+  warnings: TriangleAlert,
+  files: Files,
+  deletion: Trash2,
+  account: UserRound,
 };
-const SCREENS = [
-  ["", "Overview", "M3 13h8V3H3zm10 8h8V11h-8zM3 21h8v-6H3zm10-18v6h8V3z"],
-  ["questions", "Question explorer", "M4 20h4V10H4zm6 0h4V4h-4zm6 0h4v-7h-4z"],
-  ["crosstab", "Cross-tab matrix", "M3 3h18v18H3zm2 2v4h4V5zm6 0v4h4V5zm6 0v4h2V5zM5 11v4h4v-4zm6 0v4h4v-4zm6 0v4h2v-4zM5 17v2h4v-2zm6 0v2h4v-2z"],
-  ["trends", "Trends", "M3 17l6-6 4 4 8-8v4h2V3h-8v2h4l-6 6-4-4-8 8z"],
-  ["compare", "Compare waves", "M3 5h4v14H3zm7 4h4v10h-4zm7-6h4v16h-4z"],
-  ["audience", "Audiences", "M9 11a4 4 0 110-8 4 4 0 010 8zm7 1a3 3 0 110-6 3 3 0 010 6zM2 20c0-3.3 3.1-6 7-6s7 2.7 7 6zm15 0c0-2-.8-3.7-2-5 3 .1 5 2.2 5 5z"],
-  ["changes", "What changed", "M12 2l4 8H8zm0 20l-4-8h8zM2 12l8-4v8zm20 0l-8 4V8z"],
-  ["report", "Weekly report", "M5 3h14v18H5zm3 4h8v2H8zm0 4h8v2H8zm0 4h5v2H8z"],   // weekly tracker waves only
-  ["survey", "Survey preview", "M6 2h9l5 5v15H6zm8 1v5h5M9 13h8M9 17h8M9 9h3"],
+const SCREENS = [   // a wave's screens: the tabs in its card (TopBar)
+  ["", "Overview"], ["questions", "Questions"], ["crosstab", "Cross-tabs"], ["trends", "Trends"], ["compare", "Compare waves"],
+  ["audience", "Audiences"], ["changes", "What changed"], ["report", "Weekly report"],   // weekly tracker waves only
+  ["survey", "Survey preview"],
 ] as const;
 
 // coresight.com links, as on its own header and footer (checked live 23 Oct 2026); same tab, like any site link
@@ -62,8 +59,34 @@ const LEGAL = [["/terms-of-service/", "Terms of Use"], ["/privacy-policy/", "Pri
                ["/coresight-research-responsible-vulnerability-disclosure-policy/", "Vulnerability Disclosure Policy"]] as const;
 const siteUrl = (path: string) => path.startsWith("http") ? path : SITE + path;
 
-function Icon({ d }: { d: string }) {
-  return <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d={d} fill="currentColor" /></svg>;
+/** A menu icon: lucide's thin outline set at one size and weight, as in the 8 Nov 2026 mockups. */
+// The small red label over a wave screen's title (styles.css .page-head h1::before): which wave it is. Other pages
+// have none: the header's breadcrumb already names them, and a label repeating the menu would only decorate.
+function eyebrow(wave?: Wave): string {
+  return wave ? `${wave.survey_family === "CSI-US" ? "Weekly tracker" : "Survey"} / ${fmtDate(wave.wave_date)}` : "";
+}
+
+// Each page's name, for the header's breadcrumb and a saved view's name
+const PAGES: Record<string, string> = { "": "Survey library", search: "Search questions", schedule: "Launch schedule", ask: "Ask CIP",
+  boards: "Boards", sectors: "Sector databank", expectations: "Expected vs actual", methodology: "Methodology", "whats-new": "What's new",
+  account: "My account", "api-guide": "API guide", fieldwork: "Fieldwork", ingest: "Upload survey", logs: "Logs", access: "Access" };
+function pageName(pathname: string): string {
+  const [, first, , screen] = pathname.split("/");
+  if (first === "w") return SCREENS.find(([path]) => path === (screen ?? ""))?.[1] ?? "Overview";
+  if (first === "forsta") return SECTIONS.find(([path]) => path === pathname.split("/")[2])?.[1] ?? "Forsta";
+  return PAGES[first] ?? "";
+}
+
+/** A menu group that folds (Design 2): open unless `closed`, which a group of admin pages is until you are on one. */
+function RailGroup({ label, closed = false, children }: { label: string; closed?: boolean; children: ReactNode }) {
+  return <details className="rail-group" open={!closed}>
+    <summary className="rail-label">{label}<ChevronDown size={14} aria-hidden="true" /></summary>
+    <nav aria-label={label}>{children}</nav>
+  </details>;
+}
+
+function Icon({ of: Glyph }: { of: LucideIcon }) {
+  return <Glyph size={17} strokeWidth={1.8} aria-hidden="true" />;
 }
 
 export default function Shell() {
@@ -76,6 +99,7 @@ export default function Shell() {
   const me = useMe().data;
   const isAdmin = !!me?.permissions?.includes("admin_pages");   // the role's permission (shared/core/access.py can())
   const wave = waves.data?.find(w => String(w.survey_id) === id);
+  const latest = waves.data?.find(w => w.survey_family === "CSI-US" && w.rows_built !== 0);   // newest first
   const reportWaves = useReportWaves().data;   // the waves with a weekly report (since Jul 2025: etl/weekly_report.py)
   const hasReport = !!wave && !!reportWaves?.includes(wave.survey_id);
   const rail = useRef<HTMLElement>(null);
@@ -123,36 +147,35 @@ export default function Shell() {
 
   return <div className={`app ${mobileMenuOpen ? "mobile-nav-open" : ""}`}>
     <a href="#main" className="skip">Skip to content</a>
-    <SiteHeader theme={theme} onTheme={toggleTheme} menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen(o => !o)} />
+    <SiteHeader here={pageName(location.pathname)} theme={theme} onTheme={toggleTheme} menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen(o => !o)} />
     {mobileMenuOpen && <div className="rail-backdrop" onClick={() => setMobileMenuOpen(false)} aria-hidden="true" />}
     <aside ref={rail} className={`rail ${mobileMenuOpen ? "open" : ""}`} aria-label="Portal Navigation"
            {...(mobileMenuOpen ? { role: "dialog", "aria-modal": true } : {})}>
-      <nav aria-label="Library">
-        <NavLink to="/" end><Icon d="M4 4h6v16H4zm8 0h8v4h-8zm0 6h8v10h-8z" />Survey library</NavLink>
-        {allowed(me, "search") && <NavLink to="/search"><Icon d="M10 3a7 7 0 015.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1110 3zm0 2a5 5 0 100 10 5 5 0 000-10z" />Search questions</NavLink>}
-        {allowed(me, "schedule") && <NavLink to="/schedule"><Icon d="M7 2v2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2h-2V2h-2v2H9V2zm-2 8h14v10H5zm2 2v2h2v-2zm4 0v2h2v-2zm4 0v2h2v-2z" />Launch schedule</NavLink>}
-        {allowed(me, "ask") && <NavLink to="/ask"><Icon d="M4 4h16v12H8l-4 4zm4 5v2h2V9zm4 0v2h2V9zm4 0v2h2V9z" />Ask CIP</NavLink>}
-        {allowed(me, "boards") && <NavLink to="/boards"><Icon d="M16 3l5 5-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z" />Boards</NavLink>}
-        {allowed(me, "sectors") && <NavLink to="/sectors"><Icon d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z" />Sector databank</NavLink>}
-        {allowed(me, "expectations") && <NavLink to="/expectations"><Icon d="M4 20V10h4v10zm6 0V4h4v16zm6 0v-7h4v7z" />Expected vs actual</NavLink>}
-        <NavLink to="/methodology"><Icon d="M12 2a10 10 0 110 20 10 10 0 010-20zm-1 15h2v-6h-2zm0-8h2V7h-2z" />Methodology</NavLink>
-        <NavLink to="/whats-new"><Icon d="M12 2l2.4 6.9H22l-6 4.4 2.3 7-6.3-4.5L5.7 20.3 8 13.3 2 8.9h7.6z" />What's new</NavLink>
-      </nav>
-      {(isAdmin || me?.features?.includes("fieldwork")) && <nav aria-label="Forsta">
-        <p className="rail-label">Forsta{isAdmin ? " · admins" : ""}</p>
-        <NavLink to="/fieldwork"><Icon d="M3 4h18l-7 8v6l-4 2v-8z" />Fieldwork</NavLink>
-        {isAdmin && SECTIONS.map(([path, label]) => <NavLink key={path} to={`/forsta/${path}`}><Icon d={FORSTA_ICONS[path]} />{label}</NavLink>)}
-      </nav>}
-      {isAdmin && <nav aria-label="Admin">
-        <p className="rail-label">Admin</p>
-        <NavLink to="/ingest"><Icon d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />Upload survey</NavLink>
-        <NavLink to="/logs"><Icon d="M4 4h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm0 5h16v2H4z" />Logs</NavLink>
-        {me?.permissions?.includes("manage_roles") && <NavLink to="/access"><Icon d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5zm0 6a2 2 0 100 4 2 2 0 000-4zm-3 8h6c0-1.7-1.3-3-3-3s-3 1.3-3 3z" />Access</NavLink>}
-      </nav>}
-      {wave && <nav aria-label="This wave">
-        <p className="rail-label">{wave.survey_family === "CSI-US" ? "Weekly tracker" : "Survey"} · {fmtDate(wave.wave_date)}</p>
-        {SCREENS.filter(([path]) => (!FEATURE[path] || allowed(me, FEATURE[path])) && (path !== "report" || hasReport)).map(([path, label, d]) =>
-          <NavLink key={path} to={`/w/${wave.survey_id}${path ? "/" + path : ""}`} end={!path}><Icon d={d} />{label}</NavLink>)}
+      <RailGroup label="Explore">
+        <NavLink to="/" end><Icon of={LibraryBig} />Survey library</NavLink>
+          {allowed(me, "search") && <NavLink to="/search"><Icon of={Search} />Search questions</NavLink>}
+          {allowed(me, "schedule") && <NavLink to="/schedule"><Icon of={CalendarDays} />Launch schedule</NavLink>}
+          {allowed(me, "ask") && <NavLink to="/ask"><Icon of={MessageSquareText} />Ask CIP</NavLink>}
+          {allowed(me, "boards") && <NavLink to="/boards"><Icon of={Pin} />Boards</NavLink>}
+      </RailGroup>
+      <RailGroup label="Research data">
+          {allowed(me, "sectors") && <NavLink to="/sectors"><Icon of={Database} />Sector databank</NavLink>}
+          {allowed(me, "expectations") && <NavLink to="/expectations"><Icon of={ChartColumn} />Expected vs actual</NavLink>}
+        <NavLink to="/methodology"><Icon of={Info} />Methodology</NavLink>
+        <NavLink to="/whats-new"><Icon of={Star} />What's new</NavLink>
+      </RailGroup>
+      {(isAdmin || me?.features?.includes("fieldwork")) && <RailGroup label="Research operations" closed={!/^\/(fieldwork|forsta)/.test(location.pathname)}>
+        <NavLink to="/fieldwork"><Icon of={Filter} />Fieldwork</NavLink>
+          {isAdmin && SECTIONS.map(([path, label]) => <NavLink key={path} to={`/forsta/${path}`}><Icon of={FORSTA_ICONS[path]} />{label}</NavLink>)}
+      </RailGroup>}
+      {isAdmin && <RailGroup label="Administration" closed={!/^\/(ingest|logs|access)/.test(location.pathname)}>
+        <NavLink to="/ingest"><Icon of={Upload} />Upload survey</NavLink>
+        <NavLink to="/logs"><Icon of={ScrollText} />Logs</NavLink>
+          {me?.permissions?.includes("manage_roles") && <NavLink to="/access"><Icon of={ShieldCheck} />Access</NavLink>}
+      </RailGroup>}
+      {latest && <nav aria-label="Current weekly tracker">
+        <p className="rail-label">Current weekly tracker</p>
+        <NavLink to={`/w/${latest.survey_id}`} className={() => wave?.survey_id === latest.survey_id ? "active" : ""}><Icon of={LayoutDashboard} />{fmtDate(latest.wave_date)} · n={latest.qualified_n.toLocaleString("en-US")}</NavLink>
       </nav>}
       {wave && <div className="rail-foot">
         <b>{wave.qualified_n.toLocaleString("en-US")}</b>
@@ -165,28 +188,29 @@ export default function Shell() {
         {me.client ? <><br />{me.client}</> : null}<br /><a href="/auth/logout">Sign out</a></p>}
     </aside>
     <div className="main-col">
-      <TopBar waves={waves.data ?? []} wave={wave} />
+      {wave && <TopBar waves={waves.data ?? []} wave={wave} hasReport={hasReport} />}
       {/* a theme switch re-colours in place (CSS tokens, EChart setTheme): scroll and focus stay where they were */}
-      <main id="main" tabIndex={-1}><Outlet /></main>
+      <main id="main" tabIndex={-1} style={{ "--eyebrow": JSON.stringify(eyebrow(wave)) } as React.CSSProperties}><Outlet /></main>
       <PinDialog />
       <UndoBar />
       {showPerf && <Suspense fallback={null}><PerfHUD /></Suspense>}
+      {/* under the content only: across the full width it ended the rail's row, and the sticky rail scrolled away with it */}
+      <SiteFooter theme={theme} />
     </div>
-    <SiteFooter />
   </div>;
 }
 
-/** The coresight.com footer: dark band, the company's link groups, the way back to the main site, the copyright. */
-function SiteFooter() {
+/** The coresight.com footer: the page's own surface (light or dark with the theme), the company's link groups, the way back to the main site, the copyright. */
+function SiteFooter({ theme }: { theme: Theme }) {
   return <footer className="site-foot">
     <div className="site-foot-cols">
       <section>
-        <img src="/coresight-logo-reversed.png" alt="Coresight Research" width="120" height="60" />
+        <img src={theme === "dark" ? "/coresight-logo-reversed.png" : "/coresight-logo.png"} alt="Coresight Research" width="120" height="60" />
         <h2>Consumer Insight Portal</h2>
         <ul>
-          <li><a href={SITE + "/"}>Back to coresight.com</a></li>
-          <li><Link to="/methodology">Methodology</Link></li>
-          <li><Link to="/whats-new">What's new</Link></li>
+        <li><a href={SITE + "/"}>Back to coresight.com</a></li>
+        <li><Link to="/methodology">Methodology</Link></li>
+        <li><Link to="/whats-new">What's new</Link></li>
         </ul>
       </section>
       {FOOT_LINKS.map(([head, links]) => <section key={head}>
@@ -207,7 +231,7 @@ function SiteFooter() {
 /** The portal's header on every screen: the Coresight logo and the portal's name, then the portal's own controls
  *  (question search, weighting, theme, who is signed in, sign out). coresight.com's menus (Research & Data, Events,
  *  Services) are on the public site's header only (app/(site)/layout.tsx); the footer below keeps its links. */
-function SiteHeader({ theme, onTheme, menuOpen, onToggleMenu }: { theme: Theme; onTheme: () => void; menuOpen: boolean; onToggleMenu: () => void }) {
+function SiteHeader({ here, theme, onTheme, menuOpen, onToggleMenu }: { here: string; theme: Theme; onTheme: () => void; menuOpen: boolean; onToggleMenu: () => void }) {
   const navigate = useNavigate();
   const me = useMe().data;
   const search = useRef<HTMLInputElement>(null);
@@ -234,7 +258,7 @@ function SiteHeader({ theme, onTheme, menuOpen, onToggleMenu }: { theme: Theme; 
     </button>
     <Link to="/" className="site-brand" aria-label="Consumer Insight Portal home">
       <img src={theme === "dark" ? "/coresight-logo-reversed.png" : "/coresight-logo.png"} alt="" width="76" height="38" />
-      <span>Consumer Insight Portal</span>
+      <span>Consumer Insight Portal{here && <small> / {here}</small>}</span>
     </Link>
     <button className="icon-btn search-toggle" onClick={() => { setSearchOpen(o => !o); setTimeout(() => search.current?.focus()); }}
             aria-label="Search every question" aria-expanded={searchOpen}>
@@ -269,7 +293,7 @@ function SiteHeader({ theme, onTheme, menuOpen, onToggleMenu }: { theme: Theme; 
     <Tooltip>
       <TooltipTrigger
         render={
-          <button
+        <button
             className="theme-btn"
             onClick={onTheme}
             aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
@@ -284,7 +308,7 @@ function SiteHeader({ theme, onTheme, menuOpen, onToggleMenu }: { theme: Theme; 
                 }
               />
             </svg>
-          </button>
+        </button>
         }
       />
       <TooltipContent side="bottom">
@@ -316,7 +340,7 @@ function SaveButton({ wave }: { wave: Wave }) {
   const url = location.pathname + location.search;
   const [saved, setSaved] = useState(isSaved(url));
   useEffect(() => setSaved(isSaved(url)), [url]);
-  const screen = SCREENS.find(([path]) => path && location.pathname.split("/")[3] === path)?.[1] ?? "Overview";
+  const screen = pageName(location.pathname);
   const question = decodeURIComponent(location.pathname.split("/")[4] ?? "");
   const toggle = () => {
     if (saved) removeView(url);
@@ -327,7 +351,7 @@ function SaveButton({ wave }: { wave: Wave }) {
     <Tooltip>
       <TooltipTrigger
         render={
-          <button
+        <button
             className="save-btn"
             onClick={toggle}
             aria-pressed={saved}
@@ -343,7 +367,7 @@ function SaveButton({ wave }: { wave: Wave }) {
                 }
               />
             </svg>
-          </button>
+        </button>
         }
       />
       <TooltipContent side="bottom">
@@ -354,13 +378,13 @@ function SaveButton({ wave }: { wave: Wave }) {
 }
 
 /** The wave bar: the wave switcher ([ and ] step through the waves) and Save view. */
-function TopBar({ waves, wave }: { waves: Wave[]; wave?: Wave }) {
+function TopBar({ waves, wave, hasReport }: { waves: Wave[]; wave: Wave; hasReport: boolean }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();   // the router's path (/w/530/…), not the browser's (/app/w/530/…): that doubled /app
   const me = useMe().data;
-  const family = wave ? waves.filter(w => w.survey_family === wave.survey_family && w.study_type === wave.study_type
-                                     && (w.rows_built !== 0 || w.survey_id === wave.survey_id)) : [];
-  const at = family.findIndex(w => w.survey_id === wave?.survey_id);   // newest first
+  const family = waves.filter(w => w.survey_family === wave.survey_family && w.study_type === wave.study_type
+                                     && (w.rows_built !== 0 || w.survey_id === wave.survey_id));
+  const at = family.findIndex(w => w.survey_id === wave.survey_id);   // newest first
   const go = (w?: Wave) => w && navigate(pathname.replace(/^\/w\/\d+/, `/w/${w.survey_id}`));
 
   useEffect(() => {
@@ -378,8 +402,8 @@ function TopBar({ waves, wave }: { waves: Wave[]; wave?: Wave }) {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [at, family]);
-  return <div className={`topbar ${wave ? "" : "bare"}`}>
-    {wave ? <div className="switcher">
+  return <div className="topbar">
+    <div className="topbar-row"><div className="switcher">
       <Tooltip>
         <TooltipTrigger
           render={
@@ -419,8 +443,12 @@ function TopBar({ waves, wave }: { waves: Wave[]; wave?: Wave }) {
         </TooltipContent>
       </Tooltip>
       <span className="context" title={wave.title}>{wave.title}</span>
-    </div> : <div className="switcher">{waves.length > 0 && <span className="context">{waves.length.toLocaleString("en-US")} surveys and waves, {waves.at(-1)!.wave_date.slice(0, 4)}–{waves[0].wave_date.slice(0, 4)}</span>}</div>}
-    {wave && allowed(me, "saved_views") && <SaveButton wave={wave} />}
+    </div>
+    {allowed(me, "saved_views") && <SaveButton wave={wave} />}</div>
+    <nav className="wave-tabs" aria-label="This wave">
+      {SCREENS.filter(([path]) => (!FEATURE[path] || allowed(me, FEATURE[path])) && (path !== "report" || hasReport)).map(([path, label]) =>
+        <NavLink key={path} to={`/w/${wave.survey_id}${path ? "/" + path : ""}`} end={!path}>{label}</NavLink>)}
+    </nav>
   </div>;
 }
 
