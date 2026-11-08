@@ -145,6 +145,7 @@ export default function Shell() {
       </nav>}
       {isAdmin && <nav aria-label="Admin">
         <p className="rail-label">Admin</p>
+        <NavLink to="/ingest"><Icon d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />Upload survey</NavLink>
         <NavLink to="/logs"><Icon d="M4 4h16v2H4zm0 5h16v2H4zm0 5h10v2H4zm0 5h16v2H4z" />Logs</NavLink>
         {me?.permissions?.includes("manage_roles") && <NavLink to="/access"><Icon d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5zm0 6a2 2 0 100 4 2 2 0 000-4zm-3 8h6c0-1.7-1.3-3-3-3s-3 1.3-3 3z" />Access</NavLink>}
       </nav>}

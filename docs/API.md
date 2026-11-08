@@ -115,3 +115,16 @@ header `Authorization: Bearer cip_…`.
 A tool your menus do not include answers with an error the assistant can read ("Not included in your subscription").
 Figures are unweighted percentages of qualified respondents unless a tool says otherwise; cite the survey, wave date
 and base (n).
+
+## 5. Upload survey (admins only)
+
+The China Consumer Survey's weekly load (api/ingest.py, etl/baidu_qss_export.py). Both take two multipart files:
+`raw` (Baidu's raw export, .csv or .xlsx) and `topline` (Baidu's topline, .xls or .xlsx); a trailing `.aspx` from a
+SharePoint download is ignored. Each is at most 10 MB.
+
+- `POST /api/v1/admin/survey/preview`: the wave date, respondents, every question's counts, how many figures equal the
+  topline (`matched`) and every `problems` line (a wording missing from config/china_codebook.yml, a count that differs).
+  Writes nothing.
+- `POST /api/v1/admin/survey/publish` (optional form field `wave`, YYYY-MM-DD): the same check; with no problem the week
+  is loaded (the same week again replaces it) and the published files are rebuilt in the background. 422 with the
+  problems when the check fails (nothing written), 409 while another CIP run holds the ETL lock.

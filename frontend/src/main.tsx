@@ -53,6 +53,7 @@ const router = createBrowserRouter([{
     { path: "/account", element: page("Page:Account", () => import("./screens/Account")) },
     { path: "/api-guide", element: page("Page:ApiGuide", () => import("./screens/ApiGuide")) },
     { path: "/logs", element: page("Page:Logs", () => import("./screens/Logs")) },
+    { path: "/ingest", element: page("Page:Ingest", () => import("./screens/Ingest")) },
     { path: "/fieldwork", element: page("Page:Fieldwork", () => import("./screens/Fieldwork")) },
     { path: "/fieldwork/:survey", element: page("Page:FieldworkSurvey", () => import("./screens/FieldworkSurvey")) },
     { path: "/access", element: page("Page:Access", () => import("./screens/Access")) },

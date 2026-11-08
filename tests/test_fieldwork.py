@@ -95,13 +95,15 @@ def test_a_hibernated_survey_is_not_woken_and_a_failure_never_stops_the_run(csi_
 
 def test_the_home_pages_figures_are_counts_and_dates_only(tmp_path):
     (tmp_path / "api/v1/waves/2").mkdir(parents=True)
-    waves = [{"survey_id": 1, "wave_date": "2026-10-19", "study_type": "tracker", "qualified_n": 400, "modules": []},
-             {"survey_id": 2, "wave_date": "2026-10-26", "study_type": "tracker", "qualified_n": 404, "modules": ["Holiday tracker"]},
-             {"survey_id": 3, "wave_date": "2026-03-01", "study_type": "annual", "qualified_n": 2000}]
+    us = {"survey_family": "CSI-US", "study_type": "tracker"}
+    waves = [{"survey_id": 1, "wave_date": "2026-10-19", "qualified_n": 400, "modules": [], **us},
+             {"survey_id": 2, "wave_date": "2026-10-26", "qualified_n": 404, "modules": ["Holiday tracker"], **us},
+             {"survey_id": 3, "wave_date": "2026-03-01", "study_type": "annual", "qualified_n": 2000},
+             {"survey_id": 4, "wave_date": "2026-11-02", "survey_family": "CSI-CN", "study_type": "tracker", "qualified_n": 550}]   # China: not the US week
     (tmp_path / "api/v1/waves.json.gz").write_bytes(gzip.compress(json.dumps(waves).encode()))
     (tmp_path / "api/v1/waves/2/book.json.gz").write_bytes(gzip.compress(json.dumps({"questions": [{}, {}, {}]}).encode()))
     facts = publish.site_facts(tmp_path)
-    assert (facts["waves"], facts["responses"], facts["trackers"], facts["annual"]) == (3, 2804, 2, 1)
+    assert (facts["waves"], facts["responses"], facts["trackers"], facts["annual"]) == (4, 3354, 2, 1)
     assert facts["latestLabel"] == "Week of October 26, 2026" and facts["latestN"] == 404 and facts["questions"] == 3
     assert facts["trackerDates"] == ["2026-10-19", "2026-10-26"] and facts["latestTopics"] == ["Holiday tracker"]
 

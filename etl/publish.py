@@ -319,7 +319,9 @@ def site_facts(out: Path) -> dict:
     calendar. Counts and dates only: no survey answer is public. The site is built without the data (deploy/Dockerfile),
     so without this file it would show the figures frozen in pipeline.ts."""
     waves = json.loads(gzip.decompress((out / "api/v1/waves.json.gz").read_bytes()))
-    trackers = sorted((w for w in waves if w.get("study_type") == "tracker"), key=lambda w: w["wave_date"])
+    family = weekly_report.settings()["family"]   # the US weekly tracker; China's weekly waves are not its weeks
+    trackers = sorted((w for w in waves if w.get("study_type") == "tracker" and w.get("survey_family") == family),
+                      key=lambda w: w["wave_date"])
     if not trackers:
         return {}
     latest, when = trackers[-1], date.fromisoformat(trackers[-1]["wave_date"])

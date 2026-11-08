@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 8 November 2026
 
+### China consumer survey: upload a week from Baidu
+
+Admins have a new Upload survey page under Admin in the menu for the China Consumer Survey, which Baidu QSS fields and which has no connection CIP can reach. Choose the week's raw export and Baidu's topline (as downloaded, .csv and .xls, including files saved from SharePoint) and press Check: CIP counts every answer from the raw rows and compares each base and count with Baidu's topline (123 figures a week), translating the Chinese through a reviewed English codebook. Only when every figure matches can the week be published; it then appears as a China wave with its week-on-week changes, cuts by gender, age, income and city tier, trends and search, and the portal's files are rebuilt in the background. Baidu's topline is kept in the database beside CIP's own figures. Uploading the same week again replaces it. The analysts' English converter swapped Optimistic and Pessimistic for the two outlook questions; the codebook keys every answer by its Chinese words so this cannot happen.
+
 ### Safer logs download, steadier Ask CIP and sign-in errors
 
 Ask CIP now gives up on a slow Claude after 25 seconds and answers with the cited figures instead, and an answer that states a percentage none of its sources list is replaced by the cited figures. The Logs page's Excel download no longer lets text sent by a visitor run as a formula, and a failed Teams alert no longer writes its secret link to the log. A sign-in cookie or header with unusual characters now gets a normal refusal instead of an error page. The new-wave email is tried three times before giving up, a missing script file is a "not found" instead of a page, the mobile menu respects reduced motion, a weekly report's figures load as soon as its page starts, and downloads of Forsta reports and the Logs workbook no longer fail in Safari and Firefox.

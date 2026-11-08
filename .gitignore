@@ -12,6 +12,7 @@ logs/*.jsonl
 data/exports/*
 !data/exports/.gitkeep
 *.xlsx
+!tests/fixtures/*.xlsx
 data/*.db
 .gstack/
 backups/

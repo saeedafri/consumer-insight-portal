@@ -29,7 +29,7 @@ SOURCE_REF = "VARCHAR(255) NOT NULL DEFAULT ''"
 # (table, column, MySQL definition) — the v2 columns on v1 tables
 COLUMNS: list[tuple[str, str, str]] = [
     ("cip_survey", "platform",
-     "ENUM('forsta','qualtrics','surveymonkey') NOT NULL DEFAULT 'forsta'"),
+     "ENUM('forsta','qualtrics','surveymonkey','baidu') NOT NULL DEFAULT 'forsta'"),
     ("cip_survey", "source_ref", SOURCE_REF),
     ("cip_survey", "study_type", "ENUM('tracker','annual','adhoc') NOT NULL DEFAULT 'tracker'"),
     ("cip_survey", "load_status",
@@ -71,6 +71,7 @@ NOT_NULL: list[tuple[str, str, str]] = [("cip_survey", "source_ref", SOURCE_REF)
 # A SET that gained members: (table, column, MySQL definition, the newest member). Adding members at the end is
 # a metadata-only change in MySQL 8; SQLite stores the set as text and needs nothing.
 WIDEN: list[tuple[str, str, str, str]] = [
+    ("cip_survey", "platform", "ENUM('forsta','qualtrics','surveymonkey','baidu') NOT NULL DEFAULT 'forsta'", "baidu"),
     ("srv_result", "flags", "SET('small_base','base_changed_prior','base_changed_ly','wording_changed_prior',"
      "'wording_changed_ly','sig_prior','sig_ly') NOT NULL DEFAULT ''", "sig_ly"),   # sig_*: BH-FDR 5 % (etl/serving.py)
     ("cip_dash_metric", "flags", "SET('small_base','base_changed_prior','base_changed_ly','prior_missing','ly_missing',"

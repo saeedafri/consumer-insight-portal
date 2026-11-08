@@ -163,7 +163,8 @@ def classify_age(label: Optional[str]) -> dict:
 
     A single year ('34') gives all four. A range ('26-41', 'over 60') has no
     single age; it gets a band or generation only when it lies wholly inside
-    one — '26-41' spans GenZ and Millennials, so it gets neither. Midpoints of
+    one — '26-41' spans GenZ and Millennials, so it gets neither (China's '26-41 years old' is a band of
+    its own, named in age_band_labels). Midpoints of
     the standard bands are the analysts' (age_band_labels)."""
     value = " ".join(str(label or "").split()).lower()
     for pattern, bounds in _RANGE:
@@ -181,6 +182,9 @@ def classify_age(label: Optional[str]) -> dict:
                 # only an explicit "a - b" has a midpoint; "under 50" assumes its 18
                 "mid": known_mid if known_mid is not None
                        else (low + high) / 2 if pattern is _RANGE[0][0] else None}
+    band, mid = parse_age_band(value)
+    if band:   # a band the analysts named that is no plain range: China's "26-41 years old" (config/china_codebook.yml)
+        return {"age": None, "band": band, "gen": None, "mid": mid}
     age = parse_age(label)
     return {"age": age, "band": age_band(age), "gen": generation(age), "mid": age}
 

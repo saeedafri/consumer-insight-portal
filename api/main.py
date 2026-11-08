@@ -51,7 +51,7 @@ from starlette.staticfiles import NotModifiedResponse
 from shared.core import access, api_keys, audit
 from shared.core.database import apply_sql, get_engine
 from shared.data import payloads
-from api import assistant, exports, logs, mcp, metrics, signin, team
+from api import assistant, exports, ingest, logs, mcp, metrics, signin, team
 from api.search import SearchIndex
 from api.signin import admin, user
 from etl import launch_schedule
@@ -626,6 +626,7 @@ app.include_router(signin.router)                                 # /auth/* and 
 app.include_router(mcp.router)                                    # /mcp: the MCP connector, by API key (api/mcp.py)
 app.include_router(logs.router)                                   # /api/v1/admin/logs: operational logs (api/logs.py)
 app.include_router(metrics.router)                                # /api/v1/admin/metrics: the Logs page's dashboard (api/metrics.py)
+app.include_router(ingest.router)                                 # /api/v1/admin/survey: upload & ingest (api/ingest.py)
 
 def book_data(survey_id: int) -> Optional[dict]:
     return _parsed_book(survey_id, PUBLISHED_VERSION)
@@ -958,8 +959,9 @@ async def every_request(request: Request, call_next):
         size = request.headers.get("content-length")
         if size is None and request.headers.get("transfer-encoding"):
             return failed(411, "Send the body with a Content-Length")
-        if size is not None and (not size.isdigit() or int(size) > MAX_BODY):
-            return failed(413, f"The request body is larger than {MAX_BODY // 1024} KB")
+        limit = ingest.MAX_BYTES * 2 if request.url.path.startswith(ingest.router.prefix) else MAX_BODY   # two files
+        if size is not None and (not size.isdigit() or int(size) > limit):
+            return failed(413, f"The request body is larger than {limit // 1024} KB")
     start = time.perf_counter()
     response = await call_next(request)
     if fresh := getattr(request.state, "cookie", None):   # signin.user(): access changed since sign-in, same session

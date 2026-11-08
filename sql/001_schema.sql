@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS cip_survey (
   country       CHAR(2)      NULL DEFAULT 'US',
   status        ENUM('draft','fielding','closed','archived') NOT NULL DEFAULT 'closed',
   datamap_hash  CHAR(64)     NULL                  COMMENT 'sha256 of the datamap; detects questionnaire change',
-  platform      ENUM('forsta','qualtrics','surveymonkey') NOT NULL DEFAULT 'forsta'
+  platform      ENUM('forsta','qualtrics','surveymonkey','baidu') NOT NULL DEFAULT 'forsta'
                                                    COMMENT 'which platform fielded the wave',
   source_ref    VARCHAR(255) NOT NULL DEFAULT ''   COMMENT 'Forsta path, Qualtrics SV_ id or SurveyMonkey id',
   study_type    ENUM('tracker','annual','adhoc') NOT NULL DEFAULT 'tracker',

@@ -321,6 +321,12 @@ def start_run(survey_id: Optional[int], source_type: str, object_type: str, sour
         return int(res.lastrowid)
 
 
+def set_load_status(survey_id: int, status: str) -> None:
+    """A wave's load_status (loading, verified, failed): only verified waves are shown. Used by every loader."""
+    with get_engine("etl").begin() as conn:
+        conn.execute(text("UPDATE cip_survey SET load_status = :st WHERE survey_id = :s"), {"st": status, "s": survey_id})
+
+
 def finish_run(run_id: int, read: int, loaded: int, rejected: int = 0, error: Optional[str] = None) -> None:
     status = "failed" if error else ("partial" if rejected else "success")
     with get_engine("etl").begin() as conn:

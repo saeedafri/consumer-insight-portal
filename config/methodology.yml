@@ -5,7 +5,7 @@
 population:
   default: Survey respondents
   study_types: {tracker: US adults 18+}
-  families: {}
+  families: {CSI-CN: China adults 18+}
   ids: {}
 
 panel: >-

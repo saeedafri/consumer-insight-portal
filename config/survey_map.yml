@@ -65,6 +65,11 @@ topics:
   - {family: "CSI-US", priority: 130, pattern: "^TF\\d",                        topic: TARIFFS}
   - {family: "CSI-US", priority: 140, pattern: "^IN\\d",                        topic: INFLATION}
 
+  # ── CSI-CN, the China Consumer Survey (Baidu QSS, config/china_codebook.yml) ──
+  - {family: "CSI-CN", priority: 10, pattern: "^S[1-5]$",                       topic: DEMOGRAPHICS}
+  - {family: "CSI-CN", priority: 20, pattern: "^Q[1-6]$",                       topic: SHOPPING}
+  - {family: "CSI-CN", priority: 30, pattern: "^Q[7-9]$",                       topic: SENTIMENT}
+
   # ── Applies to every survey: technical/paradata variables ───────────────
   - {family: "*", priority: 900, pattern: "^(record|uuid|date|markers|status|source|session|url|list|decLang|userAgent|dcua|RID|start_date|conditions)$", topic: TECHNICAL}
   - {family: "*", priority: 910, pattern: "^(qtime|vlist|vos|vbrowser|vmobile|vdropout|vterm|vq|voq)",   topic: TECHNICAL}
@@ -87,6 +92,13 @@ profile:
     state_name:      D8
     outlook_income:  CS1
     outlook_economy: CS2
+  CSI-CN:
+    gender:          S1
+    age:             S2
+    income_band:     S3
+    urbanicity:      S4   # city tier: China's nearest cut to urban/suburban/rural
+    outlook_income:  Q8
+    outlook_economy: Q9
 
 # Wording used to auto-detect a demographic when no explicit mapping exists.
 # First matching question code wins.
@@ -192,6 +204,13 @@ age_band_labels:
   - {pattern: "^30\\s*-\\s*44$",               band: "30-44",   mid: 37}
   - {pattern: "^45\\s*-\\s*60$",               band: "45-60",   mid: 52.5}
   - {pattern: "^(over 60|>\\s*60|60\\s*\\+)$", band: "Over 60", mid: 67}
+  # China's bands, spelt as config/china_codebook.yml S2 writes them so US history's bare "26-41" keeps no band
+  # (57 is in two bands on the questionnaire itself)
+  - {pattern: "^18-25 years old$",             band: "18-25",   mid: 21.5}
+  - {pattern: "^26-41 years old$",             band: "26-41",   mid: 33.5}
+  - {pattern: "^42-57 years old$",             band: "42-57",   mid: 49.5}
+  - {pattern: "^57-76 years old$",             band: "57-76",   mid: 66.5}
+  - {pattern: "^77 years old or above$",       band: "77+",     mid: 80}
 
 # Household income midpoints, $000 — identical labels in Forsta and Qualtrics.
 income_midpoints_k:

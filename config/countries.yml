@@ -1,8 +1,8 @@
 # Countries CIP reports on. A wave's country is cip_survey.country, and its family is per country (CSI-US), so waves
 # are only ever compared, trended or pooled within one country. `cuts` lists each cut's values in display order
 # (Compare and exports use it; a value not listed is shown after these).
-# China is configured ahead of its data: no wave carries CN yet. Fill its cuts from the first China questionnaire's
-# profile questions; US bands (census regions, US income) do not carry over.
+# China's waves come from Baidu QSS uploads (etl/baidu_qss_export.py); its cuts are the codebook's English answers
+# (config/china_codebook.yml S1-S4). US bands (census regions, US income) do not carry over.
 US:
   name: United States
   family: CSI-US
@@ -20,7 +20,12 @@ US:
 CN:
   name: China
   family: CSI-CN
-  language: zh
+  language: zh        # what respondents read; the portal stores and shows the codebook's English
   currency: CNY
-  active: false
-  cuts: {}
+  active: true
+  cuts:
+    gender: [Male, Female]
+    age_band: [18-25, 26-41, 42-57, 57-76, 77+]
+    income_band: ["0-5,000 RMB", "5,001-10,000 RMB", "10,001-15,000 RMB", "15,001-20,000 RMB", "20,001-25,000 RMB",
+                  "25,001 RMB or above"]
+    urbanicity: [Tier-1 city, Tier-2 city, Other city]

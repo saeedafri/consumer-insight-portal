@@ -359,7 +359,8 @@ def parse_datetime(v: Any) -> Optional[datetime]:
         return None
     if isinstance(v, datetime):
         return v
-    for fmt in ("%m/%d/%Y %H:%M", "%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d"):
+    # %y: Baidu QSS writes "10/21/26 22:19" (etl/baidu_qss_export.py)
+    for fmt in ("%m/%d/%Y %H:%M", "%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d", "%m/%d/%y %H:%M"):
         try:
             return datetime.strptime(str(v).strip(), fmt)
         except ValueError:

@@ -21,7 +21,7 @@ export interface Wave {
   study_type: string; qualified_n: number; prior_survey_id: number | null; ly_survey_id: number | null;
   ly_status: "loaded" | "not_loaded" | "none"; modules?: string[]; dashboards?: string[];
   rows_built?: number;   // 0: the wave is registered but has no results yet (some legacy archive loads)
-  country?: string; platform?: "forsta" | "qualtrics" | "surveymonkey"; source_ref?: string;
+  country?: string; platform?: "forsta" | "qualtrics" | "surveymonkey" | "baidu"; source_ref?: string;
   field_start?: string | null; field_end?: string | null;   // UTC; recorded for Forsta waves only
   events?: string[];     // recurring retail events in the title (config/survey_calendar.yml events), e.g. Prime Day
   population?: string | null; weighting?: string | null;   // who the sample stands for, and how it is weighted ("none")
@@ -406,3 +406,20 @@ export const saveRole = (role: string, features: string[]) =>
   admin<{ role: string; features: string[] }>(`/api/v1/admin/roles/${encodeURIComponent(role)}`, "PUT", { features });
 /** A client or person back to the menus they inherit (their role's, or their client's). */
 export const forgetRole = (role: string) => admin<{ role: string }>(`/api/v1/admin/roles/${encodeURIComponent(role)}`, "DELETE");
+
+/** The Upload survey page (screens/Ingest.tsx, api/ingest.py): a week of the China survey from Baidu QSS. */
+export interface SurveyCheck {
+  wave: string | null; respondents: number; matched: number; problems: string[]; problem_count: number;
+  field_start: string | null; field_end: string | null; median_seconds: number | null;
+  questions: { qcode: string; text: string; type: "single" | "multi"; base: number; answers: [string, number, number][] }[];
+}
+export interface SurveyLoaded { survey_id: number; wave: string; respondents: number; matched: number }
+/** Both files to preview (writes nothing) or publish; the API's words on a refusal become the error's message. */
+export async function sendSurvey<T>(step: "preview" | "publish", raw: File, topline: File): Promise<T> {
+  const body = new FormData();
+  body.append("raw", raw);
+  body.append("topline", topline);
+  const r = await fetch(`/api/v1/admin/survey/${step}`, { method: "POST", credentials: "same-origin", headers: adminToken(), body });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`);
+  return r.json() as Promise<T>;
+}

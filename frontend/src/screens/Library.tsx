@@ -30,7 +30,8 @@ export default function Library() {
       (event === "all" || (w.events ?? []).includes(event)) &&
       words.every(t => `${w.title} ${w.survey_family} ${(w.modules ?? []).join(" ")} ${(w.events ?? []).join(" ")} ${w.wave_date}`.toLowerCase().includes(t)));
   }, [waves, kind, year, event, text]);
-  const latest = waves?.find(w => w.study_type === "tracker" && w.rows_built !== 0) ?? waves?.[0];
+  // the US weekly tracker leads; China's weekly waves (CSI-CN) are listed with the rest
+  const latest = waves?.find(w => w.survey_family === "CSI-US" && w.study_type === "tracker" && w.rows_built !== 0) ?? waves?.[0];
   // the wave most people open next: its book is fetched while this screen is idle (≈ 20 KB, cached 5 min)
   useEffect(() => { if (latest) void queries.prefetchQuery({ queryKey: ["book", latest.survey_id, false], queryFn: () => bookOf(latest.survey_id), staleTime: 5 * 60_000 }); }, [latest]);
   if (isLoading) return <SkeletonScreen kind="library" />;

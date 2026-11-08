@@ -5,6 +5,7 @@
 
 # The web API
 fastapi==0.150.0                # serves the portal's data (api/)
+python-multipart==0.0.33        # file uploads: the Upload survey page (api/ingest.py)
 uvicorn[standard]==0.54.0       # runs the API
 gunicorn==26.2.0                # keeps the API process running and restarts it if it dies
 
@@ -22,6 +23,7 @@ tenacity==9.1.4                 # retries a failed Forsta call with growing wait
 
 # Exports and the assistant
 openpyxl==3.1.5                 # Excel files
+xlrd==2.0.2                     # Baidu QSS's .xls toplines (etl/baidu_qss_export.py); openpyxl reads only .xlsx
 python-pptx==1.0.2              # PowerPoint export (api/exports.py)
 anthropic==2.0.0                # Ask CIP (api/assistant.py); without credentials it answers with cited figures only
 

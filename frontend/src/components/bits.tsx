@@ -158,7 +158,7 @@ export const ist = (utc: string | null | undefined, withYear = true) => clock(ut
 export const local = (utc: string | null | undefined, parts: Intl.DateTimeFormatOptions = FULL) => clock(utc, undefined, parts);
 
 /** The line competitors put under every chart (YouGov, OWID, Civiqs): who, when, how many, how tested. */
-const PLATFORM = { forsta: "Forsta", qualtrics: "Qualtrics", surveymonkey: "SurveyMonkey" };
+const PLATFORM = { forsta: "Forsta", qualtrics: "Qualtrics", surveymonkey: "SurveyMonkey", baidu: "Baidu QSS" };
 
 /** Where a wave came from: platform, its source reference, and the fielding window when the platform recorded one. */
 export function provenance(w?: Wave | null): string {

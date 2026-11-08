@@ -47,8 +47,8 @@ from etl.records import respondent_key
 from etl import forsta_api, launch_schedule, serving, survey_calendar, survey_map, tracker_line
 from etl.forsta_client import ForstaError
 from etl.record_stream import source_records, survey_snapshot
-from etl.loaders import (Locked, drop_unlisted_items, etl_lock, finish_run, index_survey, load_definitions, start_run,
-                         upsert_survey)
+from etl.loaders import (Locked, drop_unlisted_items, etl_lock, finish_run, index_survey, load_definitions, set_load_status,
+                         start_run, upsert_survey)
 from etl.wave_loader import parse_datetime, rebuild_profiles, rebuild_question_bases, wave_from_records
 
 log = logging.getLogger("cip.forsta")
@@ -235,12 +235,6 @@ def _number(value: Any) -> Optional[float]:
     return round(number, 4) if math.isfinite(number) and abs(number) < 1e14 else None
 
 
-def _set_status(survey_id: int, status: str) -> None:
-    with get_engine("etl").begin() as conn:
-        conn.execute(text("UPDATE cip_survey SET load_status = :st WHERE survey_id = :s"),
-                     {"st": status, "s": survey_id})
-
-
 def _fields(conn, survey_id: int) -> dict[str, dict]:
     """field name → how to store its value: kind (code / numeric / text) and,
     for coded fields, the label of each code."""
@@ -379,13 +373,13 @@ def _load_snapshot(client, path, meta, datamap, questions, records, lap, seconds
         finish_run(run, len(records), written or 0, error=str(exc)[:2000])
         # the answers write is one transaction: if it never committed, a verified wave is still intact
         intact = written is None and previous == "verified"
-        _set_status(survey_id, "verified" if intact else "failed")
+        set_load_status(survey_id, "verified" if intact else "failed")
         if not intact:   # its serving rows describe answers that are gone: no screen or published file keeps them
             with eng.begin() as conn:
                 serving.drop_wave(conn, survey_id)
         raise
     finish_run(run, len(records), written)
-    _set_status(survey_id, "verified")
+    set_load_status(survey_id, "verified")
     _mark(path, "loaded", survey_id)
     survey_calendar.rebuild()                          # its questions may name a seasonal tracker
     serving.rebuild_dependants(survey_id)              # next week / next year now have this wave to compare with

@@ -1,0 +1,154 @@
+# The China Consumer Survey (Baidu QSS) in English: every question's wording and every answer, keyed by the exact
+# Chinese text Baidu writes in the raw export and the topline. Read by etl/baidu_qss_export.py on every upload.
+#
+# Why keyed by the Chinese words, not by row position: the analyst's converter ("Consumer Tracker English.xlsx")
+# lists English rows in the topline's layout, and for Q8 and Q9 its rows are in a different order from the
+# Chinese (积极, "positive", sits beside "Pessimistic"). Matched by position, optimism would load as pessimism.
+# Its wording is used here, corrected where it differed from what respondents read (Q1, Q2, Q7, S2, S5).
+#
+# The questions never change between weeks, only the people. An answer's code is its place in its list, so add a
+# new answer at the END of its list: codes already loaded keep their meaning. A Chinese wording this file does not
+# know stops the upload and is named on the Upload survey page, so nothing untranslated reaches the screens.
+# Answers that become demographic cuts (S1-S4) stay under 40 characters: a cut value must fit the cube's key.
+
+family: CSI-CN
+questions:
+  S1:
+    text: What is your gender?
+    type: single
+    answers: {男: Male, 女: Female}
+  S2:
+    text: What is your age?
+    type: single
+    answers: {18岁以下: Below 18, 18-25岁: 18-25 years old, 26-41岁: 26-41 years old, 42-57岁: 42-57 years old,
+              57-76岁: 57-76 years old, 77岁或以上: 77 years old or above}
+  S3:
+    text: What is your monthly personal income (RMB)?
+    type: single
+    answers:
+      0-5,000 元: 0-5,000 RMB
+      5,001-10,000 元: 5,001-10,000 RMB
+      10,001-15,000 元: 10,001-15,000 RMB
+      15,001-20,000 元: 15,001-20,000 RMB
+      20,001-25,000 元: 20,001-25,000 RMB
+      25,001 元或以上: 25,001 RMB or above
+  S4:
+    text: Which city do you live in? (Tier-1 is Beijing, Shanghai, Guangzhou and Shenzhen; Tier-2 is the 45 cities the
+      questionnaire lists, from Chengdu to Jiujiang)
+    type: single
+    answers:
+      一线城市（包括：北京，上海，广州，深圳）: Tier-1 city
+      二线城市（包括：成都、重庆、杭州、武汉、南京、天津、苏州、西安、长沙、沈阳、青岛、郑州、大连、东莞、宁波、厦门、福州、无锡、合肥、昆明、哈尔滨、济南、佛山、长春、温州、石家庄、南宁、常州、泉州、南昌、贵阳、太原、烟台、嘉兴、南通、金华、珠海、惠州、徐州、海口、乌鲁木齐、绍兴、中山、台州、九江）: Tier-2 city
+      其他城市: Other city
+  S5:
+    text: How many children do you have?
+    type: single
+    answers: {没有小孩: None, 一个: One, 两个: Two, 三个: Three, 三个以上: More than three}
+  Q1:
+    text: How will your spending on everyday consumer goods and dining change in the next two weeks?
+    type: single
+    answers: {减少很多: Spending much less, 减少一些: Spending slightly less, 维持不变: Spending the same,
+              增加一些: Spending slightly more, 增加很多: Spending a lot more}
+  Q2:
+    text: Given the current situation, are you avoiding public places such as shopping centers and offices, or
+      changing your travel plans?
+    type: single
+    answers: {有: "Yes", 没有: "No"}
+  Q3:
+    text: Which places are you avoiding, or which travel plans and activities are you changing? (asked of those
+      answering Yes at Q2)
+    type: multi
+    answers:
+      购物中心: Shopping centers/malls
+      大型体育活动（如马拉松比赛，足球，飞盘等）: Sports events
+      国内旅行（包括因公或因私）: Domestic travel
+      海外旅行（包括因公或因私）: International travel
+      办公室: My workplace
+      医院或社区医疗中心: Medical centers/hospitals
+      美容美发美甲中心: Grooming services
+      餐厅/酒吧/咖啡店: Restaurants/bars/coffee shops
+      公共交通（例如地铁，火车等）: Public transportation
+      商店/超市: Shops in general
+      健身房/体育中心: Gym/sports center
+      会议/贸易展: Conference/seminar venues
+      娱乐场所（例如：电影院，主题乐园等）: Entertainment/leisure venues
+      其他（请注明____）: Other
+  Q4:
+    text: Which, if any, of these have you done in the past two weeks?
+    type: multi
+    answers:
+      和在同一座城市的朋友或者家人见面: Met up with friends or family locally
+      去亲近大自然: Enjoyed nature
+      自我提升: Improved myself
+      玩电脑/电竞游戏: Played computer games
+      看电视/短视频/直播: Watched TV/short videos/livestreams
+      躺平: Laying flat/quiet quitting
+      参与体育活动（例如，马拉松，足球，飞盘等）: Participated in sports events
+      去购物中心: Went to shopping centers/malls
+      国内旅行（包括因公或因私）: Took domestic travel
+      海外旅行（包括因公或因私）: Took international travel
+      去办公室: Went to my workplace
+      医院或社区医疗中心: Went to medical centers/hospitals
+      美容美发美甲中心: Went to grooming services
+      餐厅/酒吧/咖啡店: Went to restaurants/bars/coffee shops
+      公共交通（例如地铁，火车等）: Took public transportation
+      商店/超市: Went to shops in general
+      健身房/体育中心: Went to gym/sports center
+      会议/贸易展: Went to conference/seminar venues
+      娱乐场所（例如：电影院，主题乐园等）: Went to entertainment/leisure venues
+      其他（请注明____）: Other
+  Q5:
+    text: Which, if any, of these categories have you purchased IN A STORE in the past two weeks?
+    type: multi
+    answers:
+      运动健身产品（不包括运动服装及运动鞋）: Sports/fitness products (excl. clothing/footwear)
+      日常家居用品（包括清洁产品，卫生纸，洗衣类产品等）: Everyday household products
+      家电（包括电冰箱，电视机，洗衣机等）: Household appliances
+      服饰，鞋等时尚产品: Clothing, footwear or fashion accessories
+      电子产品（包括智能手机，笔记本电脑，游戏机等）: Electronics
+      家具及居家装饰产品: Furniture, furnishings or home decor
+      宠物产品: Pet products
+      健康产品（包括维生素，药，血压计等居家健康监测仪）: Health products
+      美容护肤产品或化妆品: Cosmetics, skincare or fragrance products
+      食物或酒水饮料（包括生鲜食品）: Food or beverages
+      个人清洁洗护用品（包括成人及婴儿洗发水，沐浴露，牙膏等）: Toiletries/personal care products
+      玩具: Toys or games
+      书籍，音乐及电影，电子游戏: Books, movies, music or video games
+      箱包: Bags or luggage
+      香烟或电子烟: Cigarettes/tobacco/e-cigarettes
+      珠宝首饰或手表: Jewelry or watches
+      家居装潢产品: Home-improvement products
+      以上皆无: None of these
+  Q6:
+    text: Which, if any, of these categories have you purchased ONLINE in the past two weeks?
+    type: multi
+    answers:
+      珠宝首饰或手表: Jewelry or watches
+      美容护肤产品或化妆品: Cosmetics, skincare or fragrance products
+      运动健身产品（不包括运动服装及运动鞋）: Sports/fitness products (excl. clothing/footwear)
+      服饰，鞋等时尚产品: Clothing, footwear or fashion accessories
+      家居装潢产品: Home-improvement products
+      个人清洁洗护用品（包括成人及婴儿洗发水，沐浴露，牙膏等）: Toiletries/personal care products
+      箱包: Bags or luggage
+      家电（包括电冰箱，电视机，洗衣机等）: Household appliances
+      健康产品（包括维生素，药，血压计等居家健康监测仪）: Health products
+      日常家居产品（包括清洁产品，卫生纸，洗衣类产品）: Everyday household products
+      家具及居家装饰产品: Furniture, furnishings or home decor
+      书籍，音乐及电影，电子游戏: Books, movies, music or video games
+      玩具: Toys or games
+      宠物产品: Pet products
+      食物或酒水饮料（包括生鲜食品）: Food or beverages
+      电子产品（包括智能手机，笔记本电脑，游戏机等）: Electronics
+      以上皆无: None of these
+  Q7:
+    text: How has your personal financial position changed in the last 12 months?
+    type: single
+    answers: {变好了: Got better, 变差了: Got worse, 没有变化: No change}
+  Q8:
+    text: How do you expect your personal financial position to change in the coming 12 months?
+    type: single
+    answers: {积极: Optimistic, 消极: Pessimistic, 没有变化: No change, 不知道: Don't know}
+  Q9:
+    text: What do you expect for the economy in the coming 12 months?
+    type: single
+    answers: {积极: Optimistic, 消极: Pessimistic, 和现在一样: Same as now, 不知道: Don't know}
