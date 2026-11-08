@@ -1,6 +1,6 @@
 /* Editorial body over the exact coresight.com chrome (header + footer) used by the portal. */
 :root {
-  --paper: #FFFFFF; --surface: #FFFFFF; --ink: #2D2A29; --ink-2: #5F5C5B; --line: #E5E3E1; --line-strong: #8A8684; --faint: #F2F1F0; --fill: #F2F1F0;
+  --paper: #FFFFFF; --surface: #FFFFFF; --ink: #2D2A29; --ink-2: #5B626B; --line: #E6E9EC; --line-strong: #8A9097; --faint: #F0F2F4; --fill: #F0F2F4;
   --red: #D62E2F; --red-text: #C42829; --blue: #2F5C86; --steel: #C2D0DD; --ok: #2E7D32;
   --dark: #17130F; --dark-ink: #F4EFE9; --dark-ink-2: #A69E95; --dark-line: #3A332C;
   --band: #ECF1F4;
@@ -8,13 +8,13 @@
   --font-head: "Montserrat Variable", Montserrat, system-ui, sans-serif;              /* headings and big numbers */
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --paper: #1B1918; --surface: #242120; --ink: #FAFAFA; --ink-2: #C9C5C3; --line: #3D3937; --line-strong: #5A544F; --faint: #1E1A16; --fill: #332F2D;
+  --paper: #13171B; --surface: #20252A; --ink: #F2F4F6; --ink-2: #B2BCC5; --line: #323A42; --line-strong: #6B7680; --faint: #1C2126; --fill: #2A3037;
   --red: #EC6A64; --red-text: #FF8A8A; --blue: #8FB6DD; --steel: #3A4A59; --ok: #7FC783;
   --dark: #0D0B09; --dark-ink: #F4EFE9; --dark-ink-2: #A69E95; --dark-line: #2C2620;
   --band: #1C1813; color-scheme: dark;
 } }
 :root[data-theme="dark"] {
-  --paper: #1B1918; --surface: #242120; --ink: #FAFAFA; --ink-2: #C9C5C3; --line: #3D3937; --line-strong: #5A544F; --faint: #1E1A16; --fill: #332F2D;
+  --paper: #13171B; --surface: #20252A; --ink: #F2F4F6; --ink-2: #B2BCC5; --line: #323A42; --line-strong: #6B7680; --faint: #1C2126; --fill: #2A3037;
   --red: #EC6A64; --red-text: #FF8A8A; --blue: #8FB6DD; --steel: #3A4A59; --ok: #7FC783;
   --dark: #0D0B09; --dark-ink: #F4EFE9; --dark-ink-2: #A69E95; --dark-line: #2C2620;
   --band: #1C1813; color-scheme: dark;
@@ -71,8 +71,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .actions .btn.primary { font-size: 15px; }
 .btn:hover { border-color: var(--red); color: var(--red-text); }
 .btn.primary:hover { color: #fff; }
-:root[data-theme="dark"] .btn.primary, :root[data-theme="dark"] .btn.primary:hover { color: #1B1918; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.primary, :root:not([data-theme="light"]) .btn.primary:hover { color: #1B1918; } }
+:root[data-theme="dark"] .btn.primary, :root[data-theme="dark"] .btn.primary:hover { color: #13171B; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.primary, :root:not([data-theme="light"]) .btn.primary:hover { color: #13171B; } }
 
 .ledger { border-top: 3px solid var(--ink); padding-top: 18px; }
 .ledger h2 { font-size: 22px; line-height: 1.25; letter-spacing: -0.01em; }

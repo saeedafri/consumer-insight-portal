@@ -1,4 +1,4 @@
-// App frame: the coresight.com header (logo, site links, search, theme, sign-in), a dark rail with the wave's screens,
+// App frame: the coresight.com header (logo, site links, search, theme, sign-in), a rail with the wave's screens,
 // a wave bar with the wave switcher, and the coresight.com footer.
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { setTheme, useTheme } from "../theme";

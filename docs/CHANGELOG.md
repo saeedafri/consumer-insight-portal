@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 8 November 2026
 
+### A cleaner look in light and dark
+
+The portal has a new look in both themes. The menu on the left is now white in light mode, with the page you are on shown as a red-tinted row, and the page behind the cards is a cool light grey. Dark mode moves from warm brown-black to a cool blue-black. Cards have rounder corners and a softer shadow, the figures at the top of a page carry a small coloured tab (red for the main one), and table headings are a light grey band instead of a dark one. The Coresight logo, fonts, charts' colours, menus and every figure are unchanged.
+
 ### China consumer survey: upload a week from Baidu
 
 Admins have a new Upload survey page under Admin in the menu for the China Consumer Survey, which Baidu QSS fields and which has no connection CIP can reach. Choose the week's raw export and Baidu's topline (as downloaded, .csv and .xls, including files saved from SharePoint) and press Check: CIP counts every answer from the raw rows and compares each base and count with Baidu's topline (123 figures a week), translating the Chinese through a reviewed English codebook. Only when every figure matches can the week be published; it then appears as a China wave with its week-on-week changes, cuts by gender, age, income and city tier, trends and search, and the portal's files are rebuilt in the background. Baidu's topline is kept in the database beside CIP's own figures. Uploading the same week again replaces it. The analysts' English converter swapped Optimistic and Pessimistic for the two outlook questions; the codebook keys every answer by its Chinese words so this cannot happen.

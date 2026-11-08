@@ -11,9 +11,9 @@ const LIGHT = {
   red: "#D62E2F",        // highlight: always some red in a chart; fills (bars, logo, active nav, primary button)
   redLine: "#D62E2F",    // the focus line
   ink: "#2D2A29",        // text
-  ink2: "#5F5C5B",       // secondary text (ink at 75 %)
-  ink3: "#757170",       // tertiary text and value axes: 4.8:1 on the paper
-  paper: "#FAFAFA",      // background
+  ink2: "#5B626B",       // secondary text: 6.2:1 on white
+  ink3: "#666D76",       // tertiary text and value axes: 4.8:1 on the paper
+  paper: "#F5F6F7",      // background
   surface: "#FFFFFF",    // cards
   raised: "#FFFFFF",     // tooltips, popovers
   blue: "#005F8F",
@@ -24,9 +24,9 @@ const LIGHT = {
   rose: "#D07676",
   grey: "#7F7F7F",
   silver: "#B2B2B2",
-  line: "#E5E3E1",       // hairlines and grid
-  lineStrong: "#8A8684", // axis lines and control borders: 3.6:1
-  mist: "#E5E3E1",
+  line: "#E6E9EC",       // hairlines and grid
+  lineStrong: "#8A9097", // axis lines and control borders: 3.2:1
+  mist: "#E6E9EC",
   warn: "#8A5A00",
   green: "#61A575",      // positive only, against red as negative
   negStrong: "#7F7F7F", negMild: "#B2B2B2", posMild: "#D07676", posStrong: "#D62E2F",   // scale answers
@@ -35,9 +35,9 @@ const LIGHT = {
   shadow2: "0 8px 24px rgba(45,42,41,.12)",
 };
 const DARK: typeof LIGHT = {
-  ...LIGHT, redLine: "#E5484A", ink: "#FAFAFA", ink2: "#C9C5C3", ink3: "#A39F9D", paper: "#1B1918", surface: "#242120", raised: "#2D2A29",
+  ...LIGHT, redLine: "#E5484A", ink: "#F2F4F6", ink2: "#B2BCC5", ink3: "#97A3AE", paper: "#13171B", surface: "#20252A", raised: "#2A3037",
   blue: "#A3C0CE", bar: "#A3C0CE", s1: "#A3C0CE", s2: "#7FA7BC", s3: "#5C8DA8", other: "#8C8785",
-  grey: "#A39F9D", silver: "#6E6A68", line: "#3D3937", lineStrong: "#77726F", mist: "#3D3937", warn: "#FEBC20",
+  grey: "#97A3AE", silver: "#5A646E", line: "#323A42", lineStrong: "#6B7680", mist: "#323A42", warn: "#FEBC20",
   negStrong: "#C9C5C3", negMild: "#8C8785", posMild: "#D07676", posStrong: "#E5484A",
   heat: ["#2C3134", "#344550", "#41606F", "#5C8DA8", "#86AEC2", "#B9D2DE"],
   heatInk: ["#FAFAFA", "#FAFAFA", "#FAFAFA", "#141211", "#141211", "#141211"],

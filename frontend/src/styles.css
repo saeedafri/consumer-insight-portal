@@ -1,28 +1,29 @@
-/* Coresight 2026 palette and the "Coresight look": white cards with a thin outline, red bold accents,
-   dark-grey table headers, the red bar before a heading (as in the PDF reports). */
+/* Coresight 2026 palette and the "Coresight look": white cards with a soft lift on a cool grey page, a white rail
+   whose current page is a red-tinted row, red bold accents, light table headers, the red bar before a heading
+   (as in the PDF reports). The 8 Nov 2026 redesign moved the greys from warm to cool in both themes. */
 /* Tokens: WCAG AA in both themes (text 4.5:1, controls and chart marks 3:1), measured in docs/REA…/83-ui-redesign.md.
    Brand: red #D62E2F (identity, active nav, primary action, the focus series), white #FAFAFA, black #2D2A29, blues for data.
-   New hexes are solid tints and shades of those blues and warm greys, so contrast is predictable. */
+   New hexes are solid tints and shades of those blues and cool greys, so contrast is predictable. */
 :root {
 
-  --red: #D62E2F; --ink: #2D2A29; --paper: #FAFAFA; --surface: #FFFFFF; --raised: #FFFFFF;
+  --red: #D62E2F; --ink: #2D2A29; --paper: #F5F6F7; --surface: #FFFFFF; --raised: #FFFFFF;
   --blue: #005F8F; --sky: #A3C0CE; --bar: #5E8CA3; --rose: #D07676; --grey: #7F7F7F; --silver: #B2B2B2;
-  --line: #E5E3E1; --mist: var(--line);   /* hairlines, card borders, grid: decorative */
-  --line-strong: #8A8684;    /* input, select, button and checkbox borders: 3.6:1 on white (WCAG 1.4.11) */
+  --line: #E6E9EC; --mist: var(--line);   /* hairlines, card borders, grid: decorative */
+  --line-strong: #8A9097;    /* input, select, button and checkbox borders: 3.2:1 on white (WCAG 1.4.11) */
   --green: #61A575; --ok: #2E6B40; --ok-wash: #E6F2E9;
-  --ink-2: #5F5C5B;          /* ink at 75 % on white (the guide's opacity trick): 6.6:1 for secondary text */
-  --ink-3: #757170;          /* tertiary text, placeholders, axis names: 4.8:1 */
-  --red-wash: #FBEAEA;       /* red at 10 % on white: selected rows, never text */
+  --ink-2: #5B626B;          /* secondary text: 6.2:1 on white, 5.5:1 on the fill */
+  --ink-3: #666D76;          /* tertiary text, placeholders, axis names: 4.8:1 on the paper, 4.7:1 on the fill */
+  --red-wash: #FFF1F1;       /* red at 10 % on white: selected rows, never text */
   --red-text: #C42829;       /* red as text: ≥ 4.9:1 on every light surface, red-wash included (brand red fails on fills) */
   --focus: #D62E2F;          /* focus ring: 4.7:1 on the paper */
   --warn: #8A5A00; --warn-wash: #FFF4D6;
-  --fill: #F2F1F0;           /* quiet fills: chips, segmented controls, base row */
-  --hover: #F5F4F3; --tag: #EEF3F6; --sig: #A61F20; --red-hover: #AF2223;   /* coresight.com's hover red */
-  --head: #2D2A29; --head-ink: #FFFFFF; --head-sub: #D9D6D4;
-  --rail: #2D2A29; --rail-ink: #D9D6D4; --rail-sub: #BDB9B7; --rail-edge: transparent;
-  --topbar: rgba(250, 250, 250, .92);
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(45, 42, 41, .06);              /* cards: a hairline lift, no blur */
+  --fill: #F0F2F4;           /* quiet fills: chips, segmented controls, base row */
+  --hover: #F4F5F6; --tag: #EBF3F7; --sig: #A61F20; --red-hover: #AF2223;   /* coresight.com's hover red */
+  --head: #F7F8F9; --head-ink: #2D2A29; --head-sub: #5B626B;   /* table headers: a quiet grey band */
+  --rail: #FFFFFF; --rail-ink: #5B626B; --rail-sub: #666D76; --rail-edge: #E6E9EC;
+  --topbar: rgba(245, 246, 247, .92);
+  --radius: 12px;
+  --shadow: 0 2px 10px rgba(30, 35, 40, .035), 0 18px 50px rgba(30, 35, 40, .025);   /* cards: a soft lift */
   --shadow-2: 0 8px 24px rgba(45, 42, 41, .12);           /* popovers, menus, dialogs */
   /* coresight.com's pairing: Montserrat for headings, nav, buttons and KPIs; Roboto for body and data */
   --font-head: "Montserrat Variable", Montserrat, system-ui, sans-serif;
@@ -34,19 +35,19 @@
   --ease: cubic-bezier(.2, .8, .2, 1); --dur-1: 120ms; --dur-2: 200ms; --dur-3: 320ms;
   color-scheme: light;
 }
-/* Dark: warm near-black canvas, cards one step up with a visible hairline, brand black for raised layers; red stays
+/* Dark: cool blue-black canvas, cards one step up with a visible hairline, brand black for raised layers; red stays
    the highlight (fills), red text and the focus ring lighten; blue text and series move to light blue. */
 :root[data-theme="dark"] {
 
-  --ink: #FAFAFA; --paper: #1B1918; --surface: #242120; --raised: #2D2A29; --ink-2: #C9C5C3; --ink-3: #A39F9D;
-  --blue: #A3C0CE; --bar: #A3C0CE; --line: #3D3937; --line-strong: #77726F; --silver: #6E6A68; --grey: #A39F9D;
-  --red-wash: rgba(214, 46, 47, .20); --red-text: #FF8A8A; --focus: #FF8A8A; --warn: #FEBC20; --warn-wash: rgba(254, 188, 32, .14);
+  --ink: #F2F4F6; --paper: #13171B; --surface: #20252A; --raised: #2A3037; --ink-2: #B2BCC5; --ink-3: #97A3AE;
+  --blue: #A3C0CE; --bar: #A3C0CE; --line: #323A42; --line-strong: #6B7680; --silver: #5A646E; --grey: #97A3AE;
+  --red-wash: #3A262A; --red-text: #F2797B; --focus: #F2797B; --warn: #FEBC20; --warn-wash: rgba(254, 188, 32, .14);
   --ok: #8FCB9F; --ok-wash: rgba(97, 165, 117, .18);
-  --fill: #332F2D; --hover: #2B2826; --tag: rgba(163, 192, 206, .16); --sig: #FF8A8A; --red-hover: #C42829;
-  --head: #2D2A29; --head-ink: #FAFAFA; --head-sub: #B9B5B3;
-  --rail: #121010; --rail-ink: #D9D6D4; --rail-sub: #A39F9D; --rail-edge: #2D2A29;
-  --topbar: rgba(27, 25, 24, .92);
-  --shadow: 0 1px 2px rgba(0, 0, 0, .4);
+  --fill: #2A3037; --hover: #282E35; --tag: #243640; --sig: #F2797B; --red-hover: #C42829;
+  --head: #1C2126; --head-ink: #F2F4F6; --head-sub: #B2BCC5;
+  --rail: #191E23; --rail-ink: #B2BCC5; --rail-sub: #97A3AE; --rail-edge: #303740;
+  --topbar: rgba(19, 23, 27, .92);
+  --shadow: 0 9px 24px rgba(0, 0, 0, .08);
   --shadow-2: 0 8px 24px rgba(0, 0, 0, .5);
   color-scheme: dark;
 }
@@ -72,24 +73,22 @@ small { font-size: 12px; }
 /* ── scrollbars ────────────────────────────────────────────────────────── */
 .rail::-webkit-scrollbar, .table-wrap::-webkit-scrollbar, .qnav-list::-webkit-scrollbar { width: 6px; height: 6px; }
 .rail::-webkit-scrollbar-track, .table-wrap::-webkit-scrollbar-track, .qnav-list::-webkit-scrollbar-track { background: transparent; }
-.rail::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .18); border-radius: 3px; }
-.rail::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .32); }
-.table-wrap::-webkit-scrollbar-thumb, .qnav-list::-webkit-scrollbar-thumb { background: var(--silver); border-radius: 3px; }
+.rail::-webkit-scrollbar-thumb, .table-wrap::-webkit-scrollbar-thumb, .qnav-list::-webkit-scrollbar-thumb { background: var(--silver); border-radius: 3px; }
 
 /* ── frame ─────────────────────────────────────────────────────────────── */
 .app { display: grid; grid-template-columns: 248px minmax(0, 1fr); grid-template-rows: auto 1fr auto; min-height: 100%; }
 .rail { position: sticky; top: 56px; height: calc(100vh - 56px); overflow-y: auto; background: var(--rail); border-right: 1px solid var(--rail-edge); color: var(--rail-ink); display: flex; flex-direction: column; padding: 18px 12px; gap: 18px; }
 .rail nav { display: flex; flex-direction: column; gap: 2px; }
 .rail nav a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: var(--rail-ink); text-decoration: none; font-weight: 500; font-size: 14px; position: relative; transition: background .15s ease, color .15s ease; }
-.rail nav a:hover { background: rgba(255,255,255,.08); color: #fff; }
-.rail nav a.active { background: rgba(214,46,47,.18); color: #fff; font-weight: 600; }
+.rail nav a:hover { background: var(--hover); color: var(--ink); }
+.rail nav a.active { background: var(--red-wash); color: var(--red-text); font-weight: 600; }
 .rail nav a.active::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3.5px; border-radius: 0 3px 3px 0; background: var(--red); }
-.rail-label { margin: 0 0 4px; padding: 0 10px; font-size: 12px; color: var(--rail-sub); }
-.rail-foot { margin-top: auto; padding: 14px; border: 1px solid rgba(255,255,255,.12); border-radius: var(--radius); }
-.rail-foot b { display: block; font-size: 26px; color: #fff; font-variant-numeric: tabular-nums; }
+.rail-label { margin: 0 0 4px; padding: 0 10px; font: 700 11px/1.4 var(--font-head); letter-spacing: .1em; text-transform: uppercase; color: var(--rail-sub); }
+.rail-foot { margin-top: auto; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); }
+.rail-foot b { display: block; font-size: 26px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .rail-foot span { font-size: 12px; color: var(--rail-sub); }
 .rail-foot-tag { margin-top: 6px; }
-.badge-verified { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--rail-sub); background: rgba(255, 255, 255, .08); padding: 2px 8px; border-radius: 999px; }
+.badge-verified { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--rail-sub); background: var(--fill); padding: 2px 8px; border-radius: 999px; }
 .main-col { min-width: 0; display: flex; flex-direction: column; }
 /* the coresight.com header: white bar, logo left, the site's menus, portal controls right; 56 px on every width */
 .site-head { grid-column: 1 / -1; position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 28px 0 20px;
@@ -112,7 +111,8 @@ small { font-size: 12px; }
              background: #2D2A29; color: #D9D6D4; padding: 36px 28px 24px; }
 .site-foot a { color: #D9D6D4; text-decoration: none; }
 .site-foot a:hover { color: #FFFFFF; text-decoration: underline; }
-.site-foot :focus-visible, .rail :focus-visible { outline-color: #FAFAFA; }   /* red is 2.9:1 on #2D2A29; this is 13.6:1 */
+.site-foot :focus-visible { outline-color: #FAFAFA; }   /* red is 2.9:1 on #2D2A29; this is 13.6:1 */
+:root[data-theme="dark"] .site-foot { background: #191E23; }   /* the dark theme's cool near-black, one step off the page */
 .site-foot ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .site-foot-cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; max-width: 1180px; }
 .site-foot-cols img { display: block; width: 120px; height: auto; margin-bottom: 12px; }
@@ -174,13 +174,12 @@ h1, h2, h3, h4, h5, h6, .btn, .seg button, .menu > summary, .rail nav a, .qtabs 
 .span2 { grid-column: span 2; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
 
-.kpi { padding: 16px 18px; }
+.kpi { padding: 16px 18px; position: relative; }
+.kpi::before { content: ""; position: absolute; top: -1px; left: 18px; width: 28px; height: 4px; border-radius: 0 0 3px 3px; background: var(--sky); }
+.kpi.lead::before { background: var(--red); }
 .kpi .k-label { font-size: 12px; color: var(--ink-2); font-weight: 600; min-height: 36px; }
 .kpi .k-value { font: var(--t-kpi); letter-spacing: -0.02em; color: var(--ink); margin: 6px 0 4px; }
 .kpi .k-note { font-size: 12px; color: var(--ink-2); }
-.kpi.lead { background: var(--head); color: var(--head-ink); border-color: var(--head); }
-.kpi.lead .k-label, .kpi.lead .k-note { color: var(--head-sub); }
-.kpi.lead .k-value { color: var(--head-ink); }
 a.kpi, button.kpi { text-decoration: none; color: inherit; text-align: left; cursor: pointer; transition: border-color .15s, box-shadow .15s; font: inherit; width: 100%; }
 a.kpi:hover, button.kpi:hover { border-color: var(--red); }
 a.kpi:focus-visible, button.kpi:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -378,7 +377,7 @@ table.xt { border-spacing: 1px; }
 .heat-legend i { width: 18px !important; border-radius: 0 !important; margin: 0 !important; }
 .heat-legend i:first-of-type { margin-left: 6px !important; border-radius: 3px 0 0 3px !important; }
 .heat-legend i:last-of-type { margin-right: 6px !important; border-radius: 0 3px 3px 0 !important; }
-.xt thead th.ref { background: var(--red); cursor: default; }
+.xt thead th.ref, .xt thead th.ref small { background: var(--red); color: #fff; cursor: default; }
 .xt thead th button { all: unset; cursor: pointer; display: block; width: 100%; }
 .xt thead th small { display: block; font-weight: 400; color: var(--head-sub); font-size: 12px; margin-top: 1px; }
 .legend-line { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-2); margin-top: 10px; }
@@ -512,7 +511,6 @@ dl.facts dd { margin: 0; font-weight: 600; }
 .bar-delta span { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
 .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .kpi .k-note b { color: var(--ink); font-weight: 600; }
-.kpi.lead .k-note b { color: var(--head-ink); }
 .theme-btn, .save-btn { flex-shrink: 0; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); border-radius: 8px; cursor: pointer; }
 .theme-btn:hover, .save-btn:hover { border-color: var(--ink); }
 .weight-btn { flex-shrink: 0; height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); border-radius: 8px; cursor: pointer; font: 500 13px/1 inherit; font-family: inherit; }
@@ -546,7 +544,7 @@ ul.takeaways b { color: var(--ink); }
 .cip-perf-hud-root { position: fixed; bottom: 16px; right: 16px; z-index: 9999; font-family: var(--font-body); }
 .cip-perf-badge {
   display: flex; align-items: center; gap: 8px; padding: 7px 12px;
-  background: var(--head); color: var(--head-ink); border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #2D2A29; color: #FAFAFA; border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); transition: transform 0.15s ease, background 0.15s ease;
 }
