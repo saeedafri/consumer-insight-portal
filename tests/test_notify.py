@@ -93,3 +93,27 @@ def test_raw_data_is_forstas_labelled_export_with_its_datamap():
         ["b2", "NO TO: Gone to a bar", "Male", None, None, None]]
     assert [list(r) for r in book["Datamap"].iter_rows(values_only=True)] == [
         ["[D1]: What is your gender?", None, None], ["Values: 1-2", None, None], [None, 1, "Kohl’s"]]
+
+
+def test_send_tries_again_after_a_transient_failure(monkeypatch):
+    attempts = []
+
+    class Flaky(FakeSMTP):
+        def __init__(self, *a, **k):
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise TimeoutError("office365 slow")
+            super().__init__(*a, **k)
+
+    monkeypatch.setattr(smtplib, "SMTP", Flaky)
+    monkeypatch.setattr(notify.time, "sleep", lambda seconds: None)
+    monkeypatch.setenv("EMAIL_PASSWORD", "x")
+    assert notify.send("subject", "body", ["a@coresight.com"]) and len(attempts) == 3
+
+
+def test_a_failed_teams_post_does_not_log_the_webhook_secret(monkeypatch, caplog):
+    def refuse(url, **kw):
+        raise RuntimeError(f"400 Client Error: Bad Request for url: {url}")
+    monkeypatch.setattr(notify.requests, "post", refuse)
+    monkeypatch.setenv("TEAMS_WEBHOOK_URL", "https://hooks.example/invoke?sig=SECRETSIG")
+    assert notify.teams("hello") is False and "SECRETSIG" not in caplog.text

@@ -213,3 +213,15 @@ def test_the_whole_page_downloads_as_one_workbook_in_india_time(tmp_path, monkey
             "Busiest pages", "Visitors", "Sign-ins", "Problems", "Requests (newest 50,000)"} <= set(book.sheetnames)
     assert book["Requests (newest 50,000)"]["C2"].value == "ana@coresight.com"
     assert metrics.ist("2026-11-07T14:50:00Z") == "7 Nov 2026, 8:20 PM"
+
+
+def test_text_a_visitor_sends_never_runs_as_a_formula_in_the_download(tmp_path, monkeypatch):
+    import io
+    from openpyxl import load_workbook
+    monkeypatch.setattr(logs, "LOGS", tmp_path)
+    monkeypatch.setattr(metrics, "TRAFFIC", metrics.Traffic())
+    now = metrics.datetime.now(metrics.timezone.utc)
+    (tmp_path / "nginx-access.log").write_text(access_line(now, agent='=HYPERLINK("http://evil/","x")'))
+    sheet = load_workbook(io.BytesIO(metrics.download(60, ADMIN).body))["Requests (newest 50,000)"]
+    cells = [c for row in sheet.iter_rows() for c in row if c.value and "HYPERLINK" in str(c.value)]
+    assert cells and all(c.data_type == "s" and str(c.value).startswith("'=") for c in cells)   # text, not a formula

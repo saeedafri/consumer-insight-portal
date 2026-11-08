@@ -13,6 +13,9 @@
 - If a code change truly needs the live API restarted, STOP and ask the user first. Restart only after an explicit yes, and kill only the :8000 LISTEN pid (`lsof -ti tcp:8000 -sTCP:LISTEN`), never cloudflared.
 - After any change, confirm the public link still returns 200 on /healthz.
 
+## Before any audit
+- Read `docs/REA Claude Opus 2026-10-23/91-gap-closure-and-reanalysis.md` (current state) and `docs/REA Gemini Deep Dive 2026-10-23/100-CLAUDE-STATUS-FOR-GEMINI-2026-10-24.md` (what is already fixed or was wrong). Re-check a finding against the live code and data before reporting it.
+
 ## HOW CODE IS WRITTEN HERE (every change, every assistant)
 The test: a new hire, or someone who has never written Python, TypeScript or used Docker, opens a file and can tell
 what it does, why it exists, and who calls it, without anyone explaining.

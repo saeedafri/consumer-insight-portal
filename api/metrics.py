@@ -20,6 +20,7 @@ from fastapi.responses import Response
 from sqlalchemy import text
 
 from api import logs
+from api.exports import literal
 from api.logs import FILES, path_of, tail
 from api.signin import admin
 from shared.core.database import get_engine
@@ -624,7 +625,7 @@ def download(minutes: int = Query(60, ge=5, le=400 * 24 * 60), who: dict = Depen
         for cell in page[1]:
             cell.font = Font(bold=True)
         for row in rows:
-            page.append(row)
+            page.append([literal(cell) for cell in row])   # visitors choose their user agent and referer
         for column, name in zip(page.columns, head):
             page.column_dimensions[column[0].column_letter].width = min(60, max(12, len(name) + 2))
         return page

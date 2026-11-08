@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 8 November 2026
 
+### Safer logs download, steadier Ask CIP and sign-in errors
+
+Ask CIP now gives up on a slow Claude after 25 seconds and answers with the cited figures instead, and an answer that states a percentage none of its sources list is replaced by the cited figures. The Logs page's Excel download no longer lets text sent by a visitor run as a formula, and a failed Teams alert no longer writes its secret link to the log. A sign-in cookie or header with unusual characters now gets a normal refusal instead of an error page. The new-wave email is tried three times before giving up, a missing script file is a "not found" instead of a page, the mobile menu respects reduced motion, a weekly report's figures load as soon as its page starts, and downloads of Forsta reports and the Logs workbook no longer fail in Safari and Firefox.
+
 ### Faster from far away and on slow connections
 
 A wave's pages ask for their figures as soon as the page starts loading, and the portal's code downloads in one go instead of in steps. The words and figures show first and the charts follow, so a slow connection no longer waits for the chart library before showing anything. From India a first visit to a wave's overview shows its figures in 1.5 s instead of 2.0 s; on a 200 kbit/s connection in 16 s instead of 28 s, and on 100 kbit/s in 31 s instead of 54 s. A second visit takes about 1 s even at 100 kbit/s, as the portal's files stay in the browser.

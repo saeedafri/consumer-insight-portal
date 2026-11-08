@@ -2,8 +2,9 @@
 // built by the API (api/exports.py). A cell starting with = + - @ is kept as text so Excel never runs it as a formula.
 import { signIn } from "./api";
 
-/** Save a blob under a file name; the URL is released after the click is handled (Safari and Firefox cancel it otherwise). */
-function save(blob: Blob, file: string) {
+/** Save a blob under a file name; the URL is released after the click is handled (Safari and Firefox cancel it otherwise).
+ *  Every download in the portal goes through here: a screen that released the URL at once lost its file in those browsers. */
+export function save(blob: Blob, file: string) {
   const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: file });
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);

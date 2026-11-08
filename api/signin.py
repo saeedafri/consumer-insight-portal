@@ -25,7 +25,6 @@ import hashlib
 import html
 import json
 import logging
-import hmac
 import os
 import re
 import secrets
@@ -41,7 +40,7 @@ from starlette.concurrency import run_in_threadpool
 from api.team import json_body
 from shared.core import access, api_keys, audit
 from shared.core.database import get_engine
-from shared.core.session import REVOKED, SESSION_HOURS, digest, issue, read, sign
+from shared.core.session import REVOKED, SESSION_HOURS, digest, issue, read, same, sign
 
 log = logging.getLogger("cip.signin")
 router = APIRouter()
@@ -128,7 +127,7 @@ def admin(request: Request, who: dict = Depends(user)) -> dict:
     # proved (csr-idp, Entra) needs nothing more: the email is the person's own
     token = os.environ.get("CIP_ADMIN_TOKEN", "")
     if demo() and not proven(who.get("sid", "")) \
-            and not (len(token) >= 32 and hmac.compare_digest(token, request.headers.get("x-cip-admin-token", ""))):
+            and not (len(token) >= 32 and same(token, request.headers.get("x-cip-admin-token", ""))):
         raise HTTPException(403, "While sign-in is the demo, admin pages also need the admin token")
     return who
 
@@ -254,8 +253,8 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
     except ValueError:
         attempt_failed(request, "sign-in expired or no sign-in cookie")
         return page(400, "Sign-in expired", "Please <a href='/auth/login'>sign in again</a>.")
-    if not found or error or not code or not secrets.compare_digest(signature, sign(value)) \
-            or not secrets.compare_digest(state, mine) or int(expires) < time.time():
+    if not found or error or not code or not same(signature, sign(value)) \
+            or not same(state, mine) or int(expires) < time.time():
         attempt_failed(request, f"provider error {error}" if error else "state or code did not check out")
         return page(400, "Sign-in failed", f"{html.escape(error or 'The sign-in could not be checked.')} "
                     "Please <a href='/auth/login'>try again</a>.")
@@ -283,7 +282,7 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
     issuer = os.environ.get("CIP_OIDC_TOKEN_ISSUER") or meta.get("issuer")   # set it when the token's iss differs from CIP_OIDC_ISSUER
     # a provider that does not echo the nonce (csr-idp) is still held by the state and the PKCE verifier
     if said.get("iss") != issuer or found["client_id"] not in audience or float(said.get("exp", 0)) < time.time() \
-            or ("nonce" in said and not secrets.compare_digest(str(said["nonce"]), nonce)):
+            or ("nonce" in said and not same(str(said["nonce"]), nonce)):
         log.warning("OIDC token refused: iss %s, aud %s", said.get("iss"), said.get("aud"))   # names, never the token
         attempt_failed(request, "identity token did not check out")
         return page(400, "Sign-in failed", "The identity token did not check out. Please <a href='/auth/login'>try again</a>.")

@@ -202,7 +202,7 @@ input:focus-visible, select:focus-visible { box-shadow: 0 0 0 3px color-mix(in s
 .state.error { color: var(--sig); }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--mist); border-top-color: var(--red); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } * { transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } .rail, .hovercard { animation: none; } * { transition: none !important; } }
 
 /* ── controls ──────────────────────────────────────────────────────────── */
 .seg {

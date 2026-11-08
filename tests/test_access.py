@@ -580,3 +580,9 @@ def test_the_cache_warmer_sees_every_feature_whatever_the_analysts_menus():
     warmer = access.profile("publish@cip")
     assert set(warmer["features"]) == set(access.rules()["features"])
     assert not access.can(warmer, "admin_pages")
+
+
+def test_non_ascii_text_in_a_cookie_is_a_refusal_not_a_crash():
+    assert session.same("abc", "abc") and session.same("é", "é") and not session.same("abc", "é")
+    assert session.read("eA==.é") is None
+    assert call("/api/v1/me", "e30=.é")[0] == 401   # a cookie of valid shape with a non-ASCII signature

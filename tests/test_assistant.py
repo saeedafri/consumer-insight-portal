@@ -48,3 +48,22 @@ def test_a_loose_search_match_that_shares_no_topic_word_is_not_a_source():
     assert assistant.ask("What is the weather on Mars?", anything, lambda sid: BOOK)["mode"] == "none"
     assert assistant.ask("How many people shopped on Cyber Monday?", anything, lambda sid: BOOK,
                          client=Claude(error=RuntimeError("no credentials")))["sources"][0]["qcode"] == "Q13"
+
+
+def test_a_percentage_no_cited_source_lists_is_not_given():
+    wrong = Claude({"answer": "Most people (62%) shopped on Cyber Monday [S1].", "cited": ["S1"], "no_source": False})
+    out = assistant.ask("Who shopped on Cyber Monday?", search, lambda sid: BOOK, client=wrong)
+    assert out["mode"] == "figures" and "62%" not in out["answer"] and "Yes 47.5%" in out["answer"]
+    rounded = Claude({"answer": "About 48% shopped on Cyber Monday [S1].", "cited": ["S1"], "no_source": False})
+    assert assistant.ask("Who shopped on Cyber Monday?", search, lambda sid: BOOK, client=rounded)["mode"] == "claude"
+    thousands = Claude({"answer": "1,200% more shoppers [S1].", "cited": ["S1"], "no_source": False})
+    assert assistant.ask("Who shopped on Cyber Monday?", search, lambda sid: BOOK, client=thousands)["mode"] == "figures"
+    everyone = Claude({"answer": "47.5% said yes, out of 100% of respondents [S1].", "cited": ["S1"], "no_source": False})
+    assert assistant.ask("Who shopped on Cyber Monday?", search, lambda sid: BOOK, client=everyone)["mode"] == "claude"
+
+
+def test_claude_is_asked_with_a_timeout_shorter_than_nginx_waits(monkeypatch):
+    made = {}
+    monkeypatch.setattr("anthropic.Anthropic", lambda **kw: made.update(kw) or Claude({"answer": "47.5% [S1]", "cited": ["S1"], "no_source": False}))
+    assistant.ask("Who shopped on Cyber Monday?", search, lambda sid: BOOK)
+    assert made == {"timeout": 25, "max_retries": 0}   # one try: deploy/cip_proxy.conf gives up at 30 s

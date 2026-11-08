@@ -21,6 +21,8 @@ function ask(u) { window.__early[u] = fetch(u, { credentials: "same-origin" }); 
 ${JSON.stringify([...EVERY_SCREEN, "/api/v1/reports"])}.forEach(ask);   // reports: the menu's weekly-report link
 var wave = location.pathname.match(/^\\/app\\/w\\/(\\d+)(\\/(${BOOK_SCREENS})(\\/.*)?)?\\/?$/);
 if (wave) ask("/api/v1/waves/" + wave[1] + "/book");
+var report = location.pathname.match(/^\\/app\\/w\\/(\\d+)\\/report\\/?$/);
+if (report) ask("/api/v1/waves/" + report[1] + "/report");
 if (wave && !wave[2]) {   // the overview: its dashboards, named in the list of waves
   window.__early["/api/v1/waves"]
     .then(function (r) { return r.ok ? r.clone().json() : []; })

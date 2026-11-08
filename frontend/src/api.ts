@@ -2,6 +2,7 @@
 import { keepPreviousData, QueryClient, useQuery } from "@tanstack/react-query";
 import { perf } from "./perf";
 import { moves } from "./moves";
+import { save } from "./csv";
 import { useWeighted, weigh } from "./weight";
 
 export type Column = "Total" | "Male" | "Female" | "Gen Z" | "Millennial" | "Gen X" | "Boomer";
@@ -392,9 +393,7 @@ const EXTENSION = { excel: "xlsx", pdf: "pdf", pptx: "pptx" };
 export async function downloadForstaReport(key: string, report: string, name: string, format: keyof typeof EXTENSION) {
   const r = await fetch(`/api/v1/admin/forsta/${key}/export/${report}?format=${format}`, { credentials: "same-origin", headers: adminToken() });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`);
-  const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await r.blob()), download: `${name}.${EXTENSION[format]}` });
-  link.click();
-  URL.revokeObjectURL(link.href);
+  save(await r.blob(), `${name}.${EXTENSION[format]}`);
 }
 
 /** The Access screen (super admin): every switchable menu, and each role's current choice (api/main.py roles). */

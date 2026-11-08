@@ -20,6 +20,11 @@ def sign(value: str) -> str:
     return base64.urlsafe_b64encode(hmac.new(key, value.encode(), hashlib.sha256).digest()).decode().rstrip("=")
 
 
+def same(first: str, second: str) -> bool:
+    """Constant-time text comparison that also accepts non-ASCII text (hmac.compare_digest raises on it: a 500, not a 401)."""
+    return hmac.compare_digest(first.encode(), second.encode())
+
+
 def digest(sid: str) -> str:
     return hashlib.sha256(sid.encode()).hexdigest()
 
@@ -38,6 +43,6 @@ def read(raw: str) -> dict | None:
         live = int(expires) >= time.time()
     except ValueError:
         return None
-    if not hmac.compare_digest(signature, sign(value)) or not live or digest(sid) in REVOKED:
+    if not same(signature, sign(value)) or not live or digest(sid) in REVOKED:
         return None
     return {"email": email, "products": products.split(","), "expires": int(expires), "sid": sid, "scope": scope}

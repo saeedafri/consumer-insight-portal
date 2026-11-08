@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useMe } from "../api";
+import { save } from "../csv";
 import { Card, clock, ist } from "../components/bits";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import { C, LIGHT, useTheme } from "../theme";
@@ -83,7 +84,6 @@ const istLine = (line: string) => {
   return m ? `${m[1]}${clock(`${m[2]}-${m[3]}-${m[4]}T${m[5]}Z`, "Asia/Kolkata", SECONDS)}${m[6]}${line.slice(m[0].length)}`
     : line.replace(/"time":"([^"]+)"/, (_, t: string) => `"time":"${clock(t, "Asia/Kolkata", SECONDS)}"`);
 };
-const save = (blob: Blob, name: string) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href); };
 const NO_SAMPLES = "Machine samples start a minute after the server starts (deploy/machine-log.sh).";
 const PER_PAGE = 200;
 const grid = (min: number): CSSProperties => ({ display: "grid", gap: 16, gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${min}px), 1fr))` });

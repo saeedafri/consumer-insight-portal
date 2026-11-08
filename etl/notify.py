@@ -93,14 +93,18 @@ def send(subject: str, body: str, to: list[str], attachments: list[tuple[str, by
         return False
     message = compose(subject, body, to, attachments, page, copy)
     sender = message["From"]
-    try:
-        with smtplib.SMTP(os.getenv("EMAIL_SMTP", "smtp.office365.com"), int(os.getenv("EMAIL_PORT", "587")), timeout=60) as server:
-            server.starttls()
-            server.login(sender, password)
-            server.send_message(message)
-    except Exception as exc:
-        log.warning("Email %r not sent: %s", subject, exc)
-        return False
+    for attempt in (1, 2, 3):   # a wave that loaded is never announced again, so one timeout must not lose its email
+        try:
+            with smtplib.SMTP(os.getenv("EMAIL_SMTP", "smtp.office365.com"), int(os.getenv("EMAIL_PORT", "587")), timeout=60) as server:
+                server.starttls()
+                server.login(sender, password)
+                server.send_message(message)
+            break
+        except Exception as exc:
+            log.warning("Email %r not sent (try %d of 3): %s", subject, attempt, exc)
+            if attempt == 3:
+                return False
+            time.sleep(30 * attempt)
     log.info("Emailed %r to %s", subject, ", ".join(to + ([message["Cc"]] if message["Cc"] else [])))
     return True
 
@@ -115,7 +119,7 @@ def teams(headline: str) -> bool:
             requests.post(url, json=card, timeout=30).raise_for_status()
             return True
         except Exception as exc:
-            log.warning("Teams message not sent: %s", exc)
+            log.warning("Teams message not sent: %s", str(exc).split("?")[0])   # the webhook's secret is in the query
     return False
 
 

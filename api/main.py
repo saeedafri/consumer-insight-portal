@@ -679,7 +679,8 @@ async def export(kind: str, request: Request, who: dict = Depends(user)) -> Resp
     return Response(body, media_type=EXPORT_TYPES[kind], headers={"Content-Disposition": f'attachment; filename="{spec["name"]}.{kind}"'})
 
 
-@app.api_route("/healthz", methods=["GET", "HEAD"])   # HEAD: uptime checks send it; GET-only fell through to a 404 page
+@app.get("/healthz")
+@app.head("/healthz", include_in_schema=False)   # uptime checks send HEAD; a GET-only route sent it to the site's 404 page
 async def healthz() -> dict:
     """Public: up or not, and which code. The detail is for admins (/api/v1/admin/health)."""
     return {"ok": True, "build": BUILD}
@@ -982,7 +983,7 @@ async def every_request(request: Request, call_next):
     headers["Referrer-Policy"] = "same-origin"
     if signin.https(request):
         headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    if path.startswith(("/assets/", "/_next/static/")):   # content-hashed files never change
+    if path.startswith(("/assets/", "/_next/static/")) and response.status_code in (200, 206, 304):   # content-hashed files never change
         headers["Cache-Control"] = "public, max-age=31536000, immutable"
     elif html:   # index.html names this release's assets: always revalidate it
         headers["Cache-Control"] = "no-cache"
@@ -1016,7 +1017,7 @@ class SinglePageApp(StaticFiles):
             if exc.status_code != 404 or path.startswith(("api/", "auth/", "assets/")):
                 raise
             return await super().get_response("index.html", scope)
-        if response.status_code == 404 and path.startswith("app/") and (WEB / "app").is_dir():
+        if response.status_code == 404 and path.startswith("app/") and not Path(path).suffix and (WEB / "app").is_dir():   # a missing script stays a 404
             return await super().get_response("app/index.html", scope)
         return response
 

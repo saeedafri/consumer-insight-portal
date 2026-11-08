@@ -45,3 +45,25 @@ def test_build_announces_the_portal_code_the_first_scripts_load(tmp_path):
     assert '<head><link rel="preload" as="script" href="/_next/static/chunks/portal.js"/>' in html
     assert '<link rel="preload" as="style" href="/_next/static/chunks/portal.css"/>' in html
     assert html.count("runtime.js") == 1
+
+
+def test_a_missing_file_is_a_404_and_is_not_cached_for_a_year(tmp_path, monkeypatch):
+    """The Python file server (servers without nginx): only a path with no file ending is the app's page; a missing
+    script is a 404; and the immutable one-year cache header (api/main.py every_request) goes only on files that exist."""
+    import api.main as main
+    monkeypatch.setattr(main, "WEB", tmp_path)   # the folder the app fallback looks in
+    (tmp_path / "404.html").write_text("not found")   # the Next.js build has one: StaticFiles answers a miss with it
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app/index.html").write_text("<html>portal</html>")
+    (tmp_path / "_next/static").mkdir(parents=True)
+    (tmp_path / "_next/static/real.js").write_text("1")
+    web = main.FastAPI()
+    web.middleware("http")(main.every_request)
+    web.mount("/", SinglePageApp(directory=tmp_path, html=True))
+    client = TestClient(web)
+    assert client.get("/app/w/530/").text == "<html>portal</html>"
+    assert client.get("/app/missing.js").status_code == 404
+    hit = client.get("/_next/static/real.js")
+    assert hit.status_code == 200 and "immutable" in hit.headers["cache-control"]
+    miss = client.get("/_next/static/nope.js")
+    assert miss.status_code == 404 and "immutable" not in miss.headers.get("cache-control", "")

@@ -78,6 +78,13 @@ def figures_only(found: list[dict]) -> str:
                      + f" [{s['id']}]" for s in found)
 
 
+def invented_figure(answer: str, cited: list[dict]) -> bool:
+    """True when the answer states a percentage that none of the cited sources lists (within a rounding of 0.5)."""
+    listed = [pct for s in cited for _, pct in s["answers"]] + [100]   # "100% of respondents" is not a computed figure
+    return any(not any(abs(float(said) - pct) <= 0.5 for pct in listed)
+               for said in re.findall(r"(\d+(?:\.\d+)?)\s*%", answer.replace(",", "")))   # "1,200%" is 1200, not 200
+
+
 def ask(question: str, search, book, client=None) -> dict:
     """{answer, sources (only the cited ones), no_source, mode}. mode: claude, figures (no credentials or Claude
     unavailable), none (nothing in the portal matched)."""
@@ -88,7 +95,10 @@ def ask(question: str, search, book, client=None) -> dict:
                 "sources": [], "no_source": True, "mode": "none"}
     try:
         import anthropic
-        client = client or anthropic.Anthropic()
+        # one try of 25 s, under nginx's 30 s (deploy/cip_proxy.conf): the SDK default is 600 s x 3 tries, which held one of
+        # the 40 API threads long after the user had a 504 (a retry would add up to 25 s more); a timeout lands in the
+        # except below and answers with the cited figures
+        client = client or anthropic.Anthropic(timeout=25, max_retries=0)
         response = client.beta.messages.create(
             model=MODEL, max_tokens=2000, system=SYSTEM,
             betas=["server-side-fallback-2026-07-01"], fallbacks="default",   # a declined request is retried server-side
@@ -105,4 +115,7 @@ def ask(question: str, search, book, client=None) -> dict:
     if reply.get("no_source") or not cited:  # an answer that names no real source is not given
         return {"answer": reply.get("answer") if reply.get("no_source") else "No source in the portal answers this.",
                 "sources": [], "no_source": True, "mode": "claude"}
+    if invented_figure(reply["answer"], cited):   # a real citation must not vouch for a wrong or computed figure
+        log.info("Assistant answer had a figure no cited source lists: the cited figures are the answer")
+        return {"answer": figures_only(found), "sources": found, "no_source": False, "mode": "figures"}
     return {"answer": reply["answer"], "sources": cited, "no_source": False, "mode": "claude"}
