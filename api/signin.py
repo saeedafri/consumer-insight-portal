@@ -170,7 +170,8 @@ async def signed_in(request: Request, who: dict, how: str, target: str, id_token
     # the database keeps only a hash of the address (shared/core/audit.py); the admins' Logs page lists sign-ins with the
     # real address from this line (api/metrics.py sign_ins), as nginx's request log already holds it
     where = re.sub(r"^(\d+\.\d+\.\d+\.\d+):\d+$", r"\1", audit.address(request))   # Azure adds ":port"
-    log.info("sign-in: %s role=%s via %s from %s", who["email"], who["role"], how, where)
+    # the ID token's size: a browser drops a cookie over ~4 KB, and sign-out then cannot end the provider's session
+    log.info("sign-in: %s role=%s via %s from %s (ID token %d bytes)", who["email"], who["role"], how, where, len(id_token))
     response = RedirectResponse(same_site(target), status_code=303)
     response.set_cookie(COOKIE, issue(who["email"], sid=sid, scope=access.scope(who)), httponly=True, samesite="lax",
                         secure=https(request), max_age=SESSION_HOURS * 3600)
@@ -376,6 +377,10 @@ async def logout(request: Request) -> Response:
         target = meta["end_session_endpoint"] + "?" + urlencode({"id_token_hint": id_token, "post_logout_redirect_uri": home})
     else:
         target = "/"
+    # why a sign-out did or did not reach the provider: without it the next "Sign in" skips the password
+    reason = target.split("?")[0] if target != "/" else \
+        "no (no logout address)" if not (meta or {}).get("end_session_endpoint") else "no (no ID token cookie)"
+    log.info("sign-out: %s; to the provider: %s", session["email"] if session else "no session", reason)
     response = RedirectResponse(target, status_code=303)
     response.delete_cookie(COOKIE)
     response.delete_cookie(ID_TOKEN, path="/auth")
