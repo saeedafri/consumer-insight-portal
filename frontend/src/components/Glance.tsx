@@ -24,9 +24,10 @@ function Delta({ d, label, flags }: { d: number | null; label: string; flags: st
   return <span className={`chip flat ${direction(d)}`}><span className="nowrap">{d > 0 ? "▲" : d < 0 ? "▼" : "±"} {Math.abs(d).toFixed(1)} pts</span> <small>{label}</small></span>;
 }
 
-function Tile({ title, m, value, note, prior }: { title: string; m: Metric | null; value?: string; note?: string; prior: string }) {
+/** One figure, as its own card (the 9 Nov 2026 redesign); the first of a block carries the red tab, the rest light blue. */
+function Tile({ title, m, value, note, prior, lead }: { title: string; m: Metric | null; value?: string; note?: string; prior: string; lead?: boolean }) {
   if (!m) return null;
-  return <div className="glance-tile" title={`n=${m.n} of ${m.base}`}>
+  return <div className={`card kpi glance-tile${lead ? " lead" : ""}`} title={`n=${m.n} of ${m.base}`}>
     <div className="k-label">{title}</div>
     <div className={`k-value${value && value.length > 14 ? " k-text" : ""}`}>{value ?? (m.pct == null ? `n<${HIDDEN_BASE}` : <CountUp text={`${m.pct.toFixed(1)}%`} />)}</div>
     {note && <div className="k-note">{note}</div>}
@@ -57,11 +58,11 @@ export default function Glance({ code, id }: { code: string; id: number }) {
           {d.data_as_of ? ` · data as of ${d.data_as_of.slice(0, 10)}` : ""}</p>
       </header>
       <div className="glance-tiles" style={columns(Object.values(d.tiles).filter(Boolean).length + highlights.length)}>
-        {Object.entries(d.tiles).map(([k, m]) => <Tile key={k} title={label(k)} m={m} prior={prior} />)}
+        {Object.entries(d.tiles).map(([k, m], i) => <Tile key={k} title={label(k)} m={m} prior={prior} lead={i === 0} />)}
         {highlights.map(h => { const top = d.lists[h.list]?.[0]; return top && <Tile key={h.list} title={h.title} m={top} value={top.label} prior={prior}
           note={`${top.pct == null ? `n<${HIDDEN_BASE}` : `${top.pct.toFixed(1)}%`} ${h.of}${top.ly_pct != null ? ` · last year ${top.ly_pct.toFixed(1)}%` : ""}`} />; })}
       </div>
-      {d.takeaways.length > 0 && <div className="glance-takeaways">
+      {d.takeaways.length > 0 && <div className="card glance-takeaways">
         <h3>Key takeaways</h3>
         <p className="sub">Written from the numbers above, so they can never disagree with them</p>
         <ul className="takeaways">{d.takeaways.map(t => { const [head, ...rest] = t.split(": "); return <li key={t}><b>{head}:</b> {rest.join(": ")}</li>; })}</ul>

@@ -522,22 +522,21 @@ dl.facts dd { margin: 0; font-weight: 600; }
 .weight-btn { flex-shrink: 0; height: 36px; padding: 0 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); border-radius: 8px; cursor: pointer; font: 500 13px/1 inherit; font-family: inherit; }
 .weight-btn:hover { background: var(--fill); color: var(--ink); }
 .weight-btn[aria-pressed="true"] { background: var(--red); border-color: var(--red); color: #fff; }
-/* Overview "at a glance": one plain card with the report's red bar on its left edge, flat tiles on a 1 px grid inside it.
-   Red marks the block as Coresight's read; it is never a background, so the red of significance keeps its meaning. */
-.glance-block { position: relative; margin-bottom: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
-.glance-block::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--red); }
-.glance-head { padding: 16px 20px 14px 24px; }
-.glance-head h2 { margin: 0; font: var(--t-h3); font-weight: 700; color: var(--ink); }
+/* Overview "at a glance": the block's name and dates as a heading, each figure its own card (lifts on hover, a tab on
+   top: red for the first), then the takeaways in a card with the report's red bar on its left edge. */
+.glance-block { margin-bottom: 26px; }
+.glance-head { padding: 0 0 12px; }
+.glance-head h2 { margin: 0; font: 780 17px/1.3 var(--font-head); letter-spacing: -.015em; color: var(--ink); }
 .glance-head p { margin: 4px 0 0; font-size: 12px; color: var(--ink-2); }
-.glance-tiles { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: 1px; background: var(--line); border-block: 1px solid var(--line); }
-.glance-tile { padding: 16px 20px 16px 24px; background: var(--surface); min-width: 0; display: flex; flex-direction: column; justify-content: flex-start; text-align: left; }
-.glance-tile .k-label { font-size: 12px; color: var(--ink-2); font-weight: 600; min-height: 32px; }
-.glance-tile .k-value { font: var(--t-kpi); font-size: 30px; letter-spacing: -0.02em; color: var(--ink); margin: 4px 0 6px; }
+.glance-tiles { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: 13px; margin-bottom: 13px; }
+.glance-tile { min-width: 0; display: flex; flex-direction: column; justify-content: flex-start; text-align: left; }
+.glance-tile .k-label { font-size: 11px; color: var(--ink-2); font-weight: 650; min-height: 30px; }
+.glance-tile .k-value { font: var(--t-kpi); font-size: 29px; letter-spacing: -0.035em; color: var(--ink); margin: 4px 0 6px; }
 .glance-tile .k-note { font-size: 12px; color: var(--ink-2); margin-top: 4px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .glance-tile .chip { white-space: normal; max-width: 100%; flex-wrap: wrap; text-align: left; }
 .glance-tile .chip .nowrap { white-space: nowrap; }
 .glance-tile .k-value.k-text { font-size: 18px; line-height: 1.3; letter-spacing: 0; }
-.glance-takeaways { padding: 16px 20px 18px 24px; }
+.glance-takeaways { border-left: 3px solid var(--red); }
 .glance-takeaways h3 { margin: 0; font: var(--t-h3); }
 .glance-takeaways .sub { margin: 3px 0 10px; color: var(--ink-2); font-size: 12px; }
 ul.takeaways { margin: 0; padding-left: 18px; display: grid; gap: 8px; line-height: 1.55; }
@@ -676,10 +675,8 @@ ul.takeaways b { color: var(--ink); }
   .chip, .btn, label.check { white-space: normal; }
   .btn, label.check { height: auto; min-height: 36px; padding-top: 6px; padding-bottom: 6px; line-height: 1.25; text-align: center; }
   .glance-tiles { grid-template-columns: repeat(var(--cols-narrow, 2), minmax(0, 1fr)); }
-  .glance-tile { padding: 14px 16px 14px 20px; }
   .glance-tile .k-value { font-size: 26px; overflow-wrap: anywhere; }
   .glance-tile .k-value.k-text { font-size: 16px; }
-  .glance-head { padding: 12px 16px 12px 20px; }
   .card { padding: 16px; }
 }
 
