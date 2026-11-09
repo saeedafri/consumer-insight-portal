@@ -47,6 +47,21 @@ router = APIRouter()
 COOKIE = "cip_session"
 LOGIN = "cip_login"          # the OIDC round trip's state, nonce, PKCE verifier and next page, signed, for 10 minutes
 ID_TOKEN = "cip_id_token"    # the provider's ID token, kept for /auth/logout: csr-idp ends its own session only with id_token_hint
+SIGNED_OUT = "cip_signed_out"   # when this browser last signed out (a time, nothing secret): the sign-in trace compares it
+
+
+def trace(step: str, request: Request, **facts) -> None:
+    """One [SIGN-TRACE] line per step of signing out and back in (Logs -> API, search SIGN-TRACE): the CIP cookies the
+    browser sent (names and sizes, never values), the page it came from, and the step's facts. Stage3's own cookies
+    belong to coresight.com and never reach CIP: whether stage3 still remembered the person shows in the callback step,
+    as how long the browser spent at stage3 and the ID token's auth_time against the last sign-out."""
+    sent = {name: len(value) for name, value in request.cookies.items() if name.startswith("cip")}
+    log.info("[SIGN-TRACE] %s | cookies sent: %s | from: %s | %s", step, sent or "none",
+             request.headers.get("referer", "-"), " | ".join(f"{k}: {v}" for k, v in facts.items()))
+
+
+def utc(seconds: float | int | None) -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(float(seconds))) if seconds else "-"
 
 
 def demo() -> bool:
@@ -170,12 +185,13 @@ async def signed_in(request: Request, who: dict, how: str, target: str, id_token
     # the database keeps only a hash of the address (shared/core/audit.py); the admins' Logs page lists sign-ins with the
     # real address from this line (api/metrics.py sign_ins), as nginx's request log already holds it
     where = re.sub(r"^(\d+\.\d+\.\d+\.\d+):\d+$", r"\1", audit.address(request))   # Azure adds ":port"
-    # the ID token's size: a browser drops a cookie over ~4 KB, and sign-out then cannot end the provider's session
-    log.info("sign-in: %s role=%s via %s from %s (ID token %d bytes)", who["email"], who["role"], how, where, len(id_token))
+    log.info("sign-in: %s role=%s via %s from %s", who["email"], who["role"], how, where)
     response = RedirectResponse(same_site(target), status_code=303)
     response.set_cookie(COOKIE, issue(who["email"], sid=sid, scope=access.scope(who)), httponly=True, samesite="lax",
                         secure=https(request), max_age=SESSION_HOURS * 3600)
     response.delete_cookie(LOGIN, path="/auth")
+    trace("6. signed in", request, **{"as": who["email"], "role": who["role"], "how": how, "next page": same_site(target),
+          "ID token cookie": f"kept ({len(id_token)} bytes; browsers drop cookies over ~4,096)" if id_token else "none"})
     if id_token:
         response.set_cookie(ID_TOKEN, id_token, path="/auth", httponly=True, samesite="lax", secure=https(request),
                             max_age=SESSION_HOURS * 3600)
@@ -199,6 +215,11 @@ def refused(request: Request, email: str) -> HTMLResponse:
 @router.get("/auth/login")
 async def login(request: Request, next: str = "/") -> Response:
     found = provider()
+    still = read(request.cookies.get(COOKIE, ""))
+    out = request.cookies.get(SIGNED_OUT, "")
+    trace("2. sign-in pressed", request, **{
+        "CIP session still in the browser": f"yes, {still['email']} (sign-out did not clear it)" if still else "no (cleared)",
+        "last sign-out in this browser": f"{utc(out)}, {int(time.time() - float(out))} s ago" if out.isdigit() else "none recorded"})
     if not found:
         if demo():
             return RedirectResponse(f"/auth/dev-login?{urlencode({'next': same_site(next)})}", status_code=303)
@@ -215,6 +236,8 @@ async def login(request: Request, next: str = "/") -> Response:
         "code_challenge": challenge, "code_challenge_method": "plain" if plain else "S256"}), status_code=303)
     response.set_cookie(LOGIN, f"{base64.urlsafe_b64encode(value.encode()).decode()}.{sign(value)}", path="/auth",
                         httponly=True, samesite="lax", secure=https(request), max_age=600)
+    trace("3. sent to the provider", request, **{"to": meta["authorization_endpoint"], "client": found["client_id"],
+          "back to": callback_url(request), "asks for a password": "only if the provider has no session of its own (no prompt=login sent)"})
     return response
 
 
@@ -252,13 +275,20 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
         value = base64.urlsafe_b64decode(encoded.encode()).decode()
         mine, nonce, verifier, target, expires = value.split("|")
     except ValueError:
+        trace("4. back from the provider: refused", request, reason="no or broken sign-in cookie", error=error or "-")
         attempt_failed(request, "sign-in expired or no sign-in cookie")
         return page(400, "Sign-in expired", "Please <a href='/auth/login'>sign in again</a>.")
     if not found or error or not code or not same(signature, sign(value)) \
             or not same(state, mine) or int(expires) < time.time():
+        trace("4. back from the provider: refused", request, reason="state, code or time did not check out", error=error or "-")
         attempt_failed(request, f"provider error {error}" if error else "state or code did not check out")
         return page(400, "Sign-in failed", f"{html.escape(error or 'The sign-in could not be checked.')} "
                     "Please <a href='/auth/login'>try again</a>.")
+    at_provider = time.time() - (int(expires) - 600)
+    trace("4. back from the provider", request, **{
+        "seconds at the provider": round(at_provider, 1),
+        "reading": "under 5 s: no password typed, the provider's own session was still on" if at_provider < 5
+                   else "long enough to have typed a password"})
     meta = await run_in_threadpool(endpoints, found["issuer"])
 
     def exchange() -> dict:
@@ -279,6 +309,16 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
         log.warning("OIDC token exchange failed: %s", type(exc).__name__)
         attempt_failed(request, f"token exchange failed ({type(exc).__name__})")
         return page(502, "Sign-in failed", "The identity provider did not answer. Please <a href='/auth/login'>try again</a>.")
+    out = request.cookies.get(SIGNED_OUT, "")
+    auth_time = said.get("auth_time")
+    trace("5. ID token received", request, **{
+        "token bytes": len(answer["id_token"]), "issued": utc(said.get("iat")), "expires": utc(said.get("exp")),
+        "provider sign-in time (auth_time)": utc(auth_time) if auth_time else "not sent by the provider",
+        "provider session id (sid)": said.get("sid", "not sent"),
+        "verdict": ("the provider reused a sign-in from BEFORE the last CIP sign-out: its session was not ended"
+                    if auth_time and out.isdigit() and float(auth_time) < float(out) else
+                    "the provider signed the person in again after the sign-out" if auth_time and out.isdigit() else
+                    "no auth_time or no sign-out to compare; see step 4's seconds")})
     audience = said.get("aud") if isinstance(said.get("aud"), list) else [said.get("aud")]
     issuer = os.environ.get("CIP_OIDC_TOKEN_ISSUER") or meta.get("issuer")   # set it when the token's iss differs from CIP_OIDC_ISSUER
     # a provider that does not echo the nonce (csr-idp) is still held by the state and the PKCE verifier
@@ -359,6 +399,7 @@ def load_revoked() -> None:
 @router.get("/auth/logout")
 async def logout(request: Request) -> Response:
     session = read(request.cookies.get(COOKIE, ""))
+    trace("1. sign-out pressed", request, **{"signed in as": session["email"] if session else "nobody (no valid CIP session cookie)"})
     if session:
         await run_in_threadpool(revoke, [digest(session["sid"])])
         audit.record(request, "sign_out", who=access.profile(session["email"]) or {"email": session["email"]})
@@ -367,23 +408,33 @@ async def logout(request: Request) -> Response:
     if found:
         try:
             meta = await run_in_threadpool(endpoints, found["issuer"])
-        except Exception:
+        except Exception as exc:   # noqa: BLE001
+            log.warning("[SIGN-TRACE] 1b. the provider's addresses could not be read: %s", type(exc).__name__)
             meta = None
     # the provider's session ends too, or the next "Sign in" lets the same person straight back in without a password;
     # either way the browser lands on the home page
     home = callback_url(request).rsplit("/auth/", 1)[0] + "/"
     id_token = request.cookies.get(ID_TOKEN, "")
-    if meta and meta.get("end_session_endpoint") and id_token:
-        target = meta["end_session_endpoint"] + "?" + urlencode({"id_token_hint": id_token, "post_logout_redirect_uri": home})
+    logout_url = (meta or {}).get("end_session_endpoint", "")
+    if logout_url and id_token:
+        target = logout_url + "?" + urlencode({"id_token_hint": id_token, "post_logout_redirect_uri": home})
     else:
         target = "/"
-    # why a sign-out did or did not reach the provider: without it the next "Sign in" skips the password
-    reason = target.split("?")[0] if target != "/" else \
-        "no (no logout address)" if not (meta or {}).get("end_session_endpoint") else "no (no ID token cookie)"
-    log.info("sign-out: %s; to the provider: %s", session["email"] if session else "no session", reason)
+    try:
+        token_expires = utc(claims(id_token).get("exp")) if id_token else "-"
+    except Exception:   # noqa: BLE001 — a broken token only changes this line
+        token_expires = "unreadable"
     response = RedirectResponse(target, status_code=303)
     response.delete_cookie(COOKIE)
     response.delete_cookie(ID_TOKEN, path="/auth")
+    response.set_cookie(SIGNED_OUT, str(int(time.time())), path="/auth", httponly=True, samesite="lax",
+                        secure=https(request), max_age=SESSION_HOURS * 3600)
+    trace("1. sign-out done", request, **{
+        "CIP session": "revoked in the database and the cookie deleted" if session else "none to revoke; cookie deleted anyway",
+        "ID token cookie": f"{len(id_token)} bytes, expires {token_expires}; deleted" if id_token else "MISSING (never kept, or dropped by the browser)",
+        "provider logout address": logout_url or "NOT SET (CIP_OIDC_LOGOUT_URL)",
+        "browser sent to": (logout_url + " with id_token_hint, then back to " + home) if target != "/"
+                           else "the home page only: the provider's session was NOT ended"})
     return response
 
 

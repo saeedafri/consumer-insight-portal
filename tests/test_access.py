@@ -293,7 +293,7 @@ def test_sign_in_through_stage3_coresight_idp(portal, monkeypatch, caplog):
     assert status == 303 and head["location"][0].startswith("https://stage3.coresight.com/csr-idp/authorize?")
     assert sent["code_challenge_method"] == ["plain"] and sent["client_id"] == ["cip-staging"]
     login = head["set-cookie"][0].split(";")[0]
-    token = {"iss": "https://stage3.coresight.com", "aud": "cip-staging", "exp": time.time() + 60,
+    token = {"iss": "https://stage3.coresight.com", "aud": "cip-staging", "exp": time.time() + 60, "auth_time": time.time() - 3600,
              "data": {"wp_user": {"user_email": "dataautomation@coresight.com", "roles": ["administrator"]}}}
     body = "x." + base64.urlsafe_b64encode(json.dumps(token).encode()).decode().rstrip("=") + ".x"
 
@@ -301,15 +301,20 @@ def test_sign_in_through_stage3_coresight_idp(portal, monkeypatch, caplog):
         def raise_for_status(self): pass
         def json(self): return {"id_token": body, "access_token": "secret-access", "scope": "openid email"}
     monkeypatch.setattr(requests, "post", lambda url, **kw: Answer() if url.endswith("/csr-idp/token") else None)
-    status, head, _ = call(f"/auth/callback?code=c&state={sent['state'][0]}", headers={"cookie": login})
+    signed_out = f"{signin.SIGNED_OUT}={int(time.time()) - 60}"   # signed out a minute ago, provider sign-in an hour ago
+    status, head, _ = call(f"/auth/callback?code=c&state={sent['state'][0]}", headers={"cookie": f"{login}; {signed_out}"})
     assert status in (302, 303) and any(c.startswith(signin.COOKIE + "=") for c in head["set-cookie"])
+    assert "[SIGN-TRACE] 3. sent to the provider" in caplog.text and "no password typed" in caplog.text
+    assert "reused a sign-in from BEFORE the last CIP sign-out" in caplog.text
     assert "administrator" in caplog.text and '"scope": "openid email"' in caplog.text
     assert "secret-access" not in caplog.text and body not in caplog.text
     assert any(c.startswith(f"{signin.ID_TOKEN}={body}") for c in head["set-cookie"])   # kept for /auth/logout
 
 
-def test_logout_never_500s_when_idp_has_no_discovery(portal, monkeypatch):
-    """Logging out when the provider has no openid-configuration returns 200 and drops the cookie."""
+def test_logout_never_500s_when_idp_has_no_discovery(portal, monkeypatch, caplog):
+    """Logging out when the provider has no openid-configuration returns 200 and drops the cookie, and the trace says
+    the provider's session was not ended."""
+    caplog.set_level("INFO", logger="cip.signin")
     for key, value in {"CIP_OIDC_ISSUER": "https://stage3.coresight.com", "CIP_OIDC_CLIENT_ID": "cip-staging",
                        "CIP_OIDC_AUTHORIZE_URL": "https://stage3.coresight.com/csr-idp/authorize",
                        "CIP_OIDC_TOKEN_URL": "https://stage3.coresight.com/csr-idp/token"}.items():
@@ -317,6 +322,7 @@ def test_logout_never_500s_when_idp_has_no_discovery(portal, monkeypatch):
     status, head, body = call("/auth/logout", signed("dataautomation@coresight.com"))
     assert status == 303 and head["location"] == ["/"]                        # the home page
     assert any(c.startswith(signin.COOKIE + "=;") or "Max-Age=0" in c for c in head.get("set-cookie", []))
+    assert "NOT SET (CIP_OIDC_LOGOUT_URL)" in caplog.text and "the provider's session was NOT ended" in caplog.text
 
 
 def test_logout_ends_the_providers_session_with_the_id_token_then_lands_home(portal, monkeypatch):
