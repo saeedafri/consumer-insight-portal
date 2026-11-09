@@ -4,6 +4,12 @@ Every feature, enhancement and update, newest first: the same entries as the por
 (`frontend/src/screens/WhatsNew.tsx`). Add each change to both; `tests/test_docs.py` fails if they differ.
 The API and the MCP connector are documented in [API.md](API.md).
 
+## 9 November 2026
+
+### Sign out now signs you out of Coresight too
+
+Signing out of the portal now also ends your Coresight sign-in (stage3's csr-idp), so the next Continue with work account asks for your password again. Until now staging had no Coresight sign-out address set, so sign-out only cleared the portal's own cookie and Coresight let you straight back in. For admins, each step of signing out and back in is written to the API log as [SIGN-TRACE] (Logs page, search SIGN-TRACE): the cookies sent, where sign-out went, and how long the browser spent at Coresight's sign-in.
+
 ## 8 November 2026
 
 ### A cleaner look in light and dark

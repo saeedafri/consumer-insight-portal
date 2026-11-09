@@ -322,7 +322,10 @@ def test_logout_never_500s_when_idp_has_no_discovery(portal, monkeypatch, caplog
     status, head, body = call("/auth/logout", signed("dataautomation@coresight.com"))
     assert status == 303 and head["location"] == ["/"]                        # the home page
     assert any(c.startswith(signin.COOKIE + "=;") or "Max-Age=0" in c for c in head.get("set-cookie", []))
-    assert "NOT SET (CIP_OIDC_LOGOUT_URL)" in caplog.text and "the provider's session was NOT ended" in caplog.text
+    assert "ID token cookie: MISSING" in caplog.text and "the provider's session was NOT ended" in caplog.text
+    # no CIP_OIDC_LOGOUT_URL (staging, 9 Nov 2026): csr-idp's logout beside its authorize address is used
+    status, head, _ = call("/auth/logout", signed("dataautomation@coresight.com") + f"; {signin.ID_TOKEN}=h.p.s")
+    assert head["location"][0].startswith("https://stage3.coresight.com/csr-idp/logout/?id_token_hint=h.p.s")
 
 
 def test_logout_ends_the_providers_session_with_the_id_token_then_lands_home(portal, monkeypatch):

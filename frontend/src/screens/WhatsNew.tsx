@@ -4,6 +4,12 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "9 November 2026",
+  entries: [
+    { title: "Sign out now signs you out of Coresight too",
+      body: "Signing out of the portal now also ends your Coresight sign-in (stage3's csr-idp), so the next Continue with work account asks for your password again. Until now staging had no Coresight sign-out address set, so sign-out only cleared the portal's own cookie and Coresight let you straight back in. For admins, each step of signing out and back in is written to the API log as [SIGN-TRACE] (Logs page, search SIGN-TRACE): the cookies sent, where sign-out went, and how long the browser spent at Coresight's sign-in." },
+  ],
+}, {
   date: "8 November 2026",
   entries: [
     { title: "A cleaner look in light and dark",

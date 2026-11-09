@@ -79,10 +79,14 @@ def provider() -> dict | None:
 def endpoints(issuer: str) -> dict:
     """The provider's sign-in and token addresses: set by hand (CIP_OIDC_AUTHORIZE_URL, CIP_OIDC_TOKEN_URL) for a
     provider without a discovery document, else read from its discovery document. Called by /auth/login and /auth/callback."""
-    if os.environ.get("CIP_OIDC_AUTHORIZE_URL"):
-        return {"issuer": issuer, "authorization_endpoint": os.environ["CIP_OIDC_AUTHORIZE_URL"],
+    authorize = os.environ.get("CIP_OIDC_AUTHORIZE_URL", "")
+    if authorize:
+        # staging had no CIP_OIDC_LOGOUT_URL (9 Nov 2026 trace), so sign-out never reached stage3 and the next sign-in
+        # skipped the password: csr-idp's logout sits beside its authorize address, so that is the default
+        csr_logout = authorize.split("/csr-idp/")[0] + "/csr-idp/logout/" if "/csr-idp/" in authorize else ""
+        return {"issuer": issuer, "authorization_endpoint": authorize,
                 "token_endpoint": os.environ.get("CIP_OIDC_TOKEN_URL", ""),
-                "end_session_endpoint": os.environ.get("CIP_OIDC_LOGOUT_URL", "")}
+                "end_session_endpoint": os.environ.get("CIP_OIDC_LOGOUT_URL") or csr_logout}
     return discovery(issuer)
 
 
