@@ -23,11 +23,17 @@ from etl.serving import CUTS
 router = APIRouter()
 VERSION = "2025-06-18"
 INSTRUCTIONS = ("Coresight Research's Consumer Insight Portal: weekly US consumer surveys since 2020 and annual and ad hoc "
-                "studies since 2018 (about 400 adults a week). Find questions with search_questions, then read one wave "
+                "studies since 2018 (about 400 adults a week). Ask anything with ask; or find questions with search_questions, then read one wave "
                 "with question_results, its history with question_trend, or two demographic cuts with crosstab. "
                 "Figures are unweighted percentages unless weighted=true; cite the survey, wave date and base (n).")
 
 TOOLS = [
+    {"name": "ask", "description": "Ask Coresight: any question about the surveys in plain words (a share, how many people, "
+     "top answers, a trend by wave, 2 weeks, 4 weeks, month, quarter or year, a comparison, a cut such as generation). Returns "
+     "the answer, every figure with its base, the chart that fits and the source question, from the surveys only; "
+     "\"mode\": \"none\" with the closest questions when no survey question matches.",
+     "inputSchema": {"type": "object", "required": ["question"], "properties": {
+         "question": {"type": "string", "description": "e.g. 'What share bought from Amazon in all waves?'"}}}},
     {"name": "search_questions", "description": "Find survey questions by topic, words, brand or question code. Plain English works.",
      "inputSchema": {"type": "object", "required": ["query"], "properties": {
          "query": {"type": "string", "description": "e.g. 'holiday shopping status', 'GLP-1', 'XM3'"},
@@ -97,16 +103,23 @@ def error(ask, code: int, text: str) -> dict:
     return {"jsonrpc": "2.0", "id": ask, "error": {"code": code, "message": text}}
 
 
+async def ask(who: dict, question: str) -> dict:
+    """The Ask Coresight page's answer (api/main.py ask_answer): the same engine, limits and access."""
+    from api import main
+    found = await main.ask_answer(who, str(question)[:500])
+    return {k: found[k] for k in ("answer", "mode", "table", "chart", "sources", "suggestions")}
+
+
 async def search_questions(who: dict, query: str, limit: int = 10) -> dict:
+    """Ask Coresight's ranking (api/ask_index.py): one entry per question over every code it was asked under."""
     from api import main
     main.require_feature(who, "search")
-    index = main.catalogue(who)
-    found = index.search(str(query)[:100], max(1, min(int(limit), 50))) if index else {"results": [], "total": 0}
-    kind = {w["survey_id"]: w["study_type"] for w in await run_in_threadpool(main.all_waves)}
-    return {"total": found["total"], "results": [
-        {"qcode": h["qcode"], "question": h["text"], "family": h["family"], "study_type": kind.get(h["survey_id"]),
-         "latest_survey_id": h["survey_id"], "latest_title": h["title"], "first_asked": h["first"], "last_asked": h["last"],
-         "waves": h["waves"]} for h in found["results"]]}
+    index, shown = await main.ask_index(who)
+    found = index.find(str(query)[:100], None, max(1, min(int(limit), 50)), shown)
+    return {"total": len(found), "results": [
+        {"qcode": h["qcode"], "codes": h.get("codes", [h["qcode"]]), "question": h["text"], "family": h["family"],
+         "study_type": h["study_type"], "latest_survey_id": index.parts[h["key"]]["surveys"][-1],
+         "first_asked": h["first"], "last_asked": h["last"], "waves": h["waves"]} for h in found]}
 
 
 async def list_waves(who: dict, family: str = "", limit: int = 20) -> list[dict]:
@@ -187,5 +200,5 @@ async def crosstab(who: dict, survey_id: int, qcode: str, by: list) -> dict:
     return {"qcode": found["qcode"], "by": found["by"], "columns": found["columns"], "rows": found["rows"]}
 
 
-CALLS = {"search_questions": search_questions, "list_waves": list_waves, "question_results": question_results,
+CALLS = {"ask": ask, "search_questions": search_questions, "list_waves": list_waves, "question_results": question_results,
          "question_trend": question_trend, "crosstab": crosstab}

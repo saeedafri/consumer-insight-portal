@@ -28,3 +28,5 @@ logs/notify-state.json
 data/published/
 logs/etl-heartbeat.json
 data/coded/
+# Ask Coresight's model readings, spend and question vectors (api/ask_model.py): server state, never committed
+logs/ask-*.json

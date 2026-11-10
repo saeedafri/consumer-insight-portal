@@ -92,6 +92,10 @@ def periods(text: str) -> tuple[list[dict], str]:
     for m in re.finditer(r"\b(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th)\s+(?:latest|most recent|last)\s+(wave|survey|week)\b", text):
         take(m, {"latest": ORDINALS[m[1]]})
         text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
+    for m in re.finditer(r"\bfirst\s+(?:and|vs\.?|versus|to)\s+(?:the\s+)?(latest|last|most recent|newest)\s+(?:wave|survey|week)s?\b", text):
+        take(m, {"first": 1})   # "the first and latest wave": two periods
+        found.append((m.end(), {"latest": 1}))
+        text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
     for m in re.finditer(r"\b(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th)\s+(wave|survey|week)\b", text):
         take(m, {"first": ORDINALS[m[1]]})
     for m in re.finditer(r"\b(previous|prior)\s+(wave|survey|week)\b|\bweek before\b", text):

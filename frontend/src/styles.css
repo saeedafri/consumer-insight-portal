@@ -977,6 +977,18 @@ code.key { display: block; padding: 8px 10px; margin-bottom: 8px; background: va
 .empty-icon { width: 62px; height: 62px; display: grid; place-items: center; margin-bottom: 18px; border-radius: 17px; background: var(--red-wash); color: var(--red-text); }
 .ask-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .ask-panel { display: flex; flex-direction: column; gap: 14px; }
+/* Ask Coresight's answers (screens/Ask.tsx Reply): the question, the headline figure, points, chart, notes, source */
+.ask-examples .tag { cursor: pointer; }
+.ask-reply { display: flex; flex-direction: column; gap: 12px; }
+.ask-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ask-q { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--ink-2); font-weight: 600; }
+.ask-headline { margin: 0; font-size: 18px; line-height: 1.5; color: var(--ink); }
+.ask-headline b, .ask-points b { color: var(--ink); }
+.ask-points { margin: 0; padding-left: 20px; display: grid; gap: 6px; line-height: 1.55; }
+.ask-notes { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.ask-source { margin: 0; }
+.ask-figures summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
+.ask-more p { margin: 0 0 6px; }
 .tagrow { display: flex; flex-wrap: wrap; gap: 7px; }
 .tagrow .tag { margin: 0; }
 .ask-box { display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 8px 0 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--ink-3); }

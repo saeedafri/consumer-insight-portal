@@ -99,8 +99,8 @@ CACHED_BYTES = 0
 CACHE_COUNTS = {"hits": 0, "misses": 0}   # RESULTS answered from memory vs built, since this process started (Logs page)
 BUILD_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_BUILD_SLOTS", "8")))   # concurrent database builds per worker
 BUILD_WAIT = float(os.environ.get("CIP_BUILD_WAIT", "3"))
-ASK_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_ASK_SLOTS", "2")))   # Ask CIP questions computed at once per worker
-ASK_WAIT = 2.0                                                              # seconds a question may queue for a slot   # seconds a request may queue for a slot before "busy, retry"
+ASK_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_ASK_SLOTS", "6")))   # Ask questions at once per worker: most of a new one
+ASK_WAIT = 8.0                                                              # is ~2 s waiting on the model (no CPU); seconds a question queues   # seconds a request may queue for a slot before "busy, retry"
 CATALOGUE: SearchIndex | None = None     # every reportable question of every built wave (api/search.py)
 CATALOGUE_ROWS: tuple = ()               # what CATALOGUE was built from, to build a filtered one per scope
 SCOPED: dict[str, SearchIndex] = {}      # scope (shared/core/access.scope) → the catalogue of the waves it may see
@@ -659,28 +659,38 @@ def warm_ask() -> None:
         log.warning("Ask CIP index not built at start: %s", type(exc).__name__)
 
 
-@app.post("/api/v1/ask")
-async def ask(request: Request, who: dict = Depends(user)) -> dict:
-    """A question in plain words, answered from the published survey figures with a chart (api/assistant.py), no model
-    and no database. Only from the waves this person may see; at most limits.ask questions a minute (config/access.yml)."""
+async def ask_index(who: dict):
+    """Ask CIP's question index (built at start; again after a publish) and the surveys this person may see."""
+    waves = await run_in_threadpool(all_waves)
+    index = await run_in_threadpool(assistant.index_for, PUBLISHED / "api" / "v1" / "questions", os.path.realpath(PUBLISHED), waves)
+    return index, {w["survey_id"] for w in waves if access.sees(who, w)}
+
+
+async def ask_answer(who: dict, question: str) -> dict:
+    """Ask CIP for the page (POST /api/v1/ask) and the MCP connector's ask tool alike: Ask on the person's menu, their
+    per-minute limit (config/access.yml limits.ask), and at most ASK_SLOTS questions computed at once per worker, so a
+    burst queues briefly, then "busy", never slows the site."""
     require_feature(who, "ask")
     if not access.spend(who["email"], "ask"):
         raise HTTPException(429, "Too many questions: wait a minute", headers={"Retry-After": "60"})
-    body = await team.json_body(request)
-    try:   # at most ASK_SLOTS questions computed at once per worker: a burst queues briefly, then "busy", never the site
+    try:
         await asyncio.wait_for(ASK_SLOTS.acquire(), ASK_WAIT)
     except asyncio.TimeoutError:
         raise HTTPException(503, "Ask Coresight is busy: try again in a few seconds", headers={"Retry-After": "5"})
     try:
-        waves = await run_in_threadpool(all_waves)
-        index = await run_in_threadpool(assistant.index_for, PUBLISHED / "api" / "v1" / "questions",
-                                        os.path.realpath(PUBLISHED), waves)   # built at start; again after a publish
-        shown = {w["survey_id"] for w in waves if access.sees(who, w)}
-        answer = await run_in_threadpool(assistant.ask, str(body.get("question") or ""), index, shown, access.scope(who))
+        index, shown = await ask_index(who)
+        return await run_in_threadpool(assistant.ask, question, index, shown, access.scope(who))
     finally:
         ASK_SLOTS.release()
-    audit.record(request, "ask", target=str(body.get("question") or "")[:300],
-                 detail={"mode": answer["mode"], "sources": [s["link"] for s in answer["sources"]]})
+
+
+@app.post("/api/v1/ask")
+async def ask(request: Request, who: dict = Depends(user)) -> dict:
+    """A question in plain words, answered from the published survey figures with a chart (api/assistant.py), no model
+    and no database. Only from the waves this person may see."""
+    question = str((await team.json_body(request)).get("question") or "")
+    answer = await ask_answer(who, question)
+    audit.record(request, "ask", target=question[:300], detail={"mode": answer["mode"], "sources": [s["link"] for s in answer["sources"]]})
     return answer
 
 

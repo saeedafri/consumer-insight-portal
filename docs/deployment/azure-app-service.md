@@ -44,6 +44,9 @@ Application settings (environment variables):
 | `STG_DB_HOST`, `STG_DB_PORT`, `STG_DB_NAME`, `STG_DB_USER`, `STG_DB_PASSWORD` | the `cip_stg` database (pipeline account) |
 | `APP_DB_USER`, `APP_DB_PASSWORD` | the portal's read-only account |
 | `FORSTA_HOST`, `FORSTA_API_KEY` | `se1.decipherinc.com` and the Forsta key |
+| `OPENAPI_KEY` | The OpenAI key Ask Coresight uses to find questions by meaning and read what a question asks (api/ask_model.py). Without it, Ask answers by rules alone |
+| `CIP_ASK_BUDGET_USD` | Monthly cap on Ask Coresight's model spend, default `0.5`; past it, rules alone until the next month (spend in logs/ask-spend.json) |
+| `CIP_ASK_MODEL` | Optional: the model that reads questions, default `gpt-4o-mini` (~$0.0003 a new question) |
 | `CIP_DEMO_LOGIN` | `1` **only until SSO is on** (sign-in by email, no password); ignored once `CIP_OIDC_ISSUER` and `CIP_OIDC_CLIENT_ID` are set, remove it then |
 | `CIP_ADMIN_TOKEN` | 48 random characters: the Logs page and other admin pages ask for it while SSO is off |
 | `EMAIL_SMTP`, `EMAIL_PORT`, `EMAIL_FROM`, `EMAIL_PASSWORD` | the mailbox that sends the load and failure emails |

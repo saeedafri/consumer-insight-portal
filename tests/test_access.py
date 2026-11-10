@@ -617,3 +617,23 @@ def test_without_api_keys_and_mcp_on_the_menu_no_key_works_and_none_can_be_made(
     assert call("/api/v1/waves", ana)[0] == 200                                        # her screens are unaffected
     assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "DELETE")[0] == 200
     assert call("/api/v1/waves", headers=bearer)[0] == 200
+
+
+def test_the_mcp_connector_asks_like_the_page_and_under_the_same_menu(portal, monkeypatch, tmp_path):
+    """The connector's ask tool is the Ask Coresight page's answer (api/main.py ask_answer): listed, answered, and
+    refused once Ask CIP is off the person's menu."""
+    from shared.core import api_keys
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
+    monkeypatch.setattr(api_keys, "FILE", tmp_path / "keys.yml")
+    monkeypatch.setitem(api_keys._cache, "checked", -1e9)
+    boss, ana = signed("boss@coresight.com"), signed("ana@coresight.com")
+    bearer = {"authorization": "Bearer " + json.loads(call("/api/v1/keys", ana, "POST", b'{"name": "Ana"}')[2])["key"]}
+    tools = json.loads(call("/mcp", method="POST", body=b'{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}', headers=bearer)[2])
+    assert "ask" in [t["name"] for t in tools["result"]["tools"]]
+    asked = json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "ask", "arguments": {"question": "holiday shopping"}}})
+    answer = json.loads(call("/mcp", method="POST", body=asked.encode(), headers=bearer)[2])["result"]
+    assert not answer.get("isError") and json.loads(answer["content"][0]["text"])["mode"] in ("figures", "none")
+    without = [f for f in RULES["features"] if f not in ("ask", "fieldwork")]
+    assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": without}).encode())[0] == 200
+    answer = json.loads(call("/mcp", method="POST", body=asked.encode(), headers=bearer)[2])["result"]
+    assert answer["isError"] and "subscription" in answer["content"][0]["text"]

@@ -13,6 +13,7 @@ process's memory. The wordings go from easy (the survey's own text) to hard (a f
 from __future__ import annotations
 
 import argparse
+import os
 import gzip
 import json
 import random
@@ -70,8 +71,7 @@ def wordings(doc: dict, index: Index, rng: random.Random) -> dict[str, str]:
 
 def make(doc: dict, raw: dict, index: Index, rng: random.Random) -> dict | None:
     """One generated question with what a right answer must say."""
-    versions = set(doc.get("versions") or range(1, 999))
-    waves = [(i, w) for i, w in enumerate(raw["waves"]) if w[2] in versions and w[0] in index_waves]
+    waves = [(i, w) for i, w in enumerate(raw["waves"]) if w[0] in index_waves]
     if not waves:
         return None
     dates = [w[1] for _, w in waves]
@@ -168,10 +168,40 @@ RAWS: dict[str, dict] = {}
 
 
 def raws_for(key: str, index: Index) -> dict:
-    file = index.docs[key]["file"]
-    if file not in RAWS:
-        RAWS[file] = json.loads(gzip.decompress((ROOT / "questions" / f"{file}.json.gz").read_bytes()))
-    return RAWS[file]
+    """One question over all its codes, joined here by plain loops (not api/ask_index.py's): waves by survey, answers
+    by their label, cuts by name."""
+    if key in RAWS:
+        return RAWS[key]
+    out = {"waves": [], "answers": [], "cuts": [], "w": [], "c": [], "a": [], "n": [], "b": []}
+    answers, cuts, seen = {}, {}, set()
+    for part_key in index.docs[key]["parts"]:
+        part = index.parts[part_key]
+        raw = json.loads(gzip.decompress((ROOT / "questions" / f"{part['file']}.json.gz").read_bytes()))
+        wave_at = {}
+        for i, (sid, day, version) in enumerate(raw["waves"]):
+            if version in part["versions"] and sid in part["keep"] and sid not in seen:   # the index's choice of waves
+                seen.add(sid)
+                wave_at[i] = len(out["waves"])
+                out["waves"].append([sid, day, 1])
+        for w, c, a, n, b in zip(raw["w"], raw["c"], raw["a"], raw["n"], raw["b"]):
+            if w not in wave_at:
+                continue
+            item, code, label = raw["answers"][a]
+            if (item.lower(), label.lower()) not in answers:
+                answers[(item.lower(), label.lower())] = len(out["answers"])
+                out["answers"].append([item, code, label])
+            cut = tuple(raw["cuts"][c])
+            if cut not in cuts:
+                cuts[cut] = len(out["cuts"])
+                out["cuts"].append(list(cut))
+            for name, value in zip("wcanb", (wave_at[w], cuts[cut], answers[(item.lower(), label.lower())], n, b)):
+                out[name].append(value)
+    order = sorted(range(len(out["waves"])), key=lambda i: out["waves"][i][1])
+    rank = {old: new for new, old in enumerate(order)}
+    out["waves"] = [out["waves"][i] for i in order]
+    out["w"] = [rank[w] for w in out["w"]]
+    RAWS[key] = out
+    return out
 
 
 def main() -> int:
@@ -179,7 +209,16 @@ def main() -> int:
     ap.add_argument("--count", type=int, default=10000)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--show", type=int, default=25)
+    ap.add_argument("--model", action="store_true", help="use the model (OPENAPI_KEY from .env): ~$0.0005 a question")
     args = ap.parse_args()
+    if args.model:
+        env = Path(__file__).resolve().parents[1] / ".env"
+        for line in env.read_text().splitlines() if env.exists() else []:
+            if line.startswith("OPENAPI_KEY="):
+                os.environ["OPENAPI_KEY"] = line.split("=", 1)[1].strip().strip("'\"")
+    else:
+        os.environ.pop("OPENAPI_KEY", None)
+        os.environ.pop("OPENAI_API_KEY", None)
     rng = random.Random(args.seed)
     waves = json.loads(gzip.decompress((ROOT / "waves.json.gz").read_bytes()))
     index_waves.update(w["survey_id"] for w in waves)
@@ -191,7 +230,7 @@ def main() -> int:
     cases = []
     while len(cases) < args.count:
         doc = rng.choice(docs)
-        raw = raws.get(doc["file"]) or raws.setdefault(doc["file"], json.loads(gzip.decompress((ROOT / "questions" / f"{doc['file']}.json.gz").read_bytes())))
+        raw = raws_for(doc["key"], index)
         case = make(doc, raw, index, rng)
         if case:
             cases.append(case)

@@ -122,3 +122,27 @@ def test_every_charted_figure_is_one_of_the_computed_figures(index):
         found = assistant.answer(q, index, EVERYONE)
         computed = {v for row in found["table"]["rows"] for v in row[1:]}
         assert all(v in computed for s in found["chart"]["series"] for v in s["data"] if v is not None), q
+
+
+def test_a_question_mostly_about_words_no_survey_uses_is_not_answered(index):
+    found = assistant.answer("bitcoin submarine Amazon", index, EVERYONE)   # mostly unknown words: the closest, never a guess
+    assert found["mode"] == "none" and found["chart"] is None and found["suggestions"]
+
+
+def test_the_first_and_latest_wave_are_two_periods_oldest_first(index):
+    plan = ask_reader.read("Compare the first and latest wave of Amazon retailers")
+    assert plan["when"] == [{"first": 1}, {"latest": 1}]
+    found = assistant.answer("Amazon retailers bought in October 2026 vs September 2026", index, EVERYONE)
+    assert [p for p in found["table"]["head"][1:]] == ["7 Sep 2026 – 28 Sep 2026", "5 Oct 2026 – 26 Oct 2026"]   # oldest first
+
+
+def test_one_cut_value_is_named_in_the_answer(index):
+    found = assistant.answer("Amazon retailers bought among Gen Z in the latest wave", index, EVERYONE)
+    assert "among GenZ" in found["answer"] and figure(found, "Amazon") == [85.0]
+
+
+def test_an_empty_index_is_built_again(tmp_path, index):
+    assistant.INDEX.update(version="v", index=Index(tmp_path / "nothing", []))   # built before a deploy restored the files
+    assert assistant.index_for(index.root, "v", []).docs == {}                   # still nothing there: still empty
+    assert assistant.index_for(index.root, "v", [{"survey_id": 100 + i, "wave_date": d, "title": "", "modules": []}
+                                                for i, d in enumerate(DATES)]).docs

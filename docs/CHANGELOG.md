@@ -4,7 +4,17 @@ Every feature, enhancement and update, newest first: the same entries as the por
 (`frontend/src/screens/WhatsNew.tsx`). Add each change to both; `tests/test_docs.py` fails if they differ.
 The API and the MCP connector are documented in [API.md](API.md).
 
+## 11 November 2026
+
+### Ask Coresight understands questions with a small AI model, for a fraction of a cent
+
+Ask Coresight now reads a new question with a small AI model (OpenAI gpt-4o-mini) over the survey questions found by meaning, so “How many people have subscribed to Amazon Prime?”, “Which retailers do Gen Z prefer?” or “How worried are people about tariffs?” find the right survey question. The model only picks the question and reads what is asked; every figure, chart and sentence is still computed exactly from the surveys, and the dates you name are read by rules. With no time named, a question asked over many waves is answered as a trend with the latest figure first; a question by a group (generation, gender, income) compares the groups in the latest wave. A question no survey asks is said so, with the closest questions, without calling the model. Each answer has Export (CSV, Excel, PowerPoint, PNG image) and Pin, and clearing the question box clears the answers. A new question costs about $0.0002 and the same question again nothing (every reading is kept); spend has a monthly cap (CIP_ASK_BUDGET_USD, $0.50 unless set). 55 of 60 analysts' questions find the right survey question in testing.
+
 ## 10 November 2026
+
+### Ask Coresight joins a question's codes over the years, answers in Claude and other assistants, and lays answers out as a conversation
+
+A question asked under different codes over the years is now one series: “What share bought from Amazon in all waves?” covers 193 waves from December 2020, joined from five codes (Q10_2, Q12_2, Q6_2, q5, q0007), and the answer says so. A month, quarter or year with no wave shows as a gap in the chart and is named (“Not asked in: 2023”), never drawn as a smooth line. Each answer now appears right under the question box, newest first: the headline figure with its numbers in bold, the other points as a list, the chart, notes, the source with a link to Trends or the Question explorer, and every figure with its base (a long series turns round so periods run down the page). With the Weighted switch on, the answer says it is unweighted. The MCP connector has a new ask tool that answers exactly as the page does, under the same menu and limits, and its search_questions now finds one entry per question over every code it was asked under.
 
 ### Ask CIP answers any survey question with exact figures and a chart, in milliseconds
 

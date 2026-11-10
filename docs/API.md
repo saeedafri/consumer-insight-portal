@@ -108,7 +108,8 @@ header `Authorization: Bearer cip_…`.
 
 | Tool | What it does | Needs on your menu |
 |---|---|---|
-| `search_questions` | Find questions by topic, words, brand or code; plain English works | Search questions |
+| `ask` | Any question in plain words, answered as on the Ask Coresight page: the answer, every figure and its base, the chart that fits, the source, the closest questions when none matches | Ask CIP |
+| `search_questions` | Find questions by topic, words, brand or code; plain English works; one entry per question over every code it was asked under | Search questions |
 | `list_waves` | Survey waves, newest first, optionally of one family (e.g. CSI-US) | — |
 | `question_results` | One question in one wave: each answer's % for Total, gender and generation, the prior week and last year, and significance | Question explorer |
 | `question_trend` | One question over the last waves of its family | Trends |

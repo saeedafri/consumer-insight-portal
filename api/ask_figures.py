@@ -17,6 +17,7 @@ import numpy as np
 
 from api.dashboards import significant
 
+PERIOD_KEY = {"month": lambda d: d[:7], "quarter": lambda d: f"{d[:4]}-Q{(int(d[5:7]) + 2) // 3}", "year": lambda d: d[:4]}
 AUTO_WAVES, AUTO_MONTHS = 26, 36   # a trend with no grain asked: waves up to 26 points, then months, then quarters
 
 
@@ -62,7 +63,8 @@ def pick(spec: dict, dates: list[str]) -> list[int]:
 
 
 def group(indexes: list[int], dates: list[str], grain: str) -> list[list[int]]:
-    """Consecutive groups of waves for a series, oldest group first."""
+    """Consecutive groups of waves for a series, oldest group first. Months, quarters and years with no wave between
+    the first and the last are empty groups (named by calendar_gaps), so a gap shows as a gap, never as a smooth line."""
     if grain == "wave":
         return [[i] for i in indexes]
     if grain in ("biweek", "4week"):   # calendar windows of 14 or 28 days counted back from the newest wave
@@ -71,11 +73,30 @@ def group(indexes: list[int], dates: list[str], grain: str) -> list[list[int]]:
         for i in indexes:
             windows.setdefault((newest - date.fromisoformat(dates[i])).days // days, []).append(i)
         return [windows[k] for k in sorted(windows, reverse=True)]
-    key = {"month": lambda d: d[:7], "quarter": lambda d: f"{d[:4]}-Q{(int(d[5:7]) + 2) // 3}", "year": lambda d: d[:4]}[grain]
-    out: dict[str, list[int]] = {}
+    key = PERIOD_KEY[grain]
+    out: dict[str, list[int]] = {k: [] for k in calendar_keys(key(dates[indexes[0]]), key(dates[indexes[-1]]), grain)} if indexes else {}
     for i in indexes:
         out.setdefault(key(dates[i]), []).append(i)
     return list(out.values())
+
+
+def calendar_keys(first: str, last: str, grain: str) -> list[str]:
+    """Every month ("2024-03"), quarter ("2024-Q1") or year ("2024") from first to last."""
+    if grain == "year":
+        return [str(y) for y in range(int(first), int(last) + 1)]
+    if grain == "quarter":
+        y, q = int(first[:4]), int(first[-1])
+        out = []
+        while f"{y}-Q{q}" <= last:
+            out.append(f"{y}-Q{q}")
+            y, q = (y + 1, 1) if q == 4 else (y, q + 1)
+        return out
+    y, m = int(first[:4]), int(first[5:7])
+    out = []
+    while f"{y}-{m:02d}" <= last:
+        out.append(f"{y}-{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
 
 
 def name_period(waves: list[int], dates: list[str], grain: str | None) -> str:
@@ -87,6 +108,15 @@ def name_period(waves: list[int], dates: list[str], grain: str | None) -> str:
     if grain == "year":
         return first[:4]
     return label_date(first) if first == last else f"{label_date(first)} – {label_date(last)}"
+
+
+def calendar_label(key: str) -> str:
+    """ "2024-03" → "Mar 2024", "2024-Q1" → "Q1 2024", "2024" → "2024"."""
+    if "-Q" in key:
+        return f"Q{key[-1]} {key[:4]}"
+    if "-" in key:
+        return f"{calendar.month_abbr[int(key[5:7])]} {key[:4]}"
+    return key
 
 
 def auto_grain(indexes: list[int], dates: list[str]) -> str:
@@ -131,20 +161,27 @@ def compute(counts: dict, plan: dict, visible: set[int], versions: list[int] | N
         chosen = sorted(set(sum(picked, [])))
         grain = grain or auto_grain(chosen, dates)
         groups = group(chosen, dates, grain)
+        key = PERIOD_KEY.get(grain)
+        names = calendar_keys(key(dates[chosen[0]]), key(dates[chosen[-1]]), grain) if key and chosen else None
     else:
-        groups = [p for p in picked if p]
+        groups = sorted((p for p in picked if p), key=lambda p: p[0])   # oldest first: a change reads forwards in time
         if plan["kind"] == "change" and len(groups) == 1 and groups[0] and groups[0][0] > 0:
             size = len(groups[0])   # a change: against the same length of time just before
             groups = [list(range(max(0, groups[0][0] - size), groups[0][0])), groups[0]]
         grain = None
-    groups = [g for g in groups if g]
+        names = None
+    if names is None:
+        groups = [g for g in groups if g]
     columns = cut_columns(counts, plan["cuts"])
     periods, people, bases, hidden = [], [], [], []
-    for g in groups:
+    for k, g in enumerate(groups):
         rows = [pool(counts, [index_of[waves[i][0]] for i in g], c) for c in columns]
         people.append([r[0] for r in rows])
         bases.append([r[1] for r in rows])
         hidden.append([r[2] for r in rows])
+        if not g:   # a calendar period with no wave: a gap in the series
+            periods.append({"label": calendar_label(names[k]), "from": "", "to": "", "waves": [], "versions": []})
+            continue
         periods.append({"label": name_period(g, dates, grain) if grain or len(g) > 1 else label_date(dates[g[0]]),
                         "from": dates[g[0]], "to": dates[g[-1]], "waves": [waves[i][0] for i in g],
                         "versions": sorted({waves[i][2] for i in g})})
