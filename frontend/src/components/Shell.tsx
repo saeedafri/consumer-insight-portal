@@ -32,7 +32,7 @@ const showPerf = (() => {
 const FEATURE: Record<string, string> = { questions: "explorer", crosstab: "crosstab", trends: "trends", compare: "compare", audience: "audiences",
                                           changes: "changes", report: "report", survey: "survey" };
 const TOP_FEATURE: Record<string, string> = { search: "search", schedule: "schedule", ask: "ask", boards: "boards", sectors: "sectors",
-                                              expectations: "expectations" };
+                                              expectations: "expectations", "api-guide": "api" };
 /** The feature the screen at this address needs, or undefined when it always shows: a hidden menu also closes its
  *  address, so a link, a bookmark or a typed URL never opens a screen the menus take away (10 Nov 2026). */
 export function featureOf(pathname: string): string | undefined {
@@ -106,6 +106,10 @@ export default function Shell() {
   const waves = useWaves();
   const me = useMe().data;
   const isAdmin = !!me?.permissions?.includes("admin_pages");   // the role's permission (shared/core/access.py can())
+  const weighted = useWeighted();
+  useEffect(() => {   // "Weighted figures" taken off this person's menu: a switch left on in this browser goes off
+    if (me?.features && !allowed(me, "weighted") && weighted) setWeighted(false);
+  }, [me, weighted]);
   const wave = waves.data?.find(w => String(w.survey_id) === id);
   const latest = waves.data?.find(w => w.survey_family === "CSI-US" && w.rows_built !== 0);   // newest first
   const reportWaves = useReportWaves().data;   // the waves with a weekly report (since Jul 2025: etl/weekly_report.py)
@@ -302,7 +306,7 @@ function SiteHeader({ here, theme, onTheme, menuOpen, onToggleMenu }: { here: st
       )}
       <kbd aria-hidden="true">⌘K</kbd>
     </form>}
-    <WeightSwitch />
+    {allowed(me, "weighted") && <WeightSwitch />}
     <Tooltip>
       <TooltipTrigger
         render={

@@ -6,6 +6,7 @@ import { Link } from "react-router";
 import { Card } from "../components/bits";
 
 const RULES: [string, string][] = [
+  ["API keys and MCP", "Only when \"API keys and MCP\" is on your menu: the super admin turns it on per role, client or person on the Access page. Without it the Account page has no keys card and every key you made is refused (403) until it is turned back on."],
   ["Your role, client and menus", "A key reads only what your left menu shows. The super admin chooses menus per role, per client and per person on the Access page; a person's choice beats their client's, which beats their role's."],
   ["Changes apply within a minute", "When a menu is taken away (a trial ends), your screens, your keys and the MCP connector lose it within a minute (most answers at once); no sign-out or refresh needed."],
   ["Surveys", "Only the surveys your organisation may see."],
@@ -84,7 +85,7 @@ export default function ApiGuide() {
       <p className="lede">Read the portal's data from your own programs (the API) and from Claude or any AI assistant that supports MCP connectors. Both act as you: they see exactly what your menus show, no more, at the moment of each request.</p></div></div>
     <Card title="1. Make a key">
       <ol className="guide-steps">
-        <li>Open <Link to="/account">Account</Link> → <b>API keys and Claude</b>.</li>
+        <li>Open <Link to="/account">Account</Link> → <b>API keys and MCP</b>.</li>
         <li>Type a name for the key (the tool it is for, such as "My Claude") and press <b>Make a key</b>.</li>
         <li>Copy the key now: it starts with <code>cip_</code> and is shown once. CIP keeps only its fingerprint.</li>
       </ol>

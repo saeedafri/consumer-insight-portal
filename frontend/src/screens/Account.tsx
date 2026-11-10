@@ -9,7 +9,8 @@ import { setTheme, useTheme } from "../theme";
 
 const FEATURES: [string, string][] = [["dashboards", "Dashboards"], ["explorer", "Question explorer"], ["crosstab", "Cross-tabs"],
   ["trends", "Trends"], ["search", "Search"], ["ask", "Ask CIP"], ["export", "Export"], ["boards", "Boards"],
-  ["audiences", "Audiences"], ["alerts", "Alerts"], ["saved_views", "Saved views"], ["schedule", "Launch schedule"]];
+  ["audiences", "Audiences"], ["alerts", "Alerts"], ["saved_views", "Saved views"], ["schedule", "Launch schedule"],
+  ["weighted", "Weighted figures"], ["api", "API keys and MCP"]];
 const ROLES: Record<string, string> = { super_admin: "Super administrator", analyst: "Analyst", client: "Client" };
 
 export default function Account() {
@@ -48,7 +49,7 @@ export default function Account() {
       {row("Boards", <Link to="/boards">Open your boards</Link>)}
     </Card>
 
-    <ApiKeys />
+    {allowed(me, "api") && <ApiKeys />}
 
     <Card title="Preferences">
       {row("Theme", <span className="seg" role="group" aria-label="Theme">

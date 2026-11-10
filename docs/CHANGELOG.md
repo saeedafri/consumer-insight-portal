@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 10 November 2026
 
+### Weighted figures and API keys and MCP are switches on the Access page
+
+The Access page has two new switches per role, client and person. Weighted figures: without it the Weighted switch is not in the header, a browser left on weighted goes back to unweighted, and the MCP connector answers unweighted. API keys and MCP: without it the Account page has no keys card, the API guide does not open, no key can be made, and every key the person already made is refused (403) for the API and the MCP connector until it is turned back on. The Account card is now called API keys and MCP. Search questions was already a switch; without it the header search and the Survey library's Search card are hidden too. Everyone keeps both new switches until the super admin turns them off; Acme-style client packages (core, professional) do not include them.
+
 ### A screen taken off your menu stays closed
 
 When the super admin takes a screen off someone's menu on the Access page, its address now closes too: a link, a bookmark or a typed address shows "Not included in your subscription" instead of the screen. Until now the Question explorer still opened from a wave's Overview (its questions and Explore all questions button) and from the Survey library's Questions button, because the screen drew from the Overview's own data. The Overview, the Survey library and Survey preview now link only to screens on your menu, and the question search in the header shows only when Search questions is on your menu. Your keys, the API and the MCP connector already refused those screens' data.

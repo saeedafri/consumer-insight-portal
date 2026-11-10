@@ -50,7 +50,7 @@ def put(root, rel, data):
 
 RULES = {
     "features": ["dashboards", "explorer", "crosstab", "trends", "search", "ask", "export", "boards", "audiences", "alerts", "saved_views",
-                 "report", "sectors", "expectations", "fieldwork"],
+                 "report", "sectors", "expectations", "weighted", "api", "fieldwork"],
     "chosen_only": ["fieldwork"],
     "feature_labels": {"sectors": "Sector databank"},
     "tiers": {"core": {"features": ["dashboards", "explorer", "trends", "search", "export", "boards", "report", "sectors", "expectations"],
@@ -551,7 +551,8 @@ def test_each_person_makes_their_own_keys_and_a_key_has_exactly_their_access_now
     ask = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "question_results", "arguments": {"survey_id": 1, "qcode": "q1"}}})
     answer = json.loads(call("/mcp", method="POST", body=ask.encode(), headers=bearer)[2])["result"]
     assert answer["isError"] and "subscription" in answer["content"][0]["text"]         # the MCP connector alike
-    assert call(f"/api/v1/keys/{listed[0]['shown']}", pat, "DELETE")[0] == 404           # not Pat's key
+    assert call(f"/api/v1/keys/{listed[0]['shown']}", pat, "DELETE")[0] == 403           # Acme's package has no API keys
+    assert call(f"/api/v1/keys/{listed[0]['shown']}", signed("bob@coresight.com"), "DELETE")[0] == 404   # not Bob's key
     assert call(f"/api/v1/keys/{listed[0]['shown']}", ana, "DELETE")[0] == 200
     assert call("/api/v1/waves", headers=bearer)[0] == 401                                # revoked: stops at once
 
@@ -595,3 +596,24 @@ def test_non_ascii_text_in_a_cookie_is_a_refusal_not_a_crash():
     assert session.same("abc", "abc") and session.same("é", "é") and not session.same("abc", "é")
     assert session.read("eA==.é") is None
     assert call("/api/v1/me", "e30=.é")[0] == 401   # a cookie of valid shape with a non-ASCII signature
+
+
+def test_without_api_keys_and_mcp_on_the_menu_no_key_works_and_none_can_be_made(portal, monkeypatch, tmp_path):
+    """The super admin takes "API keys and MCP" off Ana's menu: her existing key is refused (API and MCP alike), and
+    she can neither list nor make keys; turned back on, the same key works again (10 Nov 2026)."""
+    from shared.core import api_keys
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
+    monkeypatch.setattr(api_keys, "FILE", tmp_path / "keys.yml")
+    monkeypatch.setitem(api_keys._cache, "checked", -1e9)
+    boss, ana = signed("boss@coresight.com"), signed("ana@coresight.com")
+    key = json.loads(call("/api/v1/keys", ana, "POST", b'{"name": "Ana"}')[2])["key"]
+    bearer = {"authorization": f"Bearer {key}"}
+    assert call("/api/v1/waves", headers=bearer)[0] == 200
+    without = [f for f in RULES["features"] if f not in ("api", "fieldwork")]
+    assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": without}).encode())[0] == 200
+    assert call("/api/v1/waves", headers=bearer)[0] == 403
+    assert call("/mcp", method="POST", body=b'{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}', headers=bearer)[0] == 403
+    assert call("/api/v1/keys", ana)[0] == 403 and call("/api/v1/keys", ana, "POST", b'{"name": "x"}')[0] == 403
+    assert call("/api/v1/waves", ana)[0] == 200                                        # her screens are unaffected
+    assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "DELETE")[0] == 200
+    assert call("/api/v1/waves", headers=bearer)[0] == 200

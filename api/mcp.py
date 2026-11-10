@@ -16,6 +16,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
 from api.signin import user
+from shared.core import access
 from shared.data import payloads
 from etl.serving import CUTS
 
@@ -125,7 +126,7 @@ async def question_results(who: dict, survey_id: int, qcode: str, weighted: bool
     question = next((q for q in (book or {}).get("questions", []) if q["id"].lower() == str(qcode).lower()), None)
     if question is None:
         raise LookupError(f"{qcode} is not a charted question in survey {survey_id}")
-    weighted = bool(weighted) and bool(book["wave"].get("weighting_available"))
+    weighted = bool(weighted) and bool(book["wave"].get("weighting_available")) and access.allows(who, "weighted")
     groups = []
     for g in question["groups"]:
         rows = []

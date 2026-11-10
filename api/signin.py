@@ -122,6 +122,8 @@ def user(request: Request) -> dict:
         who = email and access.profile(email)
         if not who:
             raise HTTPException(401, "Unknown or revoked API key")
+        if not access.allows(who, "api"):   # the super admin took "API keys and MCP" off this person's menus
+            raise HTTPException(403, "API keys and MCP are not included in your subscription")
         if not access.spend(who["email"], "api"):
             raise HTTPException(429, "Too many API requests: wait a minute", headers={"Retry-After": "60"})
         person = {**who, "products": ["*"], "sid": "api-key"}

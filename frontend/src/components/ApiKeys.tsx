@@ -1,4 +1,4 @@
-// The Account page's "API keys and Claude" card (screens/Account.tsx): make, list and revoke your own keys for the
+// The Account page's "API keys and MCP" card (screens/Account.tsx): make, list and revoke your own keys for the
 // portal's API and its MCP connector (Claude and other AI assistants). A key acts as you, with your access as it is at
 // each request: what your menus hide, your keys cannot read either. Calls /api/v1/keys (api/main.py); the key is shown
 // once, here, and only its fingerprint is kept (shared/core/api_keys.py).
@@ -24,7 +24,7 @@ export default function ApiKeys() {
     catch (e) { setNote((e as Error).message); }
     void refresh();
   };
-  return <Card title="API keys and Claude" sub="Use the portal from your own programs, or from Claude and other AI assistants (MCP). A key acts as you: it reads only what your menus show, and loses anything you lose at once.">
+  return <Card title="API keys and MCP" sub="Use the portal from your own programs, or from Claude and other AI assistants (MCP). A key acts as you: it reads only what your menus show, and loses anything you lose at once.">
     {made && <div className="key-made" role="status">
       <p><b>{made.name}</b>: copy this key now. It is shown once; CIP keeps only its fingerprint.</p>
       <code className="key">{made.key}</code>

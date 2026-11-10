@@ -69,7 +69,7 @@ export default function Library() {
         <div className="card kpi lead"><div className="k-label">Weekly tracker waves</div><div className="k-value"><CountUp text={String(trackers.length)} /></div><div className="k-note">{trackers.length ? `since ${fmtDate(trackers.at(-1)!.wave_date)}` : "none yet"}</div></div>
         <div className="card kpi"><div className="k-label">Annual and ad hoc studies</div><div className="k-value"><CountUp text={String(all.length - trackers.length)} /></div><div className="k-note">{years.length} years of archive</div></div>
         <div className="card kpi"><div className="k-label">Respondents, all waves</div><div className="k-value"><CountUp text={`${(all.reduce((a, w) => a + w.qualified_n, 0) / 1000).toFixed(0)}k`} /></div><div className="k-note">qualified</div></div>
-        <Link className="card kpi" to="/search"><div className="k-label">Find any question</div><div className="k-value" style={{ fontSize: 22 }}>Search →</div><div className="k-note">across every wave</div></Link>
+        {allowed(me, "search") && <Link className="card kpi" to="/search"><div className="k-label">Find any question</div><div className="k-value" style={{ fontSize: 22 }}>Search →</div><div className="k-note">across every wave</div></Link>}
       </div>
     </div>
     <TeamSaved />

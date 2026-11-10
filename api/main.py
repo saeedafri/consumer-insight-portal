@@ -755,6 +755,7 @@ ROLE_SAVE_FAILED = "The menus were not saved: the database did not accept it. No
 @app.get("/api/v1/keys")
 async def my_keys(who: dict = Depends(user)) -> dict:
     """The signed-in person's API keys (the Account page): name, first characters and date, never the key."""
+    require_feature(who, "api")
     return {"keys": await run_in_threadpool(api_keys.mine, who["email"])}
 
 
@@ -762,6 +763,7 @@ async def my_keys(who: dict = Depends(user)) -> dict:
 async def make_key(request: Request, who: dict = Depends(user)) -> dict:
     """Make an API key for the signed-in person (the Account page). It acts as them, with their access as it is at each
     request, for the API and the MCP connector. Shown once, here; only its SHA-256 is kept. A key cannot make keys."""
+    require_feature(who, "api")
     if who["sid"] == "api-key":
         raise HTTPException(403, "Sign in to the portal to make API keys")
     name = " ".join(str((await team.json_body(request)).get("name") or "").split())[:60]
@@ -777,6 +779,7 @@ async def make_key(request: Request, who: dict = Depends(user)) -> dict:
 @app.delete("/api/v1/keys/{shown}")
 async def revoke_key(shown: str, request: Request, who: dict = Depends(user)) -> dict:
     """Revoke one of the signed-in person's own keys: it stops working at once."""
+    require_feature(who, "api")
     if who["sid"] == "api-key":
         raise HTTPException(403, "Sign in to the portal to revoke API keys")
     if not await run_in_threadpool(api_keys.revoke, who["email"], shown):

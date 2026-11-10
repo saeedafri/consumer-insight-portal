@@ -19,7 +19,7 @@
 # stored in cip_role_access); export, alerts and saved_views are actions inside screens. Survey library, a wave's
 # Overview, Methodology, What's new and My account are always there; Logs, Fieldwork and Access are the super admin's.
 features: [dashboards, explorer, crosstab, trends, compare, audiences, changes, report, survey, search, schedule, ask, boards,
-           sectors, expectations, export, alerts, saved_views, fieldwork]
+           sectors, expectations, export, alerts, saved_views, weighted, api, fieldwork]
 chosen_only: [fieldwork]   # features no package includes: a role gets one only once the super admin turns it on
 feature_labels:   # the names the Access screen shows
   dashboards: Topic dashboards (on a wave's Overview)
@@ -40,6 +40,8 @@ feature_labels:   # the names the Access screen shows
   export: Export (CSV, Excel, PowerPoint)
   alerts: Alerts
   saved_views: Saved views
+  weighted: Weighted figures (the Weighted switch in the header; Census-weighted by gender, age and region)
+  api: API keys and MCP (the Account page's keys, the API guide, and every request made with a key)
   fieldwork: Fieldwork (each survey's funnel and why respondents dropped out; no deletion schedule, no Forsta user emails)
 
 tiers:
@@ -56,7 +58,7 @@ roles:
   service:     {permissions: [all_features]}   # the pipeline's own sessions: every answer, no admin pages
 
 people:
-  super_admin: [mohdsaeedafri@coresight.com]   # Mohd Saeed Afri
+  super_admin: [mohdsaeedafri@coresight.com, preranakotian@coresight.com]   # Mohd Saeed Afri, Prerana Kotian (10 Nov 2026)
   service: [publish@cip]   # warms nginx's shared cache, so must see what everyone may (etl/publish.py ask_nginx)
 
 staff:
