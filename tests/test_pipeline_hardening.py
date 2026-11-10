@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from datetime import datetime, timedelta
 import logging
 
 import sqlalchemy as sa
@@ -99,7 +100,24 @@ def test_the_watchdog_tells_when_a_run_goes_silent(tmp_path, monkeypatch):
     assert weekly.watchdog() == 1 and told == ["the ETL run stopped without finishing"]
     weekly.beat("finished", 0, last_exit=0)
     told.clear()
-    assert weekly.watchdog() == 0 and told == []                      # a finished run owes nothing until next week
+    assert weekly.watchdog() == 0 and told == []                      # a finished run owes nothing for 2 hours
+    beat = json.loads((tmp_path / "beat.json").read_text())
+    beat["at"] = (datetime.now() - timedelta(hours=3)).isoformat(timespec="seconds")
+    (tmp_path / "beat.json").write_text(json.dumps(beat))
+    assert weekly.watchdog() == 1 and told == ["no ETL check for over 2 hours"]   # the 30-minute checks stopped
+
+
+def test_the_30_minute_check_never_starts_a_watch(monkeypatch):
+    """A check (--once) on a launch Monday is one run: only the 17:30 IST run watches, so a check never holds the lock
+    for 54 hours, and a killed watch is replaced by the next check (9 Nov 2026, wave 261100)."""
+    weekly = importlib.import_module("scripts.weekly_forsta")
+    called = []
+    monkeypatch.setattr(weekly.launch_schedule, "planned_today", lambda: {"names": ["wave"], "topics": [], "cycle": 1})
+    monkeypatch.setattr(weekly, "watch", lambda week, lock=None: called.append("watch") or 0)
+    monkeypatch.setattr(weekly, "run", lambda: called.append("run") or 0)
+    monkeypatch.setattr(weekly, "beat", lambda *a, **k: None)
+    assert weekly.main(once=True) == 0 and called == ["run"]
+    assert weekly.main() == 0 and called == ["run", "watch"]
 
 
 def test_a_new_server_starts_the_week_instead_of_alarming_every_hour(tmp_path, monkeypatch):
@@ -112,7 +130,7 @@ def test_a_new_server_starts_the_week_instead_of_alarming_every_hour(tmp_path, m
     beat = json.loads((tmp_path / "beat.json").read_text())
     beat["at"] = "2020-01-01T00:00:00"
     (tmp_path / "beat.json").write_text(json.dumps(beat))
-    assert weekly.watchdog() == 1 and told == ["no ETL run for over a week"]  # and still alarms a week later
+    assert weekly.watchdog() == 1 and told == ["no ETL check for over 2 hours"]  # and still alarms when quiet
 
 
 def test_a_salted_respondent_key_matches_a_rekeyed_old_one(monkeypatch):

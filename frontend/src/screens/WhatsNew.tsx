@@ -4,6 +4,12 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "10 November 2026",
+  entries: [
+    { title: "A closed survey loads within 30 minutes, even after a deploy",
+      body: "The pipeline now checks Forsta every 30 minutes, every day, as a short run the scheduler starts itself. Until now the 30-minute checks on a launch Monday were one long run inside the server, and a deploy stopped it with the server: on 9 November the wave launched at 7:08 PM IST was not loaded until the next morning. A deploy now delays a closed survey by at most 30 minutes, and annual and ad hoc studies load within 30 minutes of closing instead of the next morning. If no check has run for 2 hours, the pipeline-failure email says so." },
+  ],
+}, {
   date: "9 November 2026",
   entries: [
     { title: "Sign out now signs you out of Coresight too",

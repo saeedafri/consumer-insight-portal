@@ -50,6 +50,7 @@ WATCH_EVERY_SECONDS, WATCH_HOURS = 30 * 60, 54   # Mon 17:30 → Wed 23:30 IST; 
 FULL_CHECK_DAY = 4                          # Friday: the one idle run a week that still runs integrity and drift
 RUN_HOURS = 3                               # longest a run may take before the watchdog calls it stuck
 LATE_MINUTES = 60                           # slack past the promised next beat
+QUIET_HOURS = 2                             # the scheduler checks every 30 minutes: 2 hours of silence means it stopped
 
 
 def beat(state: str, next_in_hours: float, **extra) -> None:
@@ -256,14 +257,18 @@ def watchdog() -> int:
         tell(notify.failure, "this Monday's ETL run never started",
              "It was due at 17:30 IST. Check that the Mac is awake and the launchd job is loaded; run scripts/weekly_forsta.py.")
         return 1
-    if last is None or now - datetime.fromisoformat(last["at"]) > timedelta(days=8):
-        tell(notify.failure, "no ETL run for over a week", f"Last run: {last['at'] if last else 'never recorded'}.")
+    if last is None or now - datetime.fromisoformat(last["at"]) > timedelta(hours=QUIET_HOURS):
+        tell(notify.failure, f"no ETL check for over {QUIET_HOURS} hours",
+             f"Last run: {last['at'] if last else 'never recorded'}. The scheduler (deploy/etl-loop.sh) starts one every "
+             "30 minutes: it is not running.")
         return 1
     return 0
 
 
-def main() -> int:
-    planned = launch_schedule.planned_today()
+def main(once: bool = False) -> int:
+    """The launch run (a planned Monday: the watch), or with once=True a single check (deploy/etl-loop.sh, every 30
+    minutes): the check is what loads a closed wave even when a deploy killed the watch with its container."""
+    planned = None if once else launch_schedule.planned_today()
     try:
         with etl_lock() as lock:   # one writer at a time: a hand-run --due and launchd would load a wave twice
             beat("running", RUN_HOURS)
@@ -286,7 +291,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, stopped)   # launchd, a shutdown or kill: say so before going
     signal.signal(signal.SIGHUP, stopped)
     try:
-        sys.exit(main())
+        sys.exit(main(once=sys.argv[1:] == ["--once"]))
     except SystemExit as exc:
         if isinstance(exc.code, int) and exc.code > 128:
             log.error("Stopped by signal %d", exc.code - 128)

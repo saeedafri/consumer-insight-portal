@@ -1,0 +1,19 @@
+{
+  // Debug the sign-in and sign-out against stage3 (client cip-staging, callback http://192.168.1.38:8001/auth/callback,
+  // the address stage3 has registered). Never on :8000, the live server. Settings: ~/.config/cip/debug-8001.env
+  // (api.env + oidc-test.env). Breakpoints that matter: api/signin.py logout, login, callback (see docs in the chat).
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "CIP sign-in debug (stage3, :8001)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["api.main:app", "--host", "192.168.1.38", "--port", "8001"],
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "envFile": "${userHome}/.config/cip/debug-8001.env",
+      "justMyCode": true
+    }
+  ]
+}

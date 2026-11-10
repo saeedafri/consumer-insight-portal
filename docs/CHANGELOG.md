@@ -4,6 +4,12 @@ Every feature, enhancement and update, newest first: the same entries as the por
 (`frontend/src/screens/WhatsNew.tsx`). Add each change to both; `tests/test_docs.py` fails if they differ.
 The API and the MCP connector are documented in [API.md](API.md).
 
+## 10 November 2026
+
+### A closed survey loads within 30 minutes, even after a deploy
+
+The pipeline now checks Forsta every 30 minutes, every day, as a short run the scheduler starts itself. Until now the 30-minute checks on a launch Monday were one long run inside the server, and a deploy stopped it with the server: on 9 November the wave launched at 7:08 PM IST was not loaded until the next morning. A deploy now delays a closed survey by at most 30 minutes, and annual and ad hoc studies load within 30 minutes of closing instead of the next morning. If no check has run for 2 hours, the pipeline-failure email says so.
+
 ## 9 November 2026
 
 ### Sign out now signs you out of Coresight too
