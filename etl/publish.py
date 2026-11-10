@@ -48,7 +48,7 @@ from sqlalchemy import text
 
 from shared.core.database import get_engine
 from shared.data import payloads
-from etl import expectations, fieldwork, sectors, weekly_report
+from etl import expectations, fieldwork, retailers, sectors, weekly_report
 
 log = logging.getLogger("cip.publish")
 ROOT = Path(os.environ.get("CIP_PUBLISH_DIR") or Path(__file__).resolve().parents[1] / "data/published")
@@ -308,6 +308,7 @@ def write_views(out: Path) -> int:
     Returns the bytes written."""
     size = weekly_report.publish(out, write)   # the weekly report of the recent tracker waves, from the question files
     size += sectors.publish(out, write)        # the Databank's sector tables, from the books and question files
+    size += retailers.publish(out, write)      # the retailer comparison, from the weeks' respondent bitsets
     size += fieldwork.publish(out, write)      # the admins' Fieldwork screen, from Forsta's kept fieldwork records
     size += write(out / "api/v1/public/facts", site_facts(out))   # the public home page's live figures
     return size + expectations.publish(out, write)   # retail events: expected vs actual, plus the spend answers

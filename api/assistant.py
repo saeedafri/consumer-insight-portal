@@ -1,121 +1,223 @@
-"""Ask CIP: a question in plain words, answered only from the portal's own published figures, every statement cited.
+"""Ask CIP: a question in plain words, answered from the portal's own published survey figures, with a chart.
 
-1. Find sources: the question catalogue (api/search.py) gives the matching questions; each one's latest wave figures
-   come from the published wave book (the same numbers every screen shows, groups under 5 already hidden).
-2. Answer: with Claude credentials (ANTHROPIC_API_KEY, or a profile), Claude writes a short answer from those sources
-   only and names the ones it used; code then drops any citation that is not a real source, and an answer left with
-   none is "no source". Without credentials the sources themselves are the answer (cited figures, no prose).
-Only aggregates (question wording, answer labels, percentages, bases) leave the server; never respondent rows.
+Who calls it: api/main.py ask (POST /api/v1/ask). No AI model and no database: in about a millisecond to tens of
+milliseconds, and at no cost per question.
+
+  1. read     api/ask_reader.py   the periods, grain, cuts and kind of question, by rules
+  2. find     api/ask_index.py    the survey question it is about (its words, answers, topic and sector words)
+  3. compute  api/ask_figures.py  exact pooled figures from the published counts, for the waves this person may see
+  4. write    here                sentences from the figures, the chart that fits, the sources, other matches
+
+Every number in an answer is one of the computed figures; a question it cannot place is answered with the closest
+questions, never with a guess. Answers are kept per published version, person's access and wording (ANSWERS).
 """
 from __future__ import annotations
 
-import json
 import logging
-import os
+import math
 import re
-from typing import Callable, Optional
+import threading
+from collections import OrderedDict
+from pathlib import Path
+
+import numpy as np
+
+from api import ask_figures, ask_reader
+from api.ask_index import Index
 
 log = logging.getLogger("cip.assistant")
-MODEL = os.environ.get("CIP_ASSISTANT_MODEL", "claude-opus-5-5")
-SOURCES = 5
-# words a question is phrased with, not what it is about: they never make a survey question a source on their own
-FILLER = set("what which when where whose does many much have about there their they this that with from were would "
-             "should could more most some into your people share percent percentage consumers americans many".split())
+KEEP_ANSWERS = 500                   # answers kept in memory, newest used last out
+TOP, SERIES = 5, 5                   # answers listed for "top", lines on a trend chart
+DONUT_MAX = 8                        # a single-choice question with this many answers or fewer is a donut
+SKIP = re.compile(r"^(none of (these|the above)|other( - please specify)?|prefer not to say|don'?t know|not sure)$", re.I)
+INDEX: dict = {"version": None, "index": None}
+INDEX_LOCK = threading.Lock()
+ANSWERS: OrderedDict = OrderedDict()
+ANSWERS_LOCK = threading.Lock()
+FAMILY = {"CSI-US": "Weekly US consumer tracker"}
 
 
-def topic(text: str) -> set[str]:
-    """The words a text is about, cut to five letters so shopped/shopping and tariff/tariffs meet."""
-    return {w[:5] for w in re.findall(r"[a-z0-9]{4,}", text.lower()) if w not in FILLER}
-SYSTEM = (
-    "You answer questions about Coresight Research's US consumer surveys for retail analysts. Use only the numbered "
-    "sources given with the question: survey questions with their latest wave's results (unweighted percentages of "
-    "qualified US adults who answered, with the base n). Quote figures exactly as given with their source id, e.g. "
-    "\"47.5% did some Cyber Monday shopping [S1]\". Say which wave a figure is from. Never compute new percentages, "
-    "never estimate, never use outside knowledge. If the sources do not answer the question, set no_source to true and "
-    "say briefly what the portal does cover. Keep the answer under 120 words."
-)
-SCHEMA = {"type": "object", "additionalProperties": False, "required": ["answer", "cited", "no_source"],
-          "properties": {"answer": {"type": "string"}, "cited": {"type": "array", "items": {"type": "string"}},
-                         "no_source": {"type": "boolean"}}}
+def index_for(root: Path, version: str, waves: list[dict]) -> Index:
+    """The question index of this published version, built once (other threads wait for it, never build twice)."""
+    with INDEX_LOCK:
+        if INDEX["version"] != version:
+            INDEX.update(version=version, index=Index(root, waves))
+            with ANSWERS_LOCK:
+                ANSWERS.clear()
+        return INDEX["index"]
 
 
-def sources(question: str, search: Callable[[str, int], dict], book: Callable[[int], Optional[dict]]) -> list[dict]:
-    """The best-matching questions, each with its latest wave's Total figures: [{id, survey_id, wave_date, title,
-    qcode, question, base, answers: [[label, pct]], link}]."""
-    found = search(question, 12)
-    asked = topic(" ".join([question, *found.get("understood", {}).get("expanded", [])]))   # with the search's synonyms
-    out = []
-    for hit in found["results"]:
-        data = book(hit["survey_id"])
-        q = data and next((x for x in data["questions"] if x["id"] == hit["qcode"]), None)
-        if not q:
-            continue
-        group = q["groups"][0]
-        if not asked & topic(" ".join([q["text"], *(r["label"] for r in group["rows"])])):
-            continue             # a loose search match (a word fragment) that shares no topic word with the question
-        answers = sorted(([r["label"], r.get("Total")] for r in group["rows"] if r.get("Total") is not None), key=lambda a: -a[1])
-        if not answers:          # fewer than 5 people answered: nothing to quote
-            continue
-        out.append({"id": f"S{len(out) + 1}", "survey_id": hit["survey_id"], "wave_date": data["wave"]["wave_date"],
-                    "title": data["wave"]["title"], "qcode": q["id"], "question": q["text"], "base": group["base"],
-                    "number": f"Q{data['questions'].index(q) + 1}",   # its place in that wave's survey, as every screen shows it
-                    "group": group["label"], "waves": hit["waves"], "answers": answers[:8],
-                    "link": f"/w/{hit['survey_id']}/questions/{q['id']}"})
-        if len(out) == SOURCES:
-            break
-    return out
+def focus(question: str, labels: list[str]) -> list[int]:
+    """The answers the question names ("Amazon", "Walmart"), longest names first so "Amazon Fresh" beats "Amazon"."""
+    text = " " + " ".join(re.findall(r"[a-z0-9$&']+", question.lower())) + " "
+    found = []
+    for i, label in sorted(enumerate(labels), key=lambda x: -len(x[1])):
+        words = " ".join(re.findall(r"[a-z0-9$&']+", label.lower()))
+        if len(words) >= 3 and f" {words} " in text and not any(words in " ".join(re.findall(r"[a-z0-9$&']+", labels[j].lower())) for j in found):
+            found.append(i)
+    return found
 
 
-def listing(found: list[dict]) -> str:
-    return "\n\n".join(
-        f"[{s['id']}] {s['title']}, wave of {s['wave_date']} · {s['qcode']}: {s['question']}"
-        + (f" ({s['group']})" if s["group"] else "") + f" · base n={s['base']} · asked in {s['waves']} waves\n"
-        + "\n".join(f"  {label}: {pct}%" for label, pct in s["answers"]) for s in found)
+def fmt(pct: float) -> str:
+    return f"{pct:.1f}%"
 
 
-def figures_only(found: list[dict]) -> str:
-    return "\n".join(f"{s['qcode']} ({s['wave_date']}, n={s['base']}): " + "; ".join(f"{l} {p}%" for l, p in s["answers"][:3])
-                     + f" [{s['id']}]" for s in found)
+def ranked(fig: dict, period: int = -1) -> list[int]:
+    """Answers biggest first in a period (averaged over the cut columns shown), leaving out none/other/don't know."""
+    shown = ~np.isnan(fig["pct"][period])
+    values = np.where(shown.any(axis=0), np.nansum(fig["pct"][period], axis=0) / np.maximum(shown.sum(axis=0), 1), np.nan)
+    order = [i for i in np.argsort(-np.nan_to_num(values, nan=-1)) if not math.isnan(values[i]) and not SKIP.match(fig["answers"][i])]
+    return order
 
 
-def invented_figure(answer: str, cited: list[dict]) -> bool:
-    """True when the answer states a percentage that none of the cited sources lists (within a rounding of 0.5)."""
-    listed = [pct for s in cited for _, pct in s["answers"]] + [100]   # "100% of respondents" is not a computed figure
-    return any(not any(abs(float(said) - pct) <= 0.5 for pct in listed)
-               for said in re.findall(r"(\d+(?:\.\d+)?)\s*%", answer.replace(",", "")))   # "1,200%" is 1200, not 200
+def chart(fig: dict, shown: list[int]) -> dict:
+    """The chart that fits the figures: a line over time, grouped bars by a cut, a donut for a single choice of a few
+    answers that add up to 100%, else bars, biggest first."""
+    pct = lambda p, c, a: None if math.isnan(fig["pct"][p, c, a]) else float(fig["pct"][p, c, a])   # noqa: E731
+    periods, columns = fig["periods"], fig["columns"]
+    if len(periods) > 1:
+        if len(columns) > 1 and len(shown) == 1:
+            series = [{"name": v, "data": [pct(p, c, shown[0]) for p in range(len(periods))]} for c, (_, v) in enumerate(columns)]
+        else:
+            series = [{"name": fig["answers"][a], "data": [pct(p, 0, a) for p in range(len(periods))]} for a in shown]
+        return {"type": "line", "categories": [p["label"] for p in periods], "series": series, "unit": "%"}
+    if len(columns) > 1:
+        return {"type": "grouped", "categories": [fig["answers"][a] for a in shown],
+                "series": [{"name": v, "data": [pct(0, c, a) for a in shown]} for c, (_, v) in enumerate(columns)], "unit": "%"}
+    total = np.nansum(fig["pct"][0, 0])
+    every = ranked(fig)
+    if len(fig["answers"]) <= DONUT_MAX and abs(total - 100) <= 1.5:
+        return {"type": "donut", "categories": [fig["answers"][a] for a in every],
+                "series": [{"name": periods[0]["label"], "data": [pct(0, 0, a) for a in every]}], "unit": "%"}
+    keep = shown if len(shown) > 1 else every[:12]
+    return {"type": "bar", "categories": [fig["answers"][a] for a in keep],
+            "series": [{"name": periods[0]["label"], "data": [pct(0, 0, a) for a in keep]}], "unit": "%"}
 
 
-def ask(question: str, search, book, client=None) -> dict:
-    """{answer, sources (only the cited ones), no_source, mode}. mode: claude, figures (no credentials or Claude
-    unavailable), none (nothing in the portal matched)."""
+def write(plan: dict, fig: dict, doc: dict, named: list[int]) -> tuple[list[str], list[int]]:
+    """The answer's sentences, and the answers they are about."""
+    periods, columns, kind = fig["periods"], fig["columns"], plan["kind"]
+    say = [f"From “{doc['text'][:220]}” ({FAMILY.get(doc['family'], doc['family'].replace('_', ' ').title())}, "
+           f"{doc['qcode']}, asked in {doc['waves']} {'wave' if doc['waves'] == 1 else 'waves'}, "
+           f"{ask_figures.label_date(doc['first'])} – {ask_figures.label_date(doc['last'])})."]
+    base = lambda p, c, a: int(fig["bases"][p, c, a])   # noqa: E731
+    people = lambda p, c, a: int(fig["people"][p, c, a])   # noqa: E731
+    shown = named or ranked(fig)[: (plan["top"] or TOP) if kind == "top" else (SERIES if len(periods) > 1 else 3)]
+    if len(columns) > 1:
+        dim = columns[0][0].replace("_", " ")
+        for a in shown[:3]:
+            parts = [f"{v} {fmt(fig['pct'][-1, c, a])}" for c, (_, v) in enumerate(columns) if not math.isnan(fig['pct'][-1, c, a])]
+            say.append(f"By {dim}, “{fig['answers'][a]}” in {periods[-1]['label']}: " + ", ".join(parts) + ".")
+    elif len(periods) > 1 and (kind == "trend" or fig["grain"]):
+        grain = {"wave": "wave by wave", "biweek": "every two weeks", "4week": "every four weeks", "month": "by month",
+                 "quarter": "by quarter", "year": "by year"}.get(fig["grain"], "")
+        say.append(f"{len(periods)} periods, {grain}, {periods[0]['label']} to {periods[-1]['label']}:")
+        for a in shown:
+            line = [(p, fig["pct"][p, 0, a]) for p in range(len(periods)) if not math.isnan(fig["pct"][p, 0, a])]
+            if not line:
+                continue
+            (p0, v0), (p1, v1) = line[0], line[-1]
+            high = max(line, key=lambda x: x[1])
+            low = min(line, key=lambda x: x[1])
+            change = ask_figures.moved(fig, a)
+            sig = f"; latest change {change[0]:+.1f} pts{', significant' if change[1] else ''}" if change else ""
+            say.append(f"“{fig['answers'][a]}”: {fmt(v0)} ({periods[p0]['label']}) → {fmt(v1)} ({periods[p1]['label']}), "
+                       f"{v1 - v0:+.1f} pts. Highest {fmt(high[1])} ({periods[high[0]]['label']}), "
+                       f"lowest {fmt(low[1])} ({periods[low[0]]['label']}){sig}.")
+    elif len(periods) == 2:
+        for a in shown:
+            change = ask_figures.moved(fig, a)
+            if change is None:
+                continue
+            say.append(f"“{fig['answers'][a]}”: {fmt(fig['pct'][0, 0, a])} in {periods[0]['label']} (n={base(0, 0, a):,}) vs "
+                       f"{fmt(fig['pct'][1, 0, a])} in {periods[1]['label']} (n={base(1, 0, a):,}), {change[0]:+.1f} pts"
+                       f"{' — a significant change' if change[1] else ', not a significant change'}.")
+    else:
+        when = periods[0]["label"] + (f" ({len(periods[0]['waves'])} waves pooled)" if len(periods[0]["waves"]) > 1 else "")
+        if kind == "top":
+            say.append(f"Top {len(shown)} in {when}: " + "; ".join(
+                f"{i + 1}. {fig['answers'][a]} {fmt(fig['pct'][0, 0, a])}" for i, a in enumerate(shown)) + ".")
+        for a in shown if kind != "top" else shown[:1]:
+            if math.isnan(fig["pct"][0, 0, a]):
+                continue
+            lead = (f"{people(0, 0, a):,} of {base(0, 0, a):,} respondents ({fmt(fig['pct'][0, 0, a])})" if kind == "count"
+                    else f"{fmt(fig['pct'][0, 0, a])} ({people(0, 0, a):,} of {base(0, 0, a):,} respondents)")
+            say.append(f"In {when}, {lead} answered “{fig['answers'][a]}”.")
+    if len({v for p in periods for v in p["versions"]}) > 1:
+        say.append("Note: the question's wording changed within these periods; see Trends for each wording.")
+    if fig["missing"]:
+        say.append("Note: some periods asked about had no wave asking this question" +
+                   f" (it was asked {ask_figures.label_date(fig['asked'][0])} – {ask_figures.label_date(fig['asked'][-1])}).")
+    if plan["cuts"] and len(plan["cuts"]) > 1:
+        say.append(f"Shown by {columns[0][0].replace('_', ' ')} only; ask again for another cut.")
+    return say, shown
+
+
+def answer(question: str, index: Index, visible: set[int]) -> dict:
+    """{answer, chart, table, sources, suggestions, plan, mode}: mode "figures" when answered, "none" when nothing in
+    the surveys matches (then suggestions lists the closest questions, if any)."""
     question = " ".join(str(question).split())[:500]
-    found = sources(question, search, book) if len(question) >= 3 else []
-    if not found:
-        return {"answer": "No source in the portal answers this. Try other words, or search the question library.",
-                "sources": [], "no_source": True, "mode": "none"}
-    try:
-        import anthropic
-        # one try of 25 s, under nginx's 30 s (deploy/cip_proxy.conf): the SDK default is 600 s x 3 tries, which held one of
-        # the 40 API threads long after the user had a 504 (a retry would add up to 25 s more); a timeout lands in the
-        # except below and answers with the cited figures
-        client = client or anthropic.Anthropic(timeout=25, max_retries=0)
-        response = client.beta.messages.create(
-            model=MODEL, max_tokens=2000, system=SYSTEM,
-            betas=["server-side-fallback-2026-07-01"], fallbacks="default",   # a declined request is retried server-side
-            output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
-            messages=[{"role": "user", "content": f"Sources:\n\n{listing(found)}\n\nQuestion: {question}"}])
-        if response.stop_reason == "refusal":
-            raise RuntimeError("declined")
-        reply = json.loads(next(b.text for b in response.content if b.type == "text"))
-    except Exception as exc:                 # no credentials, network, refusal, or unreadable reply: the cited figures
-        log.info("Assistant falls back to figures only: %s", type(exc).__name__)
-        return {"answer": figures_only(found), "sources": found, "no_source": False, "mode": "figures"}
-    known = {s["id"]: s for s in found}
-    cited = [known[c] for c in dict.fromkeys(reply.get("cited") or []) if c in known]
-    if reply.get("no_source") or not cited:  # an answer that names no real source is not given
-        return {"answer": reply.get("answer") if reply.get("no_source") else "No source in the portal answers this.",
-                "sources": [], "no_source": True, "mode": "claude"}
-    if invented_figure(reply["answer"], cited):   # a real citation must not vouch for a wrong or computed figure
-        log.info("Assistant answer had a figure no cited source lists: the cited figures are the answer")
-        return {"answer": figures_only(found), "sources": found, "no_source": False, "mode": "figures"}
-    return {"answer": reply["answer"], "sources": cited, "no_source": False, "mode": "claude"}
+    plan = ask_reader.read(question)
+    hits = []   # the topic words, and the whole question (a cut can be the subject: "What is your age group?"), best kept
+    if len(question) >= 3:
+        best = {}
+        for words in dict.fromkeys([plan["about"] or question, question]):
+            for h in index.find(words, plan, 8, visible):
+                if h["score"] > best.get(h["key"], {"score": -1})["score"]:
+                    best[h["key"]] = h
+        hits = sorted(best.values(), key=lambda h: -h["score"])[:8]
+    suggestions = [{"qcode": h["qcode"], "text": h["text"][:200], "family": h["family"], "key": h["key"]} for h in hits[1:5]]
+    if not hits:
+        return {"answer": "No survey question in the portal matches this. Try other words, or browse Search questions.",
+                "chart": None, "table": None, "sources": [], "suggestions": [], "plan": plan, "mode": "none", "no_source": True}
+    doc = index.docs[hits[0]["key"]]
+    counts = index.counts(doc["key"])
+    fig = ask_figures.compute(counts, plan, visible, doc.get("versions"))
+    if not fig["periods"]:
+        asked = f"{ask_figures.label_date(fig['asked'][0])} – {ask_figures.label_date(fig['asked'][-1])}" if fig["asked"] else "never"
+        return {"answer": f"“{doc['text'][:200]}” ({doc['qcode']}) was not asked in the period you named: it was asked {asked}.",
+                "chart": None, "table": None, "sources": [], "suggestions": suggestions, "plan": plan, "mode": "none", "no_source": True}
+    named = focus(question, fig["answers"])
+    rest = question   # words the survey itself uses ("compare to last year", an answer "Spent more than last year") are
+    for a in named:   # the question's wording, not a period: without them, the plan is read again
+        rest = re.sub(re.escape(fig["answers"][a]), " ", rest, flags=re.I)
+    own = " ".join(re.findall(r"[a-z0-9]+", doc["text"].lower()))
+    for phrase in set(re.findall(r"\b(?:this|last|past|previous|next)\s+(?:\d+\s+|two\s+|three\s+|twelve\s+|few\s+)?(?:weeks?|months?|years?|days?|holiday season)\b", rest.lower())):
+        if phrase in own:
+            rest = re.sub(re.escape(phrase), " ", rest, flags=re.I)
+    if rest != question:
+        again = ask_reader.read(rest)
+        if (again["when"], again["grain"]) != (plan["when"], plan["grain"]):
+            replan = {**plan, **{k: again[k] for k in ("when", "grain", "kind", "compare")}}
+            refig = ask_figures.compute(counts, replan, visible, doc.get("versions"))
+            if refig["periods"]:   # only when the re-read still finds waves
+                plan, fig = replan, refig
+    sentences, shown = write(plan, fig, doc, named)
+    last = fig["periods"][-1]
+    table = {"head": ["Answer"] + [f"{p['label']}" + (f" · {v}" if len(fig['columns']) > 1 else "")
+                                   for p in fig["periods"] for _, v in fig["columns"]],
+             "rows": [[fig["answers"][a]] + [None if math.isnan(fig["pct"][p, c, a]) else float(fig["pct"][p, c, a])
+                                             for p in range(len(fig["periods"])) for c in range(len(fig["columns"]))]
+                      for a in (shown if len(fig["answers"]) > 15 else range(len(fig["answers"])))
+                      if not np.all(np.isnan(fig["pct"][:, :, a]))],   # an answer these waves never offered is not a row
+             "bases": [int(fig["bases"][p, c].max()) for p in range(len(fig["periods"])) for c in range(len(fig["columns"]))]}
+    return {"answer": "\n".join(sentences), "chart": chart(fig, shown), "table": table, "plan": plan, "mode": "figures",
+            "no_source": False, "suggestions": suggestions,
+            "sources": [{"id": "S1", "key": doc["key"], "qcode": doc["qcode"], "question": doc["text"], "family": doc["family"],
+                         "survey_id": last["waves"][-1], "wave_date": last["to"], "waves": len(set(sum((p["waves"] for p in fig["periods"]), []))),
+                         "link": f"/w/{last['waves'][-1]}/{'trends' if len(fig['periods']) > 1 else 'questions'}/{doc['qcode']}"}]}
+
+
+def ask(question: str, index: Index, visible: set[int], scope: str) -> dict:
+    """answer(), kept per published version (the index), access scope and question wording."""
+    key = (id(index), scope, " ".join(question.lower().split()))
+    with ANSWERS_LOCK:
+        if key in ANSWERS:
+            ANSWERS.move_to_end(key)
+            return ANSWERS[key]
+    found = answer(question, index, visible)
+    with ANSWERS_LOCK:
+        ANSWERS[key] = found
+        while len(ANSWERS) > KEEP_ANSWERS:
+            ANSWERS.popitem(last=False)
+    return found

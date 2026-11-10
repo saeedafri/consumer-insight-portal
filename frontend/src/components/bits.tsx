@@ -111,7 +111,7 @@ export function Failure({ error }: { error: unknown }) {
     <div className="state error" role="alert">
       <p style={{ margin: "0 0 12px", fontWeight: 600 }}>Could not load: {message}</p>
       {!missing && <button className="btn" onClick={() => window.location.reload()}>Refresh to try again</button>}{" "}
-      <Link className="btn" to="/">Back to the survey library</Link>
+      <Link className="btn" to="/library">Back to the survey library</Link>
     </div>
   );
 }

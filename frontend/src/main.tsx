@@ -3,7 +3,7 @@
 // screen's starts at once, and the screens most often opened next download while the browser is idle.
 "use client";
 import { lazy, StrictMode, Suspense } from "react";
-import { createBrowserRouter, Link, Navigate, RouterProvider } from "react-router";
+import { createBrowserRouter, Link, RouterProvider } from "react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
 import "./fonts.css";
 import "./styles.css";
@@ -34,8 +34,8 @@ const router = createBrowserRouter([{
     </div>
   ),
   children: [
-    { path: "/", element: page("Page:Library", () => import("./screens/Library")) },
-    { path: "/library", element: <Navigate to="/" replace /> },
+    { path: "/", element: page("Page:Home", () => import("./screens/Home")) },
+    { path: "/library", element: page("Page:Library", () => import("./screens/Library")) },
     { path: "/search", element: page("Page:Search", () => import("./screens/Search")) },
     { path: "/schedule", element: page("Page:Schedule", () => import("./screens/Schedule")) },
     { path: "/w/:id", element: page("Page:Overview", () => import("./screens/Overview")) },
@@ -48,6 +48,9 @@ const router = createBrowserRouter([{
     { path: "/boards/:id?", element: page("Page:Boards", () => import("./screens/Boards")) },
     { path: "/whats-new", element: page("Page:WhatsNew", () => import("./screens/WhatsNew")) },
     { path: "/sectors", element: page("Page:Sectors", () => import("./screens/Sectors")) },
+    { path: "/retailers", element: page("Page:Retailers", () => import("./screens/Retailers")) },
+    { path: "/channels", element: page("Page:Channels", () => import("./screens/Channels")) },
+    { path: "/trackers/:code?", element: page("Page:Trackers", () => import("./screens/Trackers")) },
     { path: "/expectations", element: page("Page:Expectations", () => import("./screens/Expectations")) },
     { path: "/methodology", element: page("Page:Methodology", () => import("./screens/Methodology")) },
     { path: "/account", element: page("Page:Account", () => import("./screens/Account")) },
@@ -69,7 +72,7 @@ const router = createBrowserRouter([{
           <h1 style={{ margin: "6px 0 10px", fontSize: 24 }}>Page not found</h1>
           <p className="lede">The requested report or route does not exist.</p>
           <p style={{ marginTop: 14 }}>
-            <Link className="btn primary" to="/">Return to Survey Library</Link>
+            <Link className="btn primary" to="/library">Return to Survey Library</Link>
           </p>
         </div>
       )

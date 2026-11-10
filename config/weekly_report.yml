@@ -35,8 +35,9 @@ net_words:
   positive: [better, more]
   negative: [worse, less]
 
-# answers left out of the 13-week tables (lower case, how the answer starts)
-leave_out_answers: ["none of", "other", "don't know", "prefer not"]
+# answers left out of the 13-week tables (lower case, how the answer starts). The analysts' activities table never
+# shows the movie theater and live performance answers (every PDF since Sep 2026 and their Activity sheet).
+leave_out_answers: ["none of", "other", "don't know", "prefer not", "gone to a movie theater", "gone to a live performance"]
 
 
 # the retailer questions whose shoppers get an age and income profile (the cube's midpoints, over the 13 weeks)

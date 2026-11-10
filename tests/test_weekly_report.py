@@ -66,6 +66,12 @@ def test_the_one_week_and_three_month_changes_and_their_significance():
     assert not yes["week_significant"]                    # tested on single weeks: last week and this week are both 35 %
 
 
+def test_the_activities_table_leaves_out_what_the_analysts_leave_out():
+    labels = ("Gone to a bar", "Gone to a movie theater/cinema", "Gone to a live performance (e.g., concert)", "None of these")
+    question = report.Question(tiny_file([[(100, 400)] * 4] * 16, labels))
+    assert [row["label"] for row in report.table(question, 15)["rows"]] == ["Gone to a bar"]
+
+
 def test_significance_corrects_for_testing_many_answers():
     big = (400, 1600, 500, 1600)        # 25 % -> 31 %: real
     small = (400, 1600, 420, 1600)      # 25 % -> 26 %: noise

@@ -98,7 +98,9 @@ CACHE_BYTES = int(os.environ.get("CIP_CACHE_MB", "256")) * 2**20   # per worker:
 CACHED_BYTES = 0
 CACHE_COUNTS = {"hits": 0, "misses": 0}   # RESULTS answered from memory vs built, since this process started (Logs page)
 BUILD_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_BUILD_SLOTS", "8")))   # concurrent database builds per worker
-BUILD_WAIT = float(os.environ.get("CIP_BUILD_WAIT", "3"))   # seconds a request may queue for a slot before "busy, retry"
+BUILD_WAIT = float(os.environ.get("CIP_BUILD_WAIT", "3"))
+ASK_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_ASK_SLOTS", "2")))   # Ask CIP questions computed at once per worker
+ASK_WAIT = 2.0                                                              # seconds a question may queue for a slot   # seconds a request may queue for a slot before "busy, retry"
 CATALOGUE: SearchIndex | None = None     # every reportable question of every built wave (api/search.py)
 CATALOGUE_ROWS: tuple = ()               # what CATALOGUE was built from, to build a filtered one per scope
 SCOPED: dict[str, SearchIndex] = {}      # scope (shared/core/access.scope) → the catalogue of the waves it may see
@@ -268,6 +270,7 @@ async def lifespan(app: FastAPI):
     # the first read of the request log (up to 64 MB) at start, in the background: on 7 Nov 2026 the first Logs visit
     # after a deploy did it and waited 5.4 s
     asyncio.get_running_loop().run_in_executor(None, metrics.read_traffic)
+    asyncio.get_running_loop().run_in_executor(None, warm_ask)   # Ask CIP's index (~1 s), so no question waits for it
     try:
         yield
     finally:
@@ -500,6 +503,13 @@ async def public_facts(request: Request) -> Response:
     return send_payload(request, found)
 
 
+@app.get("/api/v1/retailers")
+async def retailers(request: Request, who: dict = Depends(user)) -> Response:
+    """Retailer comparison (etl/retailers.py): each retailer's reach, its shoppers' profile and sentiment, pooled weeks."""
+    require_feature(who, "retailers")
+    return await tracker_view(request, who, "retailers")
+
+
 @app.get("/api/v1/sectors")
 async def sectors(request: Request, who: dict = Depends(user)) -> Response:
     """The Databank's sector tables (etl/sectors.py): purchase rate, retailers, brands and categories per sector wave."""
@@ -641,19 +651,34 @@ def _parsed_book(survey_id: int, version: str) -> Optional[dict]:
         return None
 
 
+def warm_ask() -> None:
+    """Build Ask CIP's question index at start, in the background (api/assistant.py index_for)."""
+    try:
+        assistant.index_for(PUBLISHED / "api" / "v1" / "questions", os.path.realpath(PUBLISHED), all_waves())
+    except Exception as exc:   # noqa: BLE001 — the first question builds it instead
+        log.warning("Ask CIP index not built at start: %s", type(exc).__name__)
+
+
 @app.post("/api/v1/ask")
 async def ask(request: Request, who: dict = Depends(user)) -> dict:
-    """A question in plain words, answered only from published figures with every source cited (api/assistant.py).
-    Only from the waves this person may see; at most limits.ask questions a minute (config/access.yml)."""
+    """A question in plain words, answered from the published survey figures with a chart (api/assistant.py), no model
+    and no database. Only from the waves this person may see; at most limits.ask questions a minute (config/access.yml)."""
     require_feature(who, "ask")
     if not access.spend(who["email"], "ask"):
         raise HTTPException(429, "Too many questions: wait a minute", headers={"Retry-After": "60"})
     body = await team.json_body(request)
-    index = catalogue(who)
-    search = index.search if index else (lambda q, n: {"results": []})
-    shown = {w["survey_id"] for w in await run_in_threadpool(all_waves) if access.sees(who, w)}
-    answer = await run_in_threadpool(assistant.ask, str(body.get("question") or ""), search,
-                                     lambda sid: book_data(sid) if sid in shown else None)
+    try:   # at most ASK_SLOTS questions computed at once per worker: a burst queues briefly, then "busy", never the site
+        await asyncio.wait_for(ASK_SLOTS.acquire(), ASK_WAIT)
+    except asyncio.TimeoutError:
+        raise HTTPException(503, "Ask Coresight is busy: try again in a few seconds", headers={"Retry-After": "5"})
+    try:
+        waves = await run_in_threadpool(all_waves)
+        index = await run_in_threadpool(assistant.index_for, PUBLISHED / "api" / "v1" / "questions",
+                                        os.path.realpath(PUBLISHED), waves)   # built at start; again after a publish
+        shown = {w["survey_id"] for w in waves if access.sees(who, w)}
+        answer = await run_in_threadpool(assistant.ask, str(body.get("question") or ""), index, shown, access.scope(who))
+    finally:
+        ASK_SLOTS.release()
     audit.record(request, "ask", target=str(body.get("question") or "")[:300],
                  detail={"mode": answer["mode"], "sources": [s["link"] for s in answer["sources"]]})
     return answer

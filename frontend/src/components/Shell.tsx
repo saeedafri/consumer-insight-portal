@@ -8,6 +8,7 @@ import type { Theme } from "../theme";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from "react-router";
 import { allowed, useMe, useReportWaves, useWaves } from "../api";
 import { SECTIONS } from "../forstaSections";
+import { TRACKERS } from "../trackers";
 import PinDialog from "./PinDialog";
 import { Menu, UndoBar } from "./bits";
 import type { Me, Wave } from "../api";
@@ -15,7 +16,7 @@ import { fmtDate } from "../stats";
 import { perf } from "../perf";
 import { isSaved, removeView, saveView } from "../saved";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Info, LayoutDashboard, LibraryBig, MessageSquareText, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
+import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Gauge, House, Info, Layers, LayoutDashboard, LibraryBig, MessageSquareText, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 // The perf badge is the developer's: shown only in a browser that opened the portal once with ?perf=1 (?perf=0 hides it again)
@@ -75,8 +76,8 @@ function eyebrow(wave?: Wave): string {
 }
 
 // Each page's name, for the header's breadcrumb and a saved view's name
-const PAGES: Record<string, string> = { "": "Survey library", search: "Search questions", schedule: "Launch schedule", ask: "Ask CIP",
-  boards: "Boards", sectors: "Sector databank", expectations: "Expected vs actual", methodology: "Methodology", "whats-new": "What's new",
+const PAGES: Record<string, string> = { "": "Home", library: "Survey library", search: "Search questions", schedule: "Launch schedule", ask: "Ask Coresight",
+  boards: "Boards", sectors: "Sector databank", retailers: "Retailer comparison", channels: "In store vs online", trackers: "Trackers", expectations: "Expected vs actual", methodology: "Methodology", "whats-new": "What's new",
   account: "My account", "api-guide": "API guide", fieldwork: "Fieldwork", ingest: "Upload survey", logs: "Logs", access: "Access" };
 function pageName(pathname: string): string {
   const [, first, , screen] = pathname.split("/");
@@ -102,6 +103,17 @@ export default function Shell() {
   const location = useLocation();
   const theme = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // the menu can be hidden for more room (header button, or Ctrl/⌘+B); the choice is kept in this browser
+  const [railHidden, setRailHidden] = useState(() => { try { return localStorage.getItem("cip-rail") === "hidden"; } catch { return false; } });
+  const toggleRail = () => setRailHidden(hidden => {
+    try { localStorage.setItem("cip-rail", hidden ? "shown" : "hidden"); } catch { /* private mode: this visit only */ }
+    return !hidden;
+  });
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") { e.preventDefault(); toggleRail(); } };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
   const waves = useWaves();
   const me = useMe().data;
@@ -114,6 +126,7 @@ export default function Shell() {
   const latest = waves.data?.find(w => w.survey_family === "CSI-US" && w.rows_built !== 0);   // newest first
   const reportWaves = useReportWaves().data;   // the waves with a weekly report (since Jul 2025: etl/weekly_report.py)
   const hasReport = !!wave && !!reportWaves?.includes(wave.survey_id);
+  const report = reportWaves?.length ? Math.max(...reportWaves) : null;   // the newest weekly report: Consumer sentiment in the menu
   const rail = useRef<HTMLElement>(null);
   const howArrived = useNavigationType();
 
@@ -157,38 +170,46 @@ export default function Shell() {
     return () => { document.removeEventListener("keydown", key); opener?.focus(); };
   }, [mobileMenuOpen]);
 
-  return <div className={`app ${mobileMenuOpen ? "mobile-nav-open" : ""}`}>
+  return <div className={`app ${mobileMenuOpen ? "mobile-nav-open" : ""} ${railHidden ? "rail-hidden" : ""}`}>
     <a href="#main" className="skip">Skip to content</a>
-    <SiteHeader here={pageName(location.pathname)} theme={theme} onTheme={toggleTheme} menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen(o => !o)} />
+    <SiteHeader here={pageName(location.pathname)} railHidden={railHidden} onToggleRail={toggleRail} theme={theme} onTheme={toggleTheme} menuOpen={mobileMenuOpen} onToggleMenu={() => setMobileMenuOpen(o => !o)} />
     {mobileMenuOpen && <div className="rail-backdrop" onClick={() => setMobileMenuOpen(false)} aria-hidden="true" />}
-    <aside ref={rail} className={`rail ${mobileMenuOpen ? "open" : ""}`} aria-label="Portal Navigation"
+    <aside ref={rail} id="portal-menu" className={`rail ${mobileMenuOpen ? "open" : ""}`} aria-label="Portal Navigation"
            {...(mobileMenuOpen ? { role: "dialog", "aria-modal": true } : {})}>
       <RailGroup label="Explore">
-        <NavLink to="/" end><Icon of={LibraryBig} />Survey library</NavLink>
-          {allowed(me, "search") && <NavLink to="/search"><Icon of={Search} />Search questions</NavLink>}
-          {allowed(me, "schedule") && <NavLink to="/schedule"><Icon of={CalendarDays} />Launch schedule</NavLink>}
-          {allowed(me, "ask") && <NavLink to="/ask"><Icon of={MessageSquareText} />Ask CIP</NavLink>}
-          {allowed(me, "boards") && <NavLink to="/boards"><Icon of={Pin} />Boards</NavLink>}
+        <NavLink to="/" end><Icon of={House} />Home</NavLink>
+        {allowed(me, "ask") && <NavLink to="/ask"><Icon of={MessageSquareText} />Ask Coresight</NavLink>}
+        <NavLink to="/library"><Icon of={LibraryBig} />Survey library</NavLink>
+        {allowed(me, "search") && <NavLink to="/search"><Icon of={Search} />Search questions</NavLink>}
+        {allowed(me, "schedule") && <NavLink to="/schedule"><Icon of={CalendarDays} />Launch schedule</NavLink>}
+        {allowed(me, "boards") && <NavLink to="/boards"><Icon of={Pin} />Boards</NavLink>}
       </RailGroup>
-      <RailGroup label="Research data">
-          {allowed(me, "sectors") && <NavLink to="/sectors"><Icon of={Database} />Sector databank</NavLink>}
-          {allowed(me, "expectations") && <NavLink to="/expectations"><Icon of={ChartColumn} />Expected vs actual</NavLink>}
+      <RailGroup label="Core research">
+        {latest && <NavLink to={`/w/${latest.survey_id}`} className={() => wave?.survey_id === latest.survey_id ? "active" : ""}>
+          <Icon of={LayoutDashboard} />Shopping & Spending</NavLink>}
+        {allowed(me, "explorer") && <NavLink to="/channels"><Icon of={Layers} />In store vs online</NavLink>}
+        {report && allowed(me, "report") && <NavLink to={`/w/${report}/report`} className={() => location.pathname === `/w/${report}/report` ? "active" : ""}>
+          <Icon of={Gauge} />Consumer sentiment</NavLink>}
+        {allowed(me, "retailers") && <NavLink to="/retailers"><Icon of={Store} />Retailer comparison</NavLink>}
+        {allowed(me, "sectors") && <NavLink to="/sectors"><Icon of={Database} />Sector databank</NavLink>}
+        {allowed(me, "expectations") && <NavLink to="/expectations"><Icon of={ChartColumn} />Expected vs actual</NavLink>}
+      </RailGroup>
+      {allowed(me, "dashboards") && <RailGroup label="Trackers" closed={!location.pathname.startsWith("/trackers")}>
+        {TRACKERS.map(([code, label]) => <NavLink key={code} to={`/trackers/${code}`}><Icon of={Activity} />{label}</NavLink>)}
+      </RailGroup>}
+      <RailGroup label="Reference">
         <NavLink to="/methodology"><Icon of={Info} />Methodology</NavLink>
         <NavLink to="/whats-new"><Icon of={Star} />What's new</NavLink>
       </RailGroup>
       {(isAdmin || me?.features?.includes("fieldwork")) && <RailGroup label="Research operations" closed={!/^\/(fieldwork|forsta)/.test(location.pathname)}>
         <NavLink to="/fieldwork"><Icon of={Filter} />Fieldwork</NavLink>
-          {isAdmin && SECTIONS.map(([path, label]) => <NavLink key={path} to={`/forsta/${path}`}><Icon of={FORSTA_ICONS[path]} />{label}</NavLink>)}
+        {isAdmin && SECTIONS.map(([path, label]) => <NavLink key={path} to={`/forsta/${path}`}><Icon of={FORSTA_ICONS[path]} />{label}</NavLink>)}
       </RailGroup>}
       {isAdmin && <RailGroup label="Administration" closed={!/^\/(ingest|logs|access)/.test(location.pathname)}>
         <NavLink to="/ingest"><Icon of={Upload} />Upload survey</NavLink>
         <NavLink to="/logs"><Icon of={ScrollText} />Logs</NavLink>
-          {me?.permissions?.includes("manage_roles") && <NavLink to="/access"><Icon of={ShieldCheck} />Access</NavLink>}
+        {me?.permissions?.includes("manage_roles") && <NavLink to="/access"><Icon of={ShieldCheck} />Access</NavLink>}
       </RailGroup>}
-      {latest && <nav aria-label="Current weekly tracker">
-        <p className="rail-label">Current weekly tracker</p>
-        <NavLink to={`/w/${latest.survey_id}`} className={() => wave?.survey_id === latest.survey_id ? "active" : ""}><Icon of={LayoutDashboard} />{fmtDate(latest.wave_date)} · n={latest.qualified_n.toLocaleString("en-US")}</NavLink>
-      </nav>}
       {wave && <div className="rail-foot">
         <b>{wave.qualified_n.toLocaleString("en-US")}</b>
         <span>qualified respondents</span>
@@ -248,7 +269,8 @@ function SiteFooter({ theme }: { theme: Theme }) {
 /** The portal's header on every screen: the Coresight logo and the portal's name, then the portal's own controls
  *  (question search, weighting, theme, who is signed in, sign out). coresight.com's menus (Research & Data, Events,
  *  Services) are on the public site's header only (app/(site)/layout.tsx); the footer below keeps its links. */
-function SiteHeader({ here, theme, onTheme, menuOpen, onToggleMenu }: { here: string; theme: Theme; onTheme: () => void; menuOpen: boolean; onToggleMenu: () => void }) {
+function SiteHeader({ here, railHidden, onToggleRail, theme, onTheme, menuOpen, onToggleMenu }: { here: string; railHidden: boolean; onToggleRail: () => void;
+  theme: Theme; onTheme: () => void; menuOpen: boolean; onToggleMenu: () => void }) {
   const navigate = useNavigate();
   const me = useMe().data;
   const search = useRef<HTMLInputElement>(null);
@@ -273,6 +295,12 @@ function SiteHeader({ here, theme, onTheme, menuOpen, onToggleMenu }: { here: st
         <path d={menuOpen ? "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" : "M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"} fill="currentColor" />
       </svg>
     </button>
+    <Tooltip>
+      <TooltipTrigger render={<button className="icon-btn rail-toggle" onClick={onToggleRail} aria-expanded={!railHidden} aria-controls="portal-menu"
+                                      aria-label={railHidden ? "Show the menu" : "Hide the menu"}>
+        {railHidden ? <PanelLeftOpen size={17} strokeWidth={1.8} aria-hidden="true" /> : <PanelLeftClose size={17} strokeWidth={1.8} aria-hidden="true" />}</button>} />
+      <TooltipContent side="right">{railHidden ? "Show the menu" : "Hide the menu"} (Ctrl/⌘ B)</TooltipContent>
+    </Tooltip>
     <Link to="/" className="site-brand" aria-label="Consumer Insight Portal home">
       <img src={theme === "dark" ? "/coresight-logo-reversed.png" : "/coresight-logo.png"} alt="" width="76" height="38" />
       <span>Consumer Insight Portal{here && <small> / {here}</small>}</span>

@@ -11,7 +11,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 const RULE: Record<string, string> = { same_wave_number: "same wave number last season", same_calendar_week: "same calendar week last year",
                                        nearest_year_ago: "closest wave a year earlier" };
 
-function Delta({ d, label, flags }: { d: number | null; label: string; flags: string[] }) {
+export function Delta({ d, label, flags }: { d: number | null; label: string; flags: string[] }) {
   if (flags.includes(`base_changed_${label === "vs LY" ? "ly" : "prior"}`)) {
     return (
       <Tooltip>

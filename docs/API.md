@@ -49,13 +49,14 @@ curl -H "Authorization: Bearer cip_…" "https://<portal>/api/v1/waves/532/resul
 | `GET /api/v1/dashboards/{code}/{survey_id}` | A topic dashboard for one wave | Topic dashboards |
 | `GET /api/v1/search` | Questions by words, code, answer or survey, `?q=tariffs&limit=40` | Search questions |
 | `GET /api/v1/sectors` | The sector databank: purchase rate, retailers, brands, categories | Sector databank |
+| `GET /api/v1/retailers` | Retailer comparison: each retailer's reach, its shoppers' gender, generation and income, and sentiment, over pooled weeks | Retailer comparison |
 | `GET /api/v1/expectations` | Retail events, expected vs actual | Expected vs actual |
 | `GET /api/v1/reports` | The waves that have a weekly report | — |
 | `GET /api/v1/schedule` | The launch plan against what Forsta fielded | Launch schedule |
 | `GET /api/v1/fieldwork` | Each survey's funnel and why respondents dropped out | Fieldwork |
 | `GET /api/v1/methodology` | How the figures are made | — |
 | `GET /api/v1/public/facts` | The home page's counts and dates (no key needed) | — |
-| `POST /api/v1/ask` | A question in plain words, answered from published figures with sources, `{"question": "…"}` | Ask CIP |
+| `POST /api/v1/ask` | A question in plain words, `{"question": "…"}`: the answer in sentences, a chart, every figure and its base, the source and other matching questions; shares, counts, top answers, trends by wave, 2 weeks, 4 weeks, month, quarter or year, comparisons and cuts, from the surveys only | Ask CIP |
 | `POST /api/v1/export/{kind}` | A screen's table as CSV, Excel or PowerPoint | Export |
 | `GET /api/v1/keys` | Your keys (name, first characters, date) | — (portal sign-in) |
 | `POST /api/v1/keys` | Make a key, `{"name": "…"}` | — (portal sign-in) |

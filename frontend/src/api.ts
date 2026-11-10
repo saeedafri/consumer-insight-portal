@@ -184,6 +184,20 @@ export interface Sector {
 export const useSectors = () =>
   useQuery({ queryKey: ["sectors"], queryFn: () => get<{ sectors: Sector[] }>("/api/v1/sectors"), ...forever, retry: false });
 
+/** Retailer comparison (etl/retailers.py): the newest weeks, each pooled with the weeks before it; per retailer and week
+ *  its reach (% of respondents), buyers, their profile (% per group, null under min_buyers) and sentiment if asked. */
+export type Profile = { gender: (number | null)[]; generation: (number | null)[]; income: (number | null)[] };
+export interface Retailers {
+  weeks: { survey_id: number; date: string; from: string; weeks: number; respondents: number }[];
+  groups: Record<keyof Profile, string[]>;
+  everyone: Profile[];
+  min_buyers: number;
+  retailers: { name: string; reach: Record<"any" | "food" | "nonfood", (number | null)[]>; buyers: number[]; profile: (Profile | null)[];
+               sentiment: { positive: number; n: number; date: string } | null }[];
+}
+export const useRetailers = () =>
+  useQuery({ queryKey: ["retailers"], queryFn: () => get<Retailers>("/api/v1/retailers"), ...forever, retry: false });
+
 /** Retail events, expected vs actual (etl/expectations.py). */
 export interface SpendSide { median: number; answers: number; spenders: number | null; market_billions: number | null }
 export interface EventComparison {
@@ -273,8 +287,12 @@ export interface Audience { audience_id: number; name: string; definition: Audie
 export interface AudienceResult { qcode: string; multi: boolean; skipped: string[]; rows: [string, number | null, number, number | null, number | null, number, number, number | null][] }
 export interface Distinctive { qcode: string; question: string; answer: string; pct: number; everyone: number; index: number; base: number }
 export interface AudienceProfile { size: number; skipped: string[]; over: Distinctive[]; under: Distinctive[] }
-export interface Answer { answer: string; no_source: boolean; mode: "claude" | "figures" | "none";
-                          sources: { id: string; survey_id: number; wave_date: string; title: string; qcode: string; number?: string; question: string; base: number; answers: [string, number][]; link: string }[] }
+/** Ask CIP's answer (api/assistant.py): sentences, the chart that fits, every figure as a table, and other matches. */
+export interface AskChart { type: "line" | "bar" | "grouped" | "donut"; categories: string[]; series: { name: string; data: (number | null)[] }[]; unit: string }
+export interface Answer { answer: string; no_source: boolean; mode: "figures" | "none"; chart: AskChart | null;
+                          table: { head: string[]; rows: (string | number | null)[][]; bases: number[] } | null;
+                          sources: { id: string; key: string; survey_id: number; wave_date: string; qcode: string; question: string; family: string; waves: number; link: string }[];
+                          suggestions: { qcode: string; text: string; family: string; key: string }[] }
 export interface BoardSummary { board_id: number; name: string; created_by: string; created_at: string; items: number }
 export interface BoardComment { comment_id: number; author: string; body: string; created_at: string }
 export interface BoardItem { item_id: number; title: string; url: string; data_version: string; added_by: string; added_at: string;

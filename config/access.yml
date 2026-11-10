@@ -19,7 +19,7 @@
 # stored in cip_role_access); export, alerts and saved_views are actions inside screens. Survey library, a wave's
 # Overview, Methodology, What's new and My account are always there; Logs, Fieldwork and Access are the super admin's.
 features: [dashboards, explorer, crosstab, trends, compare, audiences, changes, report, survey, search, schedule, ask, boards,
-           sectors, expectations, export, alerts, saved_views, weighted, api, fieldwork]
+           sectors, retailers, expectations, export, alerts, saved_views, weighted, api, fieldwork]
 chosen_only: [fieldwork]   # features no package includes: a role gets one only once the super admin turns it on
 feature_labels:   # the names the Access screen shows
   dashboards: Topic dashboards (on a wave's Overview)
@@ -33,9 +33,10 @@ feature_labels:   # the names the Access screen shows
   survey: Survey preview
   search: Search questions
   schedule: Launch schedule
-  ask: Ask CIP
+  ask: Ask Coresight
   boards: Boards
   sectors: Sector databank
+  retailers: Retailer comparison
   expectations: Expected vs actual
   export: Export (CSV, Excel, PowerPoint)
   alerts: Alerts
