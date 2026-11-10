@@ -2,7 +2,7 @@
 // when each question was shown and the screen-out rules, from its survey.xml (useLogic: etl/fieldwork.py logic).
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { useBook, useLogic } from "../api";
+import { allowed, useBook, useLogic, useMe } from "../api";
 import { BaseNote, Card, Empty, Failure, Loading, QuestionCode } from "../components/bits";
 import QuestionChart from "../components/QuestionChart";
 import { fmtDate, pct } from "../stats";
@@ -15,6 +15,7 @@ export default function Survey() {
   const { data: book, isLoading, error } = useBook(id);
   const logic = useLogic(id).data;   // none for a wave not loaded from Forsta: the screen is as before
   const [picked, setPicked] = useState<Record<string, string[]>>({});
+  const me = useMe().data;
   const at = useMemo(() => Math.max(0, book?.questions.findIndex(x => x.id === code) ?? 0), [book, code]);
   useEffect(() => {
     if (!book) return;   // hooks run on every render, so before the loading returns below
@@ -78,7 +79,7 @@ export default function Survey() {
             <Button variant="outline" disabled={at === 0} onClick={() => go(at - 1)} title="Previous question (←)">‹ Previous</Button>
             <Button variant="default" disabled={at >= book.questions.length - 1} onClick={() => go(at + 1)} title="Next question (→)">Next question ›</Button>
             <span style={{ flex: 1 }} />
-            <Link className={buttonVariants({ variant: "outline" })} to={`/w/${id}/questions/${encodeURIComponent(q.id)}`}>Open in Question Explorer →</Link>
+            {allowed(me, "explorer") && <Link className={buttonVariants({ variant: "outline" })} to={`/w/${id}/questions/${encodeURIComponent(q.id)}`}>Open in Question Explorer →</Link>}
           </div>
         </Card>
       </div>

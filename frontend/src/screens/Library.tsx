@@ -2,7 +2,7 @@
 import CountUp from "../components/CountUp";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { bookOf, queries, send, useAlerts, useTeamViews, useWaves } from "../api";
+import { allowed, bookOf, queries, send, useAlerts, useMe, useTeamViews, useWaves } from "../api";
 import type { Alert, TeamView } from "../api";
 import { Card, deleteLater, Empty, Failure, population, SkeletonScreen } from "../components/bits";
 import { removeView, savedViews } from "../saved";
@@ -22,6 +22,7 @@ export default function Library() {
   const [text, setText] = useState(params.get("q") ?? "");
   const [saved, setSaved] = useState(savedViews);
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); v === "all" || !v ? p.delete(k) : p.set(k, v); setParams(p, { replace: true }); };
+  const me = useMe().data;   // the row buttons link only to screens on this person's menu
   const years = useMemo(() => [...new Set((waves ?? []).map(w => w.wave_date.slice(0, 4)))].sort((a, b) => b.localeCompare(a)), [waves]);
   const events = useMemo(() => [...new Set((waves ?? []).flatMap(w => w.events ?? []))].sort(), [waves]);
   const shown = useMemo(() => {
@@ -59,9 +60,9 @@ export default function Library() {
           <Link className={buttonVariants({ variant: "default" })} to={`/w/${latest.survey_id}`}>
             Open this wave
           </Link>
-          <Link className={buttonVariants({ variant: "outline" })} to={`/w/${latest.survey_id}/changes`}>
+          {allowed(me, "changes") && <Link className={buttonVariants({ variant: "outline" })} to={`/w/${latest.survey_id}/changes`}>
             {latest.study_type === "tracker" ? "What changed this week" : "What changed"}
-          </Link>
+          </Link>}
         </div>
       </Card>
       <div className="grid g2">
@@ -146,8 +147,8 @@ export default function Library() {
             <span className="n">n={w.qualified_n.toLocaleString("en-US")}</span>
             <span className="wave-actions">
               <Link to={`/w/${w.survey_id}`} className="btn-chip" title="Wave overview">Overview</Link>
-              <Link to={`/w/${w.survey_id}/changes`} className="btn-chip" title="What changed this wave">Changes</Link>
-              <Link to={`/w/${w.survey_id}/questions`} className="btn-chip" title="Question explorer">Questions</Link>
+              {allowed(me, "changes") && <Link to={`/w/${w.survey_id}/changes`} className="btn-chip" title="What changed this wave">Changes</Link>}
+              {allowed(me, "explorer") && <Link to={`/w/${w.survey_id}/questions`} className="btn-chip" title="Question explorer">Questions</Link>}
             </span>
           </div>)}
         </div>)}

@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 10 November 2026
 
+### A screen taken off your menu stays closed
+
+When the super admin takes a screen off someone's menu on the Access page, its address now closes too: a link, a bookmark or a typed address shows "Not included in your subscription" instead of the screen. Until now the Question explorer still opened from a wave's Overview (its questions and Explore all questions button) and from the Survey library's Questions button, because the screen drew from the Overview's own data. The Overview, the Survey library and Survey preview now link only to screens on your menu, and the question search in the header shows only when Search questions is on your menu. Your keys, the API and the MCP connector already refused those screens' data.
+
 ### A closed survey loads within 30 minutes, even after a deploy
 
 The pipeline now checks Forsta every 30 minutes, every day, as a short run the scheduler starts itself. Until now the 30-minute checks on a launch Monday were one long run inside the server, and a deploy stopped it with the server: on 9 November the wave launched at 7:08 PM IST was not loaded until the next morning. A deploy now delays a closed survey by at most 30 minutes, and annual and ad hoc studies load within 30 minutes of closing instead of the next morning. If no check has run for 2 hours, the pipeline-failure email says so.

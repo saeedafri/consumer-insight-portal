@@ -31,6 +31,14 @@ const showPerf = (() => {
 // [path, label, icon]; FEATURE names the /me feature a screen needs (config/access.yml): unlisted screens always show
 const FEATURE: Record<string, string> = { questions: "explorer", crosstab: "crosstab", trends: "trends", compare: "compare", audience: "audiences",
                                           changes: "changes", report: "report", survey: "survey" };
+const TOP_FEATURE: Record<string, string> = { search: "search", schedule: "schedule", ask: "ask", boards: "boards", sectors: "sectors",
+                                              expectations: "expectations" };
+/** The feature the screen at this address needs, or undefined when it always shows: a hidden menu also closes its
+ *  address, so a link, a bookmark or a typed URL never opens a screen the menus take away (10 Nov 2026). */
+export function featureOf(pathname: string): string | undefined {
+  const [, first, , screen] = pathname.split("/");
+  return first === "w" ? FEATURE[screen ?? ""] : TOP_FEATURE[first];
+}
 const FORSTA_ICONS: Record<string, LucideIcon> = {   // the Forsta group's icons (forstaSections.ts names the pages)
   reports: FileText,
   crosstab: Table2,
@@ -190,7 +198,12 @@ export default function Shell() {
     <div className="main-col">
       {wave && <TopBar waves={waves.data ?? []} wave={wave} hasReport={hasReport} />}
       {/* a theme switch re-colours in place (CSS tokens, EChart setTheme): scroll and focus stay where they were */}
-      <main id="main" tabIndex={-1} style={{ "--eyebrow": JSON.stringify(eyebrow(wave)) } as React.CSSProperties}><Outlet /></main>
+      <main id="main" tabIndex={-1} style={{ "--eyebrow": JSON.stringify(eyebrow(wave)) } as React.CSSProperties}>
+        {allowed(me, featureOf(location.pathname) ?? "") || !featureOf(location.pathname) ? <Outlet /> :
+          <div className="card" style={{ padding: 24 }}><h1>Not included in your subscription</h1>
+            <p className="muted">This screen is not on your menu. Ask your Coresight contact if you need it.</p>
+            <p><Link to={wave ? `/w/${wave.survey_id}` : "/"}>Back to {wave ? "the wave's overview" : "the survey library"}</Link></p></div>}
+      </main>
       <PinDialog />
       <UndoBar />
       {showPerf && <Suspense fallback={null}><PerfHUD /></Suspense>}
@@ -260,11 +273,11 @@ function SiteHeader({ here, theme, onTheme, menuOpen, onToggleMenu }: { here: st
       <img src={theme === "dark" ? "/coresight-logo-reversed.png" : "/coresight-logo.png"} alt="" width="76" height="38" />
       <span>Consumer Insight Portal{here && <small> / {here}</small>}</span>
     </Link>
-    <button className="icon-btn search-toggle" onClick={() => { setSearchOpen(o => !o); setTimeout(() => search.current?.focus()); }}
+    {allowed(me, "search") && <button className="icon-btn search-toggle" onClick={() => { setSearchOpen(o => !o); setTimeout(() => search.current?.focus()); }}
             aria-label="Search every question" aria-expanded={searchOpen}>
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor" /></svg>
-    </button>
-    <form className={`topbar-search-form ${searchOpen ? "open" : ""}`} role="search" onSubmit={e => { e.preventDefault(); if (text.trim()) { setSearchOpen(false); navigate(`/search?q=${encodeURIComponent(text.trim())}`); } }}>
+    </button>}
+    {allowed(me, "search") && <form className={`topbar-search-form ${searchOpen ? "open" : ""}`} role="search" onSubmit={e => { e.preventDefault(); if (text.trim()) { setSearchOpen(false); navigate(`/search?q=${encodeURIComponent(text.trim())}`); } }}>
       <label className="sr-only" htmlFor="global-search">Search every question</label>
       <span className="search-icon-prefix" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="15" height="15"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor" /></svg>
@@ -288,7 +301,7 @@ function SiteHeader({ here, theme, onTheme, menuOpen, onToggleMenu }: { here: st
         </button>
       )}
       <kbd aria-hidden="true">⌘K</kbd>
-    </form>
+    </form>}
     <WeightSwitch />
     <Tooltip>
       <TooltipTrigger
