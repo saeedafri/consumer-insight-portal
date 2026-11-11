@@ -24,7 +24,7 @@ cp -n data/coded/*.json /tmp/cip-keep/coded/ 2>/dev/null   # the coding done bef
 # rebuilds them and the API answers from the database meanwhile.
 if [ ! -e "$CIP_PUBLISH_DIR/current" ]; then
   backup="${CIP_PUBLISH_BACKUP_URL:-}"
-  { { [ -n "$backup" ] && { [ "${backup#/}" = "$backup" ] || [ -f "$backup/latest" ]; } && python -m etl.publish --restore; } || nice -n 10 python -m etl.publish; } >> logs/publish-start.log 2>&1 &
+  { { [ -n "$backup" ] && { [ "${backup#/}" = "$backup" ] || [ -f "$backup/latest" ]; } && python -m etl.publish --restore --wait 21600; } || nice -n 10 python -m etl.publish; } >> logs/publish-start.log 2>&1 &
 fi
 ulimit -n "$(ulimit -Hn)"   # the default 1,024 open files caps a worker near a thousand connections
 nginx -g 'daemon off;' &

@@ -79,7 +79,8 @@ KEY_NAMES = ("OPENAPI_KEY", "OPENAI_API_KEY", "OPEN_API_KEY", "OPENAI_KEY")   # 
 
 def key_name() -> str | None:
     """The environment variable the key is read from (never its value), or None: shown on the admin health report."""
-    return next((n for n in KEY_NAMES if os.environ.get(n, "").strip()), None)
+    # any case: an Azure app setting typed "open_api_key" is the same key (11 Nov 2026: staging's was not found)
+    return next((n for wanted in KEY_NAMES for n in os.environ if n.upper() == wanted and os.environ[n].strip()), None)
 
 
 def key() -> str:

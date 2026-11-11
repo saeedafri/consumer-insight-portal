@@ -32,6 +32,8 @@ while :; do
   # lock from Monday's watch.
   [ "$slotted" = no ] && case "$(date -u +%M)" in 00|30) python scripts/weekly_forsta.py --once >> logs/etl-loop.log 2>&1 & ;; esac
   [ "$(date -u +%M)" = "05" ] && python scripts/weekly_forsta.py --watchdog >> logs/etl-loop.log 2>&1 &
+  # no published files (the restore at start gave up): tried again each hour, so the screens never stay empty
+  [ "$(date -u +%M)" = "10" ] && [ ! -e "${CIP_PUBLISH_DIR:-data/published}/current" ] && python -m etl.publish --restore >> logs/publish-start.log 2>&1 &
   # the China survey's SharePoint folder every 10 minutes (etl/sharepoint_china.py), off the Forsta minutes; only once IT's
   # access is set (CIP_SP_CLIENT_ID): a pass that finds nothing new is ~60 small Graph reads and no database write
   if [ -n "${CIP_SP_CLIENT_ID:-}" ]; then

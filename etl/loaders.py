@@ -27,17 +27,18 @@ class Locked(RuntimeError):
 
 
 @contextmanager
-def etl_lock():
+def etl_lock(wait: int = 0):
     """The one run lock every writer takes (scheduled run, loads, rebuilds, publish, rekey): two writers at once
     deadlock (20 Oct 2026). Yields the lock's connection, which a long watch pings (SELECT 1) to keep. The lock
-    goes with the connection, so a killed run frees it. SQLite (tests, local) is one process: no lock."""
+    goes with the connection, so a killed run frees it. SQLite (tests, local) is one process: no lock.
+    wait: seconds to queue for it (the restore at a container's start), else Locked at once."""
     engine = get_engine("etl")
     if engine.dialect.name != "mysql":
         yield None
         return
     with engine.connect() as conn:
         conn.execute(text(f"SET SESSION wait_timeout = {LOCK_IDLE_SECONDS}"))
-        if not conn.execute(text("SELECT GET_LOCK(:n, 0)"), {"n": LOCK}).scalar():
+        if not conn.execute(text("SELECT GET_LOCK(:n, :w)"), {"n": LOCK, "w": wait}).scalar():
             raise Locked("Another CIP run holds the lock (scripts/weekly_forsta.py?); try again when it finishes")
         try:
             yield conn

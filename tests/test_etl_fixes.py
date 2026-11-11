@@ -357,3 +357,33 @@ def test_wordings_lose_their_html_codes_and_extra_spaces():
     """The Qualtrics years kept some wordings HTML-coded; every screen showed "a brand&#39;s store" as typed (7 Nov 2026)."""
     from etl import records
     assert records.clean_text("a brand&#39;s  store, Stop &amp; Shop\xa0now") == "a brand's store, Stop & Shop now"
+
+
+def test_a_restore_queues_for_the_etl_lock_instead_of_giving_up(monkeypatch):
+    """11 Nov 2026: a new container's restore found the lock taken (a China load) and left staging with no published
+    files. The restore at start waits for it (deploy/start.sh --wait); every other run still stops at once."""
+    from contextlib import contextmanager
+    from etl import loaders
+    asked = []
+
+    class Connection:
+        def execute(self, statement, params=None):
+            asked.append(params)
+            return type("Result", (), {"scalar": lambda self: 1})()
+
+    class Engine:
+        dialect = type("Dialect", (), {"name": "mysql"})()
+
+        @contextmanager
+        def connect(self):
+            yield Connection()
+
+    monkeypatch.setattr(loaders, "get_engine", lambda role: Engine())
+    with loaders.etl_lock(wait=21600):
+        pass
+    with loaders.etl_lock():
+        pass
+    waits = [p["w"] for p in asked if p and "w" in p]
+    assert waits == [21600, 0]
+    start = open("deploy/start.sh").read()
+    assert "etl.publish --restore --wait 21600" in start

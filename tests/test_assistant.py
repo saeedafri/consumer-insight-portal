@@ -157,3 +157,11 @@ def test_event_questions_answer_only_questions_naming_an_event():
     assert assistant.EVENT.search("from which retailers did you make holiday-related purchases?")
     assert assistant.EVENT.search("prime day purchases") and assistant.EVENT.search("back-to-school plans")
     assert not assistant.EVENT.search("walmart shoppers over time") and not assistant.EVENT.search("wholesale clubs")
+
+
+def test_the_openai_key_is_found_whatever_case_its_setting_is_typed_in(monkeypatch):
+    from api import ask_model
+    for name in ask_model.KEY_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("open_api_key", "sk-test")
+    assert ask_model.key_name() == "open_api_key" and ask_model.key() == "sk-test"

@@ -508,9 +508,13 @@ def main() -> int:
                    help="1-4 workers (default: CIP_PUBLISH_JOBS or 4)")
     p.add_argument("--rollback", action="store_true")
     p.add_argument("--restore", action="store_true")
+    p.add_argument("--wait", type=int, default=0, help="seconds to queue for the ETL lock (deploy/start.sh: 6 h)")
     a = p.parse_args()
     from etl.loaders import etl_lock   # one writer of the published files at a time (the scheduled run publishes too)
-    with etl_lock():
+    # --wait: the restore at a container's start queues for the lock (a load between waves frees it for a moment): at a
+    # deploy the old container's run, or a load from elsewhere, holds it, and giving up at once left the new container
+    # with no published files (11 Nov 2026: Retailers, Sectors and every prebuilt view 404 on staging for hours)
+    with etl_lock(wait=a.wait):
         out = rollback(a.root) if a.rollback else restore(a.root) if a.restore else publish(a.root, a.jobs)
         if a.restore and behind(out):   # newer waves in the database: build only those, link the rest
             log.info("The restored version is behind the database: publishing the new waves")
