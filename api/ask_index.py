@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import difflib
 import gzip
+import hashlib
 import json
 import logging
 import math
@@ -38,15 +39,27 @@ log = logging.getLogger("cip.ask")
 CONFIG = Path(__file__).resolve().parents[1] / "config"
 SAME_IGNORES = frozenset("select all that apply only one or none of these the a an".split())   # not what a question asks
 WORD_CANDIDATES = 4  # retrieval: candidates from the keyword ranking the meaning ones missed (names, "dining out")
+AREAS = ["retailers", "shopping categories", "online and ecommerce", "grocery and food", "apparel", "beauty", "home",
+         "holidays and events", "deals and promotions", "genai and technology", "health and glp-1", "personal finances",
+         "economy and prices", "tariffs", "social media shopping", "travel and leisure", "demographics", "other"]   # scripts/ask_semantic.py TOPICS
+AREA_BOOST = 0.03   # retrieval: added for a question in the asked question's business area
+VERIFIED = CONFIG / "ask_verified.yml"   # approved question → answer plans (reviewed in git); admins add more at runtime
+VERIFIED_NEAR = 0.9   # closeness in meaning from which a question is a verified one (with the same names and groups)
 STANDING = 0.06     # retrieval: up to this added to a closeness (~0.5–0.8) for a question asked a year of waves and still asked
 SAME_ANSWERS = 0.6   # share of a wave's answers that must be the question's own for the wave to join its series
 SAME_WORDING = 0.5   # shared words / all words: "holiday 2025" vs "holiday 2026" stays one question, a reused code does not
 COUNT_CACHE_MB = 48   # parsed question files kept in memory; the largest (q1, every tracker wave) is ~4 MB
-FIELDS = {"text": 3.0, "topic": 2.5, "answers": 2.0, "older": 1.5}
+FIELDS = {"name": 3.5, "text": 3.0, "topic": 2.5, "answers": 2.0, "older": 1.5}   # name: the semantic layer's business name and aliases
+SEMANTIC = CONFIG / "ask_semantic.json"   # scripts/ask_semantic.py: a business name, aliases and topic per question wording
 STOP = set("""about above after again against also among answer answers been before being below between both could
     during each from further have having here into itself just more most other over same should some such than that their
     them then there these they this those through under until very were what when where which while whom will with would
     your yours following past select apply""".split())
+
+
+def digest(text: str) -> str:
+    """A question wording's key in config/ask_semantic.json: the same wording under any code shares one entry."""
+    return hashlib.sha1(" ".join(text.lower().split()).encode()).hexdigest()[:12]
 
 
 def stems(text: str) -> list[str]:
@@ -161,6 +174,11 @@ class Index:
                                   "surveys": [w["survey_id"] for w in asked], "dates": [w["wave_date"] for w in asked]}
                 part_words[key] = {"text": texts[-1], "topic": " ".join(topics.get(qcode.upper(), []) + [family.replace("_", " ").replace("-", " ")]),
                                    "answers": " ".join(labels), "older": " ".join(texts[:-1])}
+        named = json.loads(SEMANTIC.read_text()) if SEMANTIC.exists() else {}
+        for part in parts.values():   # the semantic layer: what analysts call it, how else they say it, its topic
+            entry = named.get(digest(part["text"]), {})
+            part.update(name=entry.get("name", ""), aliases=entry.get("aliases", []), area=entry.get("topic", ""))
+            part_words[part["key"]]["name"] = " ".join([part["name"], *part["aliases"]])
         # one entry per question whatever code it was asked under: the same wording in the same study (q5 since 2024, Q5
         # before) is one series, so "all waves" means all of them
         self.docs: dict[str, dict] = {}
@@ -196,11 +214,14 @@ class Index:
                         held[key] = max(held.get(key, 0.0), FIELDS[field])
         self.parts = parts
         # meaning: one vector per question (api/ask_model.py), from its wording, answers and topic words; none without a key
-        self.embed_text = {key: f"{doc['text']} | answers: {'; '.join(doc['labels'])[:400]} | {part_words[doc['key']]['topic'][:200]}"
+        self.embed_text = {key: f"{doc['name']}; {'; '.join(doc['aliases'])}. {doc['text']} | answers: {'; '.join(doc['labels'])[:300]}"
                            for key, doc in self.docs.items()}
-        found = ask_model.question_vectors(self.embed_text)
+        found = ask_model.question_vectors(self.embed_text, prune=True)
         self.vector_keys = [k for k in self.docs if k in found]
         self.vectors = np.array([found[k] for k in self.vector_keys], np.float32) if self.vector_keys else None
+        areas = ask_model.question_vectors({a: f"survey questions about {a}" for a in AREAS}) if self.vector_keys else {}
+        self.area_vectors = np.array([areas[a] for a in AREAS], np.float32) if len(areas) == len(AREAS) else None
+        self.load_verified()
         newest = date.fromisoformat(max((d["last"] for d in self.docs.values()), default="2000-01-01"))
         self.standing = np.array([STANDING * (min(math.log1p(self.docs[k]["waves"]) / math.log1p(52), 1.0)
                                               + math.exp(-(newest - date.fromisoformat(self.docs[k]["last"])).days / 365)) / 2
@@ -211,6 +232,10 @@ class Index:
                                  | {w for g in self.synonyms.values() for w in g if len(w) >= 4})   # whole words, to correct spelling
         self.newest = max((d["last"] for d in self.docs.values()), default="2000-01-01")
         log.info("Ask CIP index: %d questions, %d words, from %s", len(self.docs), len(self.postings), root)
+        model = ask_model.status()
+        (log.info if model["on"] else log.warning)("Ask model %s: %s; %d questions with vectors", "ON" if model["on"] else "OFF",
+                                                   f"key from {model['key_from']}, {model['model']}" if model["on"] else model["why_off"],
+                                                   len(self.vector_keys))
 
     def known(self, word: str) -> str | None:
         """The stem a word searches by: its own, or a misspelt word's closest whole word ("amazn" → amazon), else None."""
@@ -267,16 +292,22 @@ class Index:
         # match: the share of the question's words found (1.0 = all in the wording), before any boost: "not in the surveys" test
         return [{**self.docs[key], "score": round(score, 3), "match": round(match, 3)} for score, key, match in close[:limit]]
 
-    def retrieve(self, question: str, plan: dict | None, limit: int, visible: set[int] | None) -> list[dict]:
+    def retrieve(self, question: str, plan: dict | None, limit: int, visible: set[int] | None, asked: np.ndarray | None = None) -> list[dict]:
         """The candidates for a question: its nearest survey questions by meaning (vectors) joined with the keyword
-        ranking (find), best first; the keyword ranking alone when there are no vectors or the model is off."""
+        ranking (find), best first; the keyword ranking alone when there are no vectors or the model is off. `asked`:
+        the question's vector when the caller has it already (api/assistant.py embeds once per question)."""
         words = self.find(question, plan, limit, visible)
         if self.vectors is None:
             return words
-        asked = ask_model.embed([question])
+        if asked is None:
+            made = ask_model.embed([question])
+            asked = made[0] if made is not None else None
         if asked is None:
             return words
-        near = self.vectors @ asked[0] + self.standing   # meaning, plus a little for long-running and recent questions
+        near = self.vectors @ asked + self.standing   # meaning, plus a little for long-running and recent questions
+        if self.area_vectors is not None:   # the question's business area (Uber's "workspaces"): its questions a little ahead
+            area = AREAS[int(np.argmax(self.area_vectors @ asked))]
+            near = near + AREA_BOOST * np.array([self.docs[k]["area"] == area for k in self.vector_keys], np.float32)
         seen = {}
         for i in np.argsort(-near):
             doc = self.docs[self.vector_keys[i]]
@@ -289,6 +320,33 @@ class Index:
             if w["key"] not in seen:
                 out.append(w)
         return out[:limit + WORD_CANDIDATES]   # the nearest by meaning, and a few found only by their words ("Costco")
+
+    def load_verified(self) -> None:
+        """The verified questions (config/ask_verified.yml and the admins' additions in logs/ask-verified.json), each
+        resolved to its survey question by code and family, with its vector for matching."""
+        listed = (yaml.safe_load(VERIFIED.read_text()) or []) if VERIFIED.exists() else []
+        try:
+            listed += json.loads(ask_model.LOGS.joinpath("ask-verified.json").read_text())
+        except (OSError, ValueError):
+            pass
+        by_code = {}
+        for key, doc in self.docs.items():
+            for code in doc.get("codes", [doc["qcode"]]):
+                by_code.setdefault((doc["family"], code.lower()), key)
+        self.verified = [{**v, "key": by_code[(v.get("family", "CSI-US"), str(v["code"]).lower())]} for v in listed
+                         if (v.get("family", "CSI-US"), str(v.get("code", "")).lower()) in by_code]
+        found = ask_model.question_vectors({v["question"]: v["question"] for v in self.verified}) if self.verified else {}
+        self.verified = [v for v in self.verified if v["question"] in found]
+        self.verified_vectors = np.array([found[v["question"]] for v in self.verified], np.float32) if self.verified else None
+        log.info("Ask verified questions: %d", len(self.verified))
+
+    def verified_for(self, asked: np.ndarray | None) -> dict | None:
+        """The verified question nearest in meaning, if at least VERIFIED_NEAR (the caller checks names and groups)."""
+        if asked is None or self.verified_vectors is None:
+            return None
+        near = self.verified_vectors @ asked
+        best = int(np.argmax(near))
+        return {**self.verified[best], "near": float(near[best])} if near[best] >= VERIFIED_NEAR else None
 
     def counts(self, key: str) -> dict:
         """One question's cells over every code and wording it was asked under, as one series: waves (oldest first,

@@ -1,0 +1,38 @@
+# Ask Coresight's verified questions: common analyst questions with the answer an analyst checked, read by
+# api/ask_index.py load_verified. A question asked with the same meaning (vectors ≥ 0.9) and the same names and groups
+# uses this plan with no model call (Snowflake's "verified queries", research 11 Nov 2026).
+# Admins add more from the Ask page ("Save as verified"); those go to logs/ask-verified.json until reviewed into here.
+# Worded differently from scripts/ask_golden.yml on purpose: a golden question answered from here would test nothing.
+#
+#   question  the wording   code/family  the survey question   focus  answers to lead with
+#   kind      share | count | top | trend | compare            cut    none | generation | gender | income_band | region …
+#   period    latest | all | previous | first_vs_latest
+- {question: "Share of shoppers buying nonfood items at each retailer", code: q5, kind: top, period: latest}
+- {question: "Retailers where people bought food recently", code: q4, kind: top, period: latest}
+- {question: "Nonfood retailer shopping across every wave", code: q5, kind: trend, period: all}
+- {question: "Food retailer shopping across every wave", code: q4, kind: trend, period: all}
+- {question: "Categories purchased online in the latest survey", code: q3, kind: top, period: latest}
+- {question: "Online category purchases through time", code: q3, kind: trend, period: all}
+- {question: "Discretionary income outlook for the coming year", code: CS1, kind: share, period: latest}
+- {question: "Discretionary income outlook through time", code: CS1, kind: trend, period: all}
+- {question: "US economy expectations for the next 12 months", code: CS2, kind: share, period: latest}
+- {question: "US economy expectations through time", code: CS2, kind: trend, period: all}
+- {question: "Share of adults currently on a GLP-1 drug", code: GP1, kind: share, period: latest}
+- {question: "Reasons for taking GLP-1 medicines", code: GP2, kind: top, period: latest}
+- {question: "Ways GLP-1 users cut back on eating", code: D15, kind: top, period: latest}
+- {question: "Biggest concerns people have about tariffs", code: TF3, kind: top, period: latest}
+- {question: "Personal effect of tariffs on consumers", code: TF1, kind: share, period: latest}
+- {question: "Shopping changes made to dodge tariffs", code: TF5, kind: share, period: latest}
+- {question: "Where people stand with their holiday shopping", code: XM3, kind: share, period: latest}
+- {question: "Retailers used for holiday purchases", code: XM2, kind: top, period: latest}
+- {question: "Share with Amazon Prime access", code: EC6, kind: share, period: latest}
+- {question: "Retailers and platforms used to buy beauty products", code: BT13, kind: top, period: latest}
+- {question: "Share who bought beauty products in three months", code: BT1, kind: share, period: latest}
+- {question: "Share who bought clothing or accessories in three months", code: AP1, kind: share, period: latest}
+- {question: "Retailers used to buy clothing and accessories", code: AP3, kind: top, period: latest}
+- {question: "Mass merchants and warehouse clubs shopped", code: M1, kind: top, period: latest}
+- {question: "Department stores bought from in three months", code: DP2, kind: top, period: latest}
+- {question: "Dollar stores bought from in three months", code: DS2, kind: top, period: latest}
+- {question: "Social platforms used while shopping", code: SC2, kind: top, period: latest}
+- {question: "Awareness of artificial intelligence", code: G1, kind: share, period: latest}
+- {question: "Holiday-season personal finance expectations", code: HX5, kind: share, period: latest}

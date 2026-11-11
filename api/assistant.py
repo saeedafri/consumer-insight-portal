@@ -13,6 +13,7 @@ questions, never with a guess. Answers are kept per published version, person's 
 """
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -35,6 +36,9 @@ CANDIDATES = 10                      # survey questions the model chooses betwee
 TREND_FROM = 3                       # with no time named, a question asked in this many waves or more is shown as a trend
 OWN_WORDING = 0.8                    # a question with this share of a survey question's words is that question: no model
 NEAR_FLOOR = 0.35                    # closeness in meaning (0-1) below which no survey question is near: "capital of France" 0.28
+NEAR_EQUAL = 0.8                     # rules only: a match scoring this share of the best counts as near-equal
+EVENT = re.compile(r"\b(prime day|big deal|deal days|black friday|cyber monday|holidays?|valentine'?s?|easter|halloween|thanksgiving|"
+                   r"back.to.school|mother'?s day|father'?s day)\b")   # a survey question about one answers only a question naming one
 GENERIC = re.compile(r"^(yes|no|none of (these|the above)|other.*|don'?t know.*|not sure|prefer not to say|n/?a)$", re.I)   # alike in any question
 SAME_ANSWERS = 0.5                   # share of answers alike for two questions to be the same one asked under other codes
 JUNK_BELOW = 0.35                    # below this share of words matched, no survey asks it: free, no model
@@ -179,6 +183,37 @@ def write(plan: dict, fig: dict, doc: dict, named: list[int]) -> tuple[list[str]
     return say, shown
 
 
+def period_of(when: list[dict]) -> str:
+    """A plan's period in the verified library's words (api/ask_model.py SCHEMA p): dates named stay with the rules."""
+    if when == [{"all": True}]:
+        return "all"
+    if when == [{"latest": 1}]:
+        return "latest"
+    if when == [{"latest": 2}]:
+        return "previous"
+    return "first_vs_latest" if when == [{"first": 1}, {"latest": 1}] else "named"
+
+
+def save_verified(entry: dict, index: Index) -> dict:
+    """An admin's verified question (Ask page, "Save as verified"): kept in logs/ask-verified.json (on /home, so a
+    deploy keeps it), and in use at once. config/ask_verified.yml is the reviewed list in git."""
+    keep = {k: entry[k] for k in ("question", "code", "family", "focus", "kind", "cut", "period") if k in entry}
+    if not str(keep.get("question", "")).strip() or not keep.get("code"):
+        raise ValueError("a question and its survey question code are needed")
+    path = ask_model.LOGS / "ask-verified.json"
+    with ANSWERS_LOCK:
+        try:
+            saved = json.loads(path.read_text())
+        except (OSError, ValueError):
+            saved = []
+        saved = [v for v in saved if v["question"].lower() != keep["question"].lower()] + [keep]
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps(saved, indent=1))
+        ANSWERS.clear()
+    index.load_verified()
+    return {"saved": keep, "verified": len(index.verified)}
+
+
 def read_with_model(plan: dict, reading: dict) -> dict:
     """The rules' plan with the model's reading: its kind, cut and grain, and its period unless the question named dates
     (the rules read those exactly: "October 2026", "last 8 weeks")."""
@@ -208,14 +243,26 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
         hits = sorted(best.values(), key=lambda h: -h["score"])[:8]
     understood = "rules"
     reading = None
+    alternative = None   # the model's second choice: shown first as "did you mean", never answered instead
     # the model reads a new question unless the rules need no help: nothing in the surveys matches (below MIN_MATCH, the
     # closest are shown), or the question is a survey question's own wording. The rules alone pick right only ~65% of
-    # analysts' questions and their confidence does not tell which (scripts/ask_analyst_test.py, 11 Nov 2026)
+    # analysts' questions and their confidence does not tell which (scripts/ask_golden.py, 11 Nov 2026)
     own_words = hits and len(set(re.findall(r"[a-z0-9]+", question.lower())) & set(re.findall(r"[a-z0-9]+", hits[0]["text"].lower()))) \
         >= OWN_WORDING * len(set(re.findall(r"[a-z0-9]+", hits[0]["text"].lower())))
     unsure = bool(hits) and hits[0]["match"] >= JUNK_BELOW and not own_words
     subject = plan["about"] if len(plan["about"]) >= 3 else question   # time and cut words are the rules'; search the subject
-    candidates = index.retrieve(subject, plan, CANDIDATES, visible) if unsure and ask_model.ready() else []
+    made = ask_model.embed([subject]) if unsure and ask_model.ready() else None   # one vector per question, used twice
+    asked = made[0] if made is not None else None
+    verified = index.verified_for(asked)
+    if verified and visible.isdisjoint(index.docs[verified["key"]]["surveys"]):
+        verified = None
+    if verified:   # an approved question with the same names and groups: its plan, no model (Snowflake's verified queries)
+        doc_labels = index.docs[verified["key"]].get("labels", [])
+        same_names = set(focus(question, doc_labels)) == set(focus(verified["question"], doc_labels))
+        same_groups = set(plan["cuts"]) == set(ask_reader.read(verified["question"])["cuts"])
+        if not (same_names and same_groups):
+            verified = None
+    candidates = index.retrieve(subject, plan, CANDIDATES, visible, asked) if unsure and asked is not None and not verified else []
     closeness = [c["near"] for c in candidates if "near" in c]   # only the ones found by meaning carry a closeness
     if closeness and max(closeness) < NEAR_FLOOR:   # nothing close in meaning: free, no model
         return {"answer": "None of the surveys asks this. The closest questions are below.", "chart": None, "table": None,
@@ -224,26 +271,43 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
     if any("latest" in w or "last" in w for w in plan["when"]):   # "latest", "last 8 weeks": questions still being asked
         recent = [c for c in candidates if c["last"] >= str(date.fromisoformat(index.newest) - timedelta(days=CURRENT_DAYS))]
         candidates = recent or candidates
+    # a retailer or brand named among a long-running question's answers brings it in even when its wording is far in
+    # meaning: "Amazon in 2025 vs 2026" is the weekly retailer lists, not one of the Amazon studies (golden set, 11 Nov 2026)
+    seen = {c["key"] for c in candidates}
+    candidates += [d for k, d in index.docs.items() if candidates and k not in seen and d["waves"] >= TREND_FROM * 5
+                   and not visible.isdisjoint(d["surveys"]) and focus(question, d.get("labels", []))][:3]
+    if not EVENT.search(question.lower()):   # "Walmart shoppers" is not the holiday retailers question
+        candidates = [c for c in candidates if not EVENT.search(c["text"].lower())] or candidates
     # a retailer or brand the question names among a question's answers ("Amazon" in the retailer lists) goes first, the
     # longest-running first: the model otherwise favours a question with the name in its wording (Amazon's Big Deal Days)
     candidates.sort(key=lambda c: (not focus(question, c.get("labels", [])), -c["waves"] if focus(question, c.get("labels", [])) else 0))
     if candidates:   # the model reads the question over the retrieved candidates; rules keep any dates it names
-        reading = ask_model.plan(question, [{"number": i, "text": c["text"], "family": FAMILY.get(c["family"], c["family"]),
+        reading = ask_model.plan(question, [{"number": i, "text": c["text"], "name": c.get("name", ""), "family": FAMILY.get(c["family"], c["family"]),
                                              "waves": c["waves"], "first": c["first"], "last": c["last"],
                                              "answers": c.get("labels", [])} for i, c in enumerate(candidates)])
-    if reading is not None:
+    if verified:
+        understood = "verified"
+        reading = {"pick": None, "focus": verified.get("focus", []), "kind": verified.get("kind", "share"),
+                   "grain": verified.get("grain", "auto"), "cut": verified.get("cut", "none"), "period": verified.get("period", "all")}
+        chosen = {**index.docs[verified["key"]], "key": verified["key"]}
+        hits = [chosen] + [h for h in hits if h["key"] != chosen["key"]]
+        plan = read_with_model(plan, reading)
+    if reading is not None and not verified:
         understood = "model"
         if reading["pick"] is None:
             return {"answer": "None of the surveys asks this. The closest questions are below.", "chart": None, "table": None,
                     "sources": [], "plan": plan, "mode": "none", "no_source": True, "understood": understood,
                     "suggestions": [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]}
         chosen = candidates[reading["pick"]]
+        alternative = candidates[reading["alt"]] if reading.get("alt") is not None and reading["alt"] != reading["pick"] else None
         # rules the model was told but breaks, enforced here for free: a retailer or brand named among a long-running
         # question's answers is that question unless an event is named; a trend needs a question with history
         named = [c for c in candidates if c["waves"] >= TREND_FROM * 5 and focus(question, c.get("labels", []))]
-        event = re.search(r"prime day|big deal|black friday|cyber|deal days|holiday|valentine|easter|sale", question.lower())
-        if named and not focus(question, chosen.get("labels", [])) and not event:
-            chosen = named[0]
+        longest = max(named, key=lambda c: c["waves"], default=None)
+        own_name = longest and any(longest["labels"][i].lower() in chosen["text"].lower() for i in focus(question, longest["labels"]))
+        if longest and not own_name and not EVENT.search(question.lower()) and (   # "Amazon Prime" questions keep their own
+                not focus(question, chosen.get("labels", [])) or chosen["waves"] * 3 < longest["waves"]):   # q5 (195 waves) over EC2 (22)
+            chosen = longest
         if chosen["waves"] <= 2:   # the same question asked over more waves is the better source: most of its own,
             own = {a.lower() for a in chosen.get("labels", []) if not GENERIC.match(a)}   # specific answers alike
             longer = [c for c in candidates if c["waves"] >= TREND_FROM * 2 and len(own) >= 3
@@ -251,21 +315,38 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
             chosen = max(longer, key=lambda c: c["waves"], default=chosen)
         if (plan["grain"] or plan["kind"] == "trend" or reading["kind"] == "trend") and chosen["waves"] < TREND_FROM:
             chosen = next((c for c in candidates if c["waves"] >= TREND_FROM), chosen)
-        hits = [chosen] + [c for c in candidates if c["key"] != chosen["key"]]
+        alternative = alternative if alternative and alternative["key"] != chosen["key"] else None
+        hits = [chosen] + ([alternative] if alternative else []) + [c for c in candidates if c["key"] not in (chosen["key"], (alternative or {}).get("key"))]
         plan = read_with_model(plan, reading)
     if understood == "rules" and hits and hits[0]["match"] < MIN_MATCH:   # too little matched: the closest, never an answer
         return {"answer": "No survey question matches this well enough to answer it. The closest questions are below.",
                 "chart": None, "table": None, "sources": [], "plan": plan, "mode": "none", "no_source": True,
                 "suggestions": [{"qcode": h["qcode"], "text": h["text"][:200], "family": h["family"], "key": h["key"]} for h in hits[:4]]}
-    suggestions = [{"qcode": h["qcode"], "text": h["text"][:200], "family": h["family"], "key": h["key"]} for h in hits[1:5]]
+    suggestions = [{"qcode": h["qcode"], "text": h.get("name") or h["text"][:200], "family": h["family"], "key": h["key"],
+                    "alt": bool(alternative) and h["key"] == alternative["key"]} for h in hits[1:5]]
     if not hits:
         return {"answer": "No survey question in the portal matches this. Try other words, or browse Search questions.",
                 "chart": None, "table": None, "sources": [], "suggestions": [], "plan": plan, "mode": "none", "no_source": True}
-    doc = index.docs[hits[0]["key"]]
-    if not plan["when"] and not plan["cuts"] and (plan["kind"] in ("share", "count", "change") or plan["grain"]) and doc["waves"] >= TREND_FROM:
-        plan = {**plan, "kind": "trend", "when": [{"all": True}]}   # no time named: every wave, the latest figure first
-    counts = index.counts(doc["key"])
-    fig = ask_figures.compute(counts, plan, visible)
+    if understood == "rules" and hits and hits[0]["waves"] <= 2:   # no model: a near-equal match with history is the better source
+        longer = [h for h in hits[1:6] if h["waves"] >= TREND_FROM * 2 and h["score"] >= NEAR_EQUAL * hits[0]["score"]]
+        if longer:
+            hits = [max(longer, key=lambda h: h["waves"])] + [h for h in hits if h["key"] != max(longer, key=lambda h: h["waves"])["key"]]
+    asked_plan = plan
+    for hit in hits[:4]:   # the pick, or when it was not asked in the period named the next match naming the same
+        if hit is not hits[0] and not focus(question, hit.get("labels", [])):   # retailer or brand that was ("Temu over
+            continue                                                             # the last year": the retailer lists)
+        doc = index.docs[hit["key"]]
+        plan = asked_plan
+        if not plan["when"] and not plan["cuts"] and (plan["kind"] in ("share", "count", "change") or plan["grain"]) and doc["waves"] >= TREND_FROM:
+            plan = {**plan, "kind": "trend", "when": [{"all": True}]}   # no time named: every wave, the latest figure first
+        counts = index.counts(doc["key"])
+        fig = ask_figures.compute(counts, plan, visible)
+        if hit is hits[0]:
+            first = (doc, plan, counts, fig)
+        if fig["periods"]:
+            break
+    else:
+        doc, plan, counts, fig = first   # none was: say when the pick was asked
     if not fig["periods"]:
         asked = f"{ask_figures.label_date(fig['asked'][0])} – {ask_figures.label_date(fig['asked'][-1])}" if fig["asked"] else "never"
         return {"answer": f"“{doc['text'][:200]}” ({doc['qcode']}) was not asked in the period you named: it was asked {asked}.",
@@ -305,7 +386,9 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
     points = [x for x in sentences[1:] if not x.startswith(NOTE_STARTS)]
     headline = next((x for x in points if "%" in x), points[0] if points else "")   # the first sentence with a figure
     return {"answer": "\n".join(sentences), "headline": headline, "points": [x for x in points if x != headline], "notes": notes,
-            "source_line": sentences[0], "weighting": "unweighted", "understood": understood, "codes": doc.get("codes", [doc["qcode"]]),
+            "source_line": sentences[0], "weighting": "unweighted", "understood": understood,
+            "verify": {"question": question, "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],
+                       "kind": plan["kind"], "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, "codes": doc.get("codes", [doc["qcode"]]),
             "chart": chart(fig, shown), "table": table, "plan": plan, "mode": "figures", "no_source": False,
             "suggestions": suggestions,
             "sources": [{"id": "S1", "key": doc["key"], "qcode": doc["qcode"], "question": doc["text"], "family": doc["family"],

@@ -146,3 +146,14 @@ def test_an_empty_index_is_built_again(tmp_path, index):
     assert assistant.index_for(index.root, "v", []).docs == {}                   # still nothing there: still empty
     assert assistant.index_for(index.root, "v", [{"survey_id": 100 + i, "wave_date": d, "title": "", "modules": []}
                                                 for i, d in enumerate(DATES)]).docs
+
+
+def test_a_question_not_asked_then_never_borrows_an_unrelated_one(index):
+    found = assistant.answer("ways to save money in October 2026", index, EVERYONE)   # Q14 asked only in September
+    assert found["mode"] == "none" and "was not asked in the period" in found["answer"]
+
+
+def test_event_questions_answer_only_questions_naming_an_event():
+    assert assistant.EVENT.search("from which retailers did you make holiday-related purchases?")
+    assert assistant.EVENT.search("prime day purchases") and assistant.EVENT.search("back-to-school plans")
+    assert not assistant.EVENT.search("walmart shoppers over time") and not assistant.EVENT.search("wholesale clubs")

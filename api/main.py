@@ -51,7 +51,7 @@ from starlette.staticfiles import NotModifiedResponse
 from shared.core import access, api_keys, audit
 from shared.core.database import apply_sql, get_engine
 from shared.data import payloads
-from api import assistant, exports, ingest, logs, mcp, metrics, signin, team
+from api import ask_model, assistant, exports, ingest, logs, mcp, metrics, signin, team
 from api.search import SearchIndex
 from api.signin import admin, user
 from etl import launch_schedule
@@ -684,6 +684,19 @@ async def ask_answer(who: dict, question: str) -> dict:
         ASK_SLOTS.release()
 
 
+@app.post("/api/v1/admin/ask/verified")
+async def ask_verified(request: Request, who: dict = Depends(admin)) -> dict:
+    """An admin marks an Ask Coresight answer as verified (the answer's "verify" block): later questions like it, with
+    the same names and groups, use this plan with no model (api/assistant.py save_verified)."""
+    index, _ = await ask_index(who)
+    try:
+        saved = await run_in_threadpool(assistant.save_verified, await team.json_body(request), index)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    audit.record(request, "ask_verified", target=saved["saved"]["question"][:300], detail=saved["saved"])
+    return saved
+
+
 @app.post("/api/v1/ask")
 async def ask(request: Request, who: dict = Depends(user)) -> dict:
     """A question in plain words, answered from the published survey figures with a chart (api/assistant.py), no model
@@ -914,7 +927,8 @@ async def health(who: dict = Depends(admin)) -> dict:
     return {"build": BUILD, "dashboards": len(STORE), "published": str(STAMP[1]) if STAMP else None,
             "serving_waves": SERVING[0] if SERVING else 0, "serving_built": str(SERVING[1]) if SERVING else None,
             "cached_results": len(RESULTS), "cached_mb": round(CACHED_BYTES / 2**20, 1), "catalogue": len(CATALOGUE.docs) if CATALOGUE else 0,
-            "pool": pool_info, "audit_queue": audit.PENDING.qsize(), "revoked_sessions": len(signin.REVOKED)}
+            "pool": pool_info, "audit_queue": audit.PENDING.qsize(), "revoked_sessions": len(signin.REVOKED),
+            "ask_model": {**ask_model.status(), "questions_with_vectors": len(assistant.INDEX["index"].vector_keys) if assistant.INDEX["index"] else 0}}
 
 
 @app.get("/api/v1/me")

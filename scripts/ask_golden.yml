@@ -1,0 +1,182 @@
+# Ask Coresight's golden set: 150 questions worded the way analysts ask them, each with what a right answer must be.
+# Read by scripts/ask_golden.py. Run it locally and on staging before every push (research 11 Nov 2026: Uber, LinkedIn
+# and Snowflake each keep 130-150 such questions and score every step).
+#
+#   q      the question as an analyst would type it
+#   want   phrases, any one of which the right survey question's wording contains (lower case); "none" when no
+#          survey asks it (the answer must say so)
+#   check  optional: trend (a line over periods), cut (grouped by the group asked), top (a ranked list), count
+#
+# Not to be copied into config/ask_verified.yml: a verified answer for a golden question would test nothing.
+
+# --- Retailers (food and nonfood, the weekly tracker's core)
+- {q: "What share bought from Amazon in the latest wave?", want: ["nonfood products from", "food products from"]}
+- {q: "What share bought from Amazon in all waves?", want: ["nonfood products from", "food products from"], check: trend}
+- {q: "Walmart shoppers over time", want: ["nonfood products from", "food products from"], check: trend}
+- {q: "Top food retailers last 8 weeks", want: ["food products from"], check: top}
+- {q: "Top nonfood retailers this week", want: ["nonfood products from"], check: top}
+- {q: "Which retailers do Gen Z prefer?", want: ["retailers have you bought", "loyal to", "purchased from online"], check: cut}
+- {q: "Target food shoppers by income", want: ["food products from"], check: cut}
+- {q: "Walmart vs Target nonfood shoppers by generation", want: ["nonfood products from"], check: cut}
+- {q: "Costco shoppers", want: ["nonfood products from", "food products from", "warehouse clubs"]}
+- {q: "Dollar General shoppers monthly", want: ["nonfood products from", "food products from", "dollar stores have you"], check: trend}
+- {q: "Kroger grocery shoppers trend", want: ["food products from"], check: trend}
+- {q: "How many people bought food from Aldi?", want: ["food products from"]}
+- {q: "Temu shoppers over the last year", want: ["nonfood products from", "purchased from online"]}
+- {q: "Amazon vs Walmart for food", want: ["food products from"]}
+- {q: "Which online retailers do people buy from?", want: ["purchased from online in the past three months"]}
+- {q: "How do people feel about Target?", want: ["how do you feel about"]}
+- {q: "Retailers people are loyal to", want: ["loyal to"]}
+- {q: "Why are people loyal to a retailer?", want: ["contribute to your loyalty"]}
+- {q: "Warehouse club shoppers", want: ["warehouse clubs"]}
+- {q: "Off-price shoppers like TJ Maxx", want: ["off-price retailer", "nonfood products from"]}
+- {q: "Department store shoppers", want: ["department store"]}
+- {q: "Which department stores do people shop at?", want: ["which department stores"]}
+- {q: "Dollar store shoppers", want: ["dollar store"]}
+- {q: "Which dollar stores do people buy from?", want: ["which dollar stores"]}
+- {q: "Amazon in 2025 vs 2026", want: ["nonfood products from", "food products from"]}
+- {q: "Walmart in October 2026", want: ["nonfood products from", "food products from"]}
+# --- Categories bought, in store and online
+- {q: "What did people buy online last month?", want: ["online in the past two weeks"]}
+- {q: "What categories are people buying in store?", want: ["in a store in the past two weeks"]}
+- {q: "Online grocery buying trend", want: ["online in the past two weeks", "groceries online"], check: trend}
+- {q: "Electronics bought online over time", want: ["online in the past two weeks", "purchased online in th"], check: trend}
+- {q: "In-store clothing purchases by quarter", want: ["in a store in the past two weeks"], check: trend}
+- {q: "Which categories do people buy online most?", want: ["online in the past two weeks", "online in the past three months"], check: top}
+- {q: "Beauty products bought in store vs online", want: ["in a store", "online in the past"]}
+- {q: "Home improvement products bought", want: ["home-improvement"]}
+- {q: "Home furnishing purchases", want: ["home-furnishing"]}
+- {q: "Footwear categories bought", want: ["footwear"]}
+- {q: "How are people getting online orders delivered?", want: ["delivery or pickup"]}
+# --- Activities
+- {q: "What activities have people done in the past two weeks?", want: ["have you done in the past two weeks"]}
+- {q: "How many people went to a restaurant recently?", want: ["have you done in the past two weeks", "dined in at a restaurant"]}
+- {q: "Dining out trend by quarter", want: ["have you done in the past two weeks"], check: trend}
+- {q: "Movie theater visits over time", want: ["have you done in the past two weeks"], check: trend}
+- {q: "How many people travelled recently?", want: ["have you done in the past two weeks", "travel"]}
+- {q: "Gym visits by generation", want: ["have you done in the past two weeks"], check: cut}
+# --- Sentiment, finances, economy
+- {q: "How is consumer confidence trending?", want: ["economy overall", "discretionary income"], check: trend}
+- {q: "Do people expect their finances to get better or worse?", want: ["discretionary income", "personal financial situation"]}
+- {q: "Economy outlook every 4 weeks", want: ["economy overall"], check: trend}
+- {q: "Personal finances outlook by income", want: ["discretionary income"], check: cut}
+- {q: "Economic outlook by generation", want: ["economy overall"], check: cut}
+- {q: "How long could people live on their savings?", want: ["personal savings"]}
+- {q: "How much unsecured debt do people have?", want: ["unsecured debt"]}
+- {q: "Have people filed their taxes yet?", want: ["income tax return"]}
+- {q: "How have household expenses changed?", want: ["expenses changed"]}
+- {q: "Are people noticing price increases?", want: ["price changes in retail", "price changes in food"]}
+- {q: "Inflation expectations for the holidays", want: ["pace of price increases"]}
+- {q: "How are people changing grocery habits?", want: ["grocery shopping habits"]}
+- {q: "How are people changing nongrocery shopping?", want: ["nongrocery shopping"]}
+- {q: "Consumer sentiment monthly in 2026", want: ["economy overall", "discretionary income"], check: trend}
+# --- Tariffs
+- {q: "How worried are people about tariffs?", want: ["concerns about tariffs"]}
+- {q: "What impact do tariffs have on people personally?", want: ["tariffs have on you personally"]}
+- {q: "Have people changed shopping to avoid tariffs?", want: ["avoid the effects of tariffs", "avoid the impact of tariffs"]}
+- {q: "Tariff impact on the economy yearly", want: ["tariffs have on the overall us economy"], check: trend}
+- {q: "Benefits of tariffs", want: ["benefits of tariffs"]}
+- {q: "Which categories did people buy early because of tariffs?", want: ["pull forward purchases"]}
+- {q: "Where will people cut purchases because of tariffs?", want: ["reduce your purchases"]}
+# --- GenAI and technology
+- {q: "What share of people use GenAI?", want: ["genai", "generative ai", "ai tools", "artificial intelligence"]}
+- {q: "GenAI use for shopping, monthly", want: ["genai for shopping"], check: trend}
+- {q: "Have people heard of AI?", want: ["heard of artificial intelligence", "heard of"]}
+- {q: "What worries people about GenAI?", want: ["worries you about the use of"]}
+- {q: "Do younger people use GenAI more?", want: ["genai", "generative ai", "ai tools", "ai for work"], check: cut}
+- {q: "Which AI tools are people using?", want: ["ai tools have you used", "actually used"]}
+- {q: "Is AI used for work or personally?", want: ["ai for work", "personal, for work, or both"]}
+- {q: "Are people allowed to use GenAI at work?", want: ["allowed to use genai"]}
+- {q: "Have people bought something inside an AI platform?", want: ["purchase within one of these ai platforms", "purchased something within a genai platform"]}
+- {q: "Satisfaction with shopping in AI platforms", want: ["satisfied with the shopping experience", "satisfied were you with the purchase"]}
+- {q: "Where can GenAI have a positive impact?", want: ["positive impact"]}
+- {q: "Which AI assistants help people shop?", want: ["help you shop"]}
+# --- Health and GLP-1
+- {q: "How many people take GLP-1 drugs?", want: ["glp-1 drug like ozempic", "weight loss medications"]}
+- {q: "How has GLP-1 usage changed monthly", want: ["glp-1 drug like ozempic"], check: trend}
+- {q: "Why do people take GLP-1 medication?", want: ["why are you currently taking a glp-1"]}
+- {q: "Do GLP-1 users eat less?", want: ["eating more or less", "eat less"]}
+- {q: "Which foods do GLP-1 users eat more or less?", want: ["food categories"]}
+- {q: "How has weight loss medication changed apparel purchases?", want: ["weight loss medications such as ozempic", "fit/comfort"]}
+# --- Holidays and events
+- {q: "Holiday shopping progress by generation", want: ["status of your holiday shopping"], check: cut}
+- {q: "What share of women started holiday shopping", want: ["status of your holiday shopping"], check: cut}
+- {q: "Compare the first and latest wave of holiday shopping progress", want: ["status of your holiday shopping"]}
+- {q: "Top holiday retailers", want: ["holiday-related purchases"], check: top}
+- {q: "What are people buying for the holidays?", want: ["buy for the holidays", "holiday-related purchases", "holiday shopping (gifts"]}
+- {q: "Did people make holiday purchases this week?", want: ["holiday shopping (gifts", "holiday-related purchases", "holiday purchases in the last seven days"]}
+- {q: "Holiday spending expectations", want: ["holiday spending in 2026", "holiday season compare"]}
+- {q: "How did 2025 holiday spending compare to 2024?", want: ["holiday season compare"]}
+- {q: "Why do people expect to spend more this holiday?", want: ["expect to spend more"]}
+- {q: "Expected holiday financial situation", want: ["personal financial situation to be better or worse for holiday"]}
+- {q: "Holiday shopping preferences", want: ["holiday shopping preference"]}
+- {q: "Did people shop on Black Friday?", want: ["black friday"]}
+- {q: "Black Friday shopping plans", want: ["black friday"]}
+- {q: "Cyber Monday shopping", want: ["cyber monday"]}
+- {q: "Valentine's Day spending", want: ["valentine"]}
+- {q: "Easter plans", want: ["easter"]}
+- {q: "Halloween spending", want: ["halloween"]}
+- {q: "Back to school shopping plans", want: ["back-to-school", "back to school"]}
+- {q: "Mother's Day gift purchases", want: ["mother"]}
+- {q: "Thanksgiving spending", want: ["thanksgiving"]}
+# --- Deals and promotions
+- {q: "Did people buy from Amazon during Big Deal Days?", want: ["big deal days"]}
+- {q: "Prime Day purchases", want: ["prime day"]}
+- {q: "How many people have subscribed to Amazon Prime?", want: ["amazon prime membership", "membership to amazon prime"]}
+- {q: "Amazon Prime membership over time", want: ["amazon prime membership", "membership to amazon prime"], check: trend}
+- {q: "Why do people have Amazon Prime?", want: ["why do you have amazon prime"]}
+- {q: "Retail subscription programs people belong to", want: ["subscription"]}
+# --- Apparel, beauty, luxury, home
+- {q: "Clothing purchase rate", want: ["clothing or apparel accessories in the past three months"]}
+- {q: "Which apparel retailers do people buy from?", want: ["purchased clothing or apparel accessories from"]}
+- {q: "Apparel categories bought", want: ["categories of clothing"]}
+- {q: "How much did people spend on clothing?", want: ["spend on clothing", "spend monthly on clothing"]}
+- {q: "Apparel brands people bought", want: ["apparel accessories brands"]}
+- {q: "Who bought beauty products in the past three months?", want: ["beauty products"]}
+- {q: "Top beauty retailers", want: ["purchased beauty products from"], check: top}
+- {q: "Where do people discover beauty products?", want: ["discover beauty products"]}
+- {q: "Why do people buy beauty products?", want: ["why do you buy beauty products"]}
+- {q: "What do people want from a beauty brand?", want: ["want from a beauty brand"]}
+- {q: "Skin care buying priorities", want: ["skin care"]}
+- {q: "Luxury purchases", want: ["luxury"]}
+- {q: "Which luxury brands do people buy?", want: ["luxury brand"]}
+- {q: "Where do people buy luxury?", want: ["buy luxury products"]}
+- {q: "Home furnishing shopping attitudes", want: ["home furnishings"]}
+- {q: "Which retailers do people buy home improvement from?", want: ["home-improvement/diy/garden products"]}
+# --- Social commerce
+- {q: "Social media platforms used for shopping", want: ["social media platforms"]}
+- {q: "How many people bought on social media?", want: ["purchased products on social media", "purchased new products (not second-hand) on social media"]}
+- {q: "What do people buy on TikTok?", want: ["tiktok"]}
+- {q: "Why buy on social media instead of a store?", want: ["why did you buy new products on social media"]}
+# --- Gas prices and the Middle East
+- {q: "How are gas prices affecting spending?", want: ["gas prices", "gasoline prices"]}
+- {q: "Gas price impact trend in 2026", want: ["gas prices", "gasoline prices"], check: trend}
+- {q: "Where are people cutting spending because of gas prices?", want: ["reduced your spending due to higher gas prices", "reduce your spending elsewhere"]}
+- {q: "Attention to the Middle East conflict", want: ["middle east"]}
+# --- Demographics (profile questions are asked too)
+- {q: "What is the age breakdown of respondents?", want: ["age"]}
+- {q: "Household income of respondents", want: ["household income"]}
+- {q: "Where do respondents live, urban or rural?", want: ["area where your primary residence"]}
+- {q: "Political philosophy of respondents", want: ["political philosophy"]}
+# --- Wording styles: typos, short, long, specific dates
+- {q: "amazn prime membersip", want: ["amazon prime membership", "membership to amazon prime"]}
+- {q: "walmrt shoppers", want: ["nonfood products from", "food products from"]}
+- {q: "genai", want: ["genai", "generative ai", "ai tools", "artificial intelligence"]}
+- {q: "tariffs", want: ["tariff"]}
+- {q: "Can you show me how the share of people who bought groceries online has changed every month since January 2026?", want: ["online in the past two weeks", "groceries online"], check: trend}
+- {q: "Amazon food shoppers in Q3 2026", want: ["food products from"]}
+- {q: "Walmart nonfood shoppers last 4 weeks", want: ["nonfood products from"]}
+- {q: "Holiday progress in the previous wave", want: ["status of your holiday shopping"]}
+- {q: "Economy outlook in 2025 vs 2026", want: ["economy overall"]}
+- {q: "GLP-1 users biweekly", want: ["glp-1 drug like ozempic"], check: trend}
+- {q: "Online shopping by region", want: ["online in the past"], check: cut}
+- {q: "Restaurant visits among millennials", want: ["have you done in the past two weeks", "dined in at a restaurant"], check: cut}
+# --- Questions no survey asks: must say so, never guess
+- {q: "How many people own a submarine?", want: none}
+- {q: "What is the capital of France?", want: none}
+- {q: "Who won the Super Bowl last year?", want: none}
+- {q: "What is the stock price of Nvidia?", want: none}
+- {q: "How many people have visited Mars?", want: none}
+- {q: "Best pizza recipe", want: none}
+- {q: "Weather in New York tomorrow", want: none}
+- {q: "Translate hello into Spanish", want: none}

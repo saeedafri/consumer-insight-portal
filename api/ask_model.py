@@ -44,15 +44,16 @@ LOCK = threading.Lock()
 CUTS = ["none", "gender", "generation", "age_band", "income_band", "census_region", "urbanicity"]
 # the reply in short names (output tokens cost 4x input): q candidate number or null, a answer labels named, k kind,
 # g grain, c cut, p period
-SCHEMA = {"type": "object", "additionalProperties": False, "required": ["q", "a", "k", "g", "c", "p"],
-          "properties": {"q": {"type": ["integer", "null"]}, "a": {"type": "array", "items": {"type": "string"}},
+SCHEMA = {"type": "object", "additionalProperties": False, "required": ["q", "r", "a", "k", "g", "c", "p"],
+          "properties": {"q": {"type": ["integer", "null"]}, "r": {"type": ["integer", "null"]},
+                         "a": {"type": "array", "items": {"type": "string"}},
                          "k": {"type": "string", "enum": ["share", "count", "top", "trend", "compare"]},
                          "g": {"type": "string", "enum": ["auto", "wave", "biweek", "4week", "month", "quarter", "year"]},
                          "c": {"type": "string", "enum": CUTS},
                          "p": {"type": "string", "enum": ["named", "latest", "all", "previous", "first_vs_latest"]}}}
 # every word here is paid for on every new question (~200 tokens); each rule is one the measured misses needed
 SYSTEM = ("You map an analyst's question about Coresight's US consumer surveys to ONE numbered candidate survey question "
-          "(q; null if none answers it). Prefer the weekly tracker and questions asked in many waves (w) and recently, "
+          "(q; null if none answers it); r: a second candidate only if it is just as likely, else null. Prefer the weekly tracker and questions asked in many waves (w) and recently, "
           "unless a study, holiday or time is named; when candidates ask the same thing, the one with most waves. For how "
           "many or what share of people use, own, have or do X, pick the question asking whether people do X, not a "
           "follow-up asked only of those who do (how much, why, how often). A retailer or brand named (Amazon, Walmart) "
@@ -73,8 +74,24 @@ def same_question(question: str) -> str:
     return " ".join(sorted(set(re.findall(r"[a-z0-9]+", question.lower())) - FILLER))
 
 
+KEY_NAMES = ("OPENAPI_KEY", "OPENAI_API_KEY", "OPEN_API_KEY", "OPENAI_KEY")   # the setting under any of its usual names
+
+
+def key_name() -> str | None:
+    """The environment variable the key is read from (never its value), or None: shown on the admin health report."""
+    return next((n for n in KEY_NAMES if os.environ.get(n, "").strip()), None)
+
+
 def key() -> str:
-    return os.environ.get("OPENAPI_KEY") or os.environ.get("OPENAI_API_KEY") or ""
+    name = key_name()
+    return os.environ[name].strip() if name else ""
+
+
+def status() -> dict:
+    """For /api/v1/admin/health and the start-up log: is the model on, and why not."""
+    now = spent()
+    return {"on": ready(), "key_from": key_name(), "model": model(), "budget_usd": budget(), "spent_usd": round(now["usd"], 5),
+            "calls": now["calls"], "why_off": None if ready() else ("no key: set OPENAPI_KEY" if not key_name() else "monthly cap reached")}
 
 
 def model() -> str:
@@ -115,10 +132,10 @@ def ready() -> bool:
     return bool(key()) and spent()["usd"] < budget()
 
 
-def call(path: str, body: dict) -> dict:
+def call(path: str, body: dict, seconds: float = CALL_SECONDS) -> dict:
     request = urllib.request.Request(f"https://api.openai.com/v1/{path}", data=json.dumps(body).encode(),
                                      headers={"Authorization": f"Bearer {key()}", "Content-Type": "application/json"})
-    with urllib.request.urlopen(request, timeout=CALL_SECONDS) as reply:
+    with urllib.request.urlopen(request, timeout=seconds) as reply:
         return json.load(reply)
 
 
@@ -139,8 +156,9 @@ def embed(texts: list[str]) -> np.ndarray | None:
         return None
 
 
-def question_vectors(texts: dict[str, str]) -> dict[str, np.ndarray]:
-    """key → vector for every survey question, reusing the saved vectors of texts already embedded (by text hash)."""
+def question_vectors(texts: dict[str, str], prune: bool = False) -> dict[str, np.ndarray]:
+    """key → vector for each text, reusing the saved vectors of texts already embedded (by text hash). prune: drop
+    saved vectors of texts no longer asked for (only the full list of survey questions does, api/ask_index.py)."""
     digest = {k: hashlib.sha1(t.encode()).hexdigest()[:16] for k, t in texts.items()}
     try:
         saved = {h: np.array(v, np.float32) for h, v in json.loads(VECTORS.read_text()).items()}
@@ -153,7 +171,8 @@ def question_vectors(texts: dict[str, str]) -> dict[str, np.ndarray]:
             saved.update({digest[k]: v for k, v in zip(missing, made)})
             try:
                 LOGS.mkdir(exist_ok=True)
-                VECTORS.write_text(json.dumps({h: [round(float(x), 5) for x in v] for h, v in saved.items() if h in set(digest.values())}))
+                kept = set(digest.values())
+                VECTORS.write_text(json.dumps({h: [round(float(x), 5) for x in v] for h, v in saved.items() if not prune or h in kept}))
             except OSError:
                 log.warning("Ask model: vectors not saved")
             log.info("Ask model: embedded %d new survey questions", len(missing))
@@ -176,8 +195,8 @@ def plan(question: str, candidates: list[dict]) -> dict | None:
     if not ready():
         return None
     # every word sent is paid for: ~40 tokens a candidate (waves, years, wording to 110 letters, 6 short answers)
-    listing = "\n".join(f"{c['number']}. ({c['waves']}w {c['first'][2:4]}-{c['last'][2:4]}) {c['text'][:110]} | "
-                        f"{'; '.join(a[:20] for a in c['answers'][:6])}" for c in candidates)
+    listing = "\n".join(f"{c['number']}. ({c['waves']}w {c['first'][2:4]}-{c['last'][2:4]}) {c.get('name') or ''}: {c['text'][:90]} | "
+                        f"{'; '.join(a[:20] for a in c['answers'][:6])}" for c in candidates)   # the business name first
     try:
         started = time.perf_counter()
         reply = call("chat/completions", {
@@ -190,12 +209,13 @@ def plan(question: str, candidates: list[dict]) -> dict | None:
     except Exception as exc:   # noqa: BLE001 — network, timeout, refusal, bad JSON: the rules answer
         log.warning("Ask model: plan failed: %s", type(exc).__name__)
         return None
-    found = {"pick": found.get("q"), "focus": found.get("a", []), "kind": found.get("k", "share"), "grain": found.get("g", "auto"),
+    found = {"pick": found.get("q"), "alt": found.get("r"), "focus": found.get("a", []), "kind": found.get("k", "share"), "grain": found.get("g", "auto"),
              "cut": found.get("c", "none"), "period": found.get("p", "all")}
     numbers = {c["number"]: c for c in candidates}
     picked = numbers.get(found["pick"])
     labels = {a.lower(): a for a in (picked["answers"] if picked else [])}
     found["pick"] = picked["number"] if picked else None
+    found["alt"] = found["alt"] if found["alt"] in numbers else None
     found["focus"] = [labels[f.lower()] for f in found["focus"] if f.lower() in labels]
     found["seconds"], found["usd"] = round(time.perf_counter() - started, 2), usd
     with LOCK:
@@ -203,7 +223,7 @@ def plan(question: str, candidates: list[dict]) -> dict | None:
             kept = json.loads(READINGS.read_text())
         except (OSError, ValueError):
             kept = {}
-        kept[memo] = {k: found[k] for k in ("pick", "focus", "kind", "grain", "cut", "period")}
+        kept[memo] = {k: found[k] for k in ("pick", "alt", "focus", "kind", "grain", "cut", "period")}
         try:
             READINGS.write_text(json.dumps(dict(list(kept.items())[-20000:])))   # the newest 20,000 readings, ~3 MB
         except OSError:

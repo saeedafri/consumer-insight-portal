@@ -4,7 +4,7 @@
 // A question it cannot place shows the closest survey questions instead of a guess.
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { send } from "../api";
+import { send, useMe } from "../api";
 import type { Answer, AskChart } from "../api";
 import EChart, { downloadPng } from "../components/EChart";
 import type { Chart } from "../components/EChart";
@@ -65,6 +65,13 @@ function Reply({ question, answer, weighted, onAsk }: { question: string; answer
   const chart = answer.chart;
   const height = chart ? (chart.type === "line" || chart.type === "donut" ? 340 : Math.max(180, chart.categories.length * (chart.series.length > 1 ? 34 : 26) + 40)) : 0;
   const source = answer.sources[0];
+  const isAdmin = !!useMe().data?.permissions?.includes("admin_pages");
+  const [verified, setVerified] = useState("");
+  const saveVerified = async () => {
+    try { await send("POST", "/api/v1/admin/ask/verified", answer.verify); setVerified("Saved: questions like this now use this answer."); }
+    catch (e) { setVerified(e instanceof Error ? e.message : String(e)); }
+  };
+  const how = { verified: "Verified answer", model: "Understood by AI, figures computed", rules: "Matched by words, figures computed" }[answer.understood ?? ""];
   const drawn = useRef<Chart | null>(null);
   const file = `ask-${(source?.qcode ?? "answer").toLowerCase()}`;
   const notes = [question, answer.source_line ?? "", "Unweighted figures, from Coresight's surveys (Ask Coresight)."];
@@ -86,12 +93,14 @@ function Reply({ question, answer, weighted, onAsk }: { question: string; answer
         </ul>}
         {source && <p className="small muted ask-source">{answer.source_line}{" "}
           <Link to={source.link}>Open {source.link.includes("/trends/") ? "in Trends" : "in Question explorer"} →</Link></p>}
+        <p className="small muted ask-how">{how}{isAdmin && answer.verify && answer.understood !== "verified" && <>{" · "}
+          {verified ? <span role="status">{verified}</span> : <button type="button" className="linklike" onClick={() => void saveVerified()}>Save as verified</button>}</>}</p>
         {answer.table && <details className="ask-figures"><summary>Every figure and its base</summary>
           <div className="table-wrap"><Figures table={answer.table} /></div></details>}
       </>}
     {answer.suggestions.length > 0 && <div className="ask-more">
-      <p className="small muted">{answer.no_source ? "Closest questions" : "Other questions that match"}</p>
-      <div className="tagrow">{answer.suggestions.map(s => <button key={s.key} type="button" className="tag" title={s.text}
+      <p className="small muted">{answer.no_source ? "Closest questions" : answer.suggestions[0]?.alt ? "Did you mean" : "Other questions that match"}</p>
+      <div className="tagrow">{answer.suggestions.map(s => <button key={s.key} type="button" className={s.alt ? "tag sig" : "tag"} title={s.text}
         onClick={() => onAsk(s.text)}>{s.qcode}: {s.text.length > 70 ? s.text.slice(0, 69) + "…" : s.text}</button>)}</div>
     </div>}
   </article>;
