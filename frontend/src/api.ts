@@ -188,16 +188,20 @@ export interface Sector {
 export const useSectors = () =>
   useQuery({ queryKey: ["sectors"], queryFn: () => get<{ sectors: Sector[] }>("/api/v1/sectors"), ...forever, retry: false });
 
-/** Retailer comparison (etl/retailers.py): the newest weeks, each pooled with the weeks before it; per retailer and week
- *  its reach (% of respondents), buyers, their profile (% per group, null under min_buyers) and sentiment if asked. */
-export type Profile = { gender: (number | null)[]; generation: (number | null)[]; income: (number | null)[] };
+/** The retail databank (etl/retailers.py): counts per week, added up in the browser for whichever weeks are chosen.
+ *  A retailer's counts: weekly market [shoppers, food, nonfood, ...profile]; a sector [shoppers, ...profile]; profile is
+ *  every group of `groups` in order. Weeks are indexes into `weeks` (oldest first). */
+export interface RetailMarket {
+  name: string; sector: boolean; base: string; purchase: string | null;
+  weeks: number[]; asked: number[]; bought: (number | null)[]; buyers: number[][];
+  retailers: { name: string; weeks: Record<string, number[]>; sentiment: [string, number, number][] | null }[];
+}
 export interface Retailers {
-  weeks: { survey_id: number; date: string; from: string; weeks: number; respondents: number }[];
-  groups: Record<keyof Profile, string[]>;
-  everyone: Profile[];
+  weeks: { survey_id: number; date: string; n: number; profile: number[] }[];
+  groups: Record<string, string[]>;
   min_buyers: number;
-  retailers: { name: string; reach: Record<"any" | "food" | "nonfood", (number | null)[]>; buyers: number[]; profile: (Profile | null)[];
-               sentiment: { positive: number; n: number; date: string } | null }[];
+  pool: number;
+  markets: RetailMarket[];
 }
 export const useRetailers = () =>
   useQuery({ queryKey: ["retailers"], queryFn: () => get<Retailers>("/api/v1/retailers"), ...forever, retry: false });

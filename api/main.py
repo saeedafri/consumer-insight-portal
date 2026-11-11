@@ -505,7 +505,7 @@ async def public_facts(request: Request) -> Response:
 
 @app.get("/api/v1/retailers")
 async def retailers(request: Request, who: dict = Depends(user)) -> Response:
-    """Retailer comparison (etl/retailers.py): each retailer's reach, its shoppers' profile and sentiment, pooled weeks."""
+    """Retailer databank (etl/retailers.py): every retailer and sector, counts per week, for the weeks the screen adds up."""
     require_feature(who, "retailers")
     return await tracker_view(request, who, "retailers")
 

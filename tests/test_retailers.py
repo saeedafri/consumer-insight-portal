@@ -21,20 +21,35 @@ def week(walmart_food: int, walmart_nonfood: int, costco_food: int, ap8: bool = 
                      "income_band": {"under $25,000": FIRST_HALF}}}
 
 
-def test_reach_pools_weeks_and_profiles_buyers():
+def test_each_week_keeps_counts_so_any_weeks_add_up():
     weeks = [({"survey_id": 1, "wave_date": "2026-10-26"}, week(FIRST_HALF, 0, 0b1)),
              ({"survey_id": 2, "wave_date": "2026-11-02"}, week(0, EVERYONE, 0b11, ap8=True))]
     doc = retailers.build(weeks)
-    newest = doc["weeks"][0]
-    assert (newest["date"], newest["from"], newest["weeks"], newest["respondents"]) == ("2026-11-02", "2026-10-26", 2, 80)
-    walmart, costco = doc["retailers"]                      # biggest reach first; "None of these" left out
+    assert [(w["date"], w["n"]) for w in doc["weeks"]] == [("2026-10-26", 40), ("2026-11-02", 40)]
+    weekly = doc["markets"][0]
+    assert weekly["name"] == "Weekly retailers" and weekly["weeks"] == [0, 1] and weekly["asked"] == [40, 40]
+    walmart, costco = weekly["retailers"]                    # biggest in the newest week first; "None of these" left out
     assert walmart["name"] == "Walmart" and costco["name"] == "Costco"
-    assert walmart["reach"]["any"][0] == 75.0                # (20 + 40) of 80 across the two weeks
-    assert walmart["reach"]["food"][0] == 25.0 and walmart["reach"]["nonfood"][0] == 50.0
-    assert walmart["buyers"][0] == 60
-    assert walmart["profile"][0]["gender"] == [66.7, 33.3]   # 20 + 20 men, 0 + 20 women of 60 buyers
-    assert walmart["profile"][0]["income"][0] == 66.7
-    assert costco["buyers"][0] == 3 and costco["profile"][0] is None   # under min_buyers: no profile
-    assert doc["everyone"][0]["gender"] == [50.0, 50.0]
-    assert walmart["sentiment"] == {"positive": 60.0, "n": 10, "date": "2026-11-02"} and costco["sentiment"] is None
-    assert doc["weeks"][1]["weeks"] == 1 and walmart["reach"]["any"][1] == 50.0   # the older week has nothing before it
+    assert walmart["weeks"]["0"][:3] == [20, 20, 0]          # shoppers, food, nonfood: 20 of 40 in the first week
+    assert walmart["weeks"]["1"][:3] == [40, 0, 40]
+    gender = len(retailers.settings()["profile"]["gender"])
+    assert walmart["weeks"]["0"][3:3 + gender] == [20, 0]    # all 20 first-week shoppers are men
+    assert walmart["weeks"]["1"][3:3 + gender] == [20, 20]
+    # two weeks added: (20 + 40) of 80 shoppers, 40 of 60 men; the screen does this sum
+    assert sum(walmart["weeks"][w][0] for w in "01") == 60 and sum(walmart["weeks"][w][3] for w in "01") == 40
+    assert costco["weeks"]["0"][0] == 1 and costco["weeks"]["1"][0] == 2
+    assert doc["weeks"][0]["profile"][:gender] == [20, 20]   # everyone, for reference
+    assert walmart["sentiment"] == [["2026-11-02", 6, 10]] and costco["sentiment"] is None   # 6 of 10 positive
+
+
+def test_a_sector_counts_its_buyers_from_its_own_question_in_its_own_weeks():
+    people = week(FIRST_HALF, 0, 0)
+    people["questions"]["DP1"] = {"rows": [[0, 71, "", 1, "Yes"], [0, 72, "", 2, "No"]], "bits": {(0, 0): EVERYONE, (0, 71): 0b1111111111}}
+    people["questions"]["DP2"] = {"rows": [[80, 0, "Macy's", None, None], [81, 0, "Kohl's", None, None]],
+                                  "bits": {(0, 0): 0b1111111111, (80, 0): 0b111, (81, 0): 0b11111}}
+    doc = retailers.build([({"survey_id": 1, "wave_date": "2026-10-26", "modules": ["Department stores"]}, people),
+                           ({"survey_id": 2, "wave_date": "2026-11-02", "modules": []}, people)])   # not a sector week
+    sector = next(m for m in doc["markets"] if m["name"] == "Department stores")
+    assert sector["sector"] and sector["weeks"] == [0] and sector["asked"] == [10] and sector["bought"] == [10]
+    kohls, macys = sector["retailers"]
+    assert (kohls["name"], kohls["weeks"]["0"][0], macys["weeks"]["0"][0]) == ("Kohl's", 5, 3)   # of 10 buyers

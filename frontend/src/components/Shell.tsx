@@ -16,7 +16,7 @@ import { fmtDate } from "../stats";
 import { perf } from "../perf";
 import { isSaved, removeView, saveView } from "../saved";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Gauge, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, MessageSquareText, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
+import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, MessageSquareText, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 // The perf badge is the developer's: shown only in a browser that opened the portal once with ?perf=1 (?perf=0 hides it again)
@@ -77,7 +77,7 @@ function eyebrow(wave?: Wave): string {
 
 // Each page's name, for the header's breadcrumb and a saved view's name
 const PAGES: Record<string, string> = { "": "Home", library: "Survey library", search: "Search questions", schedule: "Launch schedule", ask: "Ask Coresight",
-  boards: "Boards", sectors: "Sector databank", retailers: "Retailer comparison", channels: "In store vs online", trackers: "Trackers", expectations: "Expected vs actual", methodology: "Methodology", "whats-new": "What's new",
+  boards: "Boards", sectors: "Sector databank", retailers: "Retailer databank", channels: "In store vs online", trackers: "Trackers", expectations: "Expected vs actual", methodology: "Methodology", "whats-new": "What's new",
   account: "My account", "api-guide": "API guide", fieldwork: "Fieldwork", ingest: "Upload survey", logs: "Logs", access: "Access" };
 function pageName(pathname: string): string {
   const [, first, , screen] = pathname.split("/");
@@ -127,9 +127,6 @@ export default function Shell() {
   const china = waves.data?.find(w => w.survey_family === "CSI-CN" && w.rows_built !== 0);    // the China Consumer Survey (Baidu)
   const reportWaves = useReportWaves().data;   // the waves with a weekly report (since Jul 2025: etl/weekly_report.py)
   const hasReport = !!wave && !!reportWaves?.includes(wave.survey_id);
-  // the newest weekly report of each tracker (waves come newest first): US for Consumer sentiment, China for its report
-  const newestReport = (family: string) => waves.data?.find(w => w.survey_family === family && reportWaves?.includes(w.survey_id))?.survey_id;
-  const report = newestReport("CSI-US"), chinaReport = newestReport("CSI-CN");
   const rail = useRef<HTMLElement>(null);
   const howArrived = useNavigationType();
 
@@ -192,12 +189,8 @@ export default function Shell() {
           <Icon of={LayoutDashboard} />Shopping & Spending</NavLink>}
         {china && <NavLink to={`/w/${china.survey_id}`} className={() => wave?.survey_family === "CSI-CN" ? "active" : ""}>
           <Icon of={Globe} />China weekly tracker</NavLink>}
-        {chinaReport && allowed(me, "report") && <NavLink to={`/w/${chinaReport}/report`} className={() => location.pathname === `/w/${chinaReport}/report` ? "active" : ""}>
-          <Icon of={Gauge} />China weekly report</NavLink>}
         {allowed(me, "explorer") && <NavLink to="/channels"><Icon of={Layers} />In store vs online</NavLink>}
-        {report && allowed(me, "report") && <NavLink to={`/w/${report}/report`} className={() => location.pathname === `/w/${report}/report` ? "active" : ""}>
-          <Icon of={Gauge} />Consumer sentiment</NavLink>}
-        {allowed(me, "retailers") && <NavLink to="/retailers"><Icon of={Store} />Retailer comparison</NavLink>}
+        {allowed(me, "retailers") && <NavLink to="/retailers"><Icon of={Store} />Retailer databank</NavLink>}
         {allowed(me, "sectors") && <NavLink to="/sectors"><Icon of={Database} />Sector databank</NavLink>}
         {allowed(me, "expectations") && <NavLink to="/expectations"><Icon of={ChartColumn} />Expected vs actual</NavLink>}
       </RailGroup>

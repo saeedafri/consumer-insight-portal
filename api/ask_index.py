@@ -45,6 +45,10 @@ AREAS = ["retailers", "shopping categories", "online and ecommerce", "grocery an
 AREA_BOOST = 0.03   # retrieval: added for a question in the asked question's business area
 VERIFIED = CONFIG / "ask_verified.yml"   # approved question → answer plans (reviewed in git); admins add more at runtime
 VERIFIED_NEAR = 0.9   # closeness in meaning from which a question is a verified one (with the same names and groups)
+LEARNED = ask_model.LOGS / "ask-learned.json"   # questions the model read: a rewording of one reuses its reading
+LEARNED_NEAR = 0.93   # stricter than a verified one: the model's reading, not an analyst's
+LEARNED_KEEP = 5000   # the newest kept (~1.5 KB each with its vector)
+LEARN_LOCK = threading.Lock()
 STANDING = 0.06     # retrieval: up to this added to a closeness (~0.5–0.8) for a question asked a year of waves and still asked
 SAME_ANSWERS = 0.6   # share of a wave's answers that must be the question's own for the wave to join its series
 SAME_WORDING = 0.5   # shared words / all words: "holiday 2025" vs "holiday 2026" stays one question, a reused code does not
@@ -132,6 +136,8 @@ def wording_groups(versions: list[str]) -> list[list[int]]:
 
 class Index:
     """Every published question, ranked for a question, with where its counts are."""
+    learned: list[dict] = []   # questions the model read (load_verified, learn)
+    learned_vectors: np.ndarray | None = None
 
     def __init__(self, root: Path, waves: list[dict]):
         self.root = root
@@ -339,14 +345,42 @@ class Index:
         self.verified = [v for v in self.verified if v["question"] in found]
         self.verified_vectors = np.array([found[v["question"]] for v in self.verified], np.float32) if self.verified else None
         log.info("Ask verified questions: %d", len(self.verified))
+        try:
+            kept = json.loads(LEARNED.read_text())
+        except (OSError, ValueError):
+            kept = []
+        self.learned = [{k: v for k, v in e.items() if k != "v"} for e in kept]
+        self.learned_vectors = np.array([e["v"] for e in kept], np.float32) if kept else None
 
     def verified_for(self, asked: np.ndarray | None) -> dict | None:
-        """The verified question nearest in meaning, if at least VERIFIED_NEAR (the caller checks names and groups)."""
-        if asked is None or self.verified_vectors is None:
+        """The verified question nearest in meaning, if at least VERIFIED_NEAR, else a question the model read before,
+        if at least LEARNED_NEAR (the caller checks names and groups). Milliseconds: no model call."""
+        if asked is None:
             return None
-        near = self.verified_vectors @ asked
-        best = int(np.argmax(near))
-        return {**self.verified[best], "near": float(near[best])} if near[best] >= VERIFIED_NEAR else None
+        if self.verified_vectors is not None:
+            near = self.verified_vectors @ asked
+            best = int(np.argmax(near))
+            if near[best] >= VERIFIED_NEAR:
+                return {**self.verified[best], "near": float(near[best])}
+        if self.learned_vectors is not None:
+            near = self.learned_vectors @ asked
+            best = int(np.argmax(near))
+            if near[best] >= LEARNED_NEAR and self.learned[best]["key"] in self.docs:
+                return {**self.learned[best], "near": float(near[best]), "learned": True}
+        return None
+
+    def learn(self, entry: dict, vector: np.ndarray) -> None:
+        """A question the model read and the figures answered (api/assistant.py): kept with its vector, so the same
+        question in other words reuses the reading (research 11 Nov 2026: paraphrase reuse). In memory at once, and in
+        logs/ask-learned.json for the next start."""
+        with LEARN_LOCK:
+            self.learned = (self.learned + [entry])[-LEARNED_KEEP:]
+            rows = [vector.astype(np.float32)] if self.learned_vectors is None else [*self.learned_vectors, vector.astype(np.float32)]
+            self.learned_vectors = np.array(rows[-LEARNED_KEEP:], np.float32)
+            try:
+                LEARNED.write_text(json.dumps([{**e, "v": [round(float(x), 5) for x in v]} for e, v in zip(self.learned, self.learned_vectors)]))
+            except OSError as exc:
+                log.warning("Ask: could not keep a learned question: %s", exc)
 
     def counts(self, key: str) -> dict:
         """One question's cells over every code and wording it was asked under, as one series: waves (oldest first,

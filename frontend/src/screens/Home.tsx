@@ -70,7 +70,7 @@ export default function Home() {
         {genai && <Area icon={Cpu} title="GenAI Survey" to="/trackers/genai">How people use generative AI in their lives and when they shop ({fmtDate(genai.wave_date)}).</Area>}
         {latest && allowed(me, "explorer") && <Area icon={Layers} title="In store vs online" to="/channels">Which categories people bought in a store, and which online, in the past two weeks.</Area>}
         {report && allowed(me, "report") && <Area icon={Gauge} title="Consumer sentiment & outlook" to={`/w/${report}/report`}>Personal finances and the economy over the next 12 months, by household income.</Area>}
-        {allowed(me, "retailers") && <Area icon={Store} title="Retailer comparison" to="/retailers">Two retailers side by side: reach, who their shoppers are, and how people feel about them.</Area>}
+        {allowed(me, "retailers") && <Area icon={Store} title="Retailer databank" to="/retailers">Any retailer or sector, alone or side by side, over the weeks you choose: how many shop there and who they are.</Area>}
         {allowed(me, "sectors") && <Area icon={Table2} title="Sector databank" to="/sectors">Who bought in each retail sector, and where, in every survey that asked.</Area>}
       </div>
     </section>

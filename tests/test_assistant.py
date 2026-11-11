@@ -165,3 +165,18 @@ def test_the_openai_key_is_found_whatever_case_its_setting_is_typed_in(monkeypat
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("open_api_key", "sk-test")
     assert ask_model.key_name() == "open_api_key" and ask_model.key() == "sk-test"
+
+
+def test_a_rewording_of_a_question_the_model_read_reuses_its_reading(index, tmp_path, monkeypatch):
+    """Paraphrase reuse: no model call for the same question in other words; never for a merely related one."""
+    import numpy as np
+    from api import ask_index
+    monkeypatch.setattr(ask_index, "LEARNED", tmp_path / "learned.json")
+    index.learned, index.learned_vectors = [], None      # not this machine's logs/ask-learned.json
+    asked = np.array([1.0, 0.0, 0.0], np.float32)
+    index.learn({"question": "Amazon shoppers", "key": "CSI-US/tracker/XQ1", "focus": ["Amazon"], "kind": "share", "cut": "none", "period": "all"}, asked)
+    near = np.array([0.95, 0.312, 0.0], np.float32)      # cosine 0.95: the same question
+    related = np.array([0.8, 0.6, 0.0], np.float32)      # cosine 0.8: related, not the same
+    assert index.verified_for(near / np.linalg.norm(near))["key"] == "CSI-US/tracker/XQ1"
+    assert index.verified_for(related) is None
+    assert (tmp_path / "learned.json").exists()

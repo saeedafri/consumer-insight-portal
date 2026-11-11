@@ -201,7 +201,7 @@ def plan(question: str, candidates: list[dict]) -> dict | None:
     try:
         started = time.perf_counter()
         reply = call("chat/completions", {
-            "model": model(), "temperature": 0, "max_tokens": 80,
+            "model": model(), "temperature": 0, "max_tokens": 160,   # 80 cut off a reply naming several answers (JSONDecodeError, 11 Nov)
             "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": f"{question}\n{listing}"}],
             "response_format": {"type": "json_schema", "json_schema": {"name": "plan", "strict": True, "schema": SCHEMA}}})
         usd = charge(model(), reply["usage"]["prompt_tokens"], reply["usage"]["completion_tokens"])

@@ -49,7 +49,7 @@ curl -H "Authorization: Bearer cip_…" "https://<portal>/api/v1/waves/532/resul
 | `GET /api/v1/dashboards/{code}/{survey_id}` | A topic dashboard for one wave | Topic dashboards |
 | `GET /api/v1/search` | Questions by words, code, answer or survey, `?q=tariffs&limit=40` | Search questions |
 | `GET /api/v1/sectors` | The sector databank: purchase rate, retailers, brands, categories | Sector databank |
-| `GET /api/v1/retailers` | Retailer comparison: each retailer's reach, its shoppers' gender, generation and income, and sentiment, over pooled weeks | Retailer comparison |
+| `GET /api/v1/retailers` | Retailer databank: every weekly retailer and every sector's retailers, week by week since Jul 2025, as counts (shoppers, food, nonfood, gender, generation, income, region, area) plus sentiment, for any weeks chosen | Retailer databank |
 | `GET /api/v1/expectations` | Retail events, expected vs actual | Expected vs actual |
 | `GET /api/v1/reports` | The waves that have a weekly report | — |
 | `GET /api/v1/schedule` | The launch plan against what Forsta fielded | Launch schedule |

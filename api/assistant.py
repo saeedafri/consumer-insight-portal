@@ -286,7 +286,7 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
                                              "waves": c["waves"], "first": c["first"], "last": c["last"],
                                              "answers": c.get("labels", [])} for i, c in enumerate(candidates)])
     if verified:
-        understood = "verified"
+        understood = "reused" if verified.get("learned") else "verified"
         reading = {"pick": None, "focus": verified.get("focus", []), "kind": verified.get("kind", "share"),
                    "grain": verified.get("grain", "auto"), "cut": verified.get("cut", "none"), "period": verified.get("period", "all")}
         chosen = {**index.docs[verified["key"]], "key": verified["key"]}
@@ -354,6 +354,9 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
     said = (reading or {}).get("focus", [])
     if plan["kind"] == "top" or len(said) > 4:   # "top", or the model listing most answers: every answer, ranked
         said = []
+    if understood == "model":   # an answer the model names but the question does not ("Which retailers do Gen Z prefer?"
+        words = set(re.findall(r"[a-z0-9]{3,}", question.lower()))   # → "Abercrombie & Fitch", staging 12 Nov): ranked instead
+        said = [a for a in said if words & set(re.findall(r"[a-z0-9]{3,}", a.lower()))]
     named = [fig["answers"].index(a) for a in said if a in fig["answers"] and (not SKIP.match(a) or a.lower() in question.lower())] \
         or focus(question, fig["answers"])
     named = [a for a in named if not np.all(np.isnan(fig["pct"][:, :, a]))]   # an answer these waves never offered: not shown
@@ -385,6 +388,9 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
     notes = [x for x in sentences[1:] if x.startswith(NOTE_STARTS)]
     points = [x for x in sentences[1:] if not x.startswith(NOTE_STARTS)]
     headline = next((x for x in points if "%" in x), points[0] if points else "")   # the first sentence with a figure
+    if understood == "model" and asked is not None:   # a rewording of this question later reuses the reading
+        index.learn({"question": question, "key": doc["key"], "focus": [fig["answers"][a] for a in named], "kind": plan["kind"],
+                     "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, asked)
     return {"answer": "\n".join(sentences), "headline": headline, "points": [x for x in points if x != headline], "notes": notes,
             "source_line": sentences[0], "weighting": "unweighted", "understood": understood,
             "verify": {"question": question, "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],

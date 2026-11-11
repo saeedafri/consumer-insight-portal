@@ -36,7 +36,7 @@ feature_labels:   # the names the Access screen shows
   ask: Ask Coresight
   boards: Boards
   sectors: Sector databank
-  retailers: Retailer comparison
+  retailers: Retailer databank
   expectations: Expected vs actual
   export: Export (CSV, Excel, PowerPoint)
   alerts: Alerts

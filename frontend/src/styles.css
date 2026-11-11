@@ -1069,38 +1069,38 @@ code.key { display: block; padding: 8px 10px; margin-bottom: 8px; background: va
 .chip.sig.down { background: var(--red-wash); }
 .xt sup.up, .xt sup.down { padding: 0 2px; border-radius: 3px; background: var(--surface); }   /* readable on any heat step */
 
-/* Retailer comparison (screens/Retailers.tsx): retailer A in red, B in blue, everywhere on the page */
+/* Retailer databank (screens/Retailers.tsx): one or two sides, each a market, its retailers and its weeks */
 .seg .seg-link { display: inline-flex; align-items: center; min-height: 30px; padding: 0 10px; border-radius: 6px; font: 700 11.5px/1 var(--font-head); color: var(--ink-2); text-decoration: none; }
 .seg .seg-link:hover { color: var(--ink); }
 .compare-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; }
 .compare-bar label { flex: 1 1 200px; max-width: 300px; min-width: 0; display: flex; flex-direction: column; gap: 6px; font: 700 10.5px/1.2 var(--font-head); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
 .compare-bar select { width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); font: 700 14px var(--font-head); color: var(--ink); text-transform: none; letter-spacing: 0; }
-.compare-bar .vs { padding-bottom: 12px; font: 800 14px var(--font-head); color: var(--red-text); }
 .compare-bar .chip { margin: 0 0 10px auto; }
-.pair { display: flex; flex-direction: column; gap: 16px; }
-.pair-row { display: grid; grid-template-columns: minmax(120px, 1fr) 2fr auto; align-items: center; gap: 14px; }
-.pair-name { display: flex; flex-direction: column; font: 700 14px/1.3 var(--font-head); color: var(--ink); }
-.pair-name small { font: 500 11.5px/1.4 var(--font-body); color: var(--ink-3); }
-.pair-row b { font: 800 24px/1 var(--font-head); letter-spacing: -.03em; min-width: 76px; text-align: right; }
-.pair-row.a b { color: var(--red-text); }
-.pair-row.b b { color: var(--blue); }
-.pair-track { display: block; height: 10px; border-radius: 5px; background: var(--fill); overflow: hidden; }
-.pair-track i { display: block; height: 100%; border-radius: 5px; }
-.a .pair-track i { background: var(--red); }
-.b .pair-track i { background: var(--blue); }
-.profile-grid section { min-width: 0; }
-.profile-grid h3 { margin: 0 0 10px; font: 780 14px/1.3 var(--font-head); color: var(--ink); }
-.profile-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.profile-table th, .profile-table td { padding: 7px 4px; text-align: left; border-bottom: 1px solid var(--line); }
-.profile-table thead th { font-size: 11px; font-weight: 700; color: var(--ink-3); }
-.profile-table thead th.a { color: var(--red-text); }
-.profile-table thead th.b { color: var(--blue); }
-.profile-table tbody th { font-weight: 600; color: var(--ink); white-space: nowrap; }
-.profile-table td.a, .profile-table td.b { width: 32%; font-weight: 700; color: var(--ink); white-space: nowrap; }
-.profile-table td .pair-track { display: inline-block; width: calc(100% - 46px); height: 7px; margin-right: 6px; vertical-align: middle; }
-.profile-table td.muted { text-align: right; white-space: nowrap; }
-@media (max-width: 1100px) { .profile-grid { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .compare-bar label { flex: 1 1 100%; max-width: none; } .compare-bar .chip { margin: 0; } }
+.retail-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; }
+.retail-bar .vs { padding-bottom: 12px; font: 800 14px var(--font-head); color: var(--red-text); }
+.retail-bar > .seg { margin-left: auto; }
+.retail-side { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; flex: 1 1 420px; min-width: 0; }
+.retail-side > label, .picker { flex: 1 1 180px; max-width: 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; position: relative; }
+.retail-side > label > span, .picker summary span { font: 700 10.5px/1.2 var(--font-head); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.retail-side select, .picker summary { width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); font: 700 14px var(--font-head); color: var(--ink); }
+.picker summary { display: flex; flex-direction: column; justify-content: center; gap: 2px; height: auto; min-height: 42px; padding: 6px 12px; cursor: pointer; list-style: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker summary::-webkit-details-marker { display: none; }
+.picker[open] summary { border-color: var(--ink-3); }
+.picker-list, .picker-quick { position: absolute; z-index: 20; left: 0; right: 0; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+.picker-quick { top: calc(100% + 4px); display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border-radius: 8px 8px 0 0; border-bottom: 0; }
+.picker-list { top: calc(100% + 4px); max-height: 320px; overflow: auto; padding: 6px; border-radius: 8px; display: flex; flex-direction: column; }
+.picker-quick + .picker-list { top: calc(100% + 46px); border-radius: 0 0 8px 8px; }
+.picker-list label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.picker-list label:hover { background: var(--fill); }
+.kpis { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 12px; }
+.kpis .kpi { padding: 0; min-height: 0; display: flex; flex-direction: column; gap: 2px; }
+.kpis .kpi span { font-size: 12px; color: var(--ink-2); font-weight: 650; }
+.kpis .kpi b { font: 800 24px/1 var(--font-head); letter-spacing: -.03em; color: var(--ink); }
+.kpis .kpi small { font-size: 11px; color: var(--ink-3); }
+.chart-cell { margin: 0; min-width: 0; }
+.chart-cell figcaption { font: 750 13px/1.3 var(--font-head); color: var(--ink); text-align: center; margin: 4px 0 0; }
+@media (max-width: 700px) { .retail-side > label, .picker { flex: 1 1 100%; max-width: none; } .retail-bar > .seg { margin-left: 0; } }
 
 /* Home (screens/Home.tsx): the Ask Coresight panel, research cards, this week's channels, the cross-tab way in */
 .latest-pill { align-self: center; text-decoration: none; padding: 8px 14px; font-size: 12px; }

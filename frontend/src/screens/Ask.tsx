@@ -71,7 +71,8 @@ function Reply({ question, answer, weighted, onAsk }: { question: string; answer
     try { await send("POST", "/api/v1/admin/ask/verified", answer.verify); setVerified("Saved: questions like this now use this answer."); }
     catch (e) { setVerified(e instanceof Error ? e.message : String(e)); }
   };
-  const how = { verified: "Verified answer", model: "Understood by AI, figures computed", rules: "Matched by words, figures computed" }[answer.understood ?? ""];
+  const how = { verified: "Verified answer", reused: "Same question as one understood before, figures computed", model: "Understood by AI, figures computed",
+                rules: "Matched by words, figures computed" }[answer.understood ?? ""];
   const drawn = useRef<Chart | null>(null);
   const file = `ask-${(source?.qcode ?? "answer").toLowerCase()}`;
   const notes = [question, answer.source_line ?? "", "Unweighted figures, from Coresight's surveys (Ask Coresight)."];

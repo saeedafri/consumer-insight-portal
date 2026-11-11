@@ -4,6 +4,16 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "12 November 2026",
+  entries: [
+    { title: "Ask Coresight answers a reworded question in a fraction of a second, and ranks answers it was not told to pick",
+      body: "A question that means the same as one Ask Coresight has already understood (the same retailers, brands and groups) now reuses that reading without calling the AI model: about 0.4 s instead of 2 s, and free. Only a close match in meaning counts, so a merely related question is still read afresh. Answers the AI model picks out but the question does not name are no longer put first: Which retailers do Gen Z prefer? shows the retailers ranked, not one chosen at random. A reply naming several answers is no longer cut off. A new question still takes about 2 seconds, almost all of it the two calls to OpenAI; a repeat of any question is instant." },
+    { title: "The Retailer databank: any retailer or sector, alone or side by side, over any weeks",
+      body: "Retailer comparison is now the Retailer databank, with four views: one retailer, retailers side by side, one sector, and two sectors with any of their retailers (for example Walmart, Target and Kohl's among clothing shoppers against Walmart among beauty shoppers). Choose one week or several: only weeks in which every chosen retailer was asked are offered, and several weeks are added together. Each view shows how many shop there, week by week, food, nonfood or both, who the shoppers are (gender, generation, household income, region, and urban, suburban or rural) next to all adults or the sector's shoppers, how positive people feel where the apparel survey asked, and for one retailer its share in every sector it is asked in. It covers the weekly tracker since July 2025 (71 weeks, 21 weekly retailers, 11 sectors), computed when data is published, so every choice is instant." },
+    { title: "A shorter menu: the weekly reports open from their trackers",
+      body: "The China weekly report and Consumer sentiment links are gone from the left menu: each was the Weekly report tab of the tracker above it (China weekly tracker, Shopping & Spending), which still opens it, as does the Home page." },
+  ],
+}, {
   date: "11 November 2026",
   entries: [
     { title: "Survey weeks loaded straight into the database appear within 30 minutes",
