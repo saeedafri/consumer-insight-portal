@@ -5,6 +5,10 @@ from it each week (the raw export and Baidu's topline) and uploads both here.
   POST /api/v1/admin/survey/preview  both files read and every count checked against the topline; writes nothing
   POST /api/v1/admin/survey/publish  the same check, then the wave loaded (etl/baidu_qss_export.py load) and the
                                      published files rebuilt in the background (python -m etl.publish)
+  POST /api/v1/admin/sharepoint/notify  "the China folder changed": Microsoft Graph's webhook, or a Power Automate flow,
+                                     calls it; no sign-in, a shared secret instead. It only leaves a note
+                                     (data/sharepoint.wanted) that deploy/etl-loop.sh turns into a SharePoint pass
+                                     (etl/sharepoint_china.py) within a minute, so the API does no loading itself
 
 Called by: frontend/src/screens/Ingest.tsx (/app/ingest). Both are plain `def`, so FastAPI runs them in its thread
 pool and the event loop keeps answering everyone else; a week's load takes seconds. The ETL is imported inside each
@@ -12,6 +16,7 @@ call, so the API's idle memory carries none of it.
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import subprocess
@@ -22,7 +27,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import PlainTextResponse, Response
 
 from api.signin import admin
 
@@ -32,6 +38,8 @@ ROOT = Path(__file__).resolve().parents[1]
 UPLOAD_DIR = Path(os.environ.get("CIP_UPLOAD_DIR") or ROOT / "data/uploads")   # every loaded week's two files, kept
 MAX_BYTES = 10 * 1024 * 1024   # per file; api/main.py allows two in one request, nginx 20m (deploy/cip_locations.conf). A week is ~0.4 MB
 RAW_TYPES, TOPLINE_TYPES = {".csv", ".xlsx"}, {".xls", ".xlsx"}
+hooks = APIRouter(prefix="/api/v1/admin/sharepoint", tags=["admin"])
+WANTED = ROOT / "data/sharepoint.wanted"   # read and removed by deploy/etl-loop.sh
 
 
 def save_upload(file: UploadFile, kinds: set[str], folder: Path, what: str) -> Path:
@@ -102,3 +110,27 @@ def start_publish() -> None:
     with (ROOT / "logs/publish.log").open("ab") as out:
         subprocess.Popen(["sh", "-c", PUBLISH, sys.executable], cwd=ROOT, stdout=out, stderr=subprocess.STDOUT,
                          start_new_session=True)
+
+
+@hooks.post("/notify")
+async def sharepoint_changed(request: Request) -> Response:
+    """Microsoft Graph's change notification (webhook) or a flow's call: the China folder may hold a new week.
+    Graph first checks the address by sending ?validationToken=…, answered as plain text within 10 s. Each
+    notification carries the subscription's clientState; a flow sends the same secret in X-CIP-Secret. Answered at once
+    (Graph allows 3 s), and many changes in a minute make one pass, since they leave the same note."""
+    secret = os.environ.get("CIP_SP_WEBHOOK_SECRET", "")
+    if len(secret) < 32:
+        raise HTTPException(404)   # not set up: the address does not exist
+    token = request.query_params.get("validationToken")
+    if token is not None:
+        return PlainTextResponse(token[:1000])
+    given = [request.headers.get("x-cip-secret", "")]
+    try:
+        given += [str(n.get("clientState", "")) for n in (await request.json()).get("value", [])]
+    except Exception:   # a flow's call may have no body
+        pass
+    if not any(hmac.compare_digest(secret.encode(), g.encode()) for g in given if g):
+        raise HTTPException(403, "Wrong or missing secret")
+    WANTED.parent.mkdir(parents=True, exist_ok=True)
+    WANTED.touch()
+    return Response(status_code=202)

@@ -20,7 +20,10 @@ number matched to 0.1 point, see tests/test_weekly_report.py):
   events         news events to mark on the sentiment chart (config/news_events.yml)
 
 The rules the report uses, all in config/weekly_report.yml: which question is which section, the three income groups,
-and the words that make an answer positive or negative for a net score.
+and the words that make an answer positive or negative for a net score. The same engine builds the China Consumer Survey
+Insights report of every China week from config/china_weekly_report.yml (the analysts' monthly China CSI deck and
+their aggregation workbook): four-week tables with the one-week and four-week changes, net optimism, and every answer
+in the appendix.
 
 Which waves get a report: every weekly tracker wave that asked the report's questions as they are worded today (since
 Jul 2025). Before that the tracker numbered its questions differently (q4 then asked about categories, not food
@@ -44,16 +47,26 @@ from shared.core.database import get_engine
 
 CONFIG = Path(__file__).resolve().parents[1] / "config"
 ROLLING = 4      # weeks in a rolling average
-TABLE_WEEKS = 13  # weeks shown in a table: the latest and the 12 before ("three-month change" = 12 weeks back)
 YEAR = 52        # weeks back for the change over a year
 NEAR_DAYS = 3    # a wave fielded off its Monday (e.g. Tue 3 Sep 2024) still counts as that week
 Z_95 = 1.959964  # two-sided 95 %
 
 
-@lru_cache(maxsize=1)
+REPORTS = ("weekly_report", "china_weekly_report")   # one report per config file: the US tracker, China's tracker
+# ponytail: the report being built, a module value publish() sets around each report; every other caller (retailers,
+# sectors, expectations) reads the US one. Pass the rules down instead if two reports ever build at once.
+ACTIVE = REPORTS[0]
+
+
+@lru_cache(maxsize=None)
+def rules(name: str) -> dict:
+    """config/<name>.yml: one report's sections, income groups, net-score words and table shape."""
+    return yaml.safe_load((CONFIG / f"{name}.yml").read_text(encoding="utf-8"))
+
+
 def settings() -> dict:
-    """config/weekly_report.yml: the sections, the income groups and the net-score words."""
-    return yaml.safe_load((CONFIG / "weekly_report.yml").read_text(encoding="utf-8"))
+    """The rules of the report being built (the US one unless publish() is building another)."""
+    return rules(ACTIVE)
 
 
 @lru_cache(maxsize=1)
@@ -168,13 +181,17 @@ def window(question: Question, end: int, weeks: int) -> list[int | None]:
 
 
 def table(question: Question, end: int) -> dict:
-    """A 13-week table, as in the PDF report: per answer the four-week rolling average for each of the 13 weeks, the
-    one-week change (of the four-week averages), the three-month change (latest against 12 weeks before), and which
-    changes are significant. One-week moves are tested on single weeks (this week against last), three-month moves on
-    the four weeks of each window, respondents pooled. Rows: biggest first, "None of these"-style answers left out."""
+    """A table as in the PDF report: per answer the four-week rolling average for each of the table's weeks (US 13,
+    China 4), the one-week change (of the four-week averages), the long change (latest against `change_weeks` before:
+    US 12, the three-month change; China 4), and which changes are significant; and the single weeks' % with their own
+    two changes (the China deck's weekly tables). One-week moves are tested on single weeks (this week against last),
+    long moves on the four weeks of each window, respondents pooled. Rows: biggest first, "None of these"-style answers
+    left out."""
     total = [question.cuts[("total", "Total")]]
-    waves = window(question, end, TABLE_WEEKS + ROLLING - 1)    # 16 weeks: the first table week needs three before it
-    dates = [question.dates[w] if w is not None else None for w in waves[ROLLING - 1:]]
+    shown, back = settings()["table_weeks"], settings()["change_weeks"]
+    span = max(shown, back + 1)                                 # weeks of averages needed: those shown, and the long change
+    waves = window(question, end, span + ROLLING - 1)           # US 16 weeks: the first table week needs three before it
+    dates = [question.dates[w] if w is not None else None for w in waves[-shown:]]
     rows, week_tests, quarter_tests = [], [], []
     skip = tuple(settings()["leave_out_answers"])
     for a, label in enumerate(question.labels):
@@ -182,15 +199,16 @@ def table(question: Question, end: int) -> dict:
         if label.lower().startswith(skip) or waves[-1] is None or (waves[-1], total[0], a) not in question.count:
             continue
         weekly = [share(question, w, total, [a]) for w in waves]
-        values = [rolling(weekly[k:k + ROLLING]) for k in range(TABLE_WEEKS)]
+        values = [rolling(weekly[k:k + ROLLING]) for k in range(span)]
         if values[-1] is None:
             continue
-        rows.append({"label": label, "values": [None if v is None else round(v, 1) for v in values],
-                     "week_change": None if values[-2] is None else round(values[-1] - values[-2], 1),
-                     "quarter_change": None if values[0] is None else round(values[-1] - values[0], 1)})
+        rows.append({"label": label, "values": [None if v is None else round(v, 1) for v in values[-shown:]],
+                     "week_change": change(values, 1), "quarter_change": change(values, back),
+                     "weekly": [None if v is None else round(v, 1) for v in weekly[-shown:]],
+                     "weekly_week_change": change(weekly, 1), "weekly_change": change(weekly, back)})
         this_week, last_week = (question.counts(w, total, [a]) if w is not None else (0, 0) for w in (waves[-1], waves[-2]))
         week_tests.append((*last_week, *this_week))
-        first = [question.counts(w, total, [a]) for w in waves[:ROLLING] if w is not None]
+        first = [question.counts(w, total, [a]) for w in waves[-back - ROLLING:-back] if w is not None]
         latest = [question.counts(w, total, [a]) for w in waves[-ROLLING:] if w is not None]
         quarter_tests.append((sum(n for n, _ in first), sum(b for _, b in first),
                               sum(n for n, _ in latest), sum(b for _, b in latest)))
@@ -198,6 +216,13 @@ def table(question: Question, end: int) -> dict:
         row["week_significant"], row["quarter_significant"] = week_sig, quarter_sig and row["quarter_change"] is not None
     rows.sort(key=lambda r: -r["values"][-1])
     return {"dates": dates, "rows": rows, "trend": trend(question, end, [r["label"] for r in rows])}
+
+
+def change(values: list[float | None], back: int) -> float | None:
+    """The latest value minus the one `back` places before it, in points; None when either is missing."""
+    if len(values) <= back or values[-1] is None or values[-1 - back] is None:
+        return None
+    return round(values[-1] - values[-1 - back], 1)
 
 
 def trend(question: Question, end: int, labels: list[str]) -> dict:
@@ -260,16 +285,19 @@ def appendix(question: Question, end: int) -> dict:
     waves = window(question, end, APPENDIX_WEEKS + ROLLING - 1)
     shown = waves[ROLLING - 1:]
 
+    if settings()["appendix_each_answer"]:   # China: every answer, then the net (the deck's Appendix Figures 3-8)
+        picks = [(label, lambda w, c, a=a: share(question, w, c, [a])) for a, label in enumerate(question.labels)]
+    else:                                    # US: total worse, total better
+        picks = [("Total worse", lambda w, c: share(question, w, c, down)), ("Total better", lambda w, c: share(question, w, c, up))]
+    picks.append((settings()["net_name"], lambda w, c: net(question, w, c)))
+
     def rows(cuts: list[int], averaged: bool) -> list[dict]:
         out = []
-        for label, pick in (("Total worse", lambda w: share(question, w, cuts, down)),
-                            ("Total better", lambda w: share(question, w, cuts, up)),
-                            ("Net better", lambda w: net(question, w, cuts))):
+        for label, pick in ((label, lambda w, pick=pick: pick(w, cuts)) for label, pick in picks):
             weekly = [pick(w) for w in waves]
             values = [rolling(weekly[k:k + ROLLING]) for k in range(len(shown))] if averaged else weekly[ROLLING - 1:]
-            change = lambda back: None if values[-1] is None or values[-1 - back] is None else round(values[-1] - values[-1 - back], 1)
             out.append({"label": label, "values": [None if v is None else round(v, 1) for v in values],
-                        "week_change": change(1), "four_week_change": change(ROLLING)})
+                        "week_change": change(values, 1), "four_week_change": change(values, ROLLING)})
         return out
     groups = {"All respondents": [question.cuts[("total", "Total")]], **income_cuts(question)}
     return {"dates": [question.dates[w] if w is not None else None for w in shown],
@@ -285,9 +313,10 @@ def three_points(tables: list[dict]) -> list[dict]:
         moves = [r for r in data["rows"] if r["quarter_significant"]]
         if moves:
             row = max(moves, key=lambda r: abs(r["quarter_change"]))
+            back = date.fromisoformat(data["dates"][-1]) - timedelta(weeks=settings()["change_weeks"])
             best.append({"section": data["name"], "label": row["label"], "change": row["quarter_change"],
-                         "from": row["values"][0], "to": row["values"][-1],
-                         "from_date": data["dates"][0], "to_date": data["dates"][-1]})
+                         "from": round(row["values"][-1] - row["quarter_change"], 1), "to": row["values"][-1],
+                         "from_date": back.isoformat(), "to_date": data["dates"][-1]})   # US: the table's first week
     return sorted(best, key=lambda p: -abs(p["change"]))[:3]
 
 
@@ -349,9 +378,30 @@ def profiles(cells: list[dict], survey_ids: set[int]) -> list[dict]:
 
 def publish(out: Path, write) -> int:
     """Called by etl/publish.py once the question files are written: one report file per weekly-tracker wave that asks
-    the report's questions as worded today (since Jul 2025; about 70 waves, a second or two),
-    api/v1/waves/<id>/report.json.gz, from the question files in `out` (no database) plus the shopper profiles (one
-    query). Returns the bytes written."""
+    the report's questions as worded today, for each report in REPORTS (US since Jul 2025, about 70 waves; China every
+    week, about 150; a few seconds), api/v1/waves/<id>/report.json.gz, from the question files in `out` (no database)
+    plus the US shopper profiles (one query). Returns the bytes written."""
+    global ACTIVE
+    size, reported = 0, []
+    try:
+        for ACTIVE in REPORTS:
+            written, waves = publish_one(out, write)
+            size += written
+            reported += waves
+    finally:
+        ACTIVE = REPORTS[0]
+    # the waves with a report, for the left menu's "Weekly report" link (frontend/src/components/Shell.tsx)
+    size += write(out / "api/v1/reports", reported)
+    # a wave that no longer gets a report loses it (publish reuses unchanged wave folders, report included)
+    keep = {str(survey_id) for survey_id in reported}
+    for old in (out / "api/v1/waves").glob("*/report.json.gz"):
+        if old.parent.name not in keep:
+            old.unlink()
+    return size
+
+
+def publish_one(out: Path, write) -> tuple[int, list[int]]:
+    """The active report's files: (bytes written, the survey ids that got one)."""
     family, study = settings()["family"], settings()["study_type"]
     codes = {*(s["question"] for s in settings()["sections"]), *settings()["sentiment"].values()}
     questions = read_questions(out / "api/v1/questions" / family / study, codes)   # once, for all the reports
@@ -359,22 +409,16 @@ def publish(out: Path, write) -> int:
     first = questions.get(settings()["sections"][0]["question"])
     today = {first.ids[i] for i, sentence in enumerate(first.sentences) if sentence == first.sentences[-1]} if first else set()
     recent = [w for w in waves if w["survey_id"] in today]
-    cells = profile_cells([w["survey_id"] for w in waves if w["survey_id"] in today])
-    size = 0
+    asks = [w["survey_id"] for w in waves if w["survey_id"] in today]
+    cells = profile_cells(asks) if settings()["profile_questions"] else []   # China's report has no retailer questions
+    size, shown = 0, settings()["table_weeks"]
     for wave in recent:
         at = waves.index(wave)
-        last_13 = {w["survey_id"] for w in waves[max(0, at - TABLE_WEEKS + 1):at + 1]}   # this wave and the 12 before
-        report = build(questions, waves, wave["survey_id"], profiles(cells, last_13))
+        in_table = {w["survey_id"] for w in waves[max(0, at - shown + 1):at + 1]}   # this wave and the table's weeks before
+        report = build(questions, waves, wave["survey_id"], profiles(cells, in_table))
         if report:
             size += write(out / "api/v1/waves" / str(wave["survey_id"]) / "report", report)
-    # the waves with a report, for the left menu's "Weekly report" link (frontend/src/components/Shell.tsx)
-    size += write(out / "api/v1/reports", [w["survey_id"] for w in recent])
-    # a wave that no longer gets a report loses it (publish reuses unchanged wave folders, report included)
-    keep = {str(w["survey_id"]) for w in recent}
-    for old in (out / "api/v1/waves").glob("*/report.json.gz"):
-        if old.parent.name not in keep:
-            old.unlink()
-    return size
+    return size, [w["survey_id"] for w in recent]
 
 
 def build(questions: dict[str, Question], waves: list[dict], survey_id: int,
@@ -401,6 +445,9 @@ def build(questions: dict[str, Question], waves: list[dict], survey_id: int,
             feeling[name], data[name] = sentiment(questions[code], end), appendix(questions[code], end)
     if not tables:
         return None
-    return {"survey_id": survey_id, "wave_date": wave["wave_date"], "three_points": three_points(tables),
-            "sentiment": feeling, "appendix": data, "tables": tables, "profiles": shopper_profiles or [],
-            "methodology": methodology(waves, wave["wave_date"]), "events": news_events()}
+    rules = settings()
+    return {"survey_id": survey_id, "wave_date": wave["wave_date"], "family": rules["family"], "title": rules["title"],
+            "population": rules["population"], "change_label": rules["change_label"], "net_name": rules["net_name"],
+            "three_points": three_points(tables), "sentiment": feeling, "appendix": data, "tables": tables,
+            "profiles": shopper_profiles or [], "methodology": methodology(waves, wave["wave_date"]),
+            "events": news_events() if rules["news_events"] else []}

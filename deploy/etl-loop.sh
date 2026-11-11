@@ -6,7 +6,9 @@
 #    within a day; Friday's also runs the integrity check. Each run takes the ETL lock, so runs never overlap.
 #  - scripts/weekly_forsta.py --once every 30 minutes: one check, so a closed survey loads within 30 minutes whatever
 #    stopped the watch (a deploy restarts the container and every process in it).
-#  - python -m etl.sharepoint_china every 10 minutes once IT's access is set: new China survey weeks from SharePoint.
+#  - python -m etl.sharepoint_china once IT's access is set: new China survey weeks from SharePoint. Within a minute of
+#    a webhook or Power Automate call (api/ingest.py leaves data/sharepoint.wanted); otherwise every 10 minutes, or
+#    hourly as a safety net once those calls are set up (CIP_SP_WEBHOOK_SECRET). --subscribe renews the webhook daily.
 #  - scripts/weekly_forsta.py --watchdog every hour at minute 05: a stuck or missing run is reported (etl/notify.py).
 #  - python -m etl.fieldwork once, two minutes after each start: Forsta's records of every survey still missing one.
 #  - logs/*.log and *.jsonl past 20 MB are packed into logs/archive/ as .zip and kept for good (deploy/archive-log.py).
@@ -16,6 +18,8 @@ cd /srv/cip
 # Forsta's records of every survey (etl/fieldwork.py) caught up once per start, after the published files are restored:
 # a deploy never leaves the Fieldwork screen empty until the next scheduled run. Read-only GETs, lowest priority.
 ( sleep 120 && nice -n 15 python -m etl.fieldwork >> logs/fieldwork.log 2>&1 ) &
+# the SharePoint webhook created or renewed once the API answers (Graph checks the address first), then daily
+[ -n "${CIP_SP_WEBHOOK_URL:-}" ] && ( sleep 150 && python -m etl.sharepoint_china --subscribe >> logs/sharepoint.log 2>&1 ) &
 while :; do
   now=$(date -u +%a@%H:%M)
   slotted=no
@@ -30,7 +34,14 @@ while :; do
   [ "$(date -u +%M)" = "05" ] && python scripts/weekly_forsta.py --watchdog >> logs/etl-loop.log 2>&1 &
   # the China survey's SharePoint folder every 10 minutes (etl/sharepoint_china.py), off the Forsta minutes; only once IT's
   # access is set (CIP_SP_CLIENT_ID): a pass that finds nothing new is ~60 small Graph reads and no database write
-  [ -n "${CIP_SP_CLIENT_ID:-}" ] && case "$(date -u +%M)" in 02|12|22|32|42|52) nice -n 15 python -m etl.sharepoint_china >> logs/sharepoint.log 2>&1 & ;; esac
+  if [ -n "${CIP_SP_CLIENT_ID:-}" ]; then
+    every="02 12 22 32 42 52"; [ -n "${CIP_SP_WEBHOOK_SECRET:-}" ] && every="02"   # told by calls: the timer is a safety net
+    if [ -f data/sharepoint.wanted ] || case " $every " in *" $(date -u +%M) "*) true ;; *) false ;; esac; then
+      rm -f data/sharepoint.wanted   # any number of calls in the minute make one pass
+      nice -n 15 python -m etl.sharepoint_china >> logs/sharepoint.log 2>&1 &
+    fi
+    [ -n "${CIP_SP_WEBHOOK_URL:-}" ] && [ "$(date -u +%H:%M)" = "03:17" ] && python -m etl.sharepoint_china --subscribe >> logs/sharepoint.log 2>&1 &
+  fi
   for f in logs/*.log logs/*.jsonl; do   # past 20 MB: packed into logs/archive/*.zip for good, the live file emptied
     [ -f "$f" ] && [ "$(wc -c < "$f")" -gt 20971520 ] && python deploy/archive-log.py "$f" >> logs/container.log 2>&1
   done

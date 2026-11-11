@@ -95,13 +95,14 @@ def test_net_better_is_better_minus_worse_and_income_groups_add_their_bands():
 def test_the_three_data_points_are_the_biggest_significant_moves_one_per_table():
     def row(label, change, significant):
         return {"label": label, "values": [20.0, 20.0 + change], "quarter_change": change, "quarter_significant": significant}
-    tables = [{"name": "Food", "dates": ["a", "b"], "rows": [row("Walmart", 5.4, True), row("Amazon", 6.0, True)]},
-              {"name": "Online", "dates": ["a", "b"], "rows": [row("Food", 5.6, True), row("Toys", 9.9, False)]},
-              {"name": "Activities", "dates": ["a", "b"], "rows": [row("Dining out", -6.2, True)]},
-              {"name": "In store", "dates": ["a", "b"], "rows": [row("Pets", 1.0, True)]}]
+    tables = [{"name": "Food", "dates": ["2026-08-03", "2026-10-26"], "rows": [row("Walmart", 5.4, True), row("Amazon", 6.0, True)]},
+              {"name": "Online", "dates": ["2026-08-03", "2026-10-26"], "rows": [row("Food", 5.6, True), row("Toys", 9.9, False)]},
+              {"name": "Activities", "dates": ["2026-08-03", "2026-10-26"], "rows": [row("Dining out", -6.2, True)]},
+              {"name": "In store", "dates": ["2026-08-03", "2026-10-26"], "rows": [row("Pets", 1.0, True)]}]
     points = report.three_points(tables)
     assert [(p["section"], p["label"], p["change"]) for p in points] == [
         ("Activities", "Dining out", -6.2), ("Food", "Amazon", 6.0), ("Online", "Food", 5.6)]
+    assert (points[0]["from"], points[0]["from_date"]) == (20.0, "2026-08-03")   # US: 12 weeks before Oct 26
 
 
 def test_margins_of_error_match_the_report_methodology():
@@ -190,3 +191,23 @@ def test_the_appendix_gives_worse_better_and_net_with_their_changes():
     assert len(data["dates"]) == 28 and rows["Total worse"]["values"][-1] == 20.0 and rows["Total better"]["values"][-1] == 40.0
     assert rows["Net better"]["values"][-1] == 20.0 and rows["Net better"]["week_change"] == 0.0
     assert data["weekly"][2]["four_week_change"] == 0.0
+
+
+def test_the_china_report_matches_the_september_2026_china_csi_deck(monkeypatch):
+    """config/china_weekly_report.yml on real China weeks (tests/fixtures/china_report_sep2026.json, Total only):
+    Figure 2's net optimism and Figure 10's activity rows of the analysts' Sep 2026 deck, to its printed decimal."""
+    monkeypatch.setattr(report, "ACTIVE", "china_weekly_report")
+    files = json.loads((Path(__file__).parent / "fixtures" / "china_report_sep2026.json").read_text())
+    q4, q8, q9 = (report.Question(files[code]) for code in ("Q4", "Q8", "Q9"))
+    end = q9.wave_of("2026-09-28")
+    economy, finances = report.sentiment(q9, end)["lines"]["Total"], report.sentiment(q8, end)["lines"]["Total"]
+    assert (economy["four_week"][-5], economy["four_week"][-1], economy["weekly"][-1]) == (43.7, 38.6, 31.1)
+    assert (finances["four_week"][-5], finances["four_week"][-1], finances["weekly"][-1]) == (40.4, 35.2, 30.9)
+    table = report.table(q4, q4.wave_of("2026-09-28"))
+    assert table["dates"] == ["2026-09-07", "2026-09-14", "2026-09-21", "2026-09-28"]   # four weeks, as the deck
+    games = next(r for r in table["rows"] if r["label"].startswith("Played computer"))
+    assert (games["weekly"], games["weekly_week_change"]) == ([33.6, 33.2, 28.2, 34.4], 6.1)
+    # the deck prints (0.4) as the four-week change: its workbook's formula still read January; Sep 28 against Aug 31 is
+    assert games["weekly_change"] == 3.8
+    rows = {r["label"]: r for r in report.appendix(q9, end)["four_week"]["All respondents"]}
+    assert list(rows) == ["Positive", "Negative", "Same as now", "Don't know", "Net optimism"]   # every answer, then net

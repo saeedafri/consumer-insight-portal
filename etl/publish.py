@@ -53,7 +53,7 @@ from etl import expectations, fieldwork, retailers, sectors, weekly_report
 log = logging.getLogger("cip.publish")
 ROOT = Path(os.environ.get("CIP_PUBLISH_DIR") or Path(__file__).resolve().parents[1] / "data/published")
 POPULAR = 300   # after a deploy: the most-asked answers put back in nginx's cache (popular_urls)
-WARM_WAVES = 1   # the newest wave, the one people open first after a publish (3 kept one core at 100 % for 97 s)
+WARM_WAVES = 1   # per weekly tracker (US, China): its newest wave, the one people open first (3 kept one core at 100 % for 97 s)
 KEEP = 3
 MAX_JOBS = 4     # app-role database reads per publish; shared MySQL must not get an unbounded pool
 BACKUP = os.environ.get("CIP_PUBLISH_BACKUP_URL", "").strip()   # https://<account>.blob.core.windows.net/<container>?<sas>
@@ -368,6 +368,16 @@ def restore(root: Path = ROOT) -> Path:
     return root / name
 
 
+def behind(version: Path) -> bool:
+    """Has the database gained or rebuilt a wave since this version was built? A backup taken before a load (the China
+    weeks loaded on 11 Nov 2026 straight into the database) would otherwise be served after every deploy until the next
+    scheduled load published, and the survey list would miss those waves."""
+    manifest = json.loads((version / "manifest.json").read_text())
+    with get_engine("app").connect() as conn:
+        now = [str(x) for x in conn.execute(text("SELECT COUNT(*), MAX(built_at) FROM srv_wave")).one()]
+    return manifest.get("serving_version") != now
+
+
 def publish(root: Path = ROOT, jobs: int | None = None) -> Path:
     out = build(root, jobs)
     swap(root, out)
@@ -385,7 +395,7 @@ def publish(root: Path = ROOT, jobs: int | None = None) -> Path:
 
 
 def warm_nginx(out: Path, waves: int = WARM_WAVES) -> int:
-    """Ask nginx (CIP_NGINX_URL) for every this-week cross-tab of the newest wave, as the screen asks for them (each
+    """Ask nginx (CIP_NGINX_URL) for every this-week cross-tab of each weekly tracker's newest wave, as the screen asks for them (each
     question, both orders of every pair of cuts), so the first people to open a new wave find them already cached.
     One at a time, resting as long as each took: at most half the one core, people's requests always go first. Other
     weeks and waves are built on their first click (tens of ms) and cached from then on."""
@@ -394,8 +404,13 @@ def warm_nginx(out: Path, waves: int = WARM_WAVES) -> int:
         return 0
     from urllib.parse import quote
     from etl.serving import CUTS
-    newest = sorted(json.loads(gzip.decompress((out / "api/v1/waves.json.gz").read_bytes())),
-                    key=lambda w: (w["wave_date"], w["survey_id"]), reverse=True)[:waves]
+    listed = sorted(json.loads(gzip.decompress((out / "api/v1/waves.json.gz").read_bytes())),
+                    key=lambda w: (w["wave_date"], w["survey_id"]), reverse=True)
+    # each weekly tracker's newest waves (CSI-US and CSI-CN), not only the newest of all: China's week is always older
+    # than the US one and would otherwise be built on its first click
+    trackers = [w for w in listed if w.get("study_type", "tracker") == "tracker"] or listed
+    newest = [w for w in trackers if sum(o.get("survey_family") == w.get("survey_family") for o in
+                                         trackers[:trackers.index(w) + 1]) <= waves]
     urls = [f"{base}/api/v1/waves/{w['survey_id']}/crosstab?q={quote(q['id'], safe='')}&by={a},{b}&weeks={weeks}"
             for w in newest for q in json.loads(gzip.decompress((out / f"api/v1/waves/{w['survey_id']}/book.json.gz").read_bytes()))["questions"]
             for a in CUTS for b in CUTS if a != b for weeks in (1,)]
@@ -497,6 +512,9 @@ def main() -> int:
     from etl.loaders import etl_lock   # one writer of the published files at a time (the scheduled run publishes too)
     with etl_lock():
         out = rollback(a.root) if a.rollback else restore(a.root) if a.restore else publish(a.root, a.jobs)
+        if a.restore and behind(out):   # newer waves in the database: build only those, link the rest
+            log.info("The restored version is behind the database: publishing the new waves")
+            out = publish(a.root, a.jobs)
     print(out)
     if a.restore:   # outside the lock: refilling the cache must not hold up a scheduled ETL run
         warm_after_restore(out)

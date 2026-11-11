@@ -153,12 +153,16 @@ export const useWaves = () => useQuery({ queryKey: ["waves"], queryFn: () => get
 /** The weekly US Consumer Survey Insights report of a recent tracker wave, built by the ETL (etl/weekly_report.py) and
  *  read as it is by the Report screen (screens/Report.tsx). Figures are % of respondents, four-week rolling averages. */
 export interface ReportRow { label: string; values: (number | null)[]; week_change: number | null; quarter_change: number | null;
-  week_significant: boolean; quarter_significant: boolean }
+  week_significant: boolean; quarter_significant: boolean;
+  /** single weeks' % and their one-week and long changes (the China deck's weekly tables) */
+  weekly: (number | null)[]; weekly_week_change: number | null; weekly_change: number | null }
 export interface ReportTable { dates: (string | null)[]; rows: ReportRow[]; trend: { dates: (string | null)[]; lines: Record<string, (number | null)[]> } }
 export interface AppendixRow { label: string; values: (number | null)[]; week_change: number | null; four_week_change: number | null }
 export interface SentimentLine { weekly: (number | null)[]; four_week: (number | null)[]; year_change: number | null }
 export interface WeeklyReport {
   survey_id: number; wave_date: string;
+  /** from the report's config (config/weekly_report.yml, config/china_weekly_report.yml) */
+  family: string; title: string; population: string; change_label: string; net_name: string;
   three_points: { section: string; label: string; change: number; from: number; to: number; from_date: string; to_date: string }[];
   sentiment: Record<string, { dates: (string | null)[]; lines: Record<string, SentimentLine> }>;
   appendix: Record<string, { dates: (string | null)[]; four_week: Record<string, AppendixRow[]>; weekly: AppendixRow[] }>;

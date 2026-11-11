@@ -4,6 +4,13 @@
 # the weekly US tracker: the survey family and study type whose waves get a report
 family: CSI-US
 study_type: tracker
+title: US Consumer Survey Insights
+population: US adults 18+
+
+# a table's weeks of four-week averages and how far back its long change looks (12 weeks: the three-month change)
+table_weeks: 13
+change_weeks: 12
+change_label: Three-month change
 
 # the report's 13-week tables, in the order shown: the part of the report, the table's title, its short name (used in
 # "Three data points to watch") and the weekly tracker question (CSI-US) it reads
@@ -29,6 +36,10 @@ income_groups:
   "<$50,000": ["under $25,000", "$25,000 - $49,999"]
   "$50,000 to <$100,000": ["$50,000 - $99,999"]
   "$100,000+": ["$100,000 - $149,999", "$150,000 - $199,999", "$200,000 or greater"]
+
+net_name: Net better
+appendix_each_answer: false   # the appendix lists total worse, total better and net better
+news_events: true
 
 # a net score: answers containing a positive word minus answers containing a negative word
 net_words:

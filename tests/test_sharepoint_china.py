@@ -96,3 +96,23 @@ def test_a_load_that_fails_on_the_way_is_tried_again_next_pass(graph, csi_db, mo
     again = sharepoint_china.run()
     assert again[0].startswith("2026/October/Survey of Oct 19: loaded week of 2026-10-19")
     assert again[1].startswith("2026/October/Survey of Oct 26: loaded week of 2026-10-26")
+
+
+def test_the_webhook_is_created_once_then_renewed(graph, monkeypatch):
+    assert sharepoint_china.subscribe().startswith("webhook not set up")
+    monkeypatch.setenv("CIP_SP_WEBHOOK_URL", "https://cip.example/api/v1/admin/sharepoint/notify")
+    monkeypatch.setenv("CIP_SP_WEBHOOK_SECRET", "s" * 40)
+    graph.subscriptions, sent = [], []
+    plain_get = graph.get
+    graph.get = lambda url, timeout=None: Answer({"value": graph.subscriptions}) if url.endswith("/subscriptions") else plain_get(url)
+
+    def post(url, json=None, timeout=None):
+        sent.append(("POST", json))
+        graph.subscriptions.append({"id": "sub1", "notificationUrl": json["notificationUrl"], "resource": json["resource"]})
+        return Answer()
+    graph.post = post
+    graph.patch = lambda url, json=None, timeout=None: sent.append(("PATCH", url)) or Answer()
+    assert sharepoint_china.subscribe().startswith("webhook created")
+    assert sent[0][1]["resource"] == "/drives/d/root" and sent[0][1]["clientState"] == "s" * 40
+    assert sharepoint_china.subscribe().startswith("webhook renewed")
+    assert sent[1] == ("PATCH", "https://graph.microsoft.com/v1.0/subscriptions/sub1")

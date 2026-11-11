@@ -1,0 +1,60 @@
+# The weekly "China Consumer Survey Insights" report (etl/weekly_report.py, the same engine as the US report in
+# config/weekly_report.yml): the analysts' monthly China CSI deck and their aggregation workbook ("Aggregated data",
+# tabs Consumer Sentiment, Activities in past two week, Offline store, Online store, Spending on discretionary and the
+# hidden Avoidance), computed for every China week as it is published. Change it here: no code changes needed.
+#
+# The workbook's rules, all reproduced:
+#   weekly %             count / who answered, from Baidu's figures (each week is checked against Baidu's own topline)
+#   4WRA                 =AVERAGE(4 weekly %s): the mean of the four weekly shares, not the four weeks pooled
+#   Weekly PPT change    =100*(this week - last week), of the weekly % and of the 4WRA
+#   Four-week PPT change =100*(this week - four weeks before), e.g. =100*(GL4-GH4): Sep 28 against Aug 31
+#   Net optimism         % positive minus % negative (=C4-C5), weekly and as a 4WRA
+#   CI                   =CONFIDENCE.NORM(0.05, SQRT(p*(1-p)), n): the margin of error stated in the methodology
+# Where the workbook went wrong (found 11 Nov 2026, so the engine computes by answer, never by row position):
+#   - its 4WRA blocks are labelled in another order than the rows they average ("Met up with friends" averages
+#     "Watched TV"), because the weekly rows were re-sorted after the formulas were written;
+#   - the Four-Week Change columns of Activities, Offline and Online still point at January/July 2026 (=100*(FB4-EX4),
+#     =100*(GB4-FX4)) while the data run to Sep 28.
+
+family: CSI-CN
+study_type: tracker
+title: China Consumer Survey Insights
+population: China-based consumers aged 18+
+
+# the deck's tables: the last four weeks and the change against the week before and four weeks before (Figures 10-13)
+table_weeks: 4
+change_weeks: 4
+change_label: Four-week change
+
+sections:
+  - {part: "Consumer activities", name: "Activities", question: Q4,
+     title: "Activities they have done in the past two weeks"}
+  - {part: "What consumers are buying", name: "Bought in store", question: Q5,
+     title: "What they have bought in store in the past two weeks"}
+  - {part: "What consumers are buying", name: "Bought online", question: Q6,
+     title: "What they have bought online in the past two weeks"}
+  - {part: "Spending and avoidance", name: "Spending", question: Q1,
+     title: "How their spending on everyday goods and dining will change in the next two weeks"}
+  - {part: "Spending and avoidance", name: "Places avoided", question: Q3,
+     title: "Public places they are avoiding or travel plans they are changing"}
+
+# net optimism (Figures 2-3): % positive minus % negative; Q7 looks back a year (Figures 8-9)
+sentiment:
+  Personal finances: Q8     # personal financial situation over the next 12 months
+  Economy: Q9               # the economy over the next 12 months
+  Personal finances vs a year ago: Q7
+net_name: Net optimism
+
+# the deck has no income groups
+income_groups: {}
+
+net_words:
+  positive: [positive, better, increase]
+  negative: [negative, worse, decrease]
+
+# every answer's own row in the appendix (Appendix Figures 3-8 list Optimistic, Pessimistic, Same as now, Don't know)
+appendix_each_answer: true
+
+leave_out_answers: ["none of", "other"]
+profile_questions: {}
+news_events: false

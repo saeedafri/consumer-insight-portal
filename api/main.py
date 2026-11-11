@@ -457,7 +457,7 @@ async def book(survey_id: int, request: Request, who: dict = Depends(user)) -> R
 
 @app.get("/api/v1/waves/{survey_id}/report")
 async def weekly_report(survey_id: int, request: Request, who: dict = Depends(user)) -> Response:
-    """The weekly US Consumer Survey Insights report of a recent tracker wave, as the ETL published it
+    """The weekly report of a tracker wave (US Consumer Survey Insights, or China Consumer Survey Insights), as the ETL published it
     (etl/weekly_report.py). nginx sends the file itself to most people (deploy/cip_locations.conf); this route serves a
     filtered session and a laptop without nginx. Nothing is computed here."""
     require_feature(who, "report")
@@ -637,6 +637,7 @@ app.include_router(mcp.router)                                    # /mcp: the MC
 app.include_router(logs.router)                                   # /api/v1/admin/logs: operational logs (api/logs.py)
 app.include_router(metrics.router)                                # /api/v1/admin/metrics: the Logs page's dashboard (api/metrics.py)
 app.include_router(ingest.router)                                 # /api/v1/admin/survey: upload & ingest (api/ingest.py)
+app.include_router(ingest.hooks)                                  # /api/v1/admin/sharepoint/notify: SharePoint webhook (api/ingest.py)
 
 def book_data(survey_id: int) -> Optional[dict]:
     return _parsed_book(survey_id, PUBLISHED_VERSION)

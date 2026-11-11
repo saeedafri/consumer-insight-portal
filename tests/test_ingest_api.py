@@ -61,3 +61,19 @@ def test_wrong_files_are_refused_before_anything_loads(csi_db, as_admin, monkeyp
 
 def test_only_admins_reach_the_upload(csi_db):
     assert TestClient(app).post("/api/v1/admin/survey/preview", files=files()).status_code in (401, 403)
+
+
+def test_sharepoint_notify_answers_graphs_check_and_leaves_one_note_for_a_right_secret(csi_db, monkeypatch, tmp_path):
+    client, secret = TestClient(app), "s" * 40
+    monkeypatch.setattr(ingest, "WANTED", tmp_path / "sharepoint.wanted")
+    assert client.post("/api/v1/admin/sharepoint/notify").status_code == 404           # not set up: no such address
+    monkeypatch.setenv("CIP_SP_WEBHOOK_SECRET", secret)
+    check = client.post("/api/v1/admin/sharepoint/notify?validationToken=Validation%3A+abc")
+    assert (check.status_code, check.text, check.headers["content-type"][:10]) == (200, "Validation: abc", "text/plain")
+    assert client.post("/api/v1/admin/sharepoint/notify", json={"value": [{"clientState": "wrong"}]}).status_code == 403
+    assert not ingest.WANTED.exists()
+    graph = client.post("/api/v1/admin/sharepoint/notify", json={"value": [{"clientState": secret, "changeType": "updated"}]})
+    assert graph.status_code == 202 and ingest.WANTED.exists()                          # Microsoft's webhook
+    ingest.WANTED.unlink()
+    assert client.post("/api/v1/admin/sharepoint/notify", headers={"X-CIP-Secret": secret}).status_code == 202   # a flow
+    assert ingest.WANTED.exists()

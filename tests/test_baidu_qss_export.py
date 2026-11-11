@@ -96,3 +96,36 @@ def test_two_weeks_compare_and_keep_baidus_topline_beside_cips_figures(csi_db):
             " AND r.question_id = c.question_id AND r.item_id = COALESCE(c.item_id, 0) AND r.option_id = COALESCE(c.option_id, 0)"
             " AND r.dim = 'total'")).one()
         assert compared > 200 and mismatched == 0   # Baidu's figures and the served ones, side by side
+
+
+def test_submit_times_re_saved_day_first_are_read_day_first():
+    """Baidu writes "3/9/26 14:16" (month first); a UK-set Excel re-save writes "26/05/25 20:06" or "03/11/24 09:12"."""
+    as_baidu = baidu_qss_export.submit_time_reader(["3/9/26 14:16", "10/21/26 22:19"])
+    assert as_baidu("3/9/26 14:16").date().isoformat() == "2026-03-09"
+    resaved = baidu_qss_export.submit_time_reader(["03/11/24 09:12", "04/11/24 10:00"])   # no day over 12: zeros tell
+    assert resaved("03/11/24 09:12").date().isoformat() == "2024-11-03"
+    assert baidu_qss_export.submit_time_reader(["26/05/25 20:06"])("26/05/25 20:06").date().isoformat() == "2025-05-26"
+
+
+def test_a_months_extra_questions_and_older_wordings_count_into_todays_answers(tmp_path):
+    """A topline with a month's extra question ("15.H1.", e.g. luxury or Singles' Day) and the 2023-24 age wording
+    ("18-25 周岁") reads as today's: the extra question is skipped, the old wording counts into "18-25岁"."""
+    import openpyxl
+    rows = baidu_qss_export.read_table(TOPLINE)
+    book = openpyxl.Workbook()
+    for row in rows:
+        first = str(row[0]).strip() if row and row[0] is not None else ""
+        book.active.append([first.replace("18-25岁", "18-25 周岁"), *row[1:]])
+    for extra in (["15.H1.您在过去的12个月有购买过奢侈品吗？"], ["有", 120], ["没有", 430], ["答题人数：550"]):
+        book.active.append(extra)
+    book.save(tmp_path / "topline.xlsx")
+    ours, theirs = baidu_qss_export.read_topline(TOPLINE), baidu_qss_export.read_topline(tmp_path / "topline.xlsx")
+    assert theirs == ours   # nothing from H1 lands in Q9, and the old age wording is today's answer
+
+
+def test_a_singles_day_week_reads_the_trackers_questions_not_its_own():
+    """Nov 17 2025 asked 17 Singles' Day questions as Q1-Q17, then the tracker's Q1-Q9 again: the tracker block is read
+    (every figure equal to Baidu's), the Singles' Day questions are skipped."""
+    found = baidu_qss_export.preview(FIXTURES / "baidu_raw_2025-11-17_singles_day.csv",
+                                     FIXTURES / "baidu_topline_2025-11-18_singles_day.xls")
+    assert (found["respondents"], found["matched"], found["problems"]) == (560, 123, [])

@@ -127,7 +127,9 @@ export default function Shell() {
   const china = waves.data?.find(w => w.survey_family === "CSI-CN" && w.rows_built !== 0);    // the China Consumer Survey (Baidu)
   const reportWaves = useReportWaves().data;   // the waves with a weekly report (since Jul 2025: etl/weekly_report.py)
   const hasReport = !!wave && !!reportWaves?.includes(wave.survey_id);
-  const report = reportWaves?.length ? Math.max(...reportWaves) : null;   // the newest weekly report: Consumer sentiment in the menu
+  // the newest weekly report of each tracker (waves come newest first): US for Consumer sentiment, China for its report
+  const newestReport = (family: string) => waves.data?.find(w => w.survey_family === family && reportWaves?.includes(w.survey_id))?.survey_id;
+  const report = newestReport("CSI-US"), chinaReport = newestReport("CSI-CN");
   const rail = useRef<HTMLElement>(null);
   const howArrived = useNavigationType();
 
@@ -190,6 +192,8 @@ export default function Shell() {
           <Icon of={LayoutDashboard} />Shopping & Spending</NavLink>}
         {china && <NavLink to={`/w/${china.survey_id}`} className={() => wave?.survey_family === "CSI-CN" ? "active" : ""}>
           <Icon of={Globe} />China weekly tracker</NavLink>}
+        {chinaReport && allowed(me, "report") && <NavLink to={`/w/${chinaReport}/report`} className={() => location.pathname === `/w/${chinaReport}/report` ? "active" : ""}>
+          <Icon of={Gauge} />China weekly report</NavLink>}
         {allowed(me, "explorer") && <NavLink to="/channels"><Icon of={Layers} />In store vs online</NavLink>}
         {report && allowed(me, "report") && <NavLink to={`/w/${report}/report`} className={() => location.pathname === `/w/${report}/report` ? "active" : ""}>
           <Icon of={Gauge} />Consumer sentiment</NavLink>}

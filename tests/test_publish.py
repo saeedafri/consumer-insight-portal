@@ -179,6 +179,19 @@ def test_a_new_container_restores_from_a_folder_backup_instead_of_rebuilding(tmp
     assert rebuilt == [restored.name]   # this image's reports, sector tables and expected vs actual: at deploy, not next week
 
 
+def test_a_restored_version_older_than_the_database_is_known_to_be_behind(csi_db, tmp_path):
+    """A deploy restores the last backup; a wave loaded since (the China weeks of 11 Nov) must still be published."""
+    with csi_db.begin() as conn:
+        seed(conn, 266, date(2026, 10, 5), qualified=401, xm1_yes=92, xm1_base=149)
+    serving.build_wave(266)
+    out = publish.publish(tmp_path, jobs=1)
+    assert not publish.behind(out)
+    with csi_db.begin() as conn:
+        seed(conn, 412, date(2026, 10, 12), qualified=404, xm1_yes=125, xm1_base=404)
+    serving.build_wave(412)                              # loaded after the backup was taken
+    assert publish.behind(out)
+
+
 def test_a_reload_that_drops_a_question_leaves_no_stale_question_file(csi_db, tmp_path):
     import sqlalchemy as sa
     with csi_db.begin() as conn:
@@ -207,14 +220,19 @@ def test_a_new_small_cell_rule_rebuilds_every_wave(csi_db, tmp_path, monkeypatch
     assert json.loads((publish.build(tmp_path, jobs=1) / "manifest.json").read_text())["rebuilt_waves"] == 2
 
 
-def test_the_warm_up_asks_only_the_newest_wave_one_at_a_time(tmp_path, monkeypatch):
+def test_the_warm_up_asks_each_trackers_newest_wave_one_at_a_time(tmp_path, monkeypatch):
     import gzip, json, threading
     from etl import publish
     out = tmp_path / "v"
     (out / "api/v1/waves/2").mkdir(parents=True)
     (out / "api/v1/waves.json.gz").write_bytes(gzip.compress(json.dumps(
-        [{"survey_id": 1, "wave_date": "2026-10-26"}, {"survey_id": 2, "wave_date": "2026-11-02"}]).encode()))
-    (out / "api/v1/waves/2/book.json.gz").write_bytes(gzip.compress(json.dumps({"questions": [{"id": "q1"}]}).encode()))
+        [{"survey_id": 1, "wave_date": "2026-10-26", "survey_family": "CSI-US", "study_type": "tracker"},
+         {"survey_id": 2, "wave_date": "2026-11-02", "survey_family": "CSI-US", "study_type": "tracker"},
+         {"survey_id": 3, "wave_date": "2026-10-26", "survey_family": "CSI-CN", "study_type": "tracker"},
+         {"survey_id": 4, "wave_date": "2026-11-01", "survey_family": "HOLIDAY", "study_type": "annual"}]).encode()))
+    for sid in (2, 3):
+        (out / f"api/v1/waves/{sid}").mkdir(parents=True, exist_ok=True)
+        (out / f"api/v1/waves/{sid}/book.json.gz").write_bytes(gzip.compress(json.dumps({"questions": [{"id": "q1"}]}).encode()))
     asked, at_once, busy = [], [0], [0]
     lock = threading.Lock()
 
@@ -233,12 +251,14 @@ def test_the_warm_up_asks_only_the_newest_wave_one_at_a_time(tmp_path, monkeypat
     monkeypatch.setattr(publish.time, "sleep", lambda s: None)
     cookies = []
     monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout: (asked.append(req.full_url), cookies.append(req.get_header("Cookie")), Reply())[2])
-    publish.warm_nginx(out)
     from api import signin
     from shared.core import session
-    assert session.read(cookies[0].split("=", 1)[1])["expires"] >= signin.stale_before()   # nginx caches, not the API
-    assert asked and all("/waves/2/" in u and u.endswith("weeks=1") for u in asked)   # newest wave, this week only
-    assert len(asked) == 6 * 5 and at_once[0] == 1                                    # every ordered pair of 6 cuts, serially
+    stale = signin.stale_before()   # taken first: the clock may pass a second while warming
+    publish.warm_nginx(out)
+    assert session.read(cookies[0].split("=", 1)[1])["expires"] >= stale   # nginx caches, not the API
+    assert asked and all(("/waves/2/" in u or "/waves/3/" in u) and u.endswith("weeks=1") for u in asked)   # each tracker's newest, this week only
+    assert sum("/waves/3/" in u for u in asked) == 6 * 5                              # China's newest too, not only the US
+    assert len(asked) == 2 * 6 * 5 and at_once[0] == 1                                # every ordered pair of 6 cuts, serially
 
 
 def test_after_a_deploy_the_most_asked_cached_answers_are_put_back(tmp_path, monkeypatch):

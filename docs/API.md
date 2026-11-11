@@ -42,7 +42,7 @@ curl -H "Authorization: Bearer cip_…" "https://<portal>/api/v1/waves/532/resul
 | `GET /api/v1/waves/{survey_id}/book` | A whole wave: questions, answers and topic dashboards (the always-on Overview's data) | — |
 | `GET /api/v1/waves/{survey_id}/results` | Finished rows for questions × cuts, `?q=XM3,XM1&dim=total,generation` | Question explorer |
 | `GET /api/v1/waves/{survey_id}/crosstab` | One question by two cuts, `?q=XM3&by=generation,gender&weeks=4` | Cross-tab matrix |
-| `GET /api/v1/waves/{survey_id}/report` | The weekly US Consumer Survey Insights report of a tracker wave | Weekly report |
+| `GET /api/v1/waves/{survey_id}/report` | The weekly report of a tracker wave: US Consumer Survey Insights or China Consumer Survey Insights | Weekly report |
 | `GET /api/v1/waves/{survey_id}/logic` | When each question was shown, and the screen-out rules | Survey preview |
 | `GET /api/v1/questions/{family}/{study_type}/{qcode}` | One question across every wave and cut | Trends, Compare waves or Audiences |
 | `GET /api/v1/dashboards/{code}` | A topic dashboard for its latest wave | Topic dashboards |
@@ -131,3 +131,8 @@ SharePoint download is ignored. Each is at most 10 MB.
 - `POST /api/v1/admin/survey/publish` (optional form field `wave`, YYYY-MM-DD): the same check; with no problem the week
   is loaded (the same week again replaces it) and the published files are rebuilt in the background. 422 with the
   problems when the check fails (nothing written), 409 while another CIP run holds the ETL lock.
+- `POST /api/v1/admin/sharepoint/notify`: "the China folder changed", from Microsoft Graph's webhook (the
+  subscription's `clientState`) or a Power Automate flow (header `X-CIP-Secret`); no sign-in, the secret
+  `CIP_SP_WEBHOOK_SECRET` instead. Answers Graph's `?validationToken=` check in plain text; 202 for a right secret,
+  and a SharePoint pass (etl/sharepoint_china.py) runs within a minute; 403 for a wrong one; 404 while not set up.
+  docs/CHINA_SURVEY_PIPELINE.md lists every way a week gets in.

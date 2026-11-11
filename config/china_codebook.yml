@@ -182,3 +182,17 @@ questions:
       "消极": "Negative"
       "和现在一样": "Same as now"
       "不知道": "Don't know"
+
+# Earlier questionnaires' Chinese for an answer that is the same answer today (2023 to mid-2024 files), read as
+# today's wording by etl/baidu_qss_export.py today_wording(), so every year counts into one answer. S2's oldest band
+# was printed "58-76" in Chinese too; respondents of both years are the 57/58-76 band.
+older_wordings:
+  S2:
+    "18周岁以下": "18岁以下"
+    "18-25 周岁": "18-25岁"
+    "26-41 周岁": "26-41岁"
+    "42-57 周岁": "42-57岁"
+    "58-76 周岁": "57-76岁"
+    "77 周岁或以上": "77岁或以上"
+  S4:
+    "其他城市（请注明____）": "其他城市"

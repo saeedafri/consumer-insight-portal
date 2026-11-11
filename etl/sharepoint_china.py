@@ -13,8 +13,14 @@ the one site. Settings, in the App Service: CIP_SP_TENANT_ID, CIP_SP_CLIENT_ID, 
 CIP_CHINA_SITE ("coresightresearch.sharepoint.com:/sites/CoreSightResearch") and CIP_CHINA_FOLDER (the folder's path in
 the site's document library). Without them it does nothing.
 
-    python -m etl.sharepoint_china          # one pass (what the scheduler runs)
-    python -m etl.sharepoint_china --list   # what it sees and would load; loads nothing
+    python -m etl.sharepoint_china             # one pass (what the scheduler runs)
+    python -m etl.sharepoint_china --list      # what it sees and would load; loads nothing
+    python -m etl.sharepoint_china --subscribe # create or renew the Graph webhook (daily, deploy/etl-loop.sh)
+
+What starts a pass: the scheduler every 10 minutes; or, with a webhook or a Power Automate flow set up
+(CIP_SP_WEBHOOK_SECRET), a call to POST /api/v1/admin/sharepoint/notify (api/ingest.py) within a minute, and the
+scheduler only hourly as a safety net. The webhook also needs CIP_SP_WEBHOOK_URL (that address, public) and Graph
+Files.Read.All: Microsoft allows SharePoint subscriptions only on a whole library and not with Sites.Selected.
 """
 from __future__ import annotations
 
@@ -22,7 +28,7 @@ import argparse
 import logging
 import os
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
@@ -123,6 +129,33 @@ def download(session, drive: str, item: dict, folder: Path) -> Path:
     return path
 
 
+def open_folder(session, found: dict) -> tuple[str, str]:
+    """(drive id, folder id) of the China folder."""
+    root = get(session, f"/sites/{found['CIP_CHINA_SITE']}/drive/root:/{quote(found['CIP_CHINA_FOLDER'].strip('/'))}")
+    return root["parentReference"]["driveId"], root["id"]
+
+
+def subscribe() -> str:
+    """Create the Graph webhook on the folder's library, or push its expiry out again. Microsoft ends a SharePoint
+    subscription within 42,300 minutes (under 30 days), so this runs daily and renews it to ~28 days each time."""
+    found, url, secret = settings(), os.environ.get("CIP_SP_WEBHOOK_URL", ""), os.environ.get("CIP_SP_WEBHOOK_SECRET", "")
+    if not (found and url and len(secret) >= 32):
+        return "webhook not set up (CIP_SP_WEBHOOK_URL, CIP_SP_WEBHOOK_SECRET of 32+ characters)"
+    session = sign_in(found)
+    drive, _ = open_folder(session, found)
+    until = (datetime.now(timezone.utc) + timedelta(minutes=41000)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    mine = next((s for s in get(session, "/subscriptions").get("value", [])
+                 if s.get("notificationUrl") == url and s.get("resource", "").endswith(f"drives/{drive}/root")), None)
+    if mine:
+        answer = session.patch(f"{GRAPH}/subscriptions/{mine['id']}", json={"expirationDateTime": until}, timeout=60)
+    else:   # Graph calls the address with a validationToken before it answers (api/ingest.py sharepoint_changed)
+        answer = session.post(f"{GRAPH}/subscriptions", timeout=60, json={
+            "changeType": "updated", "notificationUrl": url, "resource": f"/drives/{drive}/root",
+            "expirationDateTime": until, "clientState": secret})
+    answer.raise_for_status()
+    return f"webhook {'renewed' if mine else 'created'} until {until}"
+
+
 def run(listing_only: bool = False) -> list[str]:
     """One pass over the folder. Returns what it did, one line per week folder that needed something."""
     found = settings()
@@ -130,10 +163,9 @@ def run(listing_only: bool = False) -> list[str]:
         log.info("SharePoint watcher not set up (CIP_SP_* and CIP_CHINA_* settings missing): nothing to do")
         return []
     session = sign_in(found)
-    root = get(session, f"/sites/{found['CIP_CHINA_SITE']}/drive/root:/{quote(found['CIP_CHINA_FOLDER'].strip('/'))}")
-    drive = root["parentReference"]["driveId"]
+    drive, folder = open_folder(session, found)
     done = []
-    for path, files in week_folders(session, drive, root["id"]):
+    for path, files in week_folders(session, drive, folder):
         where = "/".join(path) or found["CIP_CHINA_FOLDER"]
         raw, crosstab, why = pick_pair(files)
         if not raw:
@@ -176,9 +208,10 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s")
     parser = argparse.ArgumentParser(description="Load new China survey weeks from SharePoint")
     parser.add_argument("--list", action="store_true", help="show what would load; load nothing")
+    parser.add_argument("--subscribe", action="store_true", help="create or renew the Graph webhook")
     args = parser.parse_args()
     try:
-        for line in run(listing_only=args.list):
+        for line in [subscribe()] if args.subscribe else run(listing_only=args.list):
             log.info(line)
     except requests.HTTPError as exc:   # a revoked secret or a moved folder: say so once, try again next pass
         notify.failure("China survey SharePoint watcher cannot read the folder", str(exc)[:1000])

@@ -20,7 +20,7 @@ const ROUTES: [string, string, string][] = [
   ["GET /api/v1/waves/{survey_id}/book", "A whole wave: questions, answers and topic dashboards (the always-on Overview's data)", "—"],
   ["GET /api/v1/waves/{survey_id}/results", "Finished rows for questions × cuts, ?q=XM3,XM1&dim=total,generation", "Question explorer"],
   ["GET /api/v1/waves/{survey_id}/crosstab", "One question by two cuts, ?q=XM3&by=generation,gender&weeks=4", "Cross-tab matrix"],
-  ["GET /api/v1/waves/{survey_id}/report", "The weekly US Consumer Survey Insights report of a tracker wave", "Weekly report"],
+  ["GET /api/v1/waves/{survey_id}/report", "The weekly report of a tracker wave: US Consumer Survey Insights or China Consumer Survey Insights", "Weekly report"],
   ["GET /api/v1/waves/{survey_id}/logic", "When each question was shown, and the screen-out rules", "Survey preview"],
   ["GET /api/v1/questions/{family}/{study_type}/{qcode}", "One question across every wave and cut", "Trends, Compare waves or Audiences"],
   ["GET /api/v1/dashboards/{code}", "A topic dashboard for its latest wave", "Topic dashboards"],

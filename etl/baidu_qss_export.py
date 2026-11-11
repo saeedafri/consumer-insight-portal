@@ -26,7 +26,7 @@ import re
 import statistics
 import zipfile
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -45,13 +45,19 @@ from shared.core.database import get_engine
 
 log = logging.getLogger("cip.baidu")
 CODEBOOK = Path(__file__).resolve().parents[1] / "config/china_codebook.yml"
-COLUMN = re.compile(r"^Q\d+\.([SQ]\d+)\.\s*.*?【(?:单选|多选)】(?:-(.*))?$")   # "Q8.Q3. <text>【多选】-<answer>"
-TITLE = re.compile(r"^\d+\.([SQ]\d+)\.")                                   # the topline's "8.Q3.<text>"
+COLUMN = re.compile(r"^Q(\d+)\.([SQ]\d+)\.\s*.*?【(?:单选|多选)】(?:-(.*))?$")   # "Q8.Q3. <text>【多选】-<answer>"
+TITLE = re.compile(r"^\d+\.(?:([SQ]\d+)\.)?\D")   # the topline's "8.Q3.<text>"; "15.H1.<text>" is a month's extra question
 
 
 def load_codebook() -> dict:
     """config/china_codebook.yml: each question's English wording and its answers, Chinese to English."""
     return yaml.safe_load(CODEBOOK.read_text(encoding="utf-8"))
+
+
+def today_wording(codebook: dict, qcode: str, chinese: Optional[str]) -> Optional[str]:
+    """An answer as today's questionnaire words it: 2023-24 files say "18-25 周岁" where today's say "18-25岁"
+    (the codebook's older_wordings), so every year's files count into the same answer."""
+    return codebook.get("older_wordings", {}).get(qcode, {}).get(chinese, chinese)
 
 
 def cell(value) -> Optional[str]:
@@ -90,23 +96,33 @@ def read_sheet(path: Path) -> list[list]:
 
 def read_topline(path: Path) -> dict[str, dict]:
     """Baidu's topline: {question code: {"base": who answered, "counts": {Chinese answer: count}}}."""
-    found: dict[str, dict] = {}
+    blocks: dict[str, list[dict]] = {}
     current = None
+    codebook = load_codebook()
     for row in read_table(path):
         first = cell(row[0]) if row else None
         if not first:
             continue
         if title := TITLE.match(first):
-            current = found[title[1]] = {"base": None, "counts": {}}
+            # a month's extra questions (luxury, 618, Singles Day, AI...) are not in the weekly tracker: skipped
+            qcode, current = title[1], None
+            if qcode:
+                current = {"base": None, "counts": {}}
+                blocks.setdefault(qcode, []).append(current)
         elif current is None or first in ("选项", "总计"):
             continue
         elif first.startswith("答题人数"):
             current["base"] = int(re.sub(r"\D", "", first) or 0)
         else:
-            current["counts"][first] = int(float(row[1] or 0)) if len(row) > 1 else 0
-    if not found:
+            answer = today_wording(codebook, qcode, first)
+            current["counts"][answer] = current["counts"].get(answer, 0) + (int(float(row[1] or 0)) if len(row) > 1 else 0)
+    if not blocks:
         raise ValueError(f"{path.name} is not a Baidu topline: no question titles such as '1.S1.' found")
-    return found
+    # a Singles' Day week numbers its own questions Q1-Q17 first, then asks the tracker's Q1-Q9 again: per code, the
+    # block whose answers are the codebook's
+    answers = codebook["questions"]
+    return {qcode: max(found, key=lambda b: sum(a in answers.get(qcode, {}).get("answers", {}) for a in b["counts"]))
+            for qcode, found in blocks.items()}
 
 
 def seconds_taken(value) -> Optional[int]:
@@ -115,6 +131,32 @@ def seconds_taken(value) -> Optional[int]:
     if not found or not any(found.groups()):
         return None
     return int(found[1] or 0) * 60 + int(found[2] or 0)
+
+
+def submit_time_reader(values: list):
+    """How to read this file's submit times. Baidu writes month first without zeros ("3/9/26 14:16"); a file an analyst
+    re-saved in a UK-set Excel (2024-2025) holds day first, zero-padded ("26/05/25 20:06", "03/11/24 09:12"). One day
+    over 12 or one zero-padded part marks the whole file day-first."""
+    parts = [found for v in values if isinstance(v, str) and (found := re.match(r"\s*(\d+)/(\d+)/\d+ ", v))]
+    if any(int(found[1]) > 12 or found[1].startswith("0") or found[2].startswith("0") for found in parts):
+        return lambda v: datetime.strptime(v.strip(), "%d/%m/%y %H:%M") if isinstance(v, str) else parse_datetime(v)
+    return parse_datetime
+
+
+def tracker_columns(rows: list[list], codebook: dict) -> dict[str, str]:
+    """{question code: the column block (Baidu's "Q23." position) holding the tracker's question}. A Singles' Day week
+    (Nov 18 2024, Nov 17 2025) asks its own Q1-Q17 first and the tracker's Q1-Q9 after them: the block whose answers
+    are the codebook's is the tracker's."""
+    fit: dict[str, dict[str, int]] = {}
+    for i, header in enumerate(cell(h) or "" for h in rows[0]):
+        found = COLUMN.match(header)
+        if not found or found[2] not in codebook["questions"]:
+            continue
+        answers = codebook["questions"][found[2]]["answers"]
+        values = [found[3]] if found[3] is not None else [cell(r[i]) for r in rows[1:51] if i < len(r)]
+        score = fit.setdefault(found[2], {}).setdefault(found[1], 0)
+        fit[found[2]][found[1]] = score + sum(today_wording(codebook, found[2], v) in answers for v in values if v)
+    return {qcode: max(blocks, key=blocks.get) for qcode, blocks in fit.items()}
 
 
 def read_raw(path: Path, codebook: dict) -> tuple[list[ParsedQuestion], list[dict], list[str]]:
@@ -127,11 +169,16 @@ def read_raw(path: Path, codebook: dict) -> tuple[list[ParsedQuestion], list[dic
     problems = []
     if [cell(h) for h in rows[0][:3]] != ["用户ID", "答题时长", "提交时间"]:   # read by position below
         problems.append(f"the first columns are not Baidu's user id, time taken, submit time: {rows[0][:3]}")
+    tracker = tracker_columns(rows, codebook)
     for i, header in enumerate(cell(h) or "" for h in rows[0]):
         found = COLUMN.match(header)
         if not found:
             continue   # Baidu's own columns: user id, time taken, submit time, panel fields
-        qcode, answer = found[1], found[2]
+        if tracker.get(found[2], found[1]) != found[1]:
+            continue   # a Singles' Day question under a tracker code: not the tracker's
+        qcode, answer = found[2], today_wording(codebook, found[2], found[3])
+        if qcode not in questions_zh and int(found[1]) < int(tracker.get("S1", 0)):
+            continue   # a Singles' Day question asked before the tracker's own (Q10-Q17 on Nov 17 2025)
         if qcode not in questions_zh:
             problems.append(f"{qcode} is in the file but not in config/china_codebook.yml")
             continue
@@ -161,16 +208,18 @@ def read_raw(path: Path, codebook: dict) -> tuple[list[ParsedQuestion], list[dic
                                             rows=[(f"{qcode}_{n}", label) for n, label in enumerate(english, start=1)]))
 
     records = []
-    for number, row in enumerate((r for r in rows[1:] if any(cell(v) for v in r)), start=1):
+    answered = [r for r in rows[1:] if any(cell(v) for v in r)]
+    when = submit_time_reader([r[2] for r in answered])
+    for number, row in enumerate(answered, start=1):
         record = {"record": number, "status": "Qualified",   # the export holds completed interviews only
-                  "date": parse_datetime(row[2]),
+                  "date": when(row[2]),
                   "qtime": seconds_taken(row[1])}
         if record["date"] is None:
             problems.append(f"row {number + 1}: submit time not understood: {row[2]!r}")
         for qcode, place in columns.items():
             answers = questions_zh[qcode]["answers"]
             if "answer" in place:
-                chosen = cell(row[place["answer"]])
+                chosen = today_wording(codebook, qcode, cell(row[place["answer"]]))
                 if chosen and chosen not in answers:
                     problems.append(f"{qcode} answer not in the codebook: {chosen}")
                 elif chosen:

@@ -1,10 +1,12 @@
-// The weekly report (/app/w/:id/report): the "US Consumer Survey Insights" PDF report of one weekly-tracker wave, in
-// the PDF's order: three data points to watch, consumer sentiment (net better, with news events and income groups),
-// the 13-week tables (where consumers shop, what they buy, what they do), each with a year's chart of its biggest
-// answers, retailers' shopper profiles, methodology, and the appendix of sentiment data. Every table has the portal's
-// Export menu (CSV, Excel, PowerPoint, Pin to a board).
+// The weekly report (/app/w/:id/report) of one weekly-tracker wave: the "US Consumer Survey Insights" PDF report, or for
+// a China week the analysts' monthly "China Consumer Survey Insights" deck, in their order: three data points to watch,
+// consumer sentiment (net better or net optimism, with news events and income groups where the report has them), the
+// tables (US: 13 weeks and the three-month change; China: 4 weeks and the four-week change, as four-week averages or
+// single weeks), each with a year's chart of its biggest answers, retailers' shopper profiles (US), methodology, and
+// the appendix of sentiment data. Every table has the portal's Export menu (CSV, Excel, PowerPoint, Pin to a board).
 // Every number is built by the ETL when the wave is published (etl/weekly_report.py → report.json.gz), and which tables
-// appear, with their titles, comes from config/weekly_report.yml: this screen only draws what it is given.
+// appear, with their titles and words, comes from config/weekly_report.yml or config/china_weekly_report.yml: this
+// screen only draws what it is given.
 // Opened from the wave's left menu ("Weekly report", shown for the waves that have one: api/v1/reports).
 import { useMemo, useState } from "react";
 import { useParams } from "react-router";
@@ -43,8 +45,8 @@ export default function Report() {
   const parts = [...new Set(data.tables.map(t => t.part))];   // the report's parts, in the order the settings give
   return <div className="stack">
     <div className="page-head"><div>
-      <h1>US Consumer Survey Insights · week of {fmtDate(data.wave_date)}</h1>
-      <p className="lede">From the survey of {fmtDate(data.wave_date)} ({data.methodology.weeks[0]?.respondents.toLocaleString("en-US")} US adults 18+).
+      <h1>{data.title} · week of {fmtDate(data.wave_date)}</h1>
+      <p className="lede">From the survey of {fmtDate(data.wave_date)} ({data.methodology.weeks[0]?.respondents.toLocaleString("en-US")} {data.population}).
         Figures are % of respondents, as four-week rolling averages unless marked weekly. Changes are in percentage points (PPTs);
         coloured only when statistically significant.</p>
     </div></div>
@@ -52,7 +54,7 @@ export default function Report() {
     <Sentiment report={data} />
     {parts.map(part => <section key={part} className="stack">
       <h2 className="report-section">{part}</h2>
-      {data.tables.filter(t => t.part === part).map(t => <WeekTable key={t.question} title={t.title} table={t} events={data.events} />)}
+      {data.tables.filter(t => t.part === part).map(t => <WeekTable key={t.question} title={t.title} table={t} report={data} />)}
     </section>)}
     <Profiles report={data} />
     <Methodology report={data} />
@@ -70,7 +72,7 @@ function ThreePoints({ report }: { report: WeeklyReport }) {
       {report.three_points.map(p => <li key={`${p.section}-${p.label}`} className={`card kpi ${p.change > 0 ? "rise" : "fall"}`}>
         <div className="k-label">{p.section}</div>
         <div className={`k-value ${direction(p.change)}`}>{points(p.change)} <small>PPTs</small></div>
-        <p className="k-note"><b>{p.label}</b>: the four-week share {p.change > 0 ? "rose" : "fell"} over three months, from {pct(p.from)} on {fmtDate(p.from_date)} to {pct(p.to)} on {fmtDate(p.to_date)}.</p>
+        <p className="k-note"><b>{p.label}</b>: the four-week share {p.change > 0 ? "rose" : "fell"} ({report.change_label.toLowerCase()}), from {pct(p.from)} on {fmtDate(p.from_date)} to {pct(p.to)} on {fmtDate(p.to_date)}.</p>
       </li>)}
     </ol>
   </section>;
@@ -84,7 +86,7 @@ function Sentiment({ report }: { report: WeeklyReport }) {
   const start = report.sentiment[names[0]]?.dates.find(Boolean) ?? "";
   const events = report.events.filter(e => e.kind === "economy" && e.date >= start);   // the economy events of this year
   const option = useMemo(() => lineChart(names.map((name, i) => ({
-    name: `Net better: ${name.toLowerCase()}`, type: "line", showSymbol: false, color: i === 0 ? "#A3C0CE" : C.red, lineStyle: { width: 2 },
+    name: `${report.net_name}: ${name.toLowerCase()}`, type: "line", showSymbol: false, color: i === 0 ? "#A3C0CE" : C.red, lineStyle: { width: 2 },
     data: report.sentiment[name].dates.map((d, k) => [time(d), report.sentiment[name].lines.Total[weekly ? "weekly" : "four_week"][k]]),
     // news events: a thin dashed line each, labelled when hovered; all are listed under the chart too
     markLine: i ? undefined : { symbol: "none", lineStyle: { color: C.lineStrong, type: [3, 3], width: 1 }, label: { show: false },
@@ -94,15 +96,16 @@ function Sentiment({ report }: { report: WeeklyReport }) {
   if (!names.length) return null;
   return <>
     <h2 className="report-section">Consumer sentiment</h2>
-    <Card title="Personal finances and the economy: net better over the next 12 months"
-          sub={`% expecting better minus % expecting worse, ${weekly ? "single weeks" : "four-week rolling average"}. Dashed lines mark news events (hover for the event).`}
+    <Card title={`${names.join(", ")}: ${report.net_name.toLowerCase()}`}
+          sub={`% positive (better) minus % negative (worse), ${weekly ? "single weeks" : "four-week rolling average"}.${events.length ? " Dashed lines mark news events (hover for the event)." : ""}`}
           aside={<div className="seg" role="group" aria-label="Averaging">
             <button aria-pressed={!weekly} onClick={() => setWeekly(false)}>Four-week average</button>
             <button aria-pressed={weekly} onClick={() => setWeekly(true)}>Weekly</button></div>}>
-      <EChart option={option} height={320} label="Net better for personal finances and the economy over the past year" />
+      <EChart option={option} height={320} label={`${report.net_name} over the past year`} />
       {events.length > 0 && <ul className="event-list">{events.map(e => <li key={e.date + e.label}><b>{shortDate(e.date)}</b> {e.label}</li>)}</ul>}
     </Card>
-    <div className="grid g2">{names.map(name => <IncomeChart key={name} report={report} name={name} />)}</div>
+    {Object.keys(report.sentiment[names[0]].lines).length > 1 &&   // income groups: the US report only
+      <div className="grid g2">{names.map(name => <IncomeChart key={name} report={report} name={name} />)}</div>}
   </>;
 }
 
@@ -140,24 +143,35 @@ function TrendChart({ title, table, events }: { title: string; table: ReportTabl
   return <EChart option={option} height={300} label={`${title}: the biggest answers over the past year, four-week rolling average`} />;
 }
 
-/** A 13-week table, as in the PDF: four-week rolling averages, then the one-week and three-month changes; its chart above. */
-function WeekTable({ title, table, events }: { title: string; table: ReportTable; events: WeeklyReport["events"] }) {
+/** A table, as in the PDF or deck: four-week rolling averages (or, for China, single weeks too), then the one-week and
+ *  long changes (US three-month, China four-week); its chart above. */
+function WeekTable({ title, table, report }: { title: string; table: ReportTable; report: WeeklyReport }) {
+  const [weekly, setWeekly] = useState(false);
+  const long = report.change_label;
+  const short = long.replace(/^Three-month/, "3-mo").replace(/^Four-week/, "4-wk").replace(" change", " chg");
   const change = (v: number | null, significant: boolean) =>
     <td className={`num ${significant && v != null ? direction(v) : ""}`} title={significant ? "Statistically significant" : undefined}>{points(v)}</td>;   // coloured only when significant, as in the PDF
+  const kind = weekly ? "single weeks" : "four-week rolling average";
+  const rows = table.rows.map(r => weekly
+    ? { label: r.label, values: r.weekly, week: r.weekly_week_change, long: r.weekly_change, weekSig: false, longSig: false }
+    : { label: r.label, values: r.values, week: r.week_change, long: r.quarter_change, weekSig: r.week_significant, longSig: r.quarter_significant });
   const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, title,
-    ["Answer", ...table.dates.map(d => d ?? ""), "1-wk chg", "3-mo chg", "1-wk significant", "3-mo significant"],
-    table.rows.map(r => [r.label, ...r.values, r.week_change, r.quarter_change, r.week_significant ? "yes" : "", r.quarter_significant ? "yes" : ""]),
-    [title, "% of respondents, four-week rolling average. Changes in percentage points.", "Source: Coresight Research US Consumer Survey"]);
-  return <Card title={title} sub="% of respondents, four-week rolling average. Coloured changes are statistically significant; biggest first. The chart shows the six biggest; click a name in its legend to add or remove a line."
-               aside={<ExportButtons onExport={exportTable} />}>
-    <TrendChart title={title} table={table} events={events} />
+    ["Answer", ...table.dates.map(d => d ?? ""), "1-wk chg", short, "1-wk significant", `${short} significant`],
+    rows.map(r => [r.label, ...r.values, r.week, r.long, r.weekSig ? "yes" : "", r.longSig ? "yes" : ""]),
+    [title, `% of respondents, ${kind}. Changes in percentage points.`, `Source: Coresight Research ${report.title}`]);
+  return <Card title={title} sub={`% of respondents, ${kind}. Coloured changes are statistically significant; biggest first. The chart shows the six biggest; click a name in its legend to add or remove a line.`}
+               aside={<>{table.rows[0]?.weekly && <div className="seg" role="group" aria-label="Averaging">
+                 <button aria-pressed={!weekly} onClick={() => setWeekly(false)}>Four-week average</button>
+                 <button aria-pressed={weekly} onClick={() => setWeekly(true)}>Weekly</button></div>}
+                 <ExportButtons onExport={exportTable} /></>}>
+    <TrendChart title={title} table={table} events={report.events} />
     <div className="table-wrap"><table className="data report-table">
       <thead><tr><th>Answer</th>{table.dates.map((d, i) => <th key={i} className="num">{shortDate(d)}</th>)}
-        <th className="num" title="One-week change, percentage points">1-wk chg</th><th className="num" title="Three-month change, percentage points">3-mo chg</th></tr></thead>
-      <tbody>{table.rows.map(row => <tr key={row.label}>
+        <th className="num" title="One-week change, percentage points">1-wk chg</th><th className="num" title={`${long}, percentage points`}>{short}</th></tr></thead>
+      <tbody>{rows.map(row => <tr key={row.label}>
         <th scope="row">{row.label}</th>
         {row.values.map((v, i) => <td key={i} className="num">{pct(v)}</td>)}
-        {change(row.week_change, row.week_significant)}{change(row.quarter_change, row.quarter_significant)}
+        {change(row.week, row.weekSig)}{change(row.long, row.longSig)}
       </tr>)}</tbody>
     </table></div>
   </Card>;
@@ -171,7 +185,7 @@ function Profiles({ report }: { report: WeeklyReport }) {
     <div className="grid g2">{report.profiles.map(set => <Card key={set.title} title={set.title}
         sub="Average age and household income of respondents who bought from each retailer in the 13 weeks, from age and income band midpoints."
         aside={<ExportButtons onExport={format => downloadTable(format, set.title, ["Retailer", "Average age", "Household income ($K)", "Shoppers"],
-          set.rows.map(p => [p.label, p.age, p.income_k, p.shoppers]), [set.title, "13 weeks to " + report.wave_date, "Source: Coresight Research US Consumer Survey"])} />}>
+          set.rows.map(p => [p.label, p.age, p.income_k, p.shoppers]), [set.title, "13 weeks to " + report.wave_date, `Source: Coresight Research ${report.title}`])} />}>
       <div className="table-wrap"><table className="data report-table">
         <thead><tr><th>Retailer</th><th className="num">Avg age</th><th className="num" title="Average household income, $ thousands">Income ($K)</th>
           <th className="num" title="Respondents who bought there in the 13 weeks">Shoppers</th></tr></thead>
@@ -186,7 +200,7 @@ function Profiles({ report }: { report: WeeklyReport }) {
 function Methodology({ report }: { report: WeeklyReport }) {
   const m = report.methodology;
   return <Card title="Methodology"
-               sub={`Coresight Research surveys US consumers aged 18+ online each week. The weekly results have a maximum margin of error of ±${m.weekly_margin}%, and the four-week rolling averages ±${m.four_week_margin}%, at a 95% confidence level.`}>
+               sub={`Coresight Research surveys ${report.population} online each week. The weekly results have a maximum margin of error of ±${m.weekly_margin}%, and the four-week rolling averages ±${m.four_week_margin}%, at a 95% confidence level.`}>
     <ol className="method-weeks">{m.weeks.map(w => <li key={w.date}><span>{fmtDate(w.date)}</span><b>{w.respondents.toLocaleString("en-US")}</b></li>)}</ol>
   </Card>;
 }
@@ -206,16 +220,16 @@ function Appendix({ report }: { report: WeeklyReport }) {
     {names.map(name => {
       const data = report.appendix[name];
       const rows: AppendixRow[] = group === "Weekly" ? data.weekly : data.four_week[group] ?? [];
-      const title = `${name}: whether they expect it to get better or worse over the next 12 months`;
+      const title = `${name}: % of respondents by answer, and ${report.net_name.toLowerCase()}`;
       const kind = group === "Weekly" ? "single weeks" : `${group}, four-week rolling average`;
       const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, `${name} - ${kind}`,
         ["", ...data.dates.map(d => d ?? ""), "1-wk chg", "4-wk chg"], rows.map(r => [r.label, ...r.values, r.week_change, r.four_week_change]),
-        [title, `% of respondents, ${kind}. Changes in percentage points.`, "Source: Coresight Research US Consumer Survey"]);
+        [title, `% of respondents, ${kind}. Changes in percentage points.`, `Source: Coresight Research ${report.title}`]);
       return <Card key={name} title={title} sub={`% of respondents, ${kind}.`} aside={<ExportButtons onExport={exportTable} />}>
         <div className="table-wrap" ref={el => { if (el) el.scrollLeft = el.scrollWidth; }}><table className="data report-table">
           <thead><tr><th></th>{data.dates.map((d, i) => <th key={i} className="num">{shortDate(d)}</th>)}
             <th className="num">1-wk chg</th><th className="num">4-wk chg</th></tr></thead>
-          <tbody>{rows.map(r => <tr key={r.label} className={r.label === "Net better" ? "purchase-row" : undefined}>
+          <tbody>{rows.map(r => <tr key={r.label} className={r.label === report.net_name ? "purchase-row" : undefined}>
             <th scope="row">{r.label}</th>{r.values.map((v, i) => <td key={i} className="num">{pct(v)}</td>)}
             <td className="num">{points(r.week_change)}</td><td className="num">{points(r.four_week_change)}</td>
           </tr>)}</tbody>
