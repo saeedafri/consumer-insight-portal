@@ -46,6 +46,9 @@ from shared.core.database import get_engine
 log = logging.getLogger("cip.baidu")
 CODEBOOK = Path(__file__).resolve().parents[1] / "config/china_codebook.yml"
 COLUMN = re.compile(r"^Q(\d+)\.([SQ]\d+)\.\s*.*?【(?:单选|多选)】(?:-(.*))?$")   # "Q8.Q3. <text>【多选】-<answer>"
+# a folder's week and its answers' week differ by 0-14 days (the analysts named weeks by fielding Monday until 2025, by
+# the week before since): further apart than this, the folder is misnamed and the answers decide
+MISNAMED_DAYS = 21
 TITLE = re.compile(r"^\d+\.(?:([SQ]\d+)\.)?\D")   # the topline's "8.Q3.<text>"; "15.H1.<text>" is a month's extra question
 
 
@@ -347,6 +350,10 @@ def load(raw: Path, topline: Path, wave_date: Optional[str] = None, source: Opti
     if wave["problems"]:
         raise ValueError(f"{len(wave['problems'])} problems, nothing loaded: " + "; ".join(wave["problems"][:10]))
     label = wave_date or wave["wave"]
+    if wave_date and wave["wave"] and abs((date.fromisoformat(wave_date) - date.fromisoformat(wave["wave"])).days) > MISNAMED_DAYS:
+        # the folder names another month than its answers: "2026/July/Survey of June 27" was answered from 28 Jul
+        log.warning("%s is named %s but was answered the week of %s: loaded as %s", source, wave_date, wave["wave"], wave["wave"])
+        label = wave["wave"]
     family = load_codebook()["family"]
     ref = f"baidu:{family}"   # one row per week: (platform, source_ref, wave_label) is the wave's identity
     questions, records = wave["questions"], wave["records"]

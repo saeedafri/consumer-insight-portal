@@ -151,3 +151,31 @@ def test_a_planned_tracker_week_missing_after_four_days_is_reported(monkeypatch)
     monkeypatch.setattr(launch_schedule, "weeks", lambda today=None: plan)
     assert integrity.planned_weeks_missing(date(2026, 10, 22)) == []          # 19 Oct is only 3 days old
     assert integrity.planned_weeks_missing(date(2026, 10, 23)) == ["planned tracker week not in the portal 4 days after its Monday: 2026-10-19"]
+
+
+def test_waves_loaded_from_elsewhere_are_published_by_the_next_30_minute_check(tmp_path, monkeypatch):
+    """11 Nov 2026: the China history went straight into the database; an idle check (nothing new in Forsta) now
+    publishes it, instead of the screens missing those weeks until a restart or the next Forsta load."""
+    import pandas as pd
+    weekly = importlib.import_module("scripts.weekly_forsta")
+    published = []
+    (tmp_path / "current").mkdir()
+    client = type("Client", (), {"whoami": lambda self: {}})()
+    monkeypatch.setattr(weekly, "healthcheck", lambda role: (True, "ok"))
+    monkeypatch.setattr(weekly, "inspect", lambda engine: type("I", (), {"get_table_names": lambda self: ["cip_forsta_survey", "cip_search", "cip_tracker_line"]})())
+    monkeypatch.setattr(weekly, "get_engine", lambda role: None)
+    monkeypatch.setattr(weekly.forsta_etl, "discover", lambda c: {})
+    monkeypatch.setattr(weekly.forsta_etl, "run_due", lambda c: {"loaded": [], "failed": []})
+    monkeypatch.setattr(weekly.fieldwork, "collect", lambda c, loaded: [])
+    monkeypatch.setattr(weekly, "tell", lambda *a: None)
+    monkeypatch.setattr(weekly.integrity, "run", lambda: [])
+    monkeypatch.setattr(weekly.publish, "ROOT", tmp_path)
+    monkeypatch.setattr(weekly.publish, "publish", lambda: published.append(1))
+    from etl import publications
+    monkeypatch.setattr(publications, "drift_summary", lambda: pd.DataFrame())
+    monkeypatch.setattr(weekly.publish, "behind", lambda version: False)
+    weekly.run(client)
+    assert published == []   # up to date: nothing published
+    published.clear()
+    monkeypatch.setattr(weekly.publish, "behind", lambda version: True)
+    assert weekly.run(client) == 0 and published == [1]

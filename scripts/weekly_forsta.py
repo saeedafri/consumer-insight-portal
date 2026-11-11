@@ -109,9 +109,11 @@ def run(client=None) -> int:
     log.info("Fieldwork records kept: %d", len(kept))
     for path in result["failed"]:
         tell(notify.failure, f"survey {path} did not load", forsta_etl.last_error_of(path))
+    # waves loaded into the database from elsewhere (the China history, 11 Nov 2026): published within 30 minutes
+    ahead = (publish.ROOT / "current").exists() and publish.behind(publish.ROOT / "current")
     if not result["loaded"] and not result["failed"]:
         tell(notify.idle_run)
-        if datetime.now().weekday() != FULL_CHECK_DAY:   # nothing changed: the derived rows and published
+        if datetime.now().weekday() != FULL_CHECK_DAY and not ahead:   # nothing changed: the derived rows and published
             if kept and (publish.ROOT / "current").exists():   # numbers are as the last full check left them;
                 fieldwork.publish(publish.ROOT / "current", publish.write)   # only the Fieldwork file is new
             return 0
@@ -146,7 +148,7 @@ def run(client=None) -> int:
             except Exception as exc:
                 tell(notify.failure, f"coding the open-ended answers of {path}", str(exc))
     # the standard screens as prebuilt files; after a failed reload too, which took that wave's serving rows away
-    if result["loaded"] or result["failed"] or not (publish.ROOT / "current").exists():
+    if result["loaded"] or result["failed"] or ahead or not (publish.ROOT / "current").exists():
         try:
             publish.publish()
         except Exception as exc:                    # the previous version stays live; say so

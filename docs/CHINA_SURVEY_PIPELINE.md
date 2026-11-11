@@ -77,12 +77,12 @@ formulas were written; 7,646 of 9,214 weekly figures agree once rows are matched
 2023-24 weeks the analysts weighted), and the Four-Week Change columns still read January or July 2026.
 
 Checked against every number of the 22 monthly decks from Dec 2024 to Sep 2026 (34,198 chart points and table cells):
-93.6 % equal to CIP's to the deck's printed decimal; six decks equal in every number (Apr, May, Jun, Jul, Aug, Oct
-2025). The rest, each traced: 2.7 % sit on the wrong row label or under a title of the other averaging (Feb 2026's
-"four-week" in-store table prints the single weeks), 1.1 % fall in Nov 18 2024 or Jul 27 2026, which CIP lacks (the
-first numbers its questions differently, the second is not on SharePoint), 1.4 % are four-week averages over those
-two weeks, and 1.3 % are deck figures Baidu's own crosstab contradicts (Apr 6 2026: Watched TV 42.0 % in Baidu's
-crosstab and in CIP, 40.8 % in the deck; Mar 2 2026: Better 48.8 %, the deck 44.2 %).
+95.0 % equal to CIP's to the deck's printed decimal; six decks equal in every number (Apr, May, Jun, Jul, Aug, Oct
+2025). The rest, each traced: 2.1 % sit on another answer's row label and 0.6 % under a title of the other averaging
+(Feb 2026's "four-week" in-store table prints the single weeks); 0.7 % are Nov 18 2024, which numbers its questions
+differently, or four-week averages over it; 1.6 % match nothing in the SharePoint files, and where checked Baidu's own
+crosstab agrees with CIP, not the deck (Apr 6 2026: Watched TV 42.0 % in Baidu's crosstab and CIP, 40.8 % in the deck;
+Mar 2 2026: Better 48.8 %, the deck 44.2 %). Jul 27 2026, missing at first, is filed as "2026/July/Survey of June 27".
 
 Not in CIP: Figure 1's macro timeline (NBS PMI, outside the survey) and the month's extra questions (luxury, 618,
 Singles' Day, AI), which the crosstab carries but the raw export does not keep in a fixed form; the loader skips them.
@@ -90,11 +90,14 @@ Singles' Day, AI), which the crosstab carries but the raw export does not keep i
 ## The history (2023-2026)
 
 The SharePoint folder holds 174 week folders from Dec 2022. 152 pass the check against Baidu's crosstab; loaded by
-folder name (`etl/sharepoint_china.py folder_week`), that is 149 weeks from Oct 2023 to Sep 2026 with Nov 17 2025. Not loadable, and
+folder name (`etl/sharepoint_china.py folder_week`), that is 149 weeks from Oct 2023 to Oct 2026 with Nov 17 2025. Not loadable, and
 left for a person: Dec 2022 to Jul 2023 month folders (several raw files, only weighted crosstabs), three corrupt or
 mis-named files (Mar 19 and Apr 1 2024, Nov 27 2023), and Nov 18 2024, whose Singles' Day file numbers the tracker's
 questions differently. Nov 17 2025 loads: its Singles' Day questions come first as Q1-Q17 and the tracker's follow, so
-for each code the loader reads the block whose answers are the codebook's (`tracker_columns`). The loader reads files re-saved in a UK-set Excel (day-first, zero-padded dates) and the
+for each code the loader reads the block whose answers are the codebook's (`tracker_columns`). A folder named more
+than three weeks away from its own answers is misnamed and the answers decide (`MISNAMED_DAYS`): "2026/July/Survey of
+June 27" was answered from 28 Jul and loads as the week of Jul 27. Other names sit 7 or 14 days from the answers: the
+analysts named a week by its fielding Monday until 2025 and by the week before since. The loader reads files re-saved in a UK-set Excel (day-first, zero-padded dates) and the
 2023-24 wordings (`older_wordings` in the codebook).
 
 ## Every way a week gets in

@@ -129,3 +129,10 @@ def test_a_singles_day_week_reads_the_trackers_questions_not_its_own():
     found = baidu_qss_export.preview(FIXTURES / "baidu_raw_2025-11-17_singles_day.csv",
                                      FIXTURES / "baidu_topline_2025-11-18_singles_day.xls")
     assert (found["respondents"], found["matched"], found["problems"]) == (560, 123, [])
+
+
+def test_a_folder_named_a_month_away_from_its_answers_loads_as_the_answers_week(csi_db):
+    """"2026/July/Survey of June 27" holds the week answered from 28 Jul: a name further than three weeks from the
+    answers is a typo, so the answers' week is kept; a name a week or two off is the analysts' convention and wins."""
+    assert baidu_qss_export.load(RAW, TOPLINE, wave_date="2026-09-26")["wave"] == "2026-10-26"
+    assert baidu_qss_export.load(RAW, TOPLINE, wave_date="2026-10-19")["wave"] == "2026-10-19"
