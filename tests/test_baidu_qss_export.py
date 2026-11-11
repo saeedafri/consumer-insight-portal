@@ -18,17 +18,17 @@ RAW_XLSX = FIXTURES / "baidu_raw_2026-01-26.xlsx"   # the same export saved as .
 def test_every_count_from_the_raw_file_equals_baidus_topline():
     found = baidu_qss_export.preview(RAW, TOPLINE)
     assert found["problems"] == []
-    assert (found["wave"], found["respondents"], found["matched"]) == ("2026-11-02", 550, 123)   # 14 bases + 109 answers
+    assert (found["wave"], found["respondents"], found["matched"]) == ("2026-10-26", 550, 123)   # 14 bases + 109 answers
     by_code = {q["qcode"]: q for q in found["questions"]}
     assert by_code["S1"]["answers"][:2] == [["Male", 277, 50.4], ["Female", 273, 49.6]]
     assert by_code["Q3"]["base"] == 295                                    # asked only after "Yes" at Q2
-    assert by_code["Q8"]["answers"][0] == ["Optimistic", 303, 55.1]       # 积极: the converter's row said Pessimistic
+    assert by_code["Q8"]["answers"][0] == ["Positive", 303, 55.1]         # 积极: the old converter said Pessimistic
 
 
 def test_an_xlsx_copy_of_the_export_reads_like_the_csv():
     questions, records, problems = baidu_qss_export.read_raw(RAW_XLSX, baidu_qss_export.load_codebook())
     assert problems == [] and len(records) == 538 and len(questions) == 14
-    assert baidu_qss_export.wave_from_records(records) == "2026-01-26"
+    assert baidu_qss_export.survey_week(records) == "2026-01-19"   # fielded 26 Jan: the survey of the week before
 
 
 def test_the_wrong_weeks_topline_or_an_unknown_wording_stops_the_load(tmp_path, csi_db):
@@ -52,7 +52,7 @@ def test_seconds_taken_reads_both_of_baidus_spellings():
 
 def test_a_week_loads_into_the_served_tables_equal_to_the_topline_and_reloads_in_place(csi_db, tmp_path):
     result = baidu_qss_export.load(RAW, TOPLINE)
-    assert (result["wave"], result["respondents"], result["matched"]) == ("2026-11-02", 550, 123)
+    assert (result["wave"], result["respondents"], result["matched"]) == ("2026-10-26", 550, 123)
     survey = result["survey_id"]
     topline = baidu_qss_export.read_topline(TOPLINE)
     answers = baidu_qss_export.load_codebook()["questions"]
@@ -67,7 +67,7 @@ def test_a_week_loads_into_the_served_tables_equal_to_the_topline_and_reloads_in
                 assert served.get((qcode, answers[qcode]["answers"][chinese]), (0, figures["base"])) == (count, figures["base"]), (qcode, chinese)
         cuts = dict(conn.execute(text("SELECT dim_value, base_n FROM srv_result WHERE survey_id = :s AND qcode = 'Q1'"
                                       " AND dim = 'urbanicity' AND option_code = 1"), {"s": survey}).all())
-        assert cuts == {"Tier-1 city": 128, "Tier-2 city": 368, "Other city": 54}
+        assert cuts == {"Tier 1 city": 128, "Tier 2 city": 368, "Other city": 54}
         bands = dict(conn.execute(text("SELECT age_band, COUNT(*) FROM cip_profile WHERE survey_id = :s GROUP BY age_band"),
                                   {"s": survey}).all())
         assert bands == {"18-25": 125, "26-41": 352, "42-57": 71, "57-76": 2}
@@ -79,7 +79,7 @@ def test_a_week_loads_into_the_served_tables_equal_to_the_topline_and_reloads_in
 
 
 def test_two_weeks_compare_and_keep_baidus_topline_beside_cips_figures(csi_db):
-    """The weeks of 26 Oct and 2 Nov loaded in turn: the later one compares with the earlier, each keeps its topline."""
+    """The surveys of Oct 19 and Oct 26 loaded in turn: the later one compares with the earlier, each keeps its topline."""
     first = baidu_qss_export.load(FIXTURES / "baidu_raw_2026-10-26.csv", FIXTURES / "baidu_topline_2026-10-29.xls")
     second = baidu_qss_export.load(RAW, TOPLINE)
     with csi_db.connect() as conn:

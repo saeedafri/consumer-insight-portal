@@ -31,7 +31,7 @@ def as_admin():
 def test_preview_checks_both_files_and_writes_nothing(csi_db, as_admin):
     answer = as_admin.post("/api/v1/admin/survey/preview", files=files())
     assert answer.status_code == 200, answer.text
-    assert (answer.json()["wave"], answer.json()["matched"], answer.json()["problems"]) == ("2026-11-02", 123, [])
+    assert (answer.json()["wave"], answer.json()["matched"], answer.json()["problems"]) == ("2026-10-26", 123, [])
     with csi_db.connect() as conn:
         assert conn.execute(text("SELECT COUNT(*) FROM cip_survey")).scalar() == 0
 
@@ -42,7 +42,7 @@ def test_publish_loads_the_week_and_starts_one_publish(csi_db, as_admin, monkeyp
     monkeypatch.setattr(ingest, "UPLOAD_DIR", tmp_path / "uploads")
     answer = as_admin.post("/api/v1/admin/survey/publish", files=files())
     assert answer.status_code == 200, answer.text
-    assert (answer.json()["wave"], answer.json()["respondents"], started) == ("2026-11-02", 550, [1])
+    assert (answer.json()["wave"], answer.json()["respondents"], started) == ("2026-10-26", 550, [1])
     assert len(list((tmp_path / "uploads").iterdir())) == 2   # both source files kept
 
 

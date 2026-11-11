@@ -6,6 +6,7 @@
 #    within a day; Friday's also runs the integrity check. Each run takes the ETL lock, so runs never overlap.
 #  - scripts/weekly_forsta.py --once every 30 minutes: one check, so a closed survey loads within 30 minutes whatever
 #    stopped the watch (a deploy restarts the container and every process in it).
+#  - python -m etl.sharepoint_china every 10 minutes once IT's access is set: new China survey weeks from SharePoint.
 #  - scripts/weekly_forsta.py --watchdog every hour at minute 05: a stuck or missing run is reported (etl/notify.py).
 #  - python -m etl.fieldwork once, two minutes after each start: Forsta's records of every survey still missing one.
 #  - logs/*.log and *.jsonl past 20 MB are packed into logs/archive/ as .zip and kept for good (deploy/archive-log.py).
@@ -27,6 +28,9 @@ while :; do
   # lock from Monday's watch.
   [ "$slotted" = no ] && case "$(date -u +%M)" in 00|30) python scripts/weekly_forsta.py --once >> logs/etl-loop.log 2>&1 & ;; esac
   [ "$(date -u +%M)" = "05" ] && python scripts/weekly_forsta.py --watchdog >> logs/etl-loop.log 2>&1 &
+  # the China survey's SharePoint folder every 10 minutes (etl/sharepoint_china.py), off the Forsta minutes; only once IT's
+  # access is set (CIP_SP_CLIENT_ID): a pass that finds nothing new is ~60 small Graph reads and no database write
+  [ -n "${CIP_SP_CLIENT_ID:-}" ] && case "$(date -u +%M)" in 02|12|22|32|42|52) nice -n 15 python -m etl.sharepoint_china >> logs/sharepoint.log 2>&1 & ;; esac
   for f in logs/*.log logs/*.jsonl; do   # past 20 MB: packed into logs/archive/*.zip for good, the live file emptied
     [ -f "$f" ] && [ "$(wc -c < "$f")" -gt 20971520 ] && python deploy/archive-log.py "$f" >> logs/container.log 2>&1
   done

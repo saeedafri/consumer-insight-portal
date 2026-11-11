@@ -26,6 +26,6 @@ CN:
   cuts:
     gender: [Male, Female]
     age_band: [18-25, 26-41, 42-57, 57-76, 77+]
-    income_band: ["0-5,000 RMB", "5,001-10,000 RMB", "10,001-15,000 RMB", "15,001-20,000 RMB", "20,001-25,000 RMB",
-                  "25,001 RMB or above"]
-    urbanicity: [Tier-1 city, Tier-2 city, Other city]
+    income_band: ["RMB 0-5,000", "RMB 5,001-10,000", "RMB 10,001-15,000", "RMB 15,001-20,000", "RMB 20,001-25,000",
+                  "RMB 25,001 or above"]
+    urbanicity: [Tier 1 city, Tier 2 city, Other city]

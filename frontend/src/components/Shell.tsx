@@ -16,7 +16,7 @@ import { fmtDate } from "../stats";
 import { perf } from "../perf";
 import { isSaved, removeView, saveView } from "../saved";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Gauge, House, Info, Layers, LayoutDashboard, LibraryBig, MessageSquareText, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
+import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Gauge, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, MessageSquareText, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 // The perf badge is the developer's: shown only in a browser that opened the portal once with ?perf=1 (?perf=0 hides it again)
@@ -72,7 +72,7 @@ const siteUrl = (path: string) => path.startsWith("http") ? path : SITE + path;
 // The small red label over a wave screen's title (styles.css .page-head h1::before): which wave it is. Other pages
 // have none: the header's breadcrumb already names them, and a label repeating the menu would only decorate.
 function eyebrow(wave?: Wave): string {
-  return wave ? `${wave.survey_family === "CSI-US" ? "Weekly tracker" : "Survey"} / ${fmtDate(wave.wave_date)}` : "";
+  return wave ? `${wave.survey_family === "CSI-US" ? "Weekly tracker" : wave.survey_family === "CSI-CN" ? "China weekly tracker" : "Survey"} / ${fmtDate(wave.wave_date)}` : "";
 }
 
 // Each page's name, for the header's breadcrumb and a saved view's name
@@ -124,6 +124,7 @@ export default function Shell() {
   }, [me, weighted]);
   const wave = waves.data?.find(w => String(w.survey_id) === id);
   const latest = waves.data?.find(w => w.survey_family === "CSI-US" && w.rows_built !== 0);   // newest first
+  const china = waves.data?.find(w => w.survey_family === "CSI-CN" && w.rows_built !== 0);    // the China Consumer Survey (Baidu)
   const reportWaves = useReportWaves().data;   // the waves with a weekly report (since Jul 2025: etl/weekly_report.py)
   const hasReport = !!wave && !!reportWaves?.includes(wave.survey_id);
   const report = reportWaves?.length ? Math.max(...reportWaves) : null;   // the newest weekly report: Consumer sentiment in the menu
@@ -187,6 +188,8 @@ export default function Shell() {
       <RailGroup label="Core research">
         {latest && <NavLink to={`/w/${latest.survey_id}`} className={() => wave?.survey_id === latest.survey_id ? "active" : ""}>
           <Icon of={LayoutDashboard} />Shopping & Spending</NavLink>}
+        {china && <NavLink to={`/w/${china.survey_id}`} className={() => wave?.survey_family === "CSI-CN" ? "active" : ""}>
+          <Icon of={Globe} />China weekly tracker</NavLink>}
         {allowed(me, "explorer") && <NavLink to="/channels"><Icon of={Layers} />In store vs online</NavLink>}
         {report && allowed(me, "report") && <NavLink to={`/w/${report}/report`} className={() => location.pathname === `/w/${report}/report` ? "active" : ""}>
           <Icon of={Gauge} />Consumer sentiment</NavLink>}

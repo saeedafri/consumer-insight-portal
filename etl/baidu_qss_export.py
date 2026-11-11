@@ -26,7 +26,7 @@ import re
 import statistics
 import zipfile
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -225,6 +225,13 @@ def compare_with_topline(questions: list[ParsedQuestion], records: list[dict], t
     return matched, problems
 
 
+def survey_week(records: list[dict]) -> str:
+    """The week the analysts name a survey by: "Survey of Oct 26" was fielded on 3 Nov, so it is the Monday of the week
+    BEFORE the first answer (the four October 2026 folders all follow it). Their folder name wins when the files come
+    from SharePoint (etl/sharepoint_china.py)."""
+    return (date.fromisoformat(wave_from_records(records)) - timedelta(days=7)).isoformat()
+
+
 def read_wave(raw: Path, topline: Path) -> dict:
     """Both files read and checked: the questions, records, wave date and every problem. Writes nothing."""
     codebook = load_codebook()
@@ -235,7 +242,7 @@ def read_wave(raw: Path, topline: Path) -> dict:
     seconds = [r["qtime"] for r in records if r["qtime"] is not None]
     return {"questions": questions, "records": records, "problems": problems + mismatches, "matched": matched,
             "topline": topline_figures,
-            "wave": wave_from_records(records) if dates else None,
+            "wave": survey_week(records) if dates else None,
             "field_start": min(dates, default=None), "field_end": max(dates, default=None),
             "median_seconds": statistics.median(seconds) if seconds else None}
 
@@ -283,7 +290,7 @@ def preview(raw: Path, topline: Path) -> dict:
             "median_seconds": wave["median_seconds"], "questions": questions}
 
 
-def load(raw: Path, topline: Path, wave_date: Optional[str] = None) -> dict:
+def load(raw: Path, topline: Path, wave_date: Optional[str] = None, source: Optional[str] = None) -> dict:
     """Load the week as a wave and build what the screens read (profiles, bases, concepts, cube, search, serving
     rows), the steps and order of the Forsta loads (etl/forsta_etl.py _load_snapshot). The same week uploaded
     again replaces it. Refuses, writing nothing, while read_wave reports any problem."""
@@ -308,7 +315,7 @@ def load(raw: Path, topline: Path, wave_date: Optional[str] = None) -> dict:
             conn.execute(text("UPDATE cip_survey SET load_status = 'loading', country = 'CN', total_n = :n,"
                               " field_start = :fs, field_end = :fe WHERE survey_id = :s"),
                          {"n": len(records), "fs": wave["field_start"], "fe": wave["field_end"], "s": survey_id})
-        run = start_run(survey_id, "excel", "data", f"baidu:{raw.name} + {topline.name}")
+        run = start_run(survey_id, "excel", "data", source or f"baidu:{raw.name} + {topline.name}")   # source: SharePoint's file ids
         written = None
         try:
             fields = load_definitions(survey_id, questions, family)

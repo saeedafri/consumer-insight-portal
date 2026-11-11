@@ -28,16 +28,19 @@ Files downloaded from SharePoint may end in `.aspx` ("Original 7.csv.aspx"); the
    the ETL lock, it is tried again every 5 minutes for half an hour; meanwhile the API builds the new wave's pages.
 3. Uploading the same week again replaces it. The two source files are kept in `CIP_UPLOAD_DIR` (default `data/uploads`).
 
-Waves are family `CSI-CN`, country `CN`, platform `baidu`, named by the Monday of the first submit. Weekly-tracker views
+Waves are family `CSI-CN`, country `CN`, platform `baidu`, named as the analysts name them: "Survey of Oct 26" was answered on 3 Nov, so a wave is the Monday of the week before
+its first answer (true for all four October 2026 folders); from SharePoint the folder's own name decides. Weekly-tracker views
 built for the US (the weekly report, sector databank, expected vs actual, the public home page's figures, the
 library's "latest tracker wave") stay on `CSI-US`.
 
 Measured on this Mac (SQLite): a week loads in ~0.9 s, the incremental publish in under a second, published China
 files are served in 2-3 ms.
 
-## The analysts' English converter ("Consumer Tracker English.xlsx")
+## Translation
 
-Good as a source of wording, not usable as the mapping itself:
+Since 11 Nov 2026 the English is the analysts' own dictionary (`zh_en_dictionary.json`, keyed by the Chinese like
+the codebook), except the age and city-tier labels the cuts need (see the codebook's header). The older positional
+converter, "Consumer Tracker English.xlsx", is not used:
 
 - **It has no Chinese in it.** Its rows line up with the topline by position only.
 - **Q8 and Q9 are in a different order from the Chinese.** 积极 (positive) sits next to "Pessimistic" and 消极
@@ -47,30 +50,45 @@ Good as a source of wording, not usable as the mapping itself:
   consumer goods and dining); Q2 adds "because of coronavirus concerns", which respondents never read; stray
   "+A29:C36" text, routing notes in answers ("(move to Q3)"), stale counts (804).
 
-So the codebook keys every answer by its exact Chinese text, uses the converter's English, and fixes the errors above.
+So the codebook keys every answer by its exact Chinese text.
 To change a wording, edit `config/china_codebook.yml`. A new answer goes at the end of its list, so the codes already
 loaded keep their meaning.
 
-## Option 1: pulling the files from SharePoint (needs IT)
+## Option 1: picked up from SharePoint by itself (built; waits for IT's access)
 
-Not built yet; the upload page works today. When IT grants the access below, a small job in `deploy/etl-loop.sh`
-can watch one folder, pair each week's raw file with its topline and call the same `load()`. The checks, refusals and
-Teams alerts would be the same as for an upload.
+`etl/sharepoint_china.py`, run by `deploy/etl-loop.sh` every 10 minutes (minutes 02, 12, … 52) once the settings below
+exist. Each pass:
+
+1. signs in as the app (client credentials) and walks the China folder: year → month → week folders, one Graph call
+   per folder (~60 a year, a few seconds from Azure);
+2. in each week folder takes the one `.csv` (raw) and the one `.xls` (crosstab); `_EN.xlsx` translations are ignored;
+3. skips the pair if this exact version was already loaded or refused (its file ids and eTags are the `source_ref` of
+   its row in `cip_load_log`): a replaced file has a new eTag, so a corrected week reloads by itself;
+4. loads it with the same `load()` and checks as the upload page, named by the folder ("2026 / Survey of Oct 26" is
+   2026-10-26). A pair whose figures differ from the crosstab is not loaded and emailed once to the failure list;
+   a load posts one line to Teams;
+5. after any load rebuilds the published files, so the week is in the survey list within minutes.
+
+"Immediately" is at most 10 minutes. Graph change notifications (webhooks) could cut that to seconds, but need a
+public endpoint and a subscription renewed every few weeks; not worth it for a weekly file.
 
 What to ask IT for (Microsoft Entra ID + Microsoft Graph, app-only, least privilege):
 
 1. **An app registration** in the Coresight tenant, e.g. "CIP – China survey reader", single tenant.
-2. **API permission: Microsoft Graph `Sites.Selected` (Application)**, with admin consent. On its own this grants
-   nothing. Then a SharePoint/Global admin grants the app the **`read`** role on **the one site** that holds the folder
-   (`POST https://graph.microsoft.com/v1.0/sites/{site-id}/permissions` with `"roles": ["read"]`). Grant **`write`**
-   instead only if CIP should move processed files into a "Loaded" subfolder. If the tenant supports it, the narrower
-   `Lists.SelectedOperations.Selected` limits the grant to the one document library.
-3. **A credential**: a certificate (preferred) or a client secret with an expiry date and an owner for its renewal.
-   It goes in the App Service settings or Key Vault, never in the repository.
-4. **The details**: tenant ID, the app's client ID, the site URL, the library and folder path, and the file naming the
-   analysts will follow (for example `YYYY-MM-DD raw.csv` and `YYYY-MM-DD topline.xls`).
+2. **API permission: Microsoft Graph `Sites.Selected` (Application)**, with admin consent. On its own it grants nothing;
+   a SharePoint or Global admin then grants the app **`read`** on the **CoreSightResearch** site only
+   (`POST https://graph.microsoft.com/v1.0/sites/{site-id}/permissions`, `"roles": ["read"]`). Read is enough: CIP
+   never changes the analysts' files.
+3. **A client secret** (24 months, with a named owner for renewal), stored as an App Service setting, never in the
+   repository. A certificate works too if IT prefers; tell us and the sign-in changes to it.
+4. **The settings** on csr-awa-cip-portal-stg (and later production): `CIP_SP_TENANT_ID`, `CIP_SP_CLIENT_ID`,
+   `CIP_SP_CLIENT_SECRET`, `CIP_CHINA_SITE=coresightresearch.sharepoint.com:/sites/CoreSightResearch` and
+   `CIP_CHINA_FOLDER` = the folder's path inside the site's Documents library (e.g. `China CSI`; IT or the analysts can
+   read it from the folder's Details pane).
 5. **Network**: outbound HTTPS (443) from the App Service to `login.microsoftonline.com` and `graph.microsoft.com`.
 
 Not needed, and best refused: `Sites.Read.All` or `Files.Read.All` (every site in the tenant), delegated permissions
-or a person's account, and SharePoint's legacy app-only (Azure ACS) registrations, which Microsoft has retired for
-SharePoint Online.
+or a person's account, and SharePoint's legacy app-only (Azure ACS) registrations, which Microsoft has retired.
+
+To try it once the settings are in: `python -m etl.sharepoint_china --list` shows each week folder it sees and what it
+would load, writing nothing.
