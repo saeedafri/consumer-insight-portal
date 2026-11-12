@@ -8,17 +8,14 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import "./fonts.css";
 import "./styles.css";
 import Shell from "./components/Shell";
-import Profiled from "./components/Profiled";
 import { SkeletonScreen } from "./components/bits";
 import { queries } from "./api";
 
-const page = (name: string, load: () => Promise<{ default: React.ComponentType }>) => {
+const page = (load: () => Promise<{ default: React.ComponentType }>) => {
   const Page = lazy(load);
   return (
     <Suspense fallback={<SkeletonScreen kind="page" />}>
-      <Profiled id={name}>
-        <Page />
-      </Profiled>
+      <Page />
     </Suspense>
   );
 };
@@ -34,36 +31,36 @@ const router = createBrowserRouter([{
     </div>
   ),
   children: [
-    { path: "/", element: page("Page:Home", () => import("./screens/Home")) },
-    { path: "/library", element: page("Page:Library", () => import("./screens/Library")) },
-    { path: "/search", element: page("Page:Search", () => import("./screens/Search")) },
-    { path: "/schedule", element: page("Page:Schedule", () => import("./screens/Schedule")) },
-    { path: "/w/:id", element: page("Page:Overview", () => import("./screens/Overview")) },
-    { path: "/w/:id/questions/:q?", element: page("Page:Explorer", () => import("./screens/Explorer")) },
-    { path: "/w/:id/crosstab/:q?", element: page("Page:Crosstab", () => import("./screens/Crosstab")) },
-    { path: "/w/:id/trends/:q?", element: page("Page:Trends", () => import("./screens/Trends")) },
-    { path: "/w/:id/compare/:q?", element: page("Page:Compare", () => import("./screens/Compare")) },
-    { path: "/w/:id/audience/:q?", element: page("Page:Audience", () => import("./screens/Audience")) },
-    { path: "/ask", element: page("Page:Ask", () => import("./screens/Ask")) },
-    { path: "/boards/:id?", element: page("Page:Boards", () => import("./screens/Boards")) },
-    { path: "/whats-new", element: page("Page:WhatsNew", () => import("./screens/WhatsNew")) },
-    { path: "/sectors", element: page("Page:Sectors", () => import("./screens/Sectors")) },
-    { path: "/retailers", element: page("Page:Retailers", () => import("./screens/Retailers")) },
-    { path: "/channels", element: page("Page:Channels", () => import("./screens/Channels")) },
-    { path: "/trackers/:code?", element: page("Page:Trackers", () => import("./screens/Trackers")) },
-    { path: "/expectations", element: page("Page:Expectations", () => import("./screens/Expectations")) },
-    { path: "/methodology", element: page("Page:Methodology", () => import("./screens/Methodology")) },
-    { path: "/account", element: page("Page:Account", () => import("./screens/Account")) },
-    { path: "/api-guide", element: page("Page:ApiGuide", () => import("./screens/ApiGuide")) },
-    { path: "/logs", element: page("Page:Logs", () => import("./screens/Logs")) },
-    { path: "/ingest", element: page("Page:Ingest", () => import("./screens/Ingest")) },
-    { path: "/fieldwork", element: page("Page:Fieldwork", () => import("./screens/Fieldwork")) },
-    { path: "/fieldwork/:survey", element: page("Page:FieldworkSurvey", () => import("./screens/FieldworkSurvey")) },
-    { path: "/access", element: page("Page:Access", () => import("./screens/Access")) },
-    { path: "/forsta/:section?", element: page("Page:Forsta", () => import("./screens/Forsta")) },
-    { path: "/w/:id/changes", element: page("Page:Changes", () => import("./screens/Changes")) },
-    { path: "/w/:id/report", element: page("Page:Report", () => import("./screens/Report")) },
-    { path: "/w/:id/survey/:q?", element: page("Page:Survey", () => import("./screens/Survey")) },
+    { path: "/", element: page(() => import("./screens/Home")) },
+    { path: "/library", element: page(() => import("./screens/Library")) },
+    { path: "/search", element: page(() => import("./screens/Search")) },
+    { path: "/schedule", element: page(() => import("./screens/Schedule")) },
+    { path: "/w/:id", element: page(() => import("./screens/Overview")) },
+    { path: "/w/:id/questions/:q?", element: page(() => import("./screens/Explorer")) },
+    { path: "/w/:id/crosstab/:q?", element: page(() => import("./screens/Crosstab")) },
+    { path: "/w/:id/trends/:q?", element: page(() => import("./screens/Trends")) },
+    { path: "/w/:id/compare/:q?", element: page(() => import("./screens/Compare")) },
+    { path: "/w/:id/audience/:q?", element: page(() => import("./screens/Audience")) },
+    { path: "/ask", element: page(() => import("./screens/Ask")) },
+    { path: "/boards/:id?", element: page(() => import("./screens/Boards")) },
+    { path: "/whats-new", element: page(() => import("./screens/WhatsNew")) },
+    { path: "/sectors", element: page(() => import("./screens/Sectors")) },
+    { path: "/retailers", element: page(() => import("./screens/Retailers")) },
+    { path: "/channels", element: page(() => import("./screens/Channels")) },
+    { path: "/trackers/:code?", element: page(() => import("./screens/Trackers")) },
+    { path: "/expectations", element: page(() => import("./screens/Expectations")) },
+    { path: "/methodology", element: page(() => import("./screens/Methodology")) },
+    { path: "/account", element: page(() => import("./screens/Account")) },
+    { path: "/api-guide", element: page(() => import("./screens/ApiGuide")) },
+    { path: "/logs", element: page(() => import("./screens/Logs")) },
+    { path: "/ingest", element: page(() => import("./screens/Ingest")) },
+    { path: "/fieldwork", element: page(() => import("./screens/Fieldwork")) },
+    { path: "/fieldwork/:survey", element: page(() => import("./screens/FieldworkSurvey")) },
+    { path: "/access", element: page(() => import("./screens/Access")) },
+    { path: "/forsta/:section?", element: page(() => import("./screens/Forsta")) },
+    { path: "/w/:id/changes", element: page(() => import("./screens/Changes")) },
+    { path: "/w/:id/report", element: page(() => import("./screens/Report")) },
+    { path: "/w/:id/survey/:q?", element: page(() => import("./screens/Survey")) },
     {
       path: "*",
       element: (

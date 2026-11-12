@@ -5,7 +5,6 @@ import type { Metric } from "../api";
 import { useDashboard } from "../api";
 import { direction, fmtDate, HIDDEN_BASE } from "../stats";
 import { Failure, Skeleton } from "./bits";
-import Profiled from "./Profiled";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 const RULE: Record<string, string> = { same_wave_number: "same wave number last season", same_calendar_week: "same calendar week last year",
@@ -48,7 +47,7 @@ export default function Glance({ code, id }: { code: string; id: number }) {
   const prior = (d.prior_label ?? "prior week").replace(/^the /, "");
   const label = (k: string) => d.tile_labels?.[k] ?? k.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
   const highlights = d.highlights ?? [];
-  return <Profiled id={`Glance:${code}`}>
+  return <>
     <section className="glance-block" aria-label={d.title}>
       <header className="glance-head">
         <h2>{d.title}: at a glance</h2>
@@ -68,6 +67,6 @@ export default function Glance({ code, id }: { code: string; id: number }) {
         <ul className="takeaways">{d.takeaways.map(t => { const [head, ...rest] = t.split(": "); return <li key={t}><b>{head}:</b> {rest.join(": ")}</li>; })}</ul>
       </div>}
     </section>
-  </Profiled>;
+  </>;
 }
 

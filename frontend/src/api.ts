@@ -1,6 +1,5 @@
 // The FastAPI contract (api/main.py) and one cached hook per endpoint.
 import { keepPreviousData, QueryClient, useQuery } from "@tanstack/react-query";
-import { perf } from "./perf";
 import { moves } from "./moves";
 import { save } from "./csv";
 import { useWeighted, weigh } from "./weight";
@@ -95,59 +94,13 @@ async function takeEarly(url: string): Promise<Response | null> {
 }
 
 async function get<T>(url: string): Promise<T> {
-  const deregister = perf.registerPendingApi(url);
-  const t0 = performance.now();
-  let status = 0;
-  let serverDur: number | null = null;
-  let size: number | null = null;
-
-  try {
-    const r = await takeEarly(url) ?? await fetch(url, { credentials: "same-origin" });
-    status = r.status;
-    const dur = performance.now() - t0;
-
-    const serverTiming = r.headers.get("server-timing");
-    if (serverTiming) {
-      const match = serverTiming.match(/dur=([\d.]+)/);
-      if (match) serverDur = parseFloat(match[1]);
-    }
-    const contentLength = r.headers.get("content-length");
-    if (contentLength) size = parseInt(contentLength, 10);
-
-    perf.logApi({
-      url,
-      endpoint: url.split("?")[0],
-      method: "GET",
-      status: r.status,
-      durationMs: dur,
-      serverDurationMs: serverDur,
-      sizeBytes: size,
-      source: "network",
-    });
-
-    if (r.status === 401) signIn();
-    if (r.status === 403 && url !== "/api/v1/me") void queries.invalidateQueries({ queryKey: ["me"] });   // access may have changed: redraw the menu
-    if (r.status === 503) throw new Busy();   // admission control: the query client waits and retries
-    // the status rides on the error, so a screen can tell "not there" (404) from a failure without reading the wording
-    if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`), { status: r.status });
-    return r.json();
-  } catch (err) {
-    if (status === 0) {
-      perf.logApi({
-        url,
-        endpoint: url.split("?")[0],
-        method: "GET",
-        status: 0,
-        durationMs: performance.now() - t0,
-        serverDurationMs: null,
-        sizeBytes: null,
-        source: "network",
-      });
-    }
-    throw err;
-  } finally {
-    deregister();
-  }
+  const r = await takeEarly(url) ?? await fetch(url, { credentials: "same-origin" });
+  if (r.status === 401) signIn();
+  if (r.status === 403 && url !== "/api/v1/me") void queries.invalidateQueries({ queryKey: ["me"] });   // access may have changed: redraw the menu
+  if (r.status === 503) throw new Busy();   // admission control: the query client waits and retries
+  // the status rides on the error, so a screen can tell "not there" (404) from a failure without reading the wording
+  if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`), { status: r.status });
+  return r.json();
 }
 
 const forever = { staleTime: 5 * 60_000, gcTime: 30 * 60_000 };

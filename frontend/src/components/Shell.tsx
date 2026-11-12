@@ -1,6 +1,6 @@
 // App frame: the coresight.com header (logo, site links, search, theme, sign-in), a rail with the wave's screens,
 // a wave bar with the wave switcher, and the coresight.com footer.
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { setTheme, useTheme } from "../theme";
 import { setWeighted, useWeighted } from "../weight";
@@ -13,21 +13,10 @@ import PinDialog from "./PinDialog";
 import { Menu, UndoBar } from "./bits";
 import type { Me, Wave } from "../api";
 import { fmtDate } from "../stats";
-import { perf } from "../perf";
 import { isSaved, removeView, saveView } from "../saved";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-
-// The perf badge is the developer's: shown only in a browser that opened the portal once with ?perf=1 (?perf=0 hides it again)
-const PerfHUD = lazy(() => import("./PerfHUD"));
-const showPerf = (() => {
-  try {
-    const flag = new URLSearchParams(location.search).get("perf");
-    if (flag !== null) localStorage.setItem("cip_perf", flag);
-    return localStorage.getItem("cip_perf") === "1";
-  } catch { return false; }
-})();
 
 // [path, label, icon]; FEATURE names the /me feature a screen needs (config/access.yml): unlisted screens always show
 const FEATURE: Record<string, string> = { questions: "explorer", crosstab: "crosstab", trends: "trends", compare: "compare", audience: "audiences",
@@ -165,9 +154,8 @@ export default function Shell() {
     window.scrollTo(0, howArrived === "POP" ? places.current.get(location.pathname) ?? 0 : 0);
   }, [location.pathname]);
 
-  // Track page transitions end-to-end and close mobile drawer
+  // a new page closes the phone drawer
   useEffect(() => {
-    perf.startPageTransition(location.pathname + location.search);
     setMobileMenuOpen(false);
   }, [location.pathname, location.search]);
 
@@ -249,7 +237,6 @@ export default function Shell() {
       </main>
       <PinDialog />
       <UndoBar />
-      {showPerf && <Suspense fallback={null}><PerfHUD /></Suspense>}
       {/* under the content only: across the full width it ended the rail's row, and the sticky rail scrolled away with it */}
       <SiteFooter theme={theme} />
     </div>

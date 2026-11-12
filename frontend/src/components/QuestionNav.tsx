@@ -4,7 +4,6 @@ import { QuestionCode } from "./bits";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Question } from "../api";
 import { SMALL_BASE } from "../stats";
-import Profiled from "./Profiled";
 import { X } from "lucide-react";
 
 export default function QuestionNav({ questions, current, onPick }:
@@ -78,7 +77,7 @@ export default function QuestionNav({ questions, current, onPick }:
         {!sections.length && <p className="muted pad">No question matches “{filter}”.</p>}
       </div>
     </nav>;
-  return <Profiled id="QuestionNav">
+  return <>
     <button className="qnav-open" onClick={() => setSheet(true)} aria-haspopup="dialog">
       {here && <QuestionCode q={here} />}<span>{here ? here.short || here.text : "Questions"}</span><small>{at + 1} of {questions.length}</small><span aria-hidden className="caret">▾</span>
     </button>
@@ -87,5 +86,5 @@ export default function QuestionNav({ questions, current, onPick }:
             onClick={e => { if (e.target === e.currentTarget) e.currentTarget.close(); }}>
       {sheet && list("sheet")}
     </dialog>
-  </Profiled>;
+  </>;
 }

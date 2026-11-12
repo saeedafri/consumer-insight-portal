@@ -15,7 +15,6 @@ import AlertMe from "../components/AlertMe";
 import { downloadTable } from "../csv";
 import type { Format } from "../csv";
 import { fmtDate, HIDDEN_BASE, pct, SMALL_BASE } from "../stats";
-import { perf } from "../perf";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const CUTS: { key: string; label: string; cols: Column[] }[] = [
@@ -44,7 +43,6 @@ export default function Explorer() {
   const cut = cuts.find(c => c.key === params.get("cut")) ?? cuts[0];
   const group = Math.max(0, Math.min(Math.trunc(Number(params.get("row") ?? 0)) || 0, question.groups.length - 1));   // a hand-edited ?row= never breaks the page
   const set = (k: string, v: string) => {
-    perf.startFilterChange(k, v);
     const p = new URLSearchParams(params);
     p.set(k, v);
     setParams(p, { replace: true });
@@ -97,7 +95,7 @@ export default function Explorer() {
           <ExportButtons onExport={exportAs} png={view === "table" ? undefined : () => chart.current && import("../components/EChart").then(m => m.downloadPng(chart.current!, `${question.number}: ${question.text}`,
             sourceText(book.wave, wave, `base n=${g.base}`), `${question.number}-${book.wave.wave_date}`))} />
           <Menu label="" icon={<span aria-hidden>⋯</span>} keep>
-            <label className="check"><input type="checkbox" checked={sort} onChange={e => { const p = new URLSearchParams(params); perf.startFilterChange("sort", String(e.target.checked)); e.target.checked ? p.delete("sort") : p.set("sort", "0"); setParams(p, { replace: true }); }} /> Sort by value</label>
+            <label className="check"><input type="checkbox" checked={sort} onChange={e => { const p = new URLSearchParams(params); e.target.checked ? p.delete("sort") : p.set("sort", "0"); setParams(p, { replace: true }); }} /> Sort by value</label>
             <button onClick={e => copyLink(e.currentTarget)}><IconLink /> <span>Copy link</span></button>
             {hasFeature(me, "alerts") && <AlertMe surveyId={id} question={question} group={g} />}
           </Menu>

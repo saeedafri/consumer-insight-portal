@@ -15,7 +15,6 @@ import { downloadTable } from "../csv";
 import type { Format } from "../csv";
 import { C, useTheme } from "../theme";
 import { direction, fmtDate, moe, pct, pts, significant } from "../stats";
-import { perf } from "../perf";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -61,7 +60,6 @@ export default function Trends() {
   if (error || !book) return <Failure error={error} />;
   if (!question) return <Empty>This wave has no questions with percentages.</Empty>;
   const set = (k: string, v: string) => {
-    perf.startFilterChange(k, v || "default");
     const p = new URLSearchParams(params);
     v ? p.set(k, v) : p.delete(k);
     setParams(p, { replace: true });

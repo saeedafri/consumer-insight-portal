@@ -7,7 +7,6 @@ import { axisText, C, blues, labelOn, scaleColours, tooltip, useTheme, valueText
 import { direction, count, HIDDEN_BASE, HIDDEN_NOTE, moe, pct, pts, SMALL_BASE } from "../stats";
 import { moveOf } from "../moves";
 import type { Chart } from "./EChart";
-import Profiled from "./Profiled";
 
 // The chart library (≈190 KB gzipped) loads when a chart is drawn, so a screen's words and figures show first: on a
 // 200 kbit/s line that is about 8 s sooner (8 Nov 2026). The space is kept at the chart's height meanwhile.
@@ -68,11 +67,9 @@ export default function QuestionChart({ question, group = 0, view, columns, sort
   const h = height ?? (view === "bars" ? Math.max(180, rows.length * (columns.length > 1 ? 18 * columns.length + 12 : 34) + 40)
     : view === "stacked" ? Math.max(160, (question.groups.length > 1 ? question.groups.length : 1) * 46 + 80) : 340);
   return (
-    <Profiled id={`Chart:${question.id}`}>
-      <Suspense fallback={<div style={{ height: h }} aria-busy="true" />}>
-        <EChart option={option} build={make} height={h} label={`${question.number}: ${question.text}`} onReady={onReady} />
-      </Suspense>
-    </Profiled>
+    <Suspense fallback={<div style={{ height: h }} aria-busy="true" />}>
+      <EChart option={option} build={make} height={h} label={`${question.number}: ${question.text}`} onReady={onReady} />
+    </Suspense>
   );
 }
 

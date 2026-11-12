@@ -13,8 +13,6 @@ import { downloadTable } from "../csv";
 import type { Format } from "../csv";
 import { C, heatStep, useTheme } from "../theme";
 import { count, fmtDate, HIDDEN_BASE, HIDDEN_NOTE, moe, pct, significant, SMALL_BASE, versusRest } from "../stats";
-import { perf } from "../perf";
-import Profiled from "../components/Profiled";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const LETTERS = "ABCDEFG";
@@ -60,7 +58,6 @@ export default function Crosstab() {
   const profiled = cols.length > 1;   // ad hoc and archive surveys without age/gender profiles have nothing to cut by
   const mode = params.get("mode") === "two" && profiled ? "two" : "banner";
   const set = (k: string, v: string) => {
-    perf.startFilterChange(k, v);
     const p = new URLSearchParams(params);
     p.set(k, v);
     setParams(p, { replace: true });
@@ -86,13 +83,9 @@ export default function Crosstab() {
       </Card>
       {!profiled && <p className="muted">This survey has no respondent profile (gender, age, generation…), so only the Total column is available.</p>}
       {mode === "banner" ? (
-        <Profiled id="Crosstab:Banner">
-          <Banner question={question} n={book.n} wave={fmtDate(book.wave.wave_date)} cols={cols} from={book.wave} />
-        </Profiled>
+        <Banner question={question} n={book.n} wave={fmtDate(book.wave.wave_date)} cols={cols} from={book.wave} />
       ) : (
-        <Profiled id="Crosstab:TwoCuts">
-          <TwoCuts id={id} question={question} />
-        </Profiled>
+        <TwoCuts id={id} question={question} />
       )}
     </div>
   </div>;
@@ -103,7 +96,6 @@ function Banner({ question, n, wave, cols, from }: { question: Question; n: Reco
   const ref = (cols.includes(params.get("ref") as Column) ? params.get("ref") : "Total") as Column;
   const marks = params.get("marks") === "arrows" ? "arrows" : "letters";
   const set = (k: string, v: string) => {
-    perf.startFilterChange(k, v);
     const p = new URLSearchParams(params);
     p.set(k, v);
     setParams(p, { replace: true });
@@ -187,7 +179,6 @@ function TwoCuts({ id, question }: { id: number; question: Question }) {
   const a = cut("a", "gender"), b = cut("b", "generation");
   const weeks = [1, 2, 4].includes(Number(params.get("weeks"))) ? Number(params.get("weeks")) : 1;
   const set = (k: string, v: string) => {
-    perf.startFilterChange(k, v);
     const p = new URLSearchParams(params);
     p.set(k, v);
     setParams(p, { replace: true });

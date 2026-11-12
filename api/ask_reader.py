@@ -37,7 +37,7 @@ CUT_VALUES = [(r"\bgen ?z\b|\bzoomers?\b", "generation", "GenZ"), (r"\bmillennia
               (r"\burban\b", "urbanicity", "Urban"), (r"\bsuburban\b", "urbanicity", "Suburban"), (r"\brural\b", "urbanicity", "Rural")]
 CUT_DIMS = [(r"\bby (generation|generations|gen)\b|\bacross generations\b", "generation"),
             (r"\bby (gender|sex)\b|\bmen (and|vs|versus) women\b|\bwomen (and|vs|versus) men\b", "gender"),
-            (r"\bby age\b|\bage (group|band)s?\b", "age_band"), (r"\bby income\b|\bincome (group|band|level)s?\b", "income_band"),
+            (r"\bby age\b|\bage (group|band)s?\b", "age_band"), (r"\bby (household )?income\b|\bincome (group|band|level)s?\b", "income_band"),
             (r"\bby region\b|\bregions?\b", "census_region"), (r"\burbanicity\b|\burban,? suburban\b", "urbanicity")]
 KINDS = [(r"\bhow many (people|respondents|users|consumers|shoppers|adults|americans)\b|\bnumber of (people|respondents)\b", "count"),
          (r"\b(top|winner|won|most popular|leading|leader|highest|best|biggest|largest|most common|rank|ranking|favou?rite)\b", "top"),
@@ -68,6 +68,9 @@ def periods(text: str) -> tuple[list[dict], str]:
         start = f"{m[3]}-{MONTHS.get(m[2], 1):02d}-01"
         end_month = MONTHS.get(m[5], 12)
         take(m, {"from": start, "to": f"{m[6]}-{end_month:02d}-{calendar.monthrange(int(m[6]), end_month)[1]:02d}"})
+        text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
+    for m in re.finditer(rf"\bsince\s+({month_names})\.?\s+(\d{{4}})\b", text):   # "since Aug 2025": from then on, not August alone
+        take(m, {"from": f"{m[2]}-{MONTHS[m[1]]:02d}-01", "to": "9999-12-31"})
         text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
     for m in re.finditer(rf"\b({month_names})\.?\s+(\d{{4}})\b", text):
         take(m, {"month": (int(m[2]), MONTHS[m[1]])})

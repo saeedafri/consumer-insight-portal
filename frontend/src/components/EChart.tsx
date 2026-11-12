@@ -6,7 +6,6 @@ import { AriaComponent, GridComponent, LegendPlainComponent, LegendScrollCompone
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsCoreOption } from "echarts/core";
 import { DARK, FONT, inLight, LIGHT, REDUCED_MOTION, savedTheme, useTheme } from "../theme";
-import { perf } from "../perf";
 
 // MarkLine: the news and retail events on the weekly report's charts; LegendScroll: a report table's many answers
 echarts.use([AriaComponent, BarChart, LineChart, PieChart, GridComponent, LegendPlainComponent, LegendScrollComponent, MarkLineComponent,
@@ -109,19 +108,6 @@ export default function EChart({ option, build, height, onClick, label, onReady 
   useEffect(() => {
     const c = chart.current;
     if (!c) return;
-    const deregister = perf.registerPendingGraph(label);
-    const t0 = performance.now();
-    const onFinished = () => {
-      const dur = performance.now() - t0;
-      perf.logGraph({
-        label,
-        durationMs: Math.round(dur * 10) / 10,
-      });
-      deregister();
-      c.off("finished", onFinished);
-    };
-    c.on("finished", onFinished);
-
     // Bars grow from the axis when a question opens; a new cut or sort moves the same bars to their new values
     // instead of redrawing, so the change itself is visible. Parts a new chart type does not share are replaced.
     // A new view can have a new height (Bars are as tall as their answers, a Donut 340 px): size the canvas first, so

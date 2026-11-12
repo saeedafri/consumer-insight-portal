@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from api import ask_model
+from api import ask_model, ask_reader
 
 log = logging.getLogger("cip.ask")
 CONFIG = Path(__file__).resolve().parents[1] / "config"
@@ -53,6 +53,10 @@ SAME_WORDING = 0.5   # shared words / all words: "holiday 2025" vs "holiday 2026
 UNIT_ONLY = {"$", "%", "#"}   # a typed-number question loaded without its numbers: its one "answer" is the unit, chosen by 100%
 COUNT_CACHE_MB = 48   # parsed question files kept in memory; the largest (q1, every tracker wave) is ~4 MB
 FIELDS = {"name": 3.5, "text": 3.0, "topic": 2.5, "answers": 2.0, "older": 1.5}   # name: the semantic layer's business name and aliases
+# words that frame a question rather than name its subject ("Should we act on tariff concerns? Show the latest numbers"):
+# left out on both sides when a question is matched to a survey question's name (Index.named)
+FRAME_WORDS = frozenset("""should we act say said says chose choose chosen answers answer among over indexes index grown grow rising
+falling going up down trend top numbers number base figures latest about consumers people think feel""".split())
 SEMANTIC = CONFIG / "ask_semantic.json"   # scripts/ask_semantic.py: a business name, aliases and topic per question wording
 STOP = set("""about above after again against also among answer answers been before being below between both could
     during each from further have having here into itself just more most other over same should some such than that their
@@ -63,6 +67,14 @@ STOP = set("""about above after again against also among answer answers been bef
 def digest(text: str) -> str:
     """A question wording's key in config/ask_semantic.json: the same wording under any code shares one entry."""
     return hashlib.sha1(" ".join(text.lower().split()).encode()).hexdigest()[:12]
+
+
+def name_key(text: str) -> str:
+    """A subject as the name table holds it: the reader's subject words (api/ask_reader.py read), frame words left out,
+    and a year that names the subject rather than a period ("Holiday spending 2025" is not "Holiday spending 2024")."""
+    plan = ask_reader.read(text)
+    years = [y for y in re.findall(r"\b20[12]\d\b", text) if y not in repr(plan["when"])]
+    return " ".join([w for w in plan["about"].split() if w not in FRAME_WORDS] + years)
 
 
 def stems(text: str) -> list[str]:
@@ -223,6 +235,20 @@ class Index:
         self.vector_keys, self.verified = [], []
         self.embed_text = {key: f"{doc['name']}; {'; '.join(doc['aliases'])}. {doc['text']} | answers: {'; '.join(doc['labels'])[:300]}"
                            for key, doc in self.docs.items()}
+        # the stored patterns: each survey question's analyst name and aliases, as a question's subject reads (name_key),
+        # to its survey questions, longest-running first. A question whose subject is one of them is answered from it at
+        # once; its periods, cuts and kind still come from the question (scripts/ask_question_bank.py tests every one)
+        self.names: dict[str, list[str]] = {}
+        for key, doc in sorted(self.docs.items(), key=lambda kv: (kv[1]["waves"], kv[1]["last"]), reverse=True):
+            for name in dict.fromkeys([doc["name"], *doc["aliases"]]):
+                pattern = name_key(name)
+                if len(pattern.split()) >= 2 and key not in self.names.get(pattern, []):   # one word ("spending") names too much
+                    self.names.setdefault(pattern, []).append(key)
+        words = {key: set(re.findall(r"[a-z0-9]+", doc["text"].lower())) - SAME_IGNORES for key, doc in self.docs.items()}
+        alike = lambda a, b: len(words[a] & words[b]) >= SAME_WORDING * len(words[a] | words[b])   # noqa: E731
+        # a name two different questions share ("Economic outlook": the economy, and the pace of price rises) is left to the
+        # search; the same question asked by several studies (Amazon Prime) keeps the name
+        self.names = {p: keys for p, keys in self.names.items() if all(alike(keys[0], k) for k in keys[1:])}
         total = max(len(self.docs), 1)
         self.idf = {s: math.log(1 + total / len(keys)) for s, keys in self.postings.items()}
         self.vocabulary = sorted({w for d in self.docs.values() for w in re.findall(r"[a-z]{4,}", d["text"].lower())}
@@ -342,6 +368,11 @@ class Index:
             if w["key"] not in seen:
                 out.append(w)
         return out[:limit + WORD_CANDIDATES]   # the nearest by meaning, and a few found only by their words ("Costco")
+
+    def named(self, about: str, visible: set[int]) -> str | None:
+        """The survey question a question names by its analyst name or an alias (the longest-running this person may see),
+        or None. Microseconds: a dictionary lookup."""
+        return next((key for key in self.names.get(name_key(about), []) if not visible.isdisjoint(self.docs[key]["surveys"])), None)
 
     def load_verified(self) -> None:
         """The verified questions (config/ask_verified.yml and the admins' additions in logs/ask-verified.json), each

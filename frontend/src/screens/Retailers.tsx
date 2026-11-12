@@ -220,7 +220,7 @@ function Reach({ data, sides, series }: { data: Data; sides: Side[]; series: Ser
         return <figure key={s.label} className="chart-cell"><figcaption>{s.label}</figcaption>
           <EChart label={`${s.label}: food and nonfood`} height={220} option={{
             tooltip: { trigger: "item", valueFormatter: (v: unknown) => `${v}%` },
-            series: [{ type: "pie", radius: ["42%", "68%"], label: { formatter: "{b}\n{d}%" }, color: [C.redLine, C.s1, C.sky],
+            series: [{ type: "pie", radius: "62%", label: { formatter: "{b}\n{d}%" }, color: [C.redLine, C.s2, C.sky],   // full circle; s1 is sky in dark
                        data: [["Food only", food - both], ["Nonfood only", nonfood - both], ["Both", both]].map(([name, n]) => ({ name, value: share(n as number, any) }))}],
           }} /></figure>;
       })}</div>
@@ -228,7 +228,7 @@ function Reach({ data, sides, series }: { data: Data; sides: Side[]; series: Ser
   </>;
 }
 
-/** Who each retailer's shoppers are: gender as donuts, the other groups as bars next to the base's own mix. */
+/** Who each retailer's shoppers are: gender as full circles (male blue, female red: two blues read as one in dark mode), the other groups as bars next to the base's own mix. */
 function ShopperProfile({ data, sides, series }: { data: Data; sides: Side[]; series: Series[] }) {
   const offset = sides[0].market.sector ? 1 : 3;   // counts start after [shoppers] or [shoppers, food, nonfood]
   const dims = Object.entries(data.groups);
@@ -254,7 +254,7 @@ function ShopperProfile({ data, sides, series }: { data: Data; sides: Side[]; se
         <EChart label={`${s.label}: gender`} height={200} option={{
           tooltip: { trigger: "item", valueFormatter: (v: unknown) => `${v}%` },
           legend: { bottom: 0 },
-          series: [{ type: "pie", radius: "62%", center: ["50%", "44%"], label: { position: "inside", formatter: "{d}%", color: "#fff", fontWeight: 700 }, color: [C.s1, C.sky, C.other],
+          series: [{ type: "pie", radius: "62%", center: ["50%", "44%"], label: { position: "inside", formatter: "{d}%", color: "#fff", fontWeight: 700 }, color: [C.s2, C.red, C.other],
                      data: dims[0][1].map((g, i) => ({ name: g, value: share(s.counts[offset + i] ?? 0, s.counts[0]) })) }],
         }} /></figure>)}</div>
       <div className="grid g2">{dims.slice(1).map(([d, groups], k) => <figure key={d} className="chart-cell"><figcaption>{TITLES[d] ?? d}</figcaption>

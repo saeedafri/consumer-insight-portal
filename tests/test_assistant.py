@@ -11,7 +11,7 @@ import json
 import pytest
 
 from api import ask_figures, ask_reader, assistant
-from api.ask_index import Index
+from api.ask_index import Index, name_key
 
 DATES = ["2026-09-07", "2026-09-14", "2026-09-21", "2026-09-28", "2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26"]
 AMAZON = [100, 110, 120, 130, 140, 150, 160, 170]   # people who chose Amazon in each wave, of 400
@@ -235,3 +235,15 @@ def test_asks_are_answered_by_words_while_the_vectors_are_built(index):
     index.vectors = index.verified_vectors = None   # api/assistant.py index_for: add_vectors still running after a deploy
     found = assistant.answer("What share bought from Amazon in the latest wave?", index, EVERYONE)
     assert found["sources"][0]["qcode"] == "XQ1" and figure(found, "Amazon") == [42.5]
+
+
+def test_a_question_using_a_stored_name_is_answered_from_it_with_its_own_cut(index):
+    index.names = {name_key("Recent retailer purchases"): ["CSI-US/tracker/XQ1"]}   # the analyst name, as config/ask_semantic.json gives it
+    found = assistant.answer("Should we act on recent retailer purchases by generation? Show the latest numbers", index, EVERYONE, quick=True)
+    assert found["understood"] == "named" and found["sources"][0]["qcode"] == "XQ1" and len(found["chart"]["series"]) >= 2
+    assert index.named("Holiday spending 2025", EVERYONE) is None   # a year in a name is part of it, never dropped
+
+
+def test_since_a_month_and_household_income_are_read():
+    assert ask_reader.read("Has Yes grown since Aug 2025?")["when"] == [{"from": "2025-08-01", "to": "9999-12-31"}]
+    assert ask_reader.read("Spending by household income")["cuts"] == {"income_band": "all"}

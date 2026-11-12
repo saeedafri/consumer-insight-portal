@@ -6,6 +6,14 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 12 November 2026
 
+### The developers' speed badge is removed
+
+The speed badge a developer could switch on with ?perf=1 timed page loads, data requests and charts in that one browser. It saved nothing on the server and no one else saw it, and Chrome's own developer tools measure the same, so it is removed: about 1,000 lines less for every page to download and run. The Logs page's monitoring dashboard (CPU, memory, bandwidth, requests per minute, server speed, the busiest pages, visitors and their city, recent errors, the cache and storage tables) stays as it is.
+
+### Full pies with a colour each for men and women in the databanks, and donuts on the tracker pages
+
+In the Retailer databank and the Sector databank, Who shops there shows each retailer's or sector's shoppers by gender as a full pie, men in blue and women in red: both were light blue in dark mode and read as one slice. Food, nonfood or both is a full pie too. Each tracker page (Tariffs & inflation and the others) now shows the chosen week's headline figures as donuts, the share who said it against everyone else asked, above the chart of every week.
+
 ### Trends, Compare waves and Ask Coresight show each question's own answers when a question code was reused
 
 A survey code is sometimes used again for a different question in a later week (Q22 was a facial recognition question one week and Thanksgiving spending another). Trends, Compare waves and Ask Coresight read one file per code, and that file kept one name per answer number, so a week could show another question's answers: How much did you spend at drug stores? listed reasons for shopping there, Have you purchased any footwear? listed price bands, and What is your age group? listed single ages (86 codes). Each question now keeps its own answers. No figure changed: every count in all 2,666 question files is the same, and so are every weekly report and the Sector databank. Expected vs actual now names each question's own answers; for Prime Big Deal Days and Singles' Day it pairs the expectations with Yes, No and Cannot remember by answer number, which the research team should review. Ask Coresight joins more weeks of the same question (Amazon Prime membership: 22 weeks, was 10) and no longer joins Halloween plans (Will you spend…) with Halloween spending (Did you spend…). The 28 questions that asked for a dollar amount whose amounts were never loaded are no longer answered as 100% answered $. Trends offers only the question's own answers to pick from. It shows after the next publish, which rebuilds every question file.

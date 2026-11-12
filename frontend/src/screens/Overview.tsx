@@ -9,7 +9,6 @@ import type { Question } from "../api";
 import { BaseNote, Card, Change, compared, Failure, SkeletonScreen, SourceLine, SIG_RULE, QuestionCode } from "../components/bits";
 import Glance from "../components/Glance";
 import QuestionChart from "../components/QuestionChart";
-import Profiled from "../components/Profiled";
 import { biggest, isProfile, moves } from "../moves";
 import { direction, fmtDate, pct, pts } from "../stats";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -35,7 +34,7 @@ export default function Overview() {
   const firstOf = (q: Question) => q.groups.length > 1 ? "stacked" as const : "bars" as const;
   const vs = compared(w);
   const tested = all.filter(m => m.testable).length;
-  return <Profiled id="Overview">
+  return <>
     <div className="page-head"><div>
       <h1>{lead ? `${lead.label} ${lead.d! > 0 ? "rose" : "fell"} ${Math.abs(lead.d!).toFixed(1)} points to ${lead.now.toFixed(1)}%`
                 : w.prior_survey_id ? `No significant change against ${vs.prior}` : w.title}</h1>
@@ -51,24 +50,20 @@ export default function Overview() {
       </div>
     </div>
 
-    <Profiled id="Overview:Glance">
-      {dashboards.map(code => <Glance key={code} code={code} id={id} />)}
-    </Profiled>
+    {dashboards.map(code => <Glance key={code} code={code} id={id} />)}
 
-    <Profiled id="Overview:Kpis">
-      <div className="grid g5" style={{ marginBottom: 16 }}>
-        <div className="card kpi lead"><div className="k-label">Qualified respondents</div><div className="k-value"><CountUp text={w.qualified_n.toLocaleString("en-US")} /></div>
-          <div className="k-note">{Object.entries(book.n).filter(([k, v]) => k !== "Total" && v > 0).slice(0, 2).map(([k, v]) => `${k} ${v}`).join(" · ")}</div></div>
-        {(up.length ? up : all.filter(m => m.q.type === "single" && !isProfile(m))).filter((m, i, list) =>
-          list.findIndex(x => x.q.id === m.q.id) === i).slice(0, 4).map(m =>   // one card per question
-          <button key={m.q.id + m.label} className="card kpi" disabled={!can("explorer")} onClick={() => navigate(`/w/${id}/questions/${encodeURIComponent(m.q.id)}`)}>
-            <div className="k-label clamp">{m.q.short || m.q.text}</div>
-            <div className="k-value"><CountUp text={pct(m.now)} /></div>
-            <div className="k-note"><b>{m.label.length > 48 ? m.label.slice(0, 46) + "…" : m.label}</b><br />
-              <Change now={m.now} before={m.prior} label={`vs ${vs.prior}`} routing={m.routing} move={m} /></div>
-          </button>)}
-      </div>
-    </Profiled>
+    <div className="grid g5" style={{ marginBottom: 16 }}>
+      <div className="card kpi lead"><div className="k-label">Qualified respondents</div><div className="k-value"><CountUp text={w.qualified_n.toLocaleString("en-US")} /></div>
+        <div className="k-note">{Object.entries(book.n).filter(([k, v]) => k !== "Total" && v > 0).slice(0, 2).map(([k, v]) => `${k} ${v}`).join(" · ")}</div></div>
+      {(up.length ? up : all.filter(m => m.q.type === "single" && !isProfile(m))).filter((m, i, list) =>
+        list.findIndex(x => x.q.id === m.q.id) === i).slice(0, 4).map(m =>   // one card per question
+        <button key={m.q.id + m.label} className="card kpi" disabled={!can("explorer")} onClick={() => navigate(`/w/${id}/questions/${encodeURIComponent(m.q.id)}`)}>
+          <div className="k-label clamp">{m.q.short || m.q.text}</div>
+          <div className="k-value"><CountUp text={pct(m.now)} /></div>
+          <div className="k-note"><b>{m.label.length > 48 ? m.label.slice(0, 46) + "…" : m.label}</b><br />
+            <Change now={m.now} before={m.prior} label={`vs ${vs.prior}`} routing={m.routing} move={m} /></div>
+        </button>)}
+    </div>
 
     <div className="grid g3" style={{ marginBottom: 16 }}>
       <Card className="span2" title={`Biggest significant moves against ${vs.prior}`} sub={prior ? `Against the wave of ${fmtDate(prior.wave_date)} · ${SIG_RULE.replace(/^Significant: /, "")} · ${tested} answers tested · routing changes excluded` : `No ${vs.Prior.toLowerCase()} to compare against`}
@@ -101,5 +96,5 @@ export default function Overview() {
         <SourceLine wave={fmtDate(w.wave_date)} base={`base n=${q.groups[0].base}`} asked={q.base_desc} from={w} />
       </Card>)}
     </div>
-  </Profiled>;
+  </>;
 }

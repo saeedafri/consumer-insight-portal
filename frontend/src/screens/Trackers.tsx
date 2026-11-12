@@ -6,7 +6,7 @@
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { dashboardQuery, useWaves } from "../api";
+import { dashboardQuery, useDashboard, useWaves } from "../api";
 import type { Dashboard } from "../api";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import Glance from "../components/Glance";
@@ -52,6 +52,7 @@ export default function Trackers() {
     </section>
 
     <Glance code={code} id={week.survey_id} />
+    <TileDonuts code={code} id={week.survey_id} />
 
     {tiles.length > 0 && history.length > 1 && <Card title="Headline figures over time" sub={`% of respondents, each week the tracker ran (${history.length} of ${weeks.length} loaded)`}>
       <EChart height={320} label={`${name}: headline figures over time`}
@@ -67,4 +68,26 @@ export default function Trackers() {
               }} />
     </Card>}
   </div>;
+}
+
+/** The chosen week's headline figures as donuts: the share who said it against everyone else asked (each tile is one
+ *  yes-or-no split, so the two slices add up to 100%). */
+function TileDonuts({ code, id }: { code: string; id: number }) {
+  const { data: d } = useDashboard(code, id);
+  const tiles = Object.entries(d?.tiles ?? {}).filter(([, m]) => m?.pct != null);
+  if (!d || !tiles.length) return null;
+  return <Card title="This week's headline figures" sub={`% of respondents, week of ${fmtDate(d.wave.week_of)}`}>
+    <div className={`grid g${Math.min(4, tiles.length)}`}>{tiles.map(([k, m], i) => {
+      const name = d.tile_labels?.[k] ?? k;
+      return <figure key={k} className="chart-cell"><figcaption>{name}</figcaption>
+        <EChart label={`${name}: ${m!.pct!.toFixed(1)}%`} height={200} option={{
+          tooltip: { ...tooltip(), trigger: "item", formatter: (p: { name: string; value: number }) => `${p.name}: ${p.value.toFixed(1)}% (n=${m!.base})` },
+          series: [{ type: "pie", radius: ["52%", "78%"], padAngle: 1, itemStyle: { borderRadius: 3 },
+                     label: { position: "center", formatter: () => `${m!.pct!.toFixed(1)}%`, color: C.ink, fontSize: 20, fontWeight: 700 },
+                     emphasis: { scaleSize: 4, label: { show: true } },
+                     data: [{ name, value: m!.pct!, itemStyle: { color: i ? C.s2 : C.red } },
+                            { name: "Everyone else asked", value: 100 - m!.pct!, itemStyle: { color: C.line }, label: { show: false } }] }],
+        }} /></figure>;
+    })}</div>
+  </Card>;
 }

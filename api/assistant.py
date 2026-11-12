@@ -255,13 +255,17 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         hits = sorted(best.values(), key=lambda h: -h["score"])[:8]
     understood = "rules"
     reading = None
+    named = index.named(question, visible)
+    if named:   # the question uses a survey question's analyst name (the stored patterns): that question, no search or model;
+        understood = "named"   # its periods, cuts and kind are the rules' reading of this question
+        hits = [{**index.docs[named], "key": named, "match": 1.0}] + [h for h in hits if h["key"] != named]
     alternative = None   # the model's second choice: shown first as "did you mean", never answered instead
     # the model reads a new question unless the rules need no help: nothing in the surveys matches (below MIN_MATCH, the
     # closest are shown), or the question is a survey question's own wording. The rules alone pick right only ~65% of
     # analysts' questions and their confidence does not tell which (scripts/ask_golden.py, 11 Nov 2026)
     own_words = hits and len(set(re.findall(r"[a-z0-9]+", question.lower())) & set(re.findall(r"[a-z0-9]+", hits[0]["text"].lower()))) \
         >= OWN_WORDING * len(set(re.findall(r"[a-z0-9]+", hits[0]["text"].lower())))
-    unsure = bool(hits) and hits[0]["match"] >= JUNK_BELOW and not own_words
+    unsure = bool(hits) and hits[0]["match"] >= JUNK_BELOW and not own_words and not named
     subject = plan["about"] if len(plan["about"]) >= 3 else question   # time and cut words are the rules'; search the subject
     made = ask_model.embed([subject]) if unsure else None   # one vector per question (local, ~3 ms), used twice
     asked = made[0] if made is not None else None
