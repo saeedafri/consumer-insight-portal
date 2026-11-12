@@ -4,8 +4,16 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "13 November 2026",
+  entries: [
+    { title: "For admins: review the questions people asked Ask Coresight, and make the right answers exact",
+      body: "The Logs page lists every question people typed into Ask Coresight in the last 90 days, most asked first, with how many times and by how many people (scripts and test runs left out). Check shows what Ask answers now; if it is right, Save as verified; if not, pick the right survey question from those offered. A verified question, and every later question worded like it, is then answered exactly and at once. Checking does not count as asking, so the list stays a true record of what people asked." },
+  ],
+}, {
   date: "12 November 2026",
   entries: [
+    { title: "Ask Coresight asks which question you meant when two are too close to call",
+      body: "When Ask Coresight finds a survey question by meaning and another survey question asking something different comes almost as close, it no longer picks one silently: it shows the closest survey questions and asks which you meant, and with the AI check on, the AI settles it in about a second. Measured on 12 November 2026: of the answers it gives at once, 98.7% were right on 5,000 test questions and 97.6% on the 161 hand-written ones, against 93.9% and 86% when it always picked. The same question asked by several studies in slightly different words is never counted as a different question. Each search model now keeps its own thresholds and its own saved vectors, so a retrained model can be swapped in without mixing two models' figures." },
     { title: "Ask Coresight checks every new survey itself, and marks which answers are verified",
       body: "Each time a survey is published, its new questions are named by the small AI model (what analysts call each, other ways they say it, eight example questions), and questions that share a name but ask different things are given a name each. Then every question people may ask about that survey's questions is asked and scored: its latest figure, trend, each cut its data holds (generation, income, region, gender, age, area), periods compared, top answers and one named answer. Admins see the result for each survey on the Logs page (Ask Coresight, survey by survey), with the questions it got wrong. A question that uses a survey question's name is answered from it at once, with its own periods and cuts, and marked Verified; any other answer is marked Best match, with the question it used to check. Of 29,838 verified answers across the whole catalogue, 99.3% were right; on the four newest US weekly surveys, 99.1% to 99.6% of all questions were right and 99.4% to 99.9% of verified ones. Fixed along the way: in the past month (the survey's own wording) is no longer read as a period, since Aug 2025 means from August on, by household income, which generation and women or men are read as cuts, rising or falling asks for a trend, a quoted Yes no longer finds the tax-return question, and a question whose groups were never asked it gets its table instead of an error." },
     { title: "The developers' speed badge is removed",

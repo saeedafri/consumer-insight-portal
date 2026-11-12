@@ -36,7 +36,7 @@ GOLDEN = ROOT / "scripts" / "ask_golden.yml"
 def score(item: dict, found: dict, countries: dict) -> list[str]:
     """What is wrong with one answer (empty when right): the country, the question found, a figure, a chart, the check."""
     if item["want"] == "none":
-        return [] if found["mode"] == "none" else [f"answered from {found['sources'][0]['qcode']}"]
+        return [] if found["mode"] != "figures" else [f"answered from {found['sources'][0]['qcode']}"]   # "choose" is not an answer either
     if found["mode"] != "figures":
         return ["no answer"]
     text = found["sources"][0]["question"].lower()

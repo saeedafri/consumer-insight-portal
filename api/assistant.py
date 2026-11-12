@@ -35,9 +35,17 @@ CURRENT_DAYS = 365                   # "latest"/"last N weeks": only questions a
 CANDIDATES = 10                      # survey questions the model chooses between (api/ask_index.py retrieve)
 TREND_FROM = 3                       # with no time named, a question asked in this many waves or more is shown as a trend
 OWN_WORDING = 0.8                    # a question with this share of a survey question's words is that question: no model
-NEAR_FLOOR = 0.64                    # closeness in meaning (0-1, local model) below which no survey question is near, unless every
-                                     # word is found (a misspelling corrected: "walmrt shoppers" 0.597). Golden set, 12 Nov 2026: off-topic
-                                     # 0.55-0.63 ("Weather in New York tomorrow" 0.626), real 0.652 and up ("Movie theater visits over time")
+# closeness in meaning (0-1) below which no survey question is near, unless every word is found ("walmrt shoppers"). It
+# belongs to the search model: each model scores on its own scale, so it is read from the model's calibration.json
+# (bge-small as shipped: 0.64, from the golden set's off-topic 0.55-0.63 vs real 0.652 and up, 12 Nov 2026)
+NEAR_FLOOR = float(ask_model.calibration().get("near_floor", 0.64))
+# a question found by meaning is answered only when its survey question beats the next *different* one by this margin;
+# closer than that, Ask asks which was meant ("choose") instead of guessing. Also the model's own: etl/ask_quality.py
+# records each answer's margin and the gate is the smallest at which 99% of the answers shown are right
+# bge-small as shipped, 12 Nov 2026, at 0.04: bank 83% answered directly, 98.7% of them right; golden (people's own
+# wording) 52% answered, 97.6% right, the rest asked to choose (86% right with no gate). The AI check settles a choice
+# where it is on, so only unsure questions cost a call
+GATE = float(ask_model.calibration().get("gate", 0.04))
 EVERY_WORD = 1.0                     # keyword match share at which every word of the question was found
 NEAR_EQUAL = 0.8                     # rules only: a match scoring this share of the best counts as near-equal
 EVENT = re.compile(r"\b(prime day|big deal|deal days|black friday|cyber monday|holidays?|valentine'?s?|easter|halloween|thanksgiving|"
@@ -257,6 +265,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
                     best[h["key"]] = h
         hits = sorted(best.values(), key=lambda h: -h["score"])[:8]
     understood = "rules"
+    margin = None   # how far the question found by meaning beats the next different one (etl/ask_quality.py calibrates the gate on it)
     reading = None
     named, sure = index.named(question, visible, plan)
     shared = [] if sure or not named else [named] + [k for k in index.names.get(name_key(question), []) if k != named]
@@ -340,6 +349,18 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         if (plan["grain"] or plan["kind"] == "trend" or (reading or {}).get("kind") == "trend") and chosen["waves"] < TREND_FROM:
             chosen = next((c for c in candidates if c["waves"] >= TREND_FROM), chosen)
         alternative = alternative if alternative and alternative["key"] != chosen["key"] else None
+        # the next question that asks something else: a near-twin from another study (alike wording) is a right answer too
+        others = [c["near"] for c in candidates if "near" in c and c["key"] != chosen["key"] and not index.alike(chosen["key"], c["key"])]
+        margin = round(chosen["near"] - max(others), 3) if "near" in chosen and others else None
+        if understood == "meaning" and margin is not None and margin < GATE:   # unsure between different questions: ask
+            shown, texts = [], set()
+            for c in [chosen] + by_meaning:
+                if c["text"].lower() not in texts and len(shown) < 3:
+                    texts.add(c["text"].lower())
+                    shown.append({"qcode": c["qcode"], "text": c.get("name") or c["text"][:200], "family": c["family"], "key": c["key"]})
+            return {"answer": "This could be more than one survey question. Which did you mean?", "chart": None, "table": None,
+                    "sources": [], "plan": plan, "mode": "choose", "no_source": True, "understood": understood, "margin": margin,
+                    "suggestions": shown, "check": quick and ask_model.ready()}
         hits = [chosen] + ([alternative] if alternative else []) + [c for c in candidates if c["key"] not in (chosen["key"], (alternative or {}).get("key"))]
         plan = read_with_model(plan, reading) if reading else plan
     if shared:   # a name questions share ("Economic outlook"): the search's pick if it is one of them, else the longest-running
@@ -423,7 +444,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
     headline = next((x for x in points if "%" in x), points[0] if points else "")   # the first sentence with a figure
     return {"answer": "\n".join(sentences), "headline": headline, "points": [x for x in points if x != headline], "notes": notes,
             "source_line": sentences[0], "weighting": "unweighted", "understood": understood,
-            "check": quick and understood == "meaning" and ask_model.ready(),
+            "check": quick and understood == "meaning" and ask_model.ready(), "margin": margin,
             "verify": {"question": question, "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],
                        "kind": plan["kind"], "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, "codes": doc.get("codes", [doc["qcode"]]),
             "chart": chart(fig, shown), "table": table, "plan": plan, "mode": "figures", "no_source": False,

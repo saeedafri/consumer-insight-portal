@@ -252,7 +252,7 @@ export interface Distinctive { qcode: string; question: string; answer: string; 
 export interface AudienceProfile { size: number; skipped: string[]; over: Distinctive[]; under: Distinctive[] }
 /** Ask CIP's answer (api/assistant.py): sentences, the chart that fits, every figure as a table, and other matches. */
 export interface AskChart { type: "line" | "bar" | "grouped" | "donut"; categories: string[]; series: { name: string; data: (number | null)[] }[]; unit: string }
-export interface Answer { answer: string; no_source: boolean; mode: "figures" | "none"; chart: AskChart | null;
+export interface Answer { answer: string; no_source: boolean; mode: "figures" | "none" | "choose"; chart: AskChart | null;
                           headline?: string; points?: string[]; notes?: string[]; source_line?: string; codes?: string[];
                           table: { head: string[]; rows: (string | number | null)[][]; bases: number[] } | null;
                           sources: { id: string; key: string; survey_id: number; wave_date: string; qcode: string; question: string; family: string; waves: number; link: string }[];

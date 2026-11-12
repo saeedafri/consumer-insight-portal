@@ -118,6 +118,8 @@ def build(index: Index, held: dict[str, list[str]], keys: set[str] | None = None
 def score(row: dict, found: dict, index: Index) -> str:
     """What is wrong with Ask's answer (empty when right): the survey question (its own or the same wording in another
     study counts), the country, and the shape the kind needs."""
+    if found["mode"] == "choose":
+        return "asked to choose"   # not shown as an answer: the person picks the survey question (counted apart)
     if found["mode"] != "figures":
         return "no answer"
     source = found["sources"][0]
@@ -161,6 +163,7 @@ def ask_all(index: Index, rows: list[dict], visible: set[int]) -> None:
         row["ms"] = round((time.perf_counter() - started) * 1000, 1)
         row["other_study"] = ""
         row["understood"] = found.get("understood", "")
+        row["margin"] = found.get("margin")
         row["got_key"] = found["sources"][0]["key"] if found["sources"] else ""
         row["problem"] = score(row, found, index)
 
@@ -248,6 +251,9 @@ def main() -> int:
         times = sorted(r["ms"] for r in rows)
         print(f"  of them from the same question in another study: {sum(bool(r['other_study']) and not r['problem'] for r in rows)}")
         print(f"Ask, quick: {right} of {len(rows)} right ({right / len(rows):.1%}) · median {times[len(times) // 2]} ms, 95th {times[int(len(times) * .95)]} ms")
+        shown = [r for r in rows if r["problem"] != "asked to choose"]
+        print(f"  answers shown: {len(shown)} of {len(rows)} ({len(shown) / len(rows):.1%}), right {sum(not r['problem'] for r in shown) / max(len(shown), 1):.1%}"
+              f" · asked to choose {len(rows) - len(shown)}")
         named = [r for r in rows if r["understood"] == "named"]
         print(f"  verified (from a stored name): {sum(not r['problem'] for r in named)} of {len(named)} right")
         for group in ("persona", "kind", "country"):

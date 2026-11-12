@@ -9,7 +9,7 @@ retrieved, the answers to focus on, the kind of answer, the grain and the cut. D
   embed()   vectors for texts: BAAI's bge-small-en-v1.5 (int8 ONNX, 384 numbers, deploy/ask-model-download.py) run
             here, ~3 ms a question and no cost; it found the right survey question in the top 10 for 144 of 148
             golden questions, OpenAI's text-embedding-3-small for 135 at ~0.7 s a call (12 Nov 2026). Every survey
-            question's vector is kept in VECTORS (logs/ask-vectors.npz) by the hash of its text, so a publish only
+            question's vector is kept in VECTORS (logs/ask-vectors-<model>.npz) by the hash of its text, so a publish only
             embeds the questions that are new.
   plan()    gpt-4o-mini (CIP_ASK_MODEL) with a strict JSON schema: ~1,500 tokens in, ~60 out, about $0.0003.
 
@@ -38,10 +38,12 @@ import numpy as np
 
 log = logging.getLogger("cip.ask")
 LOGS = Path(__file__).resolve().parents[1] / "logs"
-VECTORS = LOGS / "ask-vectors.npz"
 SPEND = LOGS / "ask-spend.json"
 READINGS = LOGS / "ask-readings.json"   # every reading the model gave, by question and candidates: never paid for twice
 EMBED_DIR = Path(os.environ.get("CIP_ASK_EMBED_DIR", Path(__file__).resolve().parents[1] / "models" / "bge-small-en-v1.5"))
+# one cache per search model: vectors are kept by text, and a retrained model gives the same text another vector
+# (a shared file would have mixed two models' vectors after a model change, 12 Nov 2026)
+VECTORS = LOGS / f"ask-vectors-{EMBED_DIR.name}.npz"
 EMBED_BATCH = 64   # texts run through the model at once, shortest first so little is padding
 PRICES = {"gpt-4o-mini": (0.15, 0.60), "gpt-5-nano": (0.05, 0.40),
           "gpt-4.1-mini": (0.40, 1.60), "gpt-5-mini": (0.25, 2.00)}   # $ per million tokens in, out (OpenAI, 11 Nov 2026)
@@ -144,6 +146,16 @@ def call(path: str, body: dict, seconds: float = CALL_SECONDS) -> dict:
                                      headers={"Authorization": f"Bearer {key()}", "Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=seconds) as reply:
         return json.load(reply)
+
+
+@functools.lru_cache(maxsize=1)
+def calibration() -> dict:
+    """The search model's own thresholds (calibration.json beside it: near_floor), {} when it has none. Each model scores
+    closeness on its own scale: a retrained one is calibrated on the golden set when it is made (12 Nov 2026)."""
+    try:
+        return json.loads((EMBED_DIR / "calibration.json").read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 @functools.lru_cache(maxsize=1)

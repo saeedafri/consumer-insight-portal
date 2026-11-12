@@ -129,7 +129,7 @@ function Reply({ question, answer, weighted, checking, checked, onAsk }: { quest
           <div className="table-wrap"><Figures table={answer.table} /></div></details>}
       </>}
     {answer.suggestions.length > 0 && <div className="ask-more">
-      <p className="small muted">{answer.no_source ? "Closest questions" : answer.suggestions[0]?.alt ? "Did you mean" : "Other questions that match"}</p>
+      <p className="small muted">{answer.mode === "choose" ? "Choose one" : answer.no_source ? "Closest questions" : answer.suggestions[0]?.alt ? "Did you mean" : "Other questions that match"}</p>
       <div className="tagrow">{answer.suggestions.map(s => <button key={s.key} type="button" className={s.alt ? "tag sig" : "tag"} title={s.text}
         onClick={() => onAsk(s.text)}>{s.qcode}: {s.text.length > 70 ? s.text.slice(0, 69) + "…" : s.text}</button>)}</div>
     </div>}

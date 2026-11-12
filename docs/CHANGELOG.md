@@ -4,7 +4,17 @@ Every feature, enhancement and update, newest first: the same entries as the por
 (`frontend/src/screens/WhatsNew.tsx`). Add each change to both; `tests/test_docs.py` fails if they differ.
 The API and the MCP connector are documented in [API.md](API.md).
 
+## 13 November 2026
+
+### For admins: review the questions people asked Ask Coresight, and make the right answers exact
+
+The Logs page lists every question people typed into Ask Coresight in the last 90 days, most asked first, with how many times and by how many people (scripts and test runs left out). Check shows what Ask answers now; if it is right, Save as verified; if not, pick the right survey question from those offered. A verified question, and every later question worded like it, is then answered exactly and at once. Checking does not count as asking, so the list stays a true record of what people asked.
+
 ## 12 November 2026
+
+### Ask Coresight asks which question you meant when two are too close to call
+
+When Ask Coresight finds a survey question by meaning and another survey question asking something different comes almost as close, it no longer picks one silently: it shows the closest survey questions and asks which you meant, and with the AI check on, the AI settles it in about a second. Measured on 12 November 2026: of the answers it gives at once, 98.7% were right on 5,000 test questions and 97.6% on the 161 hand-written ones, against 93.9% and 86% when it always picked. The same question asked by several studies in slightly different words is never counted as a different question. Each search model now keeps its own thresholds and its own saved vectors, so a retrained model can be swapped in without mixing two models' figures.
 
 ### Ask Coresight checks every new survey itself, and marks which answers are verified
 

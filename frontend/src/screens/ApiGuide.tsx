@@ -34,7 +34,7 @@ const ROUTES: [string, string, string][] = [
   ["GET /api/v1/fieldwork", "Each survey's funnel and why respondents dropped out", "Fieldwork"],
   ["GET /api/v1/methodology", "How the figures are made", "—"],
   ["GET /api/v1/public/facts", "The home page's counts and dates (no key needed)", "—"],
-  ["POST /api/v1/ask", "A question in plain words, {\"question\": \"…\"} (add \"quick\": true for the answer by meaning alone in milliseconds; its check says to ask again with \"check\": true for the AI model's reading): the answer in sentences, a chart, every figure and its base, the source and other matching questions; shares, counts, top answers, trends by wave, 2 weeks, 4 weeks, month, quarter or year, comparisons and cuts, from the surveys only", "Ask CIP"],
+  ["POST /api/v1/ask", "A question in plain words, {\"question\": \"…\"} (add \"quick\": true for the answer by meaning alone in milliseconds; its check says to ask again with \"check\": true for the AI model's reading): the answer in sentences, a chart, every figure and its base, the source and other matching questions; shares, counts, top answers, trends by wave, 2 weeks, 4 weeks, month, quarter or year, comparisons and cuts, from the surveys only; when two survey questions are too close to call it answers \"mode\": \"choose\" with them as suggestions instead of guessing", "Ask CIP"],
   ["POST /api/v1/export/{kind}", "A screen's table as CSV, Excel or PowerPoint", "Export"],
   ["GET /api/v1/keys", "Your keys (name, first characters, date)", "— (portal sign-in)"],
   ["POST /api/v1/keys", "Make a key, {\"name\": \"…\"}", "— (portal sign-in)"],
@@ -66,7 +66,7 @@ const TEAM: [string, string, string][] = [
 ];
 // [tool, what it does, needs on your menu]: the tools of docs/API.md section 4 (api/mcp.py TOOLS)
 const TOOLS: [string, string, string][] = [
-  ["ask", "Any question in plain words, answered as on the Ask Coresight page: the answer, every figure and its base, the chart that fits, the source, the closest questions when none matches", "Ask CIP"],
+  ["ask", "Any question in plain words, answered as on the Ask Coresight page: the answer, every figure and its base, the chart that fits, the source, the closest questions when none matches, or which survey question was meant when two are too close to call", "Ask CIP"],
   ["search_questions", "Find questions by topic, words, brand or code; plain English works; one entry per question over every code it was asked under", "Search questions"],
   ["list_waves", "Survey waves, newest first, optionally of one family (e.g. CSI-US)", "—"],
   ["question_results", "One question in one wave: each answer's % for Total, gender and generation, the prior week and last year, and significance", "Question explorer"],

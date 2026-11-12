@@ -247,3 +247,13 @@ def test_a_question_using_a_stored_name_is_answered_from_it_with_its_own_cut(ind
 def test_since_a_month_and_household_income_are_read():
     assert ask_reader.read("Has Yes grown since Aug 2025?")["when"] == [{"from": "2025-08-01", "to": "9999-12-31"}]
     assert ask_reader.read("Spending by household income")["cuts"] == {"income_band": "all"}
+
+
+def test_a_question_too_close_to_call_asks_which_was_meant(index, monkeypatch):
+    if index.vectors is None:   # the margin is a closeness in meaning: it needs the local search model
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    found = assistant.answer("What share bought from Amazon in the latest wave?", index, EVERYONE, quick=True)
+    assert found["mode"] == "figures" and found["margin"] is not None   # by meaning, with how far it beat the next question
+    monkeypatch.setattr(assistant, "GATE", found["margin"] + 0.01)      # closer than the gate: never a silent guess
+    unsure = assistant.answer("What share bought from Amazon in the latest wave?", index, EVERYONE, quick=True)
+    assert unsure["mode"] == "choose" and unsure["sources"] == [] and unsure["suggestions"][0]["qcode"] == "XQ1"
