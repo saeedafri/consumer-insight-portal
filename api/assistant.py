@@ -26,7 +26,7 @@ from datetime import date, timedelta
 import numpy as np
 
 from api import ask_figures, ask_model, ask_reader
-from api.ask_index import Index, stems
+from api.ask_index import Index, name_key, stems
 
 log = logging.getLogger("cip.assistant")
 KEEP_ANSWERS = 500                   # answers kept in memory, newest used last out
@@ -91,9 +91,12 @@ def ranked(fig: dict, period: int = -1) -> list[int]:
     return order
 
 
-def chart(fig: dict, shown: list[int]) -> dict:
+def chart(fig: dict, shown: list[int]) -> dict | None:
     """The chart that fits the figures: a line over time, grouped bars by a cut, a donut for a single choice of a few
-    answers that add up to 100%, else bars, biggest first."""
+    answers that add up to 100%, else bars, biggest first. None when no answer has a figure to draw (a cut whose groups
+    were never asked it: the question bank found two, 12 Nov 2026), so the answer is the table and its sentences."""
+    if not shown:
+        return None
     pct = lambda p, c, a: None if math.isnan(fig["pct"][p, c, a]) else float(fig["pct"][p, c, a])   # noqa: E731
     periods, columns = fig["periods"], fig["columns"]
     if len(periods) > 1:
@@ -255,10 +258,12 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         hits = sorted(best.values(), key=lambda h: -h["score"])[:8]
     understood = "rules"
     reading = None
-    named = index.named(question, visible)
-    if named:   # the question uses a survey question's analyst name (the stored patterns): that question, no search or model;
-        understood = "named"   # its periods, cuts and kind are the rules' reading of this question
+    named, sure = index.named(question, visible, plan)
+    shared = [] if sure or not named else [named] + [k for k in index.names.get(name_key(question), []) if k != named]
+    if named and sure:   # the question uses a survey question's own analyst name (the stored patterns): that question, no
+        understood = "named"   # search or model; its periods, cuts and kind are the rules' reading of this question
         hits = [{**index.docs[named], "key": named, "match": 1.0}] + [h for h in hits if h["key"] != named]
+    named = named if sure else None   # a name different questions share: the search picks among them (shared, below)
     alternative = None   # the model's second choice: shown first as "did you mean", never answered instead
     # the model reads a new question unless the rules need no help: nothing in the surveys matches (below MIN_MATCH, the
     # closest are shown), or the question is a survey question's own wording. The rules alone pick right only ~65% of
@@ -337,13 +342,17 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         alternative = alternative if alternative and alternative["key"] != chosen["key"] else None
         hits = [chosen] + ([alternative] if alternative else []) + [c for c in candidates if c["key"] not in (chosen["key"], (alternative or {}).get("key"))]
         plan = read_with_model(plan, reading) if reading else plan
+    if shared:   # a name questions share ("Economic outlook"): the search's pick if it is one of them, else the longest-running
+        first = hits[0]["key"] if hits and hits[0]["key"] in shared else shared[0]   # that can answer; a best match, the others listed
+        understood = "name"
+        hits = [{**index.docs[k], "key": k, "match": 1.0} for k in [first] + [k for k in shared if k != first]] + [h for h in hits if h["key"] not in shared]
     if understood == "rules" and hits and hits[0]["match"] < MIN_MATCH:   # too little matched: the closest, never an answer
         return {"answer": "No survey question matches this well enough to answer it. The closest questions are below.",
                 "chart": None, "table": None, "sources": [], "plan": plan, "mode": "none", "no_source": True,
                 "suggestions": [{"qcode": h["qcode"], "text": h["text"][:200], "family": h["family"], "key": h["key"]} for h in hits[:4]]}
     offered = {}   # one per wording shown: a question asked by several studies was listed up to four times (Q6_2, 12 Nov)
-    for h in hits[1:]:
-        text = h.get("name") or h["text"][:200]
+    for h in hits[1:]:   # a question sharing the answer's name is shown by its own wording: the name would not tell them apart
+        text = h["text"][:200] if h.get("name") and h["name"].lower() == (hits[0].get("name") or "").lower() else h.get("name") or h["text"][:200]
         if text.lower() != (hits[0].get("name") or hits[0]["text"][:200]).lower():
             offered.setdefault(text.lower(), {"qcode": h["qcode"], "text": text, "family": h["family"], "key": h["key"],
                                               "alt": bool(alternative) and h["key"] == alternative["key"]})

@@ -241,7 +241,7 @@ def test_a_question_using_a_stored_name_is_answered_from_it_with_its_own_cut(ind
     index.names = {name_key("Recent retailer purchases"): ["CSI-US/tracker/XQ1"]}   # the analyst name, as config/ask_semantic.json gives it
     found = assistant.answer("Should we act on recent retailer purchases by generation? Show the latest numbers", index, EVERYONE, quick=True)
     assert found["understood"] == "named" and found["sources"][0]["qcode"] == "XQ1" and len(found["chart"]["series"]) >= 2
-    assert index.named("Holiday spending 2025", EVERYONE) is None   # a year in a name is part of it, never dropped
+    assert index.named("Holiday spending 2025", EVERYONE) == (None, False)   # a year in a name is part of it, never dropped
 
 
 def test_since_a_month_and_household_income_are_read():

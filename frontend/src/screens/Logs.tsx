@@ -172,6 +172,7 @@ export default function Logs() {
         {denied === "notAdmin"
           ? <>You are signed in as <b>{me?.email ?? "an account"}</b>, which is not an admin, so this page stays closed whatever the token. Only the super admin opens it (config/access.yml people: super_admin).</>
           : denied}</p></Card>}
+      {metrics && <AskQuality headers={headers} token={token} />}
       {metrics && <Dashboard m={metrics} headers={headers} />}
       <RawLogs headers={headers} token={token} />
       <Archives headers={headers} token={token} />
@@ -517,6 +518,33 @@ function RawLogs({ headers, token }: { headers: Record<string, string>; token: s
       {answer?.lines.length ? answer.lines.map(istLine).join("\n") : answer ? "Nothing logged here yet." : "Loading…"}
     </pre>
     <div style={{ marginTop: 10 }}>{pager}</div>
+  </Card>;
+}
+
+// ---- Ask Coresight, survey by survey: checked after each publish (etl/ask_quality.py) ----------------------------------
+interface AskCheck { survey_id: number; wave_date: string; title: string; checked: string; questions: number; named: number; asked: number;
+                     right: number; verified: number; verified_right: number; misses: { question: string; problem: string; verified: boolean }[] }
+const share = (n: number, of: number) => (of ? `${(100 * n / of).toFixed(1)}%` : "–");
+function AskQuality({ headers, token }: { headers: Record<string, string>; token: string }) {
+  const [list, setList] = useState<AskCheck[] | null>(null);
+  const [open, setOpen] = useState<number | null>(null);
+  useEffect(() => {
+    fetch("/api/v1/admin/ask/quality", { credentials: "same-origin", headers }).then(r => r.ok ? r.json() : []).then(setList).catch(() => setList([]));
+  }, [token]);
+  const shown = list?.find(c => c.survey_id === open);
+  return <Card title="Ask Coresight, survey by survey" sub="After each publish, every question people may ask about a new survey's questions (latest figure, trend, each cut its data holds, periods compared, top answers, one answer) is asked and scored. Verified answers come from a question's stored name and must be right 99% of the time; the rest are labelled best match.">
+    {list?.length ? <div className="table-wrap"><table className="data">
+      <thead><tr><th>Survey</th><th>Week</th><th className="num">Questions</th><th className="num">Named</th><th className="num">Asked</th>
+        <th className="num">Right</th><th className="num">Verified answers right</th><th>Checked (IST)</th><th /></tr></thead>
+      <tbody>{list.map(c => <tr key={c.survey_id}><th scope="row">{c.title || c.survey_id}</th><td>{c.wave_date}</td>
+        <td className="num">{c.questions}</td><td className="num">{c.named}</td><td className="num">{c.asked}</td>
+        <td className="num">{share(c.right, c.asked)}</td>
+        <td className="num" style={c.verified && c.verified_right / c.verified < 0.99 ? { color: "var(--red-text)", fontWeight: 600 } : undefined}>
+          {share(c.verified_right, c.verified)} <small className="muted">({c.verified_right} of {c.verified})</small></td>
+        <td>{ist(c.checked)}</td>
+        <td className="num">{c.misses.length > 0 && <button className="btn" onClick={() => setOpen(open === c.survey_id ? null : c.survey_id)}>{open === c.survey_id ? "Hide" : "Misses"}</button>}</td></tr>)}</tbody>
+    </table></div> : <p className="muted">{list ? "No survey checked yet: the check runs after the next publish." : "Loading…"}</p>}
+    {shown && <ul className="small" style={{ marginTop: 12 }}>{shown.misses.map(m => <li key={m.question}>{m.verified && <b>Verified · </b>}{m.question} <span className="muted">→ {m.problem}</span></li>)}</ul>}
   </Card>;
 }
 

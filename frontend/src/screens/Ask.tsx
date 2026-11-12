@@ -94,8 +94,11 @@ function Reply({ question, answer, weighted, checking, checked, onAsk }: { quest
     try { await send("POST", "/api/v1/admin/ask/verified", answer.verify); setVerified("Saved: questions like this now use this answer."); }
     catch (e) { setVerified(e instanceof Error ? e.message : String(e)); }
   };
-  const how = { verified: "Verified answer", model: "Understood by AI, figures computed", meaning: "Found by meaning, figures computed",
-                rules: "Matched by words, figures computed" }[answer.understood ?? ""];
+  // verified and named: right 99%+ in the per-survey checks (etl/ask_quality.py); the rest are best matches to check
+  const how = { verified: "Verified answer", named: "Verified: the survey question's own name, figures computed",
+                name: "Best match by name: other survey questions share this name (below)",
+                model: "Best match, understood by AI: check the question below", meaning: "Best match by meaning: check the question below",
+                rules: "Best match by words: check the question below" }[answer.understood ?? ""];
   const drawn = useRef<Chart | null>(null);
   const file = `ask-${(source?.qcode ?? "answer").toLowerCase()}`;
   const notes = [question, answer.source_line ?? "", "Unweighted figures, from Coresight's surveys (Ask Coresight)."];

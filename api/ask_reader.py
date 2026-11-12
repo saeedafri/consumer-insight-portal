@@ -35,13 +35,13 @@ CUT_VALUES = [(r"\bgen ?z\b|\bzoomers?\b", "generation", "GenZ"), (r"\bmillennia
               (r"\bnortheast\b", "census_region", "Northeast"), (r"\bmidwest\b", "census_region", "Midwest"),
               (r"\b(the )?south\b(?! korea)", "census_region", "South"), (r"\b(the )?west\b", "census_region", "West"),
               (r"\burban\b", "urbanicity", "Urban"), (r"\bsuburban\b", "urbanicity", "Suburban"), (r"\brural\b", "urbanicity", "Rural")]
-CUT_DIMS = [(r"\bby (generation|generations|gen)\b|\bacross generations\b", "generation"),
-            (r"\bby (gender|sex)\b|\bmen (and|vs|versus) women\b|\bwomen (and|vs|versus) men\b", "gender"),
-            (r"\bby age\b|\bage (group|band)s?\b", "age_band"), (r"\bby (household )?income\b|\bincome (group|band|level)s?\b", "income_band"),
-            (r"\bby region\b|\bregions?\b", "census_region"), (r"\burbanicity\b|\burban,? suburban\b", "urbanicity")]
+CUT_DIMS = [(r"\bby (generation|generations|gen)\b|\bacross generations\b|\bwhich generations?\b", "generation"),
+            (r"\bby (gender|sex)\b|\bmen (and|vs|versus|or) women\b|\bwomen (and|vs|versus|or) men\b", "gender"),
+            (r"\bby age( group| band)?s?\b|\bage (group|band)s?\b|\bwhich age( group)?s?\b", "age_band"), (r"\bby (household )?income\b|\bincome (group|band|level)s?\b", "income_band"),
+            (r"\bby region\b|\bregions?\b|\b(the )?south (vs|versus|and|or) (the )?west\b", "census_region"), (r"\burbanicity\b|\burban,? suburban\b", "urbanicity")]
 KINDS = [(r"\bhow many (people|respondents|users|consumers|shoppers|adults|americans)\b|\bnumber of (people|respondents)\b", "count"),
          (r"\b(top|winner|won|most popular|leading|leader|highest|best|biggest|largest|most common|rank|ranking|favou?rite)\b", "top"),
-         (r"\b(trend|over time|history|historically|evolution|track(ed)?)\b", "trend"),
+         (r"\b(trend|over time|history|historically|evolution|track(ed)?|rising or falling|going up or down|up or down)\b", "trend"),
          (r"\b(change|changed|increase|increased|decrease|decreased|grow|grew|growth|rise|rose|fall|fell|drop|dropped|shift)\b", "change")]
 FILLER = re.compile(r"\b(what|which|who|how|many|much|percent(age)?|share|proportion|of|the|in|on|for|did|do|does|is|are|was|"
                     r"were|have|has|had|people|respondents|consumers|shoppers|users|americans|adults|show|me|tell|give|"
@@ -95,7 +95,9 @@ def periods(text: str) -> tuple[list[dict], str]:
                          r"|\bpast\s+(\d+)\s+(waves?|weeks?|surveys?)\b(?<!past 2 weeks)", text):
         unit = (m[2] or m[4]).rstrip("s").replace("survey", "wave")
         take(m, {"last": number(m[1] or m[3]), "unit": unit})
-    for m in re.finditer(r"\b(?:last|past|previous)\s+(week|month|year)\b", text):
+    # "last month" is a period; "(in the) past month" is how surveys word what a question covers ("used marijuana in the
+    # past month"), read as a period it answered "not asked then" (question bank, 12 Nov 2026)
+    for m in re.finditer(r"\b(?:last|previous)\s+(week|month|year)\b", text):
         take(m, {"latest": 2} if m[1] == "week" else {"last": 1, "unit": m[1], "previous": True})
     for m in re.finditer(r"\b(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th)\s+(?:latest|most recent|last)\s+(wave|survey|week)\b", text):
         take(m, {"latest": ORDINALS[m[1]]})
@@ -142,7 +144,7 @@ def read(question: str) -> dict:
     top = re.search(r"\btop\s+(\d+|three|five|ten)\b", text)
     # waves are only ever compared within one country (config/countries.yml): "China" asks the China survey, no name the first
     country = next((code for code, words in COUNTRY_WORDS.items() if words.search(text)), next(iter(COUNTRY_WORDS)))
-    about = rest
+    about = re.sub(r"[\u201c\"](yes|no|don't know|not sure)[\u201d\"]", " ", rest)   # a quoted Yes is an answer, not the subject (it found the tax-return question)
     for words in COUNTRY_WORDS.values():
         about = words.sub(" ", about)
     for pattern, *_ in CUT_DIMS + CUT_VALUES + GRAINS + KINDS:   # before the filler words: "by generation" is one phrase

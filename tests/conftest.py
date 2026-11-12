@@ -93,6 +93,17 @@ def own_notify_state(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def own_ask_files(tmp_path, monkeypatch):
+    """Each test's own Ask check report and publish-time names: a test that publishes runs etl/ask_quality.py
+    after_publish, which must never write the real logs/ (12 Nov 2026: test surveys appeared on the Logs page)."""
+    from api import ask_index
+    from etl import ask_quality, ask_semantic
+    monkeypatch.setattr(ask_quality, "REPORT", tmp_path / "ask-quality.json")
+    for module in (ask_index, ask_quality, ask_semantic):
+        monkeypatch.setattr(module, "SEMANTIC_ADDED", tmp_path / "ask-semantic.json")
+
+
+@pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     """A missed mock must fail closed before reaching MySQL, HTTP, SMTP or an API."""
     monkeypatch.setattr(socket.socket, "connect", _blocked_network)

@@ -52,6 +52,7 @@ from shared.core import access, api_keys, audit
 from shared.core.database import apply_sql, get_engine
 from shared.data import payloads
 from api import ask_model, assistant, exports, ingest, logs, mcp, metrics, signin, team
+from api.ask_index import read_json
 from api.search import SearchIndex
 from api.signin import admin, user
 from etl import launch_schedule
@@ -919,6 +920,13 @@ async def forget_role(role: str, request: Request, who: dict = Depends(super_adm
         log.warning("Role %s not dropped: %s", role, exc)
         raise HTTPException(503, ROLE_SAVE_FAILED)
     return applied(request, who, role, None)
+
+
+@app.get("/api/v1/admin/ask/quality")
+async def ask_quality(who: dict = Depends(admin)) -> list:
+    """Ask Coresight's check of each survey, newest first (etl/ask_quality.py after_publish, after every publish): how
+    many of the questions people may ask about it Ask got right, and how its verified answers did."""
+    return read_json(ask_model.LOGS / "ask-quality.json") or []
 
 
 @app.get("/api/v1/admin/health")

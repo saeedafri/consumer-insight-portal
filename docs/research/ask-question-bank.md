@@ -1,53 +1,75 @@
-# Ask Coresight question bank: who asks what, and how Ask scores (12 November 2026)
+# Ask Coresight: how every survey is made answerable, and how accuracy is measured (12 November 2026)
 
-The bank itself is `ask-question-bank.csv` (10,707 rows), written by `scripts/ask_question_bank.py` from the
-published catalogue (3,082 survey questions: 3,068 US, 14 China, staging's data of 12 Nov 2026). Every row names the
-survey question that answers it, so a right answer is known before the question is asked.
+## What 99% means here
 
-## Who uses the portal, and what they ask
+An answer is **right** when it uses a survey question that answers what was asked, from the right country, with the
+period, cut and kind asked (a trend is a line, a cut shows its groups), and every figure is computed from the published
+counts (exact by construction). Ask marks each answer:
 
-Sources: how comparable products describe their users (Morning Consult AI and its AI Connector, YouGov's Crunch AI
-agent, NIQ Ask Arthur, Tastewise, Collage), market-research practice writing (Quirks, FlexMR, Locally Optimistic,
-QuestionPro, Attest), Coresight's own published weekly survey notes, and the 63 questions people typed in CIP's
-audit log (`cip_access_log`, action `ask`). Reddit's search could not be read on 12 Nov 2026 (the site returned an
-error page), so no Reddit thread is used.
+- **Verified**: the question uses a survey question's stored name (its analyst name or an alias), so Ask answers from it
+  directly. Target: right 99% of the time or more, measured on every survey.
+- **Best match**: anything else (found by meaning, or a name several different questions share). The page says so and
+  shows the question used and the alternatives, so an analyst checks it before quoting it.
 
-| Who | What they come for | How they ask | In the bank |
-|---|---|---|---|
-| Analyst (Coresight research team) | The exact figure for a report: a wave, its base, a cut, a change and whether it is significant; a series for a chart | Short, precise, often the question's own name: "Tariff concerns by generation", "BD5 trend since Aug 2025", "Q3 2026 vs Q3 2025" | 6,202 rows: latest with base, trend, by generation / income / region, Gen Z vs Boomers, year vs year, by quarter, top answers |
-| Portal user (Coresight staff outside research: sales, editorial, events) | A number to quote and a chart to paste | Plain words, one topic: "What do consumers say about Amazon Prime?", "Is holiday spending rising or falling?" | 2,268 rows: what consumers say, one answer's share, rising or falling, season-specific |
-| Client (retailers, brands, investors) | A decision: who to target, whether something is growing, what changed since last year | A business question with the topic inside: "Should we act on tariff concerns?", "Which generation over-indexes on buy now pay later?" | 2,237 rows: decision, target audience, momentum, year on year |
+No product answers 99% of free text with no checking: ThoughtSpot, Snowflake Cortex Analyst and Databricks Genie all
+separate "trusted / verified" answers from the rest, as here.
 
-What comparable products show: users want the figure *with* its audience, period and comparison (Morning Consult's
-example: one brand's favorability by quarter, in three countries, for one audience); the answer must come from the
-vendor's own survey data, never from the model; and an answer built from a verified, curated question is labelled as
-such. Seasons drive a large share of retail questions (holiday, back-to-school, Black Friday, Prime Day, Valentine's,
-Easter, Mother's and Father's Day, Memorial Day, Fourth of July, Halloween, Thanksgiving): 2,213 bank rows name one.
+## The workflow, every survey, automatically (etl/publish.py publish → etl/ask_quality.py after_publish)
 
-## How Ask scores on the bank (quick answer, no AI model)
+| Step | What happens | Where |
+|---|---|---|
+| 1. Publish | The new wave's question files are written, as before | etl/publish.py |
+| 2. Name | Every question wording not named yet gets an analyst name, aliases and eight example asks from the small model (~$0.002 a survey); kept in logs/ask-semantic.json on /home, so a deploy keeps them | etl/ask_semantic.py name_new |
+| 3. Split shared names | Questions that got the same name but ask different things ("Economic outlook": the economy, and the pace of price rises) are named apart, once | etl/ask_semantic.py rename_shared |
+| 4. Check | Every question the bank writes about the new surveys' questions (latest, trend, each cut its data holds, periods compared, top answers, one answer, season) is asked and scored, at low CPU priority, ~6 s a survey | etl/ask_quality.py check_surveys |
+| 5. Show | Per survey: questions, named, asked, right, verified right, and the misses, on the Logs page | GET /api/v1/admin/ask/quality, logs/ask-quality.json |
+| 6. Answer | The API's index reads the new names at its next build; a question using one is answered as Verified in ~5 ms | api/ask_index.py named |
+
+A failure in steps 2-5 is logged and the publish stands. With no AI key, or the month's model budget spent, steps 2-3
+wait for the next publish; the check still runs and shows the survey's questions without names.
+
+By hand: `python -m etl.ask_semantic` (name into config/ask_semantic.json, reviewed in git),
+`python -m etl.ask_quality --surveys <ids>` (check older surveys), `python -m etl.ask_quality --published <api/v1>`
+(the whole catalogue, below).
+
+## Who asks what (the bank's questions)
+
+| Who | What they come for | How they ask |
+|---|---|---|
+| Analyst (Coresight research) | The exact figure for a report, its base, a cut, a change | "Tariff concerns by generation", "Recent clothing purchases by quarter" |
+| Portal user (sales, editorial, events) | A number to quote, a chart to paste | "What do consumers say about Amazon Prime?", "Is it rising or falling?" |
+| Client (retailers, brands, investors) | Who to target, what is growing | "Which generation over-indexes on Temu?", "Are women or men more likely to choose…?" |
+
+Sources: Morning Consult AI and its connector, YouGov Crunch AI, NIQ Ask Arthur, Tastewise, Collage (vendor pages);
+Quirks, FlexMR, Locally Optimistic (research practice); Coresight's weekly survey notes; CIP's own audit log.
+
+## Results (quick answer, no AI model, staging's data of 12 Nov 2026)
 
 | | Right |
 |---|---|
-| All 10,707 | 4,795 (44.8%), of which 1,042 from the same question asked in another study |
-| Analyst / user / client | 46.8% / 61.3% / 22.4% |
-| Latest / top answers / year vs year / trend / cut | 52.3% / 68.0% / 73.0% / 38.9% / 33.6% |
-| Speed | median 11.6 ms, 95th percentile 18.7 ms (the server's own time) |
+| Verified answers, whole catalogue | **29,627 of 29,838 (99.3%)** |
+| Newest four US weekly surveys (2, 9 Nov; 19, 26 Oct), all questions | 99.1% to 99.6% |
+| The same, verified answers | 99.4% to 99.9% |
+| Templated questions, whole catalogue (34,803) | 96.4% (analyst 96.8%, client 95.8%, user 95.8%) |
+| Wording Ask never saw (3,801: the last two of each question's eight asks, held out from the search) | 40.4%, shown as Best match |
+| Hand-written golden set (161) | 139 (86%) |
+| Speed on the server | median 5.7 ms |
 
-The 161-question golden set scores 86% because it asks about the topics people ask most; the bank covers every
-question in the catalogue, including 2019-2023 ad hoc studies that asked nearly the same question with other words.
-What goes wrong: the wrong survey question (4,241), a cut the survey cannot give or did not show (1,290; some ad hoc
-and business-to-business studies hold no generation or income, so the bank's cut row is itself unanswerable there),
-no answer (268), no trend (113).
+How it got there, each change measured on the same 5,000 questions: 71.3% → 75.4% (survey wording "past month" not a
+period; a study asked in the period named; a quoted answer not the subject) → 79.0% (which generation / women or men /
+South vs West read as cuts) → 82.0% (direction words kept: "spend more" is not "spend less"; a study that holds the cut
+asked for) → 87.8% → 91.5% (shared names: the search picks among them, else the longest-running; one-word names;
+"rising or falling" a trend). The bank also found a crash (a cut whose groups were never asked a question), now fixed.
 
-## What reaches 99%
+## What is not yet 99%, and what moves it
 
-Choosing one of 3,082 questions from free text cannot reach 99%: many questions differ only by study and year, and a
-client's "Should we act on…" carries few of the survey's words. The products that claim trust do the same thing:
-a verified question is answered from its stored answer, exactly; anything else is labelled as a best match.
+- **Older one-off studies (2019-2023)**: many ask nearly the same thing in different words, so names collide. Step 3
+  splits them at staging's first publish; the check shows the result per survey.
+- **China (14 questions)**: no names yet (they were loaded after the last naming run, and there is no AI key here):
+  88.2%; named at staging's first publish, then checked.
+- **Wording no name covers (40.4%)**: answered as Best match. Each real question analysts type (cip_access_log) that
+  an admin saves as verified on the Ask page becomes a stored answer, so the share of Verified answers grows with use.
+- **Golden set "Economic outlook by generation"**: the name was given to the wrong questions; step 3 renames them.
 
-1. A verified-answer table built from this bank once reviewed: the exact wording (normalised) → the survey question,
-   period, cut and kind. A match is answered from it at once (a dictionary lookup, under a millisecond on the server)
-   and marked verified; these rows are right by construction.
-2. Questions near a verified one (same meaning, other words) take its reading, then the figures are computed as now.
-3. When two studies asked the same question, Ask says which it used and offers the other, instead of choosing silently.
-4. The bank's rows that fail today become the test: the score is reported per persona and kind after every change.
+The bank: `ask-question-bank.csv.gz` (38,604 rows: question, who, purpose, kind, country, season, the survey question
+that answers it, and what Ask answered, how, in how long, and what was wrong).

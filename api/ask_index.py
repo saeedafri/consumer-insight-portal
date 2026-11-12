@@ -41,7 +41,7 @@ SAME_IGNORES = frozenset("select all that apply only one or none of these the a 
 WORD_CANDIDATES = 4  # retrieval: candidates from the keyword ranking the meaning ones missed (names, "dining out")
 AREAS = ["retailers", "shopping categories", "online and ecommerce", "grocery and food", "apparel", "beauty", "home",
          "holidays and events", "deals and promotions", "genai and technology", "health and glp-1", "personal finances",
-         "economy and prices", "tariffs", "social media shopping", "travel and leisure", "demographics", "other"]   # scripts/ask_semantic.py TOPICS
+         "economy and prices", "tariffs", "social media shopping", "travel and leisure", "demographics", "other"]   # etl/ask_semantic.py TOPICS
 AREA_BOOST = 0.03   # retrieval: added for a question in the asked question's business area
 ASK_WEIGHT = 0.3    # retrieval: the nearest ask's share of closeness; golden set right first 109 alone, 118 at 0.3, 97 at max (12 Nov 2026)
 VERIFIED = CONFIG / "ask_verified.yml"   # approved question → answer plans (reviewed in git); admins add more at runtime
@@ -55,9 +55,13 @@ COUNT_CACHE_MB = 48   # parsed question files kept in memory; the largest (q1, e
 FIELDS = {"name": 3.5, "text": 3.0, "topic": 2.5, "answers": 2.0, "older": 1.5}   # name: the semantic layer's business name and aliases
 # words that frame a question rather than name its subject ("Should we act on tariff concerns? Show the latest numbers"):
 # left out on both sides when a question is matched to a survey question's name (Index.named)
+# words that tell two questions apart though the reader drops them from a subject ("spend more" vs "spend less" on categories)
+DIRECTION_WORDS = frozenset("more less fewer increase increased decrease decreased higher lower".split())
 FRAME_WORDS = frozenset("""should we act say said says chose choose chosen answers answer among over indexes index grown grow rising
-falling going up down trend top numbers number base figures latest about consumers people think feel""".split())
-SEMANTIC = CONFIG / "ask_semantic.json"   # scripts/ask_semantic.py: a business name, aliases and topic per question wording
+falling going up down trend top numbers number base figures latest about consumers people think feel different differ likely
+tell change changed over-indexes over-index""".split())
+SEMANTIC = CONFIG / "ask_semantic.json"   # etl/ask_semantic.py: a business name, aliases and topic per question wording
+SEMANTIC_ADDED = ask_model.LOGS / "ask-semantic.json"   # the same, for wordings named after a publish (etl/ask_quality.py)
 STOP = set("""about above after again against also among answer answers been before being below between both could
     during each from further have having here into itself just more most other over same should some such than that their
     them then there these they this those through under until very were what when where which while whom will with would
@@ -69,12 +73,23 @@ def digest(text: str) -> str:
     return hashlib.sha1(" ".join(text.lower().split()).encode()).hexdigest()[:12]
 
 
+def read_json(path: Path) -> dict:
+    """A JSON file's content, {} when it is missing or unreadable."""
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
 def name_key(text: str) -> str:
     """A subject as the name table holds it: the reader's subject words (api/ask_reader.py read), frame words left out,
     and a year that names the subject rather than a period ("Holiday spending 2025" is not "Holiday spending 2024")."""
+    text = re.sub(r"[\u201c\"][^\u201d\"]*[\u201d\"]|\b(more|less) likely\b", " ", text)   # a quoted answer ("Yes") is not the subject
     plan = ask_reader.read(text)
-    years = [y for y in re.findall(r"\b20[12]\d\b", text) if y not in repr(plan["when"])]
-    return " ".join([w for w in plan["about"].split() if w not in FRAME_WORDS] + years)
+    years = {y for y in re.findall(r"\b20[12]\d\b", text) if y not in repr(plan["when"])}
+    direction = DIRECTION_WORDS & set(re.findall(r"[a-z]+", text.lower()))
+    # a set, in order: "Categories for online shopping" and "online shopping categories" are one name
+    return " ".join(sorted({w for w in plan["about"].split() if w not in FRAME_WORDS} | years | direction))
 
 
 def stems(text: str) -> list[str]:
@@ -185,14 +200,14 @@ class Index:
                 for w, c, a in zip(data["w"], data["c"], data["a"]):
                     if c == 0 and w in waves_in:
                         by_wave.setdefault(data["waves"][w][0], set()).add(data["answers"][a][2])
-                parts[key] = {"key": key, "file": file, "labels": shown, "wave_answers": by_wave, "versions": versions, "qcode": qcode, "family": family,
+                parts[key] = {"key": key, "file": file, "labels": shown, "cuts": {c[0] for c in data["cuts"]}, "wave_answers": by_wave, "versions": versions, "qcode": qcode, "family": family,
                                   "study_type": study_type, "text": texts[-1], "first": asked[0]["wave_date"],
                                   "title": family.replace("_", " ").title(),
                                   "last": asked[-1]["wave_date"], "waves": len(asked),
                                   "surveys": [w["survey_id"] for w in asked], "dates": [w["wave_date"] for w in asked]}
                 part_words[key] = {"text": texts[-1], "topic": " ".join(topics.get(qcode.upper(), []) + [family.replace("_", " ").replace("-", " ")]),
                                    "answers": " ".join(labels), "older": " ".join(texts[:-1])}
-        named = json.loads(SEMANTIC.read_text()) if SEMANTIC.exists() else {}
+        named = {**read_json(SEMANTIC), **read_json(SEMANTIC_ADDED)}   # a publish's new names and renames (etl/ask_semantic.py) over the config
         for part in parts.values():   # the semantic layer: what analysts call it, how else they say it, its topic
             entry = named.get(digest(part["text"]), {})
             part.update(name=entry.get("name", ""), aliases=entry.get("aliases", []), area=entry.get("topic", ""), asks=entry.get("asks", []))
@@ -237,18 +252,23 @@ class Index:
                            for key, doc in self.docs.items()}
         # the stored patterns: each survey question's analyst name and aliases, as a question's subject reads (name_key),
         # to its survey questions, longest-running first. A question whose subject is one of them is answered from it at
-        # once; its periods, cuts and kind still come from the question (scripts/ask_question_bank.py tests every one)
+        # once; its periods, cuts and kind still come from the question (etl/ask_quality.py tests every one)
         self.names: dict[str, list[str]] = {}
         for key, doc in sorted(self.docs.items(), key=lambda kv: (kv[1]["waves"], kv[1]["last"]), reverse=True):
             for name in dict.fromkeys([doc["name"], *doc["aliases"]]):
                 pattern = name_key(name)
-                if len(pattern.split()) >= 2 and key not in self.names.get(pattern, []):   # one word ("spending") names too much
+                if pattern and key not in self.names.get(pattern, []):
                     self.names.setdefault(pattern, []).append(key)
         words = {key: set(re.findall(r"[a-z0-9]+", doc["text"].lower())) - SAME_IGNORES for key, doc in self.docs.items()}
         alike = lambda a, b: len(words[a] & words[b]) >= SAME_WORDING * len(words[a] | words[b])   # noqa: E731
         # a name two different questions share ("Economic outlook": the economy, and the pace of price rises) is left to the
         # search; the same question asked by several studies (Amazon Prime) keeps the name
-        self.names = {p: keys for p, keys in self.names.items() if all(alike(keys[0], k) for k in keys[1:])}
+        # names two different questions share ("Economic outlook": the economy, and the pace of price rises; "Valentine's Day
+        # spending expectations" 2021 and 2023): used only when the question's period leaves questions alike (named)
+        self.ambiguous = {p for p, keys in self.names.items() if not all(alike(keys[0], k) for k in keys[1:])}
+        self.alike = alike
+        self.name_words = {p: frozenset(p.split()) for p in self.names}
+        self.answer_words = {key: set(re.findall(r"[a-z0-9$%'-]+", " ".join(doc["labels"]).lower())) for key, doc in self.docs.items()}
         total = max(len(self.docs), 1)
         self.idf = {s: math.log(1 + total / len(keys)) for s, keys in self.postings.items()}
         self.vocabulary = sorted({w for d in self.docs.values() for w in re.findall(r"[a-z]{4,}", d["text"].lower())}
@@ -369,10 +389,36 @@ class Index:
                 out.append(w)
         return out[:limit + WORD_CANDIDATES]   # the nearest by meaning, and a few found only by their words ("Costco")
 
-    def named(self, about: str, visible: set[int]) -> str | None:
-        """The survey question a question names by its analyst name or an alias (the longest-running this person may see),
-        or None. Microseconds: a dictionary lookup."""
-        return next((key for key in self.names.get(name_key(about), []) if not visible.isdisjoint(self.docs[key]["surveys"])), None)
+    def named(self, question: str, visible: set[int], plan: dict | None = None) -> tuple[str | None, bool]:
+        """(survey question, sure) for a question that uses a survey question's analyst name or an alias, else (None,
+        False). The name may be the whole subject, or sit among that question's own answers ("Are women or men more
+        likely to choose Toys or games for categories purchased from mass merchandisers?"; two words or more, the
+        longest wins). Of the studies holding the name, the first (longest-running) this person may see that can answer:
+        asked in the period named, holding the cut, with history for a trend. sure: the name is that question's alone,
+        or the period leaves only questions alike; a name different questions share ("Recent clothing purchases") gives
+        the longest-running, not sure: a best match, the others listed. ~1 ms."""
+        subject = name_key(question)
+        words = set(subject.split())
+        keys = self.names.get(subject)
+        if not keys:
+            inside = [(len(n), p) for p, n in self.name_words.items() if len(n) >= 2 and n <= words and p not in self.ambiguous
+                      and words - n <= self.answer_words[self.names[p][0]]]
+            keys = self.names[max(inside)[1]] if inside else []
+        keys = [k for k in keys if not visible.isdisjoint(self.docs[k]["surveys"])]
+        plan = plan or {}
+        dated = [s for s in plan.get("when", []) if {"year", "month", "quarter", "from"} & s.keys()]
+        sure = subject not in self.ambiguous
+        if not sure:   # the period may leave only one of the questions sharing the name
+            within = [k for k in keys if dated and all(in_period(s, self.docs[k]["dates"]) for s in dated)]
+            if within and all(self.alike(within[0], k) for k in within[1:]):
+                keys, sure = within, True
+        trend = bool(plan.get("grain")) or plan.get("kind") == "trend"
+        able = lambda k: (all(in_period(s, self.docs[k]["dates"]) for s in dated),   # noqa: E731
+                          set(plan.get("cuts", {})) <= self.docs[k]["cuts"], not trend or self.docs[k]["waves"] >= 3)
+        best = min(keys, key=lambda k: [not ok for ok in able(k)], default=None)
+        # none holds the cut or the history asked for: the search may find a question that does ("in-store clothing by
+        # quarter" is the weekly categories question, not a one-off study); not asked in the period is an answer
+        return (best, sure) if best is not None and all(able(best)[1:]) else (None, False)
 
     def load_verified(self) -> None:
         """The verified questions (config/ask_verified.yml and the admins' additions in logs/ask-verified.json), each

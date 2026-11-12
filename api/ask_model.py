@@ -200,7 +200,11 @@ def question_vectors(texts: dict[str, str], prune: bool = False) -> dict[str, np
             saved = {h: v for h, v in saved.items() if not prune or h in kept}
             try:
                 LOGS.mkdir(exist_ok=True)
-                np.savez(VECTORS, hashes=np.array(list(saved)), vectors=np.array(list(saved.values()), np.float16))   # half size, same ranking
+                # written aside, then renamed in one step: the publish's Ask check (etl/ask_quality.py) and the API share it
+                part = VECTORS.with_suffix(f".{os.getpid()}.part")
+                with part.open("wb") as f:
+                    np.savez(f, hashes=np.array(list(saved)), vectors=np.array(list(saved.values()), np.float16))   # half size, same ranking
+                os.replace(part, VECTORS)
             except OSError:
                 log.warning("Ask model: vectors not saved")
             log.info("Ask model: embedded %d new texts", len(missing))
