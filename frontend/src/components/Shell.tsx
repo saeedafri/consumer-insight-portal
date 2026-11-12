@@ -16,7 +16,7 @@ import { fmtDate } from "../stats";
 import { perf } from "../perf";
 import { isSaved, removeView, saveView } from "../saved";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, MessageSquareText, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
+import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 // The perf badge is the developer's: shown only in a browser that opened the portal once with ?perf=1 (?perf=0 hides it again)
@@ -178,7 +178,6 @@ export default function Shell() {
            {...(mobileMenuOpen ? { role: "dialog", "aria-modal": true } : {})}>
       <RailGroup label="Explore">
         <NavLink to="/" end><Icon of={House} />Home</NavLink>
-        {allowed(me, "ask") && <NavLink to="/ask"><Icon of={MessageSquareText} />Ask Coresight</NavLink>}
         <NavLink to="/library"><Icon of={LibraryBig} />Survey library</NavLink>
         {allowed(me, "search") && <NavLink to="/search"><Icon of={Search} />Search questions</NavLink>}
         {allowed(me, "schedule") && <NavLink to="/schedule"><Icon of={CalendarDays} />Launch schedule</NavLink>}

@@ -26,6 +26,8 @@ openpyxl==3.1.5                 # Excel files
 xlrd==2.0.2                     # Baidu QSS's .xls toplines (etl/baidu_qss_export.py); openpyxl reads only .xlsx
 python-pptx==1.0.2              # PowerPoint export (api/exports.py)
 anthropic==2.0.0                # Ask CIP (api/assistant.py); without credentials it answers with cited figures only
+onnxruntime==1.31.1             # Ask Coresight's search model on our own CPU (api/ask_model.py embed)
+tokenizers==0.23.3              # its word splitter
 
 # Settings
 python-dotenv==1.2.3            # reads .env on a developer's machine

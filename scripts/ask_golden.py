@@ -3,6 +3,7 @@
 
     python scripts/ask_golden.py              # every question, a line each, then the score per step and the model spend
     python scripts/ask_golden.py --only 20    # the first 20 (a quick check)
+    python scripts/ask_golden.py --quick      # the Ask page's first answer: by meaning and rules, no model
 
 Run before every push to staging, after any change to api/ask_*.py, the model prompt or config/ask_semantic.json.
 A repeat costs nothing: the model's readings are kept in logs/ask-readings.json.
@@ -55,23 +56,25 @@ def score(item: dict, found: dict) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--only", type=int, default=0)
+    ap.add_argument("--quick", action="store_true")
     args = ap.parse_args()
     golden = yaml.safe_load(GOLDEN.read_text())[:args.only or None]
     waves = json.loads(gzip.decompress((PUBLISHED / "waves.json.gz").read_bytes()))
     index = Index(PUBLISHED / "questions", waves)
-    print(f"Model {'on (' + ask_model.model() + ')' if ask_model.ready() else 'off (rules only)'} · {len(golden)} questions\n")
+    print(f"Model {'off (quick)' if args.quick else 'on (' + ask_model.model() + ')' if ask_model.ready() else 'off (rules only)'} · {len(golden)} questions\n")
     visible = {w["survey_id"] for w in waves}
     before = ask_model.spent()["usd"]
     right, times = 0, []
     for item in golden:
         started = time.perf_counter()
-        found = assistant.answer(item["q"], index, visible)
+        found = assistant.answer(item["q"], index, visible, args.quick)
         times.append(time.perf_counter() - started)
         problems = score(item, found)
         right += not problems
         code = found["sources"][0]["qcode"] if found["sources"] else "-"
         print(f"{'ok  ' if not problems else 'MISS'} {times[-1]:4.1f}s {item['q'][:60]:<60} → {code:<6} {found.get('understood', '-'):<8} {'; '.join(problems)}")
-    print(f"\n{right} of {len(golden)} right ({right / len(golden):.0%}) · median {sorted(times)[len(times) // 2]:.2f} s · "
+    print(f"\n{right} of {len(golden)} right ({right / len(golden):.0%}) · median {sorted(times)[len(times) // 2]:.3f} s, "
+          f"slowest {max(times):.3f} s · "
           f"model spend this run ${ask_model.spent()['usd'] - before:.4f}")
     return 0
 

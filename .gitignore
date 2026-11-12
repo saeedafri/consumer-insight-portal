@@ -29,4 +29,6 @@ data/published/
 logs/etl-heartbeat.json
 data/coded/
 # Ask Coresight's model readings, spend and question vectors (api/ask_model.py): server state, never committed
-logs/ask-*.json
+logs/ask-*
+# Ask Coresight's search model, downloaded by deploy/ask-model-download.py (67 MB)
+models/

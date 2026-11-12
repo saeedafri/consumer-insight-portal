@@ -75,6 +75,15 @@ def csi_db(tmp_path, monkeypatch):
     engine.dispose()
 
 
+@pytest.fixture(autouse=True, scope="session")
+def own_ask_vectors():
+    """Test indexes' vectors never replace the real ones (logs/ask-vectors.npz): the local search model runs in tests.
+    Session-wide, so module-scoped indexes are built after it."""
+    from pathlib import Path
+    from api import ask_model
+    ask_model.VECTORS = Path(_TEST_ROOT) / "ask-vectors.npz"
+
+
 @pytest.fixture(autouse=True)
 def own_notify_state(tmp_path, monkeypatch):
     """Tests' fake failures must never fill the real throttle (logs/notify-state.json): it would

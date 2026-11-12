@@ -667,12 +667,14 @@ async def ask_index(who: dict):
     return index, {w["survey_id"] for w in waves if access.sees(who, w)}
 
 
-async def ask_answer(who: dict, question: str) -> dict:
+async def ask_answer(who: dict, question: str, quick: bool = False, check: bool = False) -> dict:
     """Ask CIP for the page (POST /api/v1/ask) and the MCP connector's ask tool alike: Ask on the person's menu, their
     per-minute limit (config/access.yml limits.ask), and at most ASK_SLOTS questions computed at once per worker, so a
-    burst queues briefly, then "busy", never slows the site."""
+    burst queues briefly, then "busy", never slows the site. check: the page's second pass at a question it asked
+    quick (api/assistant.py answer), not counted again."""
     require_feature(who, "ask")
-    if not access.spend(who["email"], "ask"):
+    # ponytail: a check is trusted to follow its quick ask; the monthly model cap bounds what a misuse could cost
+    if not check and not access.spend(who["email"], "ask"):
         raise HTTPException(429, "Too many questions: wait a minute", headers={"Retry-After": "60"})
     try:
         await asyncio.wait_for(ASK_SLOTS.acquire(), ASK_WAIT)
@@ -680,7 +682,7 @@ async def ask_answer(who: dict, question: str) -> dict:
         raise HTTPException(503, "Ask Coresight is busy: try again in a few seconds", headers={"Retry-After": "5"})
     try:
         index, shown = await ask_index(who)
-        return await run_in_threadpool(assistant.ask, question, index, shown, access.scope(who))
+        return await run_in_threadpool(assistant.ask, question, index, shown, access.scope(who), quick)
     finally:
         ASK_SLOTS.release()
 
@@ -700,10 +702,12 @@ async def ask_verified(request: Request, who: dict = Depends(admin)) -> dict:
 
 @app.post("/api/v1/ask")
 async def ask(request: Request, who: dict = Depends(user)) -> dict:
-    """A question in plain words, answered from the published survey figures with a chart (api/assistant.py), no model
-    and no database. Only from the waves this person may see."""
-    question = str((await team.json_body(request)).get("question") or "")
-    answer = await ask_answer(who, question)
+    """A question in plain words, answered from the published survey figures with a chart (api/assistant.py), no
+    database. Only from the waves this person may see. {"quick": true}: by meaning and rules alone, in ~100 ms;
+    {"check": true}: the same question read by the model, asked after a quick answer that says check."""
+    body = await team.json_body(request)
+    question = str(body.get("question") or "")
+    answer = await ask_answer(who, question, quick=body.get("quick") is True, check=body.get("check") is True)
     audit.record(request, "ask", target=question[:300], detail={"mode": answer["mode"], "sources": [s["link"] for s in answer["sources"]]})
     return answer
 

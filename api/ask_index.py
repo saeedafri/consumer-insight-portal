@@ -43,12 +43,10 @@ AREAS = ["retailers", "shopping categories", "online and ecommerce", "grocery an
          "holidays and events", "deals and promotions", "genai and technology", "health and glp-1", "personal finances",
          "economy and prices", "tariffs", "social media shopping", "travel and leisure", "demographics", "other"]   # scripts/ask_semantic.py TOPICS
 AREA_BOOST = 0.03   # retrieval: added for a question in the asked question's business area
+ASK_WEIGHT = 0.3    # retrieval: the nearest ask's share of closeness; golden set right first 109 alone, 118 at 0.3, 97 at max (12 Nov 2026)
 VERIFIED = CONFIG / "ask_verified.yml"   # approved question → answer plans (reviewed in git); admins add more at runtime
-VERIFIED_NEAR = 0.9   # closeness in meaning from which a question is a verified one (with the same names and groups)
-LEARNED = ask_model.LOGS / "ask-learned.json"   # questions the model read: a rewording of one reuses its reading
-LEARNED_NEAR = 0.93   # stricter than a verified one: the model's reading, not an analyst's
-LEARNED_KEEP = 5000   # the newest kept (~1.5 KB each with its vector)
-LEARN_LOCK = threading.Lock()
+VERIFIED_NEAR = 0.91   # closeness in meaning (local model) from which a question is a verified one (with the same names and
+                       # groups): "Holiday spending expectations" is 0.903 from the holiday finances one, a different question
 STANDING = 0.06     # retrieval: up to this added to a closeness (~0.5–0.8) for a question asked a year of waves and still asked
 SAME_ANSWERS = 0.6   # share of a wave's answers that must be the question's own for the wave to join its series
 SAME_WORDING = 0.5   # shared words / all words: "holiday 2025" vs "holiday 2026" stays one question, a reused code does not
@@ -136,8 +134,6 @@ def wording_groups(versions: list[str]) -> list[list[int]]:
 
 class Index:
     """Every published question, ranked for a question, with where its counts are."""
-    learned: list[dict] = []   # questions the model read (load_verified, learn)
-    learned_vectors: np.ndarray | None = None
 
     def __init__(self, root: Path, waves: list[dict]):
         self.root = root
@@ -183,7 +179,7 @@ class Index:
         named = json.loads(SEMANTIC.read_text()) if SEMANTIC.exists() else {}
         for part in parts.values():   # the semantic layer: what analysts call it, how else they say it, its topic
             entry = named.get(digest(part["text"]), {})
-            part.update(name=entry.get("name", ""), aliases=entry.get("aliases", []), area=entry.get("topic", ""))
+            part.update(name=entry.get("name", ""), aliases=entry.get("aliases", []), area=entry.get("topic", ""), asks=entry.get("asks", []))
             part_words[part["key"]]["name"] = " ".join([part["name"], *part["aliases"]])
         # one entry per question whatever code it was asked under: the same wording in the same study (q5 since 2024, Q5
         # before) is one series, so "all waves" means all of them
@@ -219,12 +215,17 @@ class Index:
                         held = self.postings.setdefault(s, {})
                         held[key] = max(held.get(key, 0.0), FIELDS[field])
         self.parts = parts
-        # meaning: one vector per question (api/ask_model.py), from its wording, answers and topic words; none without a key
+        # meaning: one vector per question (api/ask_model.py), from its wording, answers and topic words, and one per
+        # analyst's ask (config/ask_semantic.json): a question's closeness joins its own and its nearest ask's (ASK_WEIGHT)
         self.embed_text = {key: f"{doc['name']}; {'; '.join(doc['aliases'])}. {doc['text']} | answers: {'; '.join(doc['labels'])[:300]}"
                            for key, doc in self.docs.items()}
-        found = ask_model.question_vectors(self.embed_text, prune=True)
+        asks = {f"ask {a}": a for doc in self.docs.values() for a in doc.get("asks", [])}
+        found = ask_model.question_vectors({**self.embed_text, **asks}, prune=True)
         self.vector_keys = [k for k in self.docs if k in found]
         self.vectors = np.array([found[k] for k in self.vector_keys], np.float32) if self.vector_keys else None
+        owners = [(i, f"ask {a}") for i, k in enumerate(self.vector_keys) for a in self.docs[k].get("asks", []) if f"ask {a}" in found]
+        self.ask_owner = np.array([i for i, _ in owners], np.int32)
+        self.ask_vectors = np.array([found[a] for _, a in owners], np.float32) if owners else None
         areas = ask_model.question_vectors({a: f"survey questions about {a}" for a in AREAS}) if self.vector_keys else {}
         self.area_vectors = np.array([areas[a] for a in AREAS], np.float32) if len(areas) == len(AREAS) else None
         self.load_verified()
@@ -310,7 +311,12 @@ class Index:
             asked = made[0] if made is not None else None
         if asked is None:
             return words
-        near = self.vectors @ asked + self.standing   # meaning, plus a little for long-running and recent questions
+        near = self.vectors @ asked
+        if self.ask_vectors is not None:   # joined with its nearest analyst's ask
+            nearest_ask = near.copy()
+            np.maximum.at(nearest_ask, self.ask_owner, self.ask_vectors @ asked)
+            near = (1 - ASK_WEIGHT) * near + ASK_WEIGHT * nearest_ask
+        near = near + self.standing   # plus a little for long-running and recent questions
         if self.area_vectors is not None:   # the question's business area (Uber's "workspaces"): its questions a little ahead
             area = AREAS[int(np.argmax(self.area_vectors @ asked))]
             near = near + AREA_BOOST * np.array([self.docs[k]["area"] == area for k in self.vector_keys], np.float32)
@@ -345,42 +351,15 @@ class Index:
         self.verified = [v for v in self.verified if v["question"] in found]
         self.verified_vectors = np.array([found[v["question"]] for v in self.verified], np.float32) if self.verified else None
         log.info("Ask verified questions: %d", len(self.verified))
-        try:
-            kept = json.loads(LEARNED.read_text())
-        except (OSError, ValueError):
-            kept = []
-        self.learned = [{k: v for k, v in e.items() if k != "v"} for e in kept]
-        self.learned_vectors = np.array([e["v"] for e in kept], np.float32) if kept else None
 
     def verified_for(self, asked: np.ndarray | None) -> dict | None:
-        """The verified question nearest in meaning, if at least VERIFIED_NEAR, else a question the model read before,
-        if at least LEARNED_NEAR (the caller checks names and groups). Milliseconds: no model call."""
-        if asked is None:
+        """The verified question nearest in meaning, if at least VERIFIED_NEAR (the caller checks names and groups).
+        Milliseconds: no model call."""
+        if asked is None or self.verified_vectors is None:
             return None
-        if self.verified_vectors is not None:
-            near = self.verified_vectors @ asked
-            best = int(np.argmax(near))
-            if near[best] >= VERIFIED_NEAR:
-                return {**self.verified[best], "near": float(near[best])}
-        if self.learned_vectors is not None:
-            near = self.learned_vectors @ asked
-            best = int(np.argmax(near))
-            if near[best] >= LEARNED_NEAR and self.learned[best]["key"] in self.docs:
-                return {**self.learned[best], "near": float(near[best]), "learned": True}
-        return None
-
-    def learn(self, entry: dict, vector: np.ndarray) -> None:
-        """A question the model read and the figures answered (api/assistant.py): kept with its vector, so the same
-        question in other words reuses the reading (research 11 Nov 2026: paraphrase reuse). In memory at once, and in
-        logs/ask-learned.json for the next start."""
-        with LEARN_LOCK:
-            self.learned = (self.learned + [entry])[-LEARNED_KEEP:]
-            rows = [vector.astype(np.float32)] if self.learned_vectors is None else [*self.learned_vectors, vector.astype(np.float32)]
-            self.learned_vectors = np.array(rows[-LEARNED_KEEP:], np.float32)
-            try:
-                LEARNED.write_text(json.dumps([{**e, "v": [round(float(x), 5) for x in v]} for e, v in zip(self.learned, self.learned_vectors)]))
-            except OSError as exc:
-                log.warning("Ask: could not keep a learned question: %s", exc)
+        near = self.verified_vectors @ asked
+        best = int(np.argmax(near))
+        return {**self.verified[best], "near": float(near[best])} if near[best] >= VERIFIED_NEAR else None
 
     def counts(self, key: str) -> dict:
         """One question's cells over every code and wording it was asked under, as one series: waves (oldest first,

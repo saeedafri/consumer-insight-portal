@@ -1,7 +1,9 @@
 // Ask Coresight (/app/ask): a question in plain words, answered from the portal's own published survey figures with
-// the chart that fits (api/assistant.py: no AI model, no database, milliseconds). A conversation: each answer appears
-// right under the box, newest first, with its headline figure, the points, the chart, notes, its source and every figure.
-// A question it cannot place shows the closest survey questions instead of a guess.
+// the chart that fits (api/assistant.py, no database). Each question is asked twice: quick (the nearest survey question
+// by meaning, ~100 ms) is shown at once; when it says check, the AI model's reading follows and replaces it only if it
+// found a differently worded question (the same wording asked by another study is the same answer). A conversation: each answer appears right under the box, newest first, with its headline
+// figure, the points, the chart (line, bars, columns, donut or table, as the figures allow), notes, its source and
+// every figure. A question it cannot place shows the closest survey questions instead of a guess.
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { send, useMe } from "../api";
@@ -22,15 +24,33 @@ const FIGURE = /([+−-]?\d[\d,]*(?:\.\d+)?%|[+−-]\d+(?:\.\d+)? pts|\d[\d,]* o
 const Bold = ({ text }: { text: string }) =>
   <>{text.split(FIGURE).map((part, i) => i % 2 ? <b key={i}>{part}</b> : <Fragment key={i}>{part}</Fragment>)}</>;
 
-/** The ECharts option for an Ask chart: lines over time, horizontal bars (long answer names stay readable), grouped
- *  bars by a cut, or a donut for a single choice that adds up to 100%. */
-function option(chart: AskChart) {
+type View = "line" | "bar" | "column" | "donut" | "table";
+const VIEW_NAMES: Record<View, string> = { line: "Line", bar: "Bars", column: "Columns", donut: "Donut", table: "Table" };
+
+/** The ways an answer's figures can be drawn: over time a line or columns; one period bars or columns, and a donut
+ *  when its answers add up to 100% (a single choice); always a table. The server's choice first. */
+function views(chart: AskChart): View[] {
+  if (chart.type === "line") return ["line", "column", "table"];
+  const total = chart.series.length === 1 ? chart.series[0].data.reduce<number>((t, v) => t + (v ?? 0), 0) : 0;
+  return [...(chart.type === "donut" ? ["donut"] as View[] : []), "bar", "column", ...(chart.type !== "donut" && Math.abs(total - 100) <= 1.5 ? ["donut"] as View[] : []), "table"];
+}
+
+/** The ECharts option for an Ask chart drawn as `view`: lines over time, horizontal bars (long answer names stay
+ *  readable), columns, or a donut for a single choice that adds up to 100%. */
+function option(chart: AskChart, view: View) {
   const pct = { valueFormatter: (v: unknown) => (v == null ? "not asked" : `${v}%`) };
-  if (chart.type === "donut")
+  if (view === "column")
+    return { tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, ...pct }, legend: chart.series.length > 1 ? { bottom: 0, type: "scroll" } : undefined,
+             grid: { left: 8, right: 16, top: 24, bottom: chart.series.length > 1 ? 40 : 8, containLabel: true },
+             xAxis: { type: "category", data: chart.categories, axisLabel: { interval: 0, rotate: chart.categories.length > 6 ? 35 : 0, width: 110, overflow: "truncate" } },
+             yAxis: { type: "value", axisLabel: { formatter: "{value}%" } },
+             series: chart.series.map(s => ({ name: s.name, type: "bar", data: s.data, barMaxWidth: 28,
+                                              label: { show: chart.series.length === 1 && chart.categories.length <= 16, position: "top", formatter: "{c}%" } })) };
+  if (view === "donut")
     return { tooltip: { trigger: "item", ...pct }, legend: { bottom: 0, type: "scroll" },
              series: [{ type: "pie", radius: ["45%", "72%"], label: { formatter: "{d}%" },
                         data: chart.categories.map((name, i) => ({ name, value: chart.series[0].data[i] })) }] };
-  if (chart.type === "line")
+  if (view === "line")
     return { tooltip: { trigger: "axis", ...pct }, legend: { bottom: 0, type: "scroll" }, grid: { left: 48, right: 24, top: 16, bottom: 56 },
              xAxis: { type: "category", data: chart.categories }, yAxis: { type: "value", axisLabel: { formatter: "{value}%" } },
              series: chart.series.map(s => ({ name: s.name, type: "line", data: s.data, connectNulls: false, symbolSize: 6 })) };
@@ -61,9 +81,12 @@ function Figures({ table }: { table: NonNullable<Answer["table"]> }) {
   </table>;
 }
 
-function Reply({ question, answer, weighted, onAsk }: { question: string; answer: Answer; weighted: boolean; onAsk: (q: string) => void }) {
+function Reply({ question, answer, weighted, checking, checked, onAsk }: { question: string; answer: Answer; weighted: boolean; checking: boolean; checked: boolean; onAsk: (q: string) => void }) {
   const chart = answer.chart;
-  const height = chart ? (chart.type === "line" || chart.type === "donut" ? 340 : Math.max(180, chart.categories.length * (chart.series.length > 1 ? 34 : 26) + 40)) : 0;
+  const offered = chart ? views(chart) : [];
+  const [picked, setView] = useState<View | null>(null);
+  const view = picked && offered.includes(picked) ? picked : offered[0];   // the checked answer may draw differently
+  const height = chart ? (view !== "bar" ? 340 : Math.max(180, chart.categories.length * (chart.series.length > 1 ? 34 : 26) + 40)) : 0;
   const source = answer.sources[0];
   const isAdmin = !!useMe().data?.permissions?.includes("admin_pages");
   const [verified, setVerified] = useState("");
@@ -71,7 +94,7 @@ function Reply({ question, answer, weighted, onAsk }: { question: string; answer
     try { await send("POST", "/api/v1/admin/ask/verified", answer.verify); setVerified("Saved: questions like this now use this answer."); }
     catch (e) { setVerified(e instanceof Error ? e.message : String(e)); }
   };
-  const how = { verified: "Verified answer", reused: "Same question as one understood before, figures computed", model: "Understood by AI, figures computed",
+  const how = { verified: "Verified answer", model: "Understood by AI, figures computed", meaning: "Found by meaning, figures computed",
                 rules: "Matched by words, figures computed" }[answer.understood ?? ""];
   const drawn = useRef<Chart | null>(null);
   const file = `ask-${(source?.qcode ?? "answer").toLowerCase()}`;
@@ -87,14 +110,17 @@ function Reply({ question, answer, weighted, onAsk }: { question: string; answer
       : <>
         <p className="ask-headline"><Bold text={answer.headline || answer.answer.split("\n")[1] || ""} /></p>
         {!!answer.points?.length && <ul className="ask-points">{answer.points.map((p, i) => <li key={i}><Bold text={p} /></li>)}</ul>}
-        {chart && <EChart option={option(chart)} height={height} label={answer.headline || question} onReady={c => { drawn.current = c; }} />}
+        {chart && offered.length > 1 && <span className="seg ask-views" role="group" aria-label="Chart type">
+          {offered.map(v => <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>{VIEW_NAMES[v]}</button>)}</span>}
+        {chart && view !== "table" && <EChart key={view} option={option(chart, view)} height={height} label={answer.headline || question} onReady={c => { drawn.current = c; }} />}
+        {chart && view === "table" && answer.table && <div className="table-wrap"><Figures table={answer.table} /></div>}
         {(!!answer.notes?.length || weighted) && <ul className="ask-notes small muted">
           {answer.notes?.map((n, i) => <li key={i}>{n}</li>)}
           {weighted && <li>Your Weighted switch is on, but Ask Coresight answers with unweighted figures (as Forsta shows them).</li>}
         </ul>}
         {source && <p className="small muted ask-source">{answer.source_line}{" "}
           <Link to={source.link}>Open {source.link.includes("/trends/") ? "in Trends" : "in Question explorer"} →</Link></p>}
-        <p className="small muted ask-how">{how}{isAdmin && answer.verify && answer.understood !== "verified" && <>{" · "}
+        <p className="small muted ask-how">{how}{checking && " · checking with AI…"}{checked && " · checked by AI"}{answer.changed && ` · updated by AI (first shown: ${answer.changed})`}{isAdmin && answer.verify && answer.understood !== "verified" && <>{" · "}
           {verified ? <span role="status">{verified}</span> : <button type="button" className="linklike" onClick={() => void saveVerified()}>Save as verified</button>}</>}</p>
         {answer.table && <details className="ask-figures"><summary>Every figure and its base</summary>
           <div className="table-wrap"><Figures table={answer.table} /></div></details>}
@@ -110,7 +136,7 @@ function Reply({ question, answer, weighted, onAsk }: { question: string; answer
 export default function Ask() {
   const [params, setParams] = useSearchParams();
   const [text, setText] = useState(params.get("q") ?? "");
-  const [replies, setReplies] = useState<{ question: string; answer: Answer }[]>([]);   // this visit's conversation, newest first
+  const [replies, setReplies] = useState<{ question: string; answer: Answer; checking?: boolean; checked?: boolean }[]>([]);   // this visit's conversation, newest first
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const weighted = useWeighted();
@@ -121,8 +147,14 @@ export default function Ask() {
     setParams({ q: question }, { replace: true });
     setBusy(true); setError("");
     try {
-      const answer = await send<Answer>("POST", "/api/v1/ask", { question });
-      setReplies(r => [{ question, answer }, ...r].slice(0, 20));
+      const answer = await send<Answer>("POST", "/api/v1/ask", { question, quick: true });
+      setReplies(r => [{ question, answer, checking: !!answer.check }, ...r].slice(0, 20));
+      if (answer.check) {   // the model's reading, after the quick answer is on screen: replaces it only for another question
+        const settle = (better: Answer | null) => setReplies(r => r.map(x => x.answer !== answer ? x : !better
+          || (better.mode === answer.mode && better.sources[0]?.question === answer.sources[0]?.question) ? { ...x, checking: false, checked: !!better }
+          : { question, answer: { ...better, changed: answer.sources[0]?.qcode } }));
+        send<Answer>("POST", "/api/v1/ask", { question, check: true }).then(settle, () => settle(null));
+      }
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
@@ -149,7 +181,7 @@ export default function Ask() {
           {EXAMPLES.map(q => <button key={q} type="button" className="tag" onClick={() => void ask(q)}>{q}</button>)}
         </div>}
       </section>
-      {replies.map((r, i) => <Reply key={replies.length - i} question={r.question} answer={r.answer} weighted={weighted} onAsk={q => void ask(q)} />)}
+      {replies.map((r, i) => <Reply key={replies.length - i} question={r.question} answer={r.answer} weighted={weighted} checking={!!r.checking} checked={!!r.checked} onAsk={q => void ask(q)} />)}
     </div>
   </>;
 }

@@ -167,16 +167,32 @@ def test_the_openai_key_is_found_whatever_case_its_setting_is_typed_in(monkeypat
     assert ask_model.key_name() == "open_api_key" and ask_model.key() == "sk-test"
 
 
-def test_a_rewording_of_a_question_the_model_read_reuses_its_reading(index, tmp_path, monkeypatch):
-    """Paraphrase reuse: no model call for the same question in other words; never for a merely related one."""
+def test_an_analysts_ask_brings_its_question_nearer(index):
+    """Retrieval joins a question's own closeness with its nearest ask's (ASK_WEIGHT): 0.7 × 0.5 + 0.3 × 1.0 = 0.65
+    beats 0.7 × 0.6 + 0.3 × 0.6 = 0.60."""
     import numpy as np
-    from api import ask_index
-    monkeypatch.setattr(ask_index, "LEARNED", tmp_path / "learned.json")
-    index.learned, index.learned_vectors = [], None      # not this machine's logs/ask-learned.json
-    asked = np.array([1.0, 0.0, 0.0], np.float32)
-    index.learn({"question": "Amazon shoppers", "key": "CSI-US/tracker/XQ1", "focus": ["Amazon"], "kind": "share", "cut": "none", "period": "all"}, asked)
-    near = np.array([0.95, 0.312, 0.0], np.float32)      # cosine 0.95: the same question
-    related = np.array([0.8, 0.6, 0.0], np.float32)      # cosine 0.8: related, not the same
-    assert index.verified_for(near / np.linalg.norm(near))["key"] == "CSI-US/tracker/XQ1"
-    assert index.verified_for(related) is None
-    assert (tmp_path / "learned.json").exists()
+    keys = list(index.docs)[:2]
+    index.vector_keys, index.area_vectors = keys, None
+    index.vectors = np.array([[0.5, 0.866], [0.6, 0.8]], np.float32)       # closeness to (1, 0): 0.5 and 0.6
+    index.ask_vectors, index.ask_owner = np.array([[1.0, 0.0]], np.float32), np.array([0], np.int32)   # an ask of the first, 1.0
+    index.standing = np.zeros(2, np.float32)
+    found = index.retrieve("anything", {}, 2, None, np.array([1.0, 0.0], np.float32))
+    assert [f["key"] for f in found[:2]] == keys and found[0]["near"] == pytest.approx(0.65, abs=1e-3)
+
+
+def test_the_local_model_puts_questions_alike_in_meaning_closer():
+    from api import ask_model
+    if ask_model.encoder() is None:
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    v = ask_model.embed(["Amazon shoppers", "people who bought from Amazon", "the capital of France"])
+    assert v.shape == (3, 384) and abs(float(v[0] @ v[0]) - 1) < 1e-4 and v[0] @ v[1] > v[0] @ v[2] + 0.1
+
+
+def test_a_quick_answer_needs_no_model_and_asks_for_its_check(index, monkeypatch):
+    from api import ask_model
+    if ask_model.encoder() is None:
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    monkeypatch.setattr(ask_model, "ready", lambda: True)
+    monkeypatch.setattr(ask_model, "plan", lambda *a: pytest.fail("the quick answer called the model"))
+    found = assistant.answer("Amazon shoppers over time", index, EVERYONE, quick=True)
+    assert found["mode"] == "figures" and found["understood"] == "meaning" and found["check"] is True

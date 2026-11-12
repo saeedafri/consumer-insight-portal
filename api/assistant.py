@@ -26,7 +26,7 @@ from datetime import date, timedelta
 import numpy as np
 
 from api import ask_figures, ask_model, ask_reader
-from api.ask_index import Index
+from api.ask_index import Index, stems
 
 log = logging.getLogger("cip.assistant")
 KEEP_ANSWERS = 500                   # answers kept in memory, newest used last out
@@ -35,7 +35,7 @@ CURRENT_DAYS = 365                   # "latest"/"last N weeks": only questions a
 CANDIDATES = 10                      # survey questions the model chooses between (api/ask_index.py retrieve)
 TREND_FROM = 3                       # with no time named, a question asked in this many waves or more is shown as a trend
 OWN_WORDING = 0.8                    # a question with this share of a survey question's words is that question: no model
-NEAR_FLOOR = 0.35                    # closeness in meaning (0-1) below which no survey question is near: "capital of France" 0.28
+NEAR_FLOOR = 0.6                     # closeness in meaning (0-1, local model) below which no survey question is near: "capital of France" 0.55
 NEAR_EQUAL = 0.8                     # rules only: a match scoring this share of the best counts as near-equal
 EVENT = re.compile(r"\b(prime day|big deal|deal days|black friday|cyber monday|holidays?|valentine'?s?|easter|halloween|thanksgiving|"
                    r"back.to.school|mother'?s day|father'?s day)\b")   # a survey question about one answers only a question naming one
@@ -228,9 +228,11 @@ def read_with_model(plan: dict, reading: dict) -> dict:
     return {**plan, "kind": kind, "when": when, "cuts": cuts, "grain": grain, "compare": plan["compare"] or len(when) > 1}
 
 
-def answer(question: str, index: Index, visible: set[int]) -> dict:
-    """{answer, chart, table, sources, suggestions, plan, mode}: mode "figures" when answered, "none" when nothing in
-    the surveys matches (then suggestions lists the closest questions, if any)."""
+def answer(question: str, index: Index, visible: set[int], quick: bool = False) -> dict:
+    """{answer, chart, table, sources, suggestions, plan, mode, check}: mode "figures" when answered, "none" when nothing
+    in the surveys matches (then suggestions lists the closest questions, if any). quick: the nearest survey question by
+    meaning and the rules, no model (~100 ms); check is then true when the model's reading may differ, and the page
+    asks again without quick to have it read (the Ask page shows the quick answer meanwhile)."""
     question = " ".join(str(question).split())[:500]
     plan = ask_reader.read(question)
     hits = []   # the topic words, and the whole question (a cut can be the subject: "What is your age group?"), best kept
@@ -251,7 +253,7 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
         >= OWN_WORDING * len(set(re.findall(r"[a-z0-9]+", hits[0]["text"].lower())))
     unsure = bool(hits) and hits[0]["match"] >= JUNK_BELOW and not own_words
     subject = plan["about"] if len(plan["about"]) >= 3 else question   # time and cut words are the rules'; search the subject
-    made = ask_model.embed([subject]) if unsure and ask_model.ready() else None   # one vector per question, used twice
+    made = ask_model.embed([subject]) if unsure else None   # one vector per question (local, ~3 ms), used twice
     asked = made[0] if made is not None else None
     verified = index.verified_for(asked)
     if verified and visible.isdisjoint(index.docs[verified["key"]]["surveys"]):
@@ -264,7 +266,7 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
             verified = None
     candidates = index.retrieve(subject, plan, CANDIDATES, visible, asked) if unsure and asked is not None and not verified else []
     closeness = [c["near"] for c in candidates if "near" in c]   # only the ones found by meaning carry a closeness
-    if closeness and max(closeness) < NEAR_FLOOR:   # nothing close in meaning: free, no model
+    if closeness and max(closeness) < NEAR_FLOOR and hits[0]["match"] < MIN_MATCH:   # nothing close in meaning or words ("walmrt" is corrected): free, no model
         return {"answer": "None of the surveys asks this. The closest questions are below.", "chart": None, "table": None,
                 "sources": [], "plan": plan, "mode": "none", "no_source": True, "understood": "meaning",
                 "suggestions": [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]}
@@ -278,33 +280,36 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
                    and not visible.isdisjoint(d["surveys"]) and focus(question, d.get("labels", []))][:3]
     if not EVENT.search(question.lower()):   # "Walmart shoppers" is not the holiday retailers question
         candidates = [c for c in candidates if not EVENT.search(c["text"].lower())] or candidates
+    by_meaning = list(candidates)   # the quick answer's order: nearest first
     # a retailer or brand the question names among a question's answers ("Amazon" in the retailer lists) goes first, the
     # longest-running first: the model otherwise favours a question with the name in its wording (Amazon's Big Deal Days)
     candidates.sort(key=lambda c: (not focus(question, c.get("labels", [])), -c["waves"] if focus(question, c.get("labels", [])) else 0))
-    if candidates:   # the model reads the question over the retrieved candidates; rules keep any dates it names
+    if candidates and not quick:   # the model reads the question over the retrieved candidates; rules keep any dates it names
         reading = ask_model.plan(question, [{"number": i, "text": c["text"], "name": c.get("name", ""), "family": FAMILY.get(c["family"], c["family"]),
                                              "waves": c["waves"], "first": c["first"], "last": c["last"],
                                              "answers": c.get("labels", [])} for i, c in enumerate(candidates)])
     if verified:
-        understood = "reused" if verified.get("learned") else "verified"
+        understood = "verified"
         reading = {"pick": None, "focus": verified.get("focus", []), "kind": verified.get("kind", "share"),
                    "grain": verified.get("grain", "auto"), "cut": verified.get("cut", "none"), "period": verified.get("period", "all")}
         chosen = {**index.docs[verified["key"]], "key": verified["key"]}
         hits = [chosen] + [h for h in hits if h["key"] != chosen["key"]]
         plan = read_with_model(plan, reading)
-    if reading is not None and not verified:
-        understood = "model"
-        if reading["pick"] is None:
+    if candidates and not verified:   # the model's pick, or with no model the nearest by meaning
+        understood = "model" if reading else "meaning"
+        if reading and reading["pick"] is None:
             return {"answer": "None of the surveys asks this. The closest questions are below.", "chart": None, "table": None,
                     "sources": [], "plan": plan, "mode": "none", "no_source": True, "understood": understood,
                     "suggestions": [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]}
-        chosen = candidates[reading["pick"]]
-        alternative = candidates[reading["alt"]] if reading.get("alt") is not None and reading["alt"] != reading["pick"] else None
+        chosen = candidates[reading["pick"]] if reading else by_meaning[0]
+        alternative = candidates[reading["alt"]] if reading and reading.get("alt") is not None and reading["alt"] != reading["pick"] else None
         # rules the model was told but breaks, enforced here for free: a retailer or brand named among a long-running
         # question's answers is that question unless an event is named; a trend needs a question with history
         named = [c for c in candidates if c["waves"] >= TREND_FROM * 5 and focus(question, c.get("labels", []))]
         longest = max(named, key=lambda c: c["waves"], default=None)
-        own_name = longest and any(longest["labels"][i].lower() in chosen["text"].lower() for i in focus(question, longest["labels"]))
+        names = [longest["labels"][i] for i in focus(question, longest["labels"])] if longest else []
+        rest = {s for s in stems(question) if len(s) >= 4} - {s for n in names for s in stems(n)}   # quick: "Costco shoppers" is not "why Costco"
+        own_name = any(n.lower() in chosen["text"].lower() for n in names) and bool(reading or rest & set(stems(chosen["text"])))
         if longest and not own_name and not EVENT.search(question.lower()) and (   # "Amazon Prime" questions keep their own
                 not focus(question, chosen.get("labels", [])) or chosen["waves"] * 3 < longest["waves"]):   # q5 (195 waves) over EC2 (22)
             chosen = longest
@@ -313,17 +318,22 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
             longer = [c for c in candidates if c["waves"] >= TREND_FROM * 2 and len(own) >= 3
                       and len(own & {a.lower() for a in c.get("labels", [])}) >= SAME_ANSWERS * len(own)]
             chosen = max(longer, key=lambda c: c["waves"], default=chosen)
-        if (plan["grain"] or plan["kind"] == "trend" or reading["kind"] == "trend") and chosen["waves"] < TREND_FROM:
+        if (plan["grain"] or plan["kind"] == "trend" or (reading or {}).get("kind") == "trend") and chosen["waves"] < TREND_FROM:
             chosen = next((c for c in candidates if c["waves"] >= TREND_FROM), chosen)
         alternative = alternative if alternative and alternative["key"] != chosen["key"] else None
         hits = [chosen] + ([alternative] if alternative else []) + [c for c in candidates if c["key"] not in (chosen["key"], (alternative or {}).get("key"))]
-        plan = read_with_model(plan, reading)
+        plan = read_with_model(plan, reading) if reading else plan
     if understood == "rules" and hits and hits[0]["match"] < MIN_MATCH:   # too little matched: the closest, never an answer
         return {"answer": "No survey question matches this well enough to answer it. The closest questions are below.",
                 "chart": None, "table": None, "sources": [], "plan": plan, "mode": "none", "no_source": True,
                 "suggestions": [{"qcode": h["qcode"], "text": h["text"][:200], "family": h["family"], "key": h["key"]} for h in hits[:4]]}
-    suggestions = [{"qcode": h["qcode"], "text": h.get("name") or h["text"][:200], "family": h["family"], "key": h["key"],
-                    "alt": bool(alternative) and h["key"] == alternative["key"]} for h in hits[1:5]]
+    offered = {}   # one per wording shown: a question asked by several studies was listed up to four times (Q6_2, 12 Nov)
+    for h in hits[1:]:
+        text = h.get("name") or h["text"][:200]
+        if text.lower() != (hits[0].get("name") or hits[0]["text"][:200]).lower():
+            offered.setdefault(text.lower(), {"qcode": h["qcode"], "text": text, "family": h["family"], "key": h["key"],
+                                              "alt": bool(alternative) and h["key"] == alternative["key"]})
+    suggestions = list(offered.values())[:4]
     if not hits:
         return {"answer": "No survey question in the portal matches this. Try other words, or browse Search questions.",
                 "chart": None, "table": None, "sources": [], "suggestions": [], "plan": plan, "mode": "none", "no_source": True}
@@ -388,11 +398,9 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
     notes = [x for x in sentences[1:] if x.startswith(NOTE_STARTS)]
     points = [x for x in sentences[1:] if not x.startswith(NOTE_STARTS)]
     headline = next((x for x in points if "%" in x), points[0] if points else "")   # the first sentence with a figure
-    if understood == "model" and asked is not None:   # a rewording of this question later reuses the reading
-        index.learn({"question": question, "key": doc["key"], "focus": [fig["answers"][a] for a in named], "kind": plan["kind"],
-                     "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, asked)
     return {"answer": "\n".join(sentences), "headline": headline, "points": [x for x in points if x != headline], "notes": notes,
             "source_line": sentences[0], "weighting": "unweighted", "understood": understood,
+            "check": quick and understood == "meaning" and ask_model.ready(),
             "verify": {"question": question, "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],
                        "kind": plan["kind"], "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, "codes": doc.get("codes", [doc["qcode"]]),
             "chart": chart(fig, shown), "table": table, "plan": plan, "mode": "figures", "no_source": False,
@@ -402,14 +410,14 @@ def answer(question: str, index: Index, visible: set[int]) -> dict:
                          "link": f"/w/{last['waves'][-1]}/{'trends' if len(fig['periods']) > 1 else 'questions'}/{doc['qcode']}"}]}
 
 
-def ask(question: str, index: Index, visible: set[int], scope: str) -> dict:
-    """answer(), kept per published version (the index), access scope and question wording."""
-    key = (id(index), scope, " ".join(question.lower().split()))
+def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool = False) -> dict:
+    """answer(), kept per published version (the index), access scope, quick or not, and question wording."""
+    key = (id(index), scope, quick, " ".join(question.lower().split()))
     with ANSWERS_LOCK:
         if key in ANSWERS:
             ANSWERS.move_to_end(key)
             return ANSWERS[key]
-    found = answer(question, index, visible)
+    found = answer(question, index, visible, quick)
     with ANSWERS_LOCK:
         ANSWERS[key] = found
         while len(ANSWERS) > KEEP_ANSWERS:

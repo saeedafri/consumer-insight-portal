@@ -1,16 +1,20 @@
-"""Ask Coresight's model steps (OpenAI): find survey questions by meaning, and read what a question asks for.
+"""Ask Coresight's model steps: find survey questions by meaning (a small model on our own CPU), and read what a
+question asks for (OpenAI).
 
-Who calls it: api/ask_index.py (vectors of every survey question, once per publish) and api/assistant.py (one plan per
-new question). The model never sees or writes a figure: it picks one of the candidate survey questions api/ask_index.py
+Who calls it: api/ask_index.py (vectors of every survey question and its analysts' asks, once per publish) and
+api/assistant.py (one vector per new question; a plan when the page asks for the model's check). The model never sees or writes a figure: it picks one of the candidate survey questions api/ask_index.py
 retrieved, the answers to focus on, the kind of answer, the grain and the cut. Dates the analyst names ("October
 2026", "last 8 weeks") are read by rules (api/ask_reader.py); the arithmetic is api/ask_figures.py's.
 
-  embed()   vectors for texts: text-embedding-3-small at 256 numbers each (~$0.02 per million tokens). Every survey
-            question's vector is kept in VECTORS (logs/ask-vectors.json) by the hash of its text, so a publish only
-            embeds the questions that are new; one question asked costs a few millionths of a dollar.
+  embed()   vectors for texts: BAAI's bge-small-en-v1.5 (int8 ONNX, 384 numbers, deploy/ask-model-download.py) run
+            here, ~3 ms a question and no cost; it found the right survey question in the top 10 for 144 of 148
+            golden questions, OpenAI's text-embedding-3-small for 135 at ~0.7 s a call (12 Nov 2026). Every survey
+            question's vector is kept in VECTORS (logs/ask-vectors.npz) by the hash of its text, so a publish only
+            embeds the questions that are new.
   plan()    gpt-4o-mini (CIP_ASK_MODEL) with a strict JSON schema: ~1,500 tokens in, ~60 out, about $0.0003.
 
-Cost guard: api/assistant.py asks the model only when the rules are unsure (~5% of questions); every reading is kept in
+Cost guard: the search costs nothing (local). api/assistant.py asks the model only when the rules are unsure, and the
+Ask page only after showing the quick answer (the check); every reading is kept in
 logs/ask-readings.json, so a question is never paid for twice; every call's price is added to logs/ask-spend.json for
 the month, and past CIP_ASK_BUDGET_USD (default $0.50) the
 model is not called until the next month and the rules answer alone. Key: OPENAPI_KEY (or OPENAI_API_KEY); without it,
@@ -19,6 +23,7 @@ or on any error or a reply over CALL_SECONDS, the caller falls back to the rules
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import logging
@@ -33,11 +38,12 @@ import numpy as np
 
 log = logging.getLogger("cip.ask")
 LOGS = Path(__file__).resolve().parents[1] / "logs"
-VECTORS = LOGS / "ask-vectors.json"
+VECTORS = LOGS / "ask-vectors.npz"
 SPEND = LOGS / "ask-spend.json"
 READINGS = LOGS / "ask-readings.json"   # every reading the model gave, by question and candidates: never paid for twice
-EMBED_MODEL, EMBED_SIZE = "text-embedding-3-small", 256
-PRICES = {"text-embedding-3-small": (0.02, 0.0), "gpt-4o-mini": (0.15, 0.60), "gpt-5-nano": (0.05, 0.40),
+EMBED_DIR = Path(os.environ.get("CIP_ASK_EMBED_DIR", Path(__file__).resolve().parents[1] / "models" / "bge-small-en-v1.5"))
+EMBED_BATCH = 64   # texts run through the model at once, shortest first so little is padding
+PRICES = {"gpt-4o-mini": (0.15, 0.60), "gpt-5-nano": (0.05, 0.40),
           "gpt-4.1-mini": (0.40, 1.60), "gpt-5-mini": (0.25, 2.00)}   # $ per million tokens in, out (OpenAI, 11 Nov 2026)
 CALL_SECONDS = 6
 LOCK = threading.Lock()
@@ -140,43 +146,64 @@ def call(path: str, body: dict, seconds: float = CALL_SECONDS) -> dict:
         return json.load(reply)
 
 
-def embed(texts: list[str]) -> np.ndarray | None:
-    """Unit vectors (len(texts) × EMBED_SIZE), or None without a key, over the cap or on an error."""
-    if not texts or not ready():
-        return None
+@functools.lru_cache(maxsize=1)
+def encoder():
+    """The local search model (tokenizer, ONNX session), loaded on first use (~150 MB of memory), or None when its files
+    are missing: Ask then searches by words alone."""
     try:
-        out = []
-        for start in range(0, len(texts), 500):   # the API takes up to 2,048 inputs; 500 keeps each request small
-            reply = call("embeddings", {"model": EMBED_MODEL, "input": texts[start:start + 500], "dimensions": EMBED_SIZE})
-            charge(EMBED_MODEL, reply["usage"]["prompt_tokens"], 0)
-            out += [d["embedding"] for d in sorted(reply["data"], key=lambda d: d["index"])]
-        vectors = np.array(out, np.float32)
-        return vectors / np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-9)
-    except Exception as exc:   # noqa: BLE001 — no vectors: the keyword search alone
-        log.warning("Ask model: embeddings failed: %s", type(exc).__name__)
+        import onnxruntime
+        import tokenizers
+        words = tokenizers.Tokenizer.from_file(str(EMBED_DIR / "tokenizer.json"))
+        words.enable_truncation(512)   # the model's limit
+        words.enable_padding(pad_id=0, pad_token="[PAD]")
+        options = onnxruntime.SessionOptions()
+        options.intra_op_num_threads = options.inter_op_num_threads = 1   # one vCPU on Azure: never crowd the API
+        return words, onnxruntime.InferenceSession(str(EMBED_DIR / "model_optimized.onnx"), options, providers=["CPUExecutionProvider"])
+    except Exception as exc:   # noqa: BLE001 — files missing or unreadable
+        log.warning("Ask: no local search model in %s: %s", EMBED_DIR, type(exc).__name__)
         return None
+
+
+def embed(texts: list[str]) -> np.ndarray | None:
+    """Unit vectors (len(texts) × 384) from the local model, or None without it. bge's own pooling: the first token."""
+    model = encoder()
+    if not texts or model is None:
+        return None
+    words, session = model
+    inputs = {i.name for i in session.get_inputs()}
+    order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
+    out = np.zeros((len(texts), 384), np.float32)
+    for start in range(0, len(order), EMBED_BATCH):
+        batch = order[start:start + EMBED_BATCH]
+        coded = words.encode_batch([texts[i] for i in batch])
+        ids = np.array([c.ids for c in coded], np.int64)
+        feed = {"input_ids": ids, "attention_mask": np.array([c.attention_mask for c in coded], np.int64), "token_type_ids": np.zeros_like(ids)}
+        out[batch] = session.run(None, {k: v for k, v in feed.items() if k in inputs})[0][:, 0]
+    return out / np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-9)
 
 
 def question_vectors(texts: dict[str, str], prune: bool = False) -> dict[str, np.ndarray]:
     """key → vector for each text, reusing the saved vectors of texts already embedded (by text hash). prune: drop
     saved vectors of texts no longer asked for (only the full list of survey questions does, api/ask_index.py)."""
     digest = {k: hashlib.sha1(t.encode()).hexdigest()[:16] for k, t in texts.items()}
-    try:
-        saved = {h: np.array(v, np.float32) for h, v in json.loads(VECTORS.read_text()).items()}
-    except (OSError, ValueError):
-        saved = {}
-    missing = [k for k in texts if digest[k] not in saved]
-    if missing:
-        made = embed([texts[k] for k in missing])
+    with LOCK:
+        try:
+            with np.load(VECTORS) as kept:
+                saved = dict(zip(kept["hashes"], kept["vectors"].astype(np.float32)))
+        except (OSError, ValueError, KeyError):
+            saved = {}
+        missing = [k for k in texts if digest[k] not in saved]
+        made = embed([texts[k] for k in missing]) if missing else None
         if made is not None:
             saved.update({digest[k]: v for k, v in zip(missing, made)})
+            kept = set(digest.values())
+            saved = {h: v for h, v in saved.items() if not prune or h in kept}
             try:
                 LOGS.mkdir(exist_ok=True)
-                kept = set(digest.values())
-                VECTORS.write_text(json.dumps({h: [round(float(x), 5) for x in v] for h, v in saved.items() if not prune or h in kept}))
+                np.savez(VECTORS, hashes=np.array(list(saved)), vectors=np.array(list(saved.values()), np.float16))   # half size, same ranking
             except OSError:
                 log.warning("Ask model: vectors not saved")
-            log.info("Ask model: embedded %d new survey questions", len(missing))
+            log.info("Ask model: embedded %d new texts", len(missing))
     return {k: saved[digest[k]] for k in texts if digest[k] in saved}
 
 

@@ -988,6 +988,7 @@ code.key { display: block; padding: 8px 10px; margin-bottom: 8px; background: va
 .ask-notes { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
 .ask-source { margin: 0; }
 .ask-how { margin: 0; }
+.ask-views { align-self: flex-start; }
 .linklike { background: none; border: 0; padding: 0; color: var(--link, var(--red)); text-decoration: underline; cursor: pointer; font: inherit; }
 .ask-figures summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
 .ask-more p { margin: 0 0 6px; }

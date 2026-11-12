@@ -302,7 +302,7 @@ export interface Answer { answer: string; no_source: boolean; mode: "figures" | 
                           table: { head: string[]; rows: (string | number | null)[][]; bases: number[] } | null;
                           sources: { id: string; key: string; survey_id: number; wave_date: string; qcode: string; question: string; family: string; waves: number; link: string }[];
                           suggestions: { qcode: string; text: string; family: string; key: string; alt?: boolean }[];
-                          understood?: string; verify?: { question: string; code: string; family: string; focus: string[]; kind: string; cut: string; period: string } }
+                          understood?: string; check?: boolean; changed?: string; verify?: { question: string; code: string; family: string; focus: string[]; kind: string; cut: string; period: string } }
 export interface BoardSummary { board_id: number; name: string; created_by: string; created_at: string; items: number }
 export interface BoardComment { comment_id: number; author: string; body: string; created_at: string }
 export interface BoardItem { item_id: number; title: string; url: string; data_version: string; added_by: string; added_at: string;

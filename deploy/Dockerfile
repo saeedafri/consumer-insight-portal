@@ -34,6 +34,9 @@ WORKDIR /srv/cip
 # the visitors' city on the Logs page, looked up here (about 130 MB on disk, read on demand, not loaded into memory)
 COPY deploy/geo-download.py /tmp/
 RUN mkdir -p geo && python3 /tmp/geo-download.py geo/dbip-city-lite.mmdb
+# Ask Coresight's search model (67 MB, api/ask_model.py embed): run on this server's CPU, ~3 ms a question
+COPY deploy/ask-model-download.py /tmp/
+RUN python3 /tmp/ask-model-download.py models/bge-small-en-v1.5
 COPY api/ api/
 COPY shared/ shared/
 COPY etl/ etl/
