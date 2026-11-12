@@ -18,7 +18,6 @@ import gzip
 import hashlib
 import json
 import logging
-import math
 import sys
 from collections import Counter, defaultdict
 from datetime import date, timedelta
@@ -32,6 +31,7 @@ from sqlalchemy import bindparam, text
 from shared.core.database import get_engine
 from shared.data.payloads import HIDDEN_BASE, TEST_BASE
 from etl.loaders import etl_lock
+from etl.serving import p_value
 
 log = logging.getLogger("cip.api.dashboards")
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "dashboards.yml"
@@ -83,12 +83,9 @@ def comparisons(waves: list[dict], wave: dict, ly_rule: str = "same_calendar_wee
 
 def significant(p1: float, n1: int, p2: float, n2: int) -> bool:
     """Two-sided two-proportion z-test at 95% (percentages in, as web/src/stats.ts); never with under TEST_BASE a side."""
-    if not n1 or not n2 or min(n1, n2) < TEST_BASE:
+    if min(n1 or 0, n2 or 0) < TEST_BASE:
         return False
-    a, b = p1 / 100, p2 / 100
-    pooled = (a * n1 + b * n2) / (n1 + n2)
-    se = math.sqrt(pooled * (1 - pooled) * (1 / n1 + 1 / n2))
-    return se > 0 and math.erfc(abs(a - b) / se / math.sqrt(2)) < 0.05
+    return p_value(p1 / 100 * n1, n1, p2 / 100 * n2, n2) < 0.05
 
 
 def cells(conn, survey_ids: list[int], qcodes: list[str], dims: list[str], aliases: Optional[dict] = None) -> dict:

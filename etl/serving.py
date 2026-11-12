@@ -203,8 +203,11 @@ def rows_for(wave: dict, cells: list[dict]) -> list[dict]:
     return out
 
 
-def p_value(n1: int, base1: int, n2: int, base2: int) -> float:
-    """Two-sided p of the pooled two-proportion z-test (as frontend/src/stats.ts pValue)."""
+def p_value(n1: float, base1: int, n2: float, base2: int) -> float:
+    """Two-sided p of the pooled two-proportion z-test (as frontend/src/stats.ts pValue): the portal's one test, also
+    used by the weekly report (etl/weekly_report.significant) and the dashboards (api/dashboards.significant)."""
+    if not base1 or not base2:
+        return 1.0
     pooled = (n1 + n2) / (base1 + base2)
     se = math.sqrt(pooled * (1 - pooled) * (1 / base1 + 1 / base2))
     return math.erfc(abs(n1 / base1 - n2 / base2) / se / math.sqrt(2)) if se > 0 else 1.0

@@ -118,9 +118,11 @@ function TrendView({ t, column, waveId, from }: { t: Trend; column: Column; wave
   const version = t.waves[at].version;   // one question per line: other versions reused this code for something else
   const idx = t.waves.map((w, i) => i).filter(i => t.waves[i].version === version && new Date(t.waves[i].wave_date).getTime() >= start && i <= at);
   const elsewhere = t.waves.filter(w => w.version !== version).length;
-  const ranked = [...t.series].sort((a, b) => (b.pct[at] ?? -1) - (a.pct[at] ?? -1));
-  const chosen = (params.get("show")?.split("|") ?? ranked.slice(0, 3).map(s => s.label)).filter(l => t.series.some(s => s.label === l));
-  const shown = t.series.filter(s => chosen.includes(s.label)).sort((a, b) => chosen.indexOf(a.label) - chosen.indexOf(b.label));
+  // this question's own answers: the other questions that reused the code keep theirs (Q22 once listed US states)
+  const own = t.series.filter(s => t.waves.some((w, i) => w.version === version && s.pct[i] != null));
+  const ranked = [...own].sort((a, b) => (b.pct[at] ?? -1) - (a.pct[at] ?? -1));
+  const chosen = (params.get("show")?.split("|") ?? ranked.slice(0, 3).map(s => s.label)).filter(l => own.some(s => s.label === l));
+  const shown = own.filter(s => chosen.includes(s.label)).sort((a, b) => chosen.indexOf(a.label) - chosen.indexOf(b.label));
   const toggle = (label: string) => {
     const next = chosen.includes(label) ? chosen.filter(l => l !== label) : [...chosen, label];
     const p = new URLSearchParams(params); p.set("show", next.join("|")); setParams(p, { replace: true });
@@ -187,7 +189,7 @@ function TrendView({ t, column, waveId, from }: { t: Trend; column: Column; wave
           if (!real.length) return "No wave this week (not fielded or not loaded)";
           const i = real[0].data.i;
           return `<b>Wave of ${fmtDate(t.waves[i].wave_date)}</b>` + real.map(p => {
-            const s = t.series.find(x => x.label === p.seriesName)!;
+            const s = shown.find(x => x.label === p.seriesName)!;   // drawn lines only: another question may share a label
             const v = p.data.value[1]!, base = s.base[i] ?? 0;
             const pi = previous(t, s, i);
             const change = pi == null ? "" : ` · <span class="${direction(v - s.pct[pi]!)}">${pts(v - s.pct[pi]!)}</span>${s.base[pi] && significant(v, base, s.pct[pi]!, s.base[pi]!) ? " <b>sig. (single test)</b>" : ""}`;

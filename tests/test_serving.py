@@ -236,6 +236,23 @@ def test_the_question_file_holds_every_wave_and_cut_with_its_versions(csi_db):
     assert (2, 0, 0, 190, 400) in cells and (1, 1, 0, 20, 40) in cells and len(cells) == 12
 
 
+def test_a_reused_code_keeps_each_questions_own_answer_labels():
+    """Q22 was a facial-recognition question one week and a Thanksgiving question another: answer code 1 is "Very likely"
+    in one and "Things cost more this year" in the other, and neither may borrow the other's label. A reworded answer
+    of the same question ("Walmart" then "Walmart.com") stays one answer with its newest label."""
+    asked = {1: "Would you shop at a store using facial recognition?", 2: "Why did you spend more this Thanksgiving?",
+             3: "Would you shop at a store using facial recognition?", 4: "Where did you buy groceries?",
+             5: "Where did you buy groceries?"}
+    labels = {1: "Very likely", 2: "Things cost more this year", 3: "Very likely", 4: "Walmart", 5: "Walmart.com"}
+    rows = [{"survey_id": s, "dim": "total", "dim_value": "Total", "item_label": "", "option_code": 1, "option_label": labels[s],
+             "sort_order": 1, "n": 10 * s, "base_n": 100, "concept_option_id": None, "qtext": asked[s]} for s in asked]
+    waves = [{"survey_id": s, "wave_date": date(2024, 1, s)} for s in asked]
+    data = payloads.question_from("Q22", waves, rows, {})
+    label_of = {data["waves"][w][0]: data["answers"][a][2] for w, a in zip(data["w"], data["a"])}
+    assert label_of == {1: "Very likely", 2: "Things cost more this year", 3: "Very likely", 4: "Walmart.com", 5: "Walmart.com"}
+    assert len(data["answers"]) == 3   # Very likely (waves 1 and 3), Things cost more (2), Walmart.com (4 and 5)
+
+
 def test_rebuilding_a_wave_keeps_its_answers_for_two_cut_crosstabs(csi_db):
     from tests.test_forsta_etl import FakeForsta
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")

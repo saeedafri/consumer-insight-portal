@@ -107,7 +107,8 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
              "zero_cells": 1,   # 1: an asked group's unchosen answer is 0 %, not blank (24 Oct 2026); bump on any book rule
              "weighted": 1,     # books carry Census-weighted figures (etl/weighting.py, 24 Oct 2026)
              "open_ends": 1,    # books chart coded open-ended questions (etl/open_ends.py, 24 Oct 2026)
-             "cut_inventory": 1}  # each wave's complete cuts directory is the question discovery catalogue
+             "cut_inventory": 1,  # each wave's complete cuts directory is the question discovery catalogue
+             "answer_labels": 1}  # a reused code keeps each question's own answer labels (payloads.question_from, 12 Nov 2026)
     rules_changed = last.get("rules", {"hidden_base": 30}) != rules   # a new small-cell rule: every file is rebuilt
     before = {} if rules_changed else last.get("built", {})
     start = time.perf_counter()

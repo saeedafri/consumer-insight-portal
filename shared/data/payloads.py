@@ -526,9 +526,19 @@ def question_from(qcode: str, waves: list[dict], rows: list[dict], order: dict) 
             texts[v] = wording[w["survey_id"]]
             out_waves.append([w["survey_id"], str(w["wave_date"])[:10], v])
     at = {w[0]: i for i, w in enumerate(out_waves)}
+    version_of = {w[0]: w[2] for w in out_waves}
+    newest_first = sorted(rows, key=lambda r: -at[r["survey_id"]])
+    # A code is reused for other questions over the years (Q22: facial recognition one week, Thanksgiving spending
+    # another), so an answer is its code AND the label its own question last gave it: no wave borrows another
+    # question's label, and a reworded answer of one question ("Walmart", later "Walmart.com") stays one answer.
+    named: dict = {}
+    for r in newest_first:
+        named.setdefault((version_of[r["survey_id"]], r["item_label"], r["option_code"]), r["option_label"] or r["item_label"])
+    key = lambda r: (r["item_label"], r["option_code"],   # noqa: E731
+                     normalise_text(named[(version_of[r["survey_id"]], r["item_label"], r["option_code"])]))
     answers: dict = {}
-    for r in sorted(rows, key=lambda r: -at[r["survey_id"]]):   # the latest wording of each answer
-        answers.setdefault((r["item_label"], r["option_code"]), (r["sort_order"], r["option_label"] or r["item_label"]))
+    for r in newest_first:   # the latest wording of each answer
+        answers.setdefault(key(r), (r["sort_order"], r["option_label"] or r["item_label"]))
     keys = sorted(answers, key=lambda k: answers[k][0])
     answer = {k: i for i, k in enumerate(keys)}
     present = {(r["dim"], r["dim_value"]) for r in rows}
@@ -536,7 +546,7 @@ def question_from(qcode: str, waves: list[dict], rows: list[dict], order: dict) 
     cuts = [("total", "Total")] + sorted((c for c in present if c[0] != "total"),
                                          key=lambda c: (CUTS.index(c[0]) if c[0] in CUTS else 99, *rank(*c)))
     cut = {c: i for i, c in enumerate(cuts)}
-    cells = sorted((at[r["survey_id"]], cut[(r["dim"], r["dim_value"])], answer[(r["item_label"], r["option_code"])],
+    cells = sorted((at[r["survey_id"]], cut[(r["dim"], r["dim_value"])], answer[key(r)],
                     int(r["n"]), int(r["base_n"])) for r in rows)
     return {"qcode": qcode, "waves": out_waves, "versions": [texts[v] for v in sorted(texts)],
             "answers": [[k[0], k[1], answers[k][1]] for k in keys], "cuts": [list(c) for c in cuts],

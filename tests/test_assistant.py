@@ -155,6 +155,19 @@ def test_a_question_not_asked_then_never_borrows_an_unrelated_one(index):
     assert found["mode"] == "none" and "was not asked in the period" in found["answer"]
 
 
+def test_a_dollar_question_loaded_without_its_amounts_is_never_quoted(tmp_path):
+    """Q22 "How much, in dollars, do you expect to spend on Thanksgiving?": its typed amounts were never loaded, so its
+    one answer is "$", chosen by everyone. Ask must not answer "100% answered $" (12 Nov 2026, staging)."""
+    root = tmp_path / "questions" / "CSI-US" / "tracker"
+    root.mkdir(parents=True)
+    (root / "Q22.json.gz").write_bytes(gzip.compress(json.dumps(question_file(
+        [[100, DATES[0], 1]], ["How much, in dollars, do you expect to spend on Thanksgiving this year?"],
+        [["", 1, "$"]], [["total", "Total"]], [(0, 0, 0, 258, 258)])).encode()))
+    index = Index(tmp_path / "questions", [{"survey_id": 100, "wave_date": DATES[0], "title": "Shopping", "modules": []}])
+    assert index.docs == {}
+    assert assistant.answer("How much will people spend on Thanksgiving?", index, {100})["mode"] == "none"
+
+
 def test_event_questions_answer_only_questions_naming_an_event():
     assert assistant.EVENT.search("from which retailers did you make holiday-related purchases?")
     assert assistant.EVENT.search("prime day purchases") and assistant.EVENT.search("back-to-school plans")

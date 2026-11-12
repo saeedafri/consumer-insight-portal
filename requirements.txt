@@ -11,6 +11,7 @@ gunicorn==26.2.0                # keeps the API process running and restarts it 
 
 # Data processing (the ETL and the Excel/PowerPoint exports)
 pandas==2.3.3
+numpy==2.5.3                    # Ask Coresight counts (api/ask_figures.py, api/ask_index.py); already installed with pandas, named so the API does not rely on it
 
 # Database: Azure MySQL
 sqlalchemy==2.1.1
@@ -25,7 +26,7 @@ tenacity==9.1.4                 # retries a failed Forsta call with growing wait
 openpyxl==3.1.5                 # Excel files
 xlrd==2.0.2                     # Baidu QSS's .xls toplines (etl/baidu_qss_export.py); openpyxl reads only .xlsx
 python-pptx==1.0.2              # PowerPoint export (api/exports.py)
-anthropic==2.0.0                # Ask CIP (api/assistant.py); without credentials it answers with cited figures only
+anthropic==2.0.0                # open-ended answers coded into themes (etl/open_ends.py); without credentials the frequency coder runs
 onnxruntime==1.31.1             # Ask Coresight's search model on our own CPU (api/ask_model.py embed)
 tokenizers==0.23.3              # its word splitter
 

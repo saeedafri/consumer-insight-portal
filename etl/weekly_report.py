@@ -44,6 +44,7 @@ import yaml
 from sqlalchemy import bindparam, text
 
 from shared.core.database import get_engine
+from etl.serving import p_value, survives
 
 CONFIG = Path(__file__).resolve().parents[1] / "config"
 ROLLING = 4      # weeks in a rolling average
@@ -154,21 +155,7 @@ def significant(changes: list[tuple[int, int, int, int]]) -> list[bool]:
     """Which changes are real: a two-proportion z-test of each (n1, base1, n2, base2), then the Benjamini-Hochberg
     correction over all the changes of one table at 5 %, the portal's rule everywhere (the PDF's highlights match it:
     in the 26 Oct 2026 food table, Dollar Tree's +3.2 is not significant while Family Dollar's +3.5 is)."""
-    p_values = []
-    for n1, b1, n2, b2 in changes:
-        if not b1 or not b2:
-            p_values.append(1.0)
-            continue
-        pooled = (n1 + n2) / (b1 + b2)
-        se = math.sqrt(pooled * (1 - pooled) * (1 / b1 + 1 / b2))
-        z = abs(n2 / b2 - n1 / b1) / se if se else 0.0
-        p_values.append(math.erfc(z / math.sqrt(2)))
-    ranked = sorted(range(len(p_values)), key=lambda i: p_values[i])
-    passing, total = set(), len(p_values)
-    for rank, i in enumerate(ranked, start=1):   # the largest rank whose p fits under rank/total * 5 %, and all before it
-        if p_values[i] <= rank / total * 0.05:
-            passing = set(ranked[:rank])
-    return [i in passing for i in range(total)]
+    return survives([p_value(*change) for change in changes])
 
 
 def window(question: Question, end: int, weeks: int) -> list[int | None]:

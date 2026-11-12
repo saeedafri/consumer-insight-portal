@@ -50,6 +50,7 @@ VERIFIED_NEAR = 0.91   # closeness in meaning (local model) from which a questio
 STANDING = 0.06     # retrieval: up to this added to a closeness (~0.5–0.8) for a question asked a year of waves and still asked
 SAME_ANSWERS = 0.6   # share of a wave's answers that must be the question's own for the wave to join its series
 SAME_WORDING = 0.5   # shared words / all words: "holiday 2025" vs "holiday 2026" stays one question, a reused code does not
+UNIT_ONLY = {"$", "%", "#"}   # a typed-number question loaded without its numbers: its one "answer" is the unit, chosen by 100%
 COUNT_CACHE_MB = 48   # parsed question files kept in memory; the largest (q1, every tracker wave) is ~4 MB
 FIELDS = {"name": 3.5, "text": 3.0, "topic": 2.5, "answers": 2.0, "older": 1.5}   # name: the semantic layer's business name and aliases
 SEMANTIC = CONFIG / "ask_semantic.json"   # scripts/ask_semantic.py: a business name, aliases and topic per question wording
@@ -162,6 +163,8 @@ class Index:
                 key = file if len(groups) == 1 else f"{file}#{g + 1}"
                 waves_in = {i for i, w in enumerate(data["waves"]) if w[2] in versions}
                 used = {a for w, a in zip(data["w"], data["a"]) if w in waves_in}
+                if all(data["answers"][a][2].strip() in UNIT_ONLY for a in used):
+                    continue   # "How much, in dollars…" holds no amounts (28 such questions, 12 Nov 2026): never quote "$ 100%"
                 labels = {data["answers"][a][2] for a in used} | {data["answers"][a][0] for a in used if data["answers"][a][0]}
                 texts = [data["versions"][v - 1] for v in versions]
                 shown = [f"{data['answers'][a][0]}: {data['answers'][a][2]}" if data["answers"][a][0] and data["answers"][a][0] != data["answers"][a][2]
