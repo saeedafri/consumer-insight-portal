@@ -185,8 +185,8 @@ class Traffic:
             minute, status, ms = stamp[:16], int(entry["status"]), float(entry["seconds"]) * 1000
         except (ValueError, KeyError, TypeError):
             return
-        if entry.get("client") == "127.0.0.1":   # the platform's own probes and our cache warming, not visitors
-            return
+        if entry.get("client") == "127.0.0.1" or entry.get("path", "").startswith("/healthz"):   # probes, cache warming and
+            return                                                                                 # the pages' keep-warm ping
         m = self.minutes.get(minute)
         if m is None:
             m = self.minutes[minute] = {
@@ -245,7 +245,7 @@ def hour_summary(hour: str, minutes: list[dict]) -> dict:
     total = merge(minutes)
     pages = dict(total["pages"].most_common(HOUR_TOP))
     clients = dict(total["clients"].most_common(HOUR_TOP))
-    samples = [s for s in machine_series(f"{hour}:00") if s["time"][:13] == hour]
+    samples = [s for s in LOG_LISTS["machine"] if s["time"][:13] == hour]
     machine = None
     if samples:
         mean = lambda key: round(sum(s.get(key) or 0 for s in samples) / len(samples), 2)
@@ -462,6 +462,19 @@ def sign_ins(since: str) -> list[dict]:
     return out[:50]
 
 
+# The lists above, read by the API's minute loop (api/main.py) instead of on each dashboard refresh: 7 reads of 4 MB
+# (on /home, Azure's network storage) made GET /admin/metrics 2 s on staging and 145 ms on a Mac (12 Nov 2026); held
+# here, a refresh is ~2 ms on the same files. They are at most a minute old, the dashboard's own refresh interval.
+LOG_LISTS = {"machine": [], "problems": [], "restarts": [], "etl": [], "sign_ins": []}
+
+
+def read_log_lists() -> None:
+    """Re-read the machine samples, problems, restarts, ETL runs and sign-ins from the logs, every time range at once:
+    the lists are in time order, so metrics() keeping a range afterwards gives what reading with that range gave."""
+    LOG_LISTS.update(machine=machine_series(""), problems=problems(""), restarts=restarts(""), etl=etl_runs(""),
+                     sign_ins=sign_ins(""))
+
+
 def time_range(minutes: int, start: str, end: str) -> tuple[str, str]:
     """(since, until) as UTC minutes "2026-11-07T14:20": `start`/`end` (ISO, UTC) when given, else the last `minutes`."""
     now = datetime.now(timezone.utc)
@@ -493,7 +506,7 @@ def metrics(minutes: int = Query(60, ge=5, le=400 * 24 * 60), who: dict = Depend
         held = sorted(TRAFFIC.minutes.items())
         if since >= (datetime.now(timezone.utc) - timedelta(minutes=KEEP_MINUTES)).strftime("%Y-%m-%dT%H:%M"):
             step, chosen = "minute", [(k, v) for k, v in held if since <= k <= until]
-            machine = [x for x in machine_series(since) if x["time"][:16] <= until]
+            machine = [x for x in LOG_LISTS["machine"] if in_range(x["time"], since, until)]
         else:   # older than the day in memory: the saved hours, then the hours not saved yet
             step, saved = "hour", saved_hours(since, until)
             recent: dict[str, list] = {}
@@ -541,8 +554,8 @@ def metrics(minutes: int = Query(60, ge=5, le=400 * 24 * 60), who: dict = Depend
                    "without_python_pct": round(100 * page_hits[p] / n, 1)} for p, n in pages.most_common(15)],
         "clients": [{"client": c, "user": users.get(c, ""), "place": place_of(c), "requests": n}
                     for c, n in clients.most_common(min(top, 500))],
-        **{name: [x for x in found(since) if in_range(x.get("time") or x.get("minute", ""), since, until)]
-           for name, found in (("problems", problems), ("restarts", restarts), ("etl", etl_runs), ("sign_ins", sign_ins))},
+        **{name: [x for x in LOG_LISTS[name] if in_range(x.get("time") or x.get("minute", ""), since, until)]
+           for name in ("problems", "restarts", "etl", "sign_ins")},
     }
 
 

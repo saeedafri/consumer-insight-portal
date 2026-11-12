@@ -196,3 +196,20 @@ def test_a_quick_answer_needs_no_model_and_asks_for_its_check(index, monkeypatch
     monkeypatch.setattr(ask_model, "plan", lambda *a: pytest.fail("the quick answer called the model"))
     found = assistant.answer("Amazon shoppers over time", index, EVERYONE, quick=True)
     assert found["mode"] == "figures" and found["understood"] == "meaning" and found["check"] is True
+
+
+def test_a_question_reads_only_its_countrys_waves_and_marks_a_small_base(tmp_path):
+    for family, sid, amazon, base, country in (("CSI-US", 100, 170, 400, "US"), ("CSI-CN", 900, 9, 30, "CN")):
+        root = tmp_path / "questions" / family / "tracker"
+        root.mkdir(parents=True)
+        (root / "XQ1.json.gz").write_bytes(gzip.compress(json.dumps(question_file(
+            [[sid, DATES[-1], 1]], ["Which of these retailers have you bought from in the past two weeks?"],
+            [["", 1, "Amazon"]], [["total", "Total"]], [(0, 0, 0, amazon, base)])).encode()))
+    waves = [{"survey_id": 100, "wave_date": DATES[-1], "title": "US", "modules": [], "country": "US"},
+             {"survey_id": 900, "wave_date": DATES[-1], "title": "China", "modules": [], "country": "CN"}]
+    index = Index(tmp_path / "questions", waves)
+    us = assistant.answer("What share bought from Amazon?", index, {100, 900})
+    china = assistant.answer("What share of Chinese consumers bought from Amazon?", index, {100, 900})
+    assert us["sources"][0]["family"] == "CSI-US" and figure(us, "Amazon") == [42.5]
+    assert china["sources"][0]["family"] == "CSI-CN" and figure(china, "Amazon") == [30.0]
+    assert "small base" not in us["answer"] and "as few as 30 respondents" in china["answer"]   # config/methodology.yml: under 50

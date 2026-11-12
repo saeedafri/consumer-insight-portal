@@ -6,6 +6,7 @@
 US:
   name: United States
   family: CSI-US
+  ask_words: [usa, u.s., america, american, americans, united states]   # Ask Coresight: a question naming none is about the first country here
   language: en
   currency: USD
   active: true
@@ -20,6 +21,7 @@ US:
 CN:
   name: China
   family: CSI-CN
+  ask_words: [china, chinese, prc, mainland]
   language: zh        # what respondents read; the portal stores and shows the codebook's English
   currency: CNY
   active: true

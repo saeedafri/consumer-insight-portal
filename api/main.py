@@ -216,6 +216,7 @@ async def _refresh_forever() -> None:
                 await run_in_threadpool(load_published)
             await run_in_threadpool(_load_schedule)
             await run_in_threadpool(signin.load_revoked)
+            await run_in_threadpool(metrics.read_log_lists)   # before read_traffic: the hours it saves use the machine samples
             await run_in_threadpool(metrics.read_traffic)   # every minute, so a busy log is counted before it rotates
             await run_in_threadpool(metrics.measure_storage)   # folder and database sizes, at most every 5 minutes
         except Exception:   # keep serving the last good payloads; the next poll retries
@@ -268,8 +269,8 @@ async def lifespan(app: FastAPI):
     task = asyncio.get_running_loop().create_task(_refresh_forever())
     asyncio.get_running_loop().run_in_executor(None, metrics.measure_storage)   # the Logs page's storage table, at start
     # the first read of the request log (up to 64 MB) at start, in the background: on 7 Nov 2026 the first Logs visit
-    # after a deploy did it and waited 5.4 s
-    asyncio.get_running_loop().run_in_executor(None, metrics.read_traffic)
+    # after a deploy did it and waited 5.4 s; the log lists first, as in the minute loop
+    asyncio.get_running_loop().run_in_executor(None, lambda: (metrics.read_log_lists(), metrics.read_traffic()))
     asyncio.get_running_loop().run_in_executor(None, warm_ask)   # Ask CIP's index (~1 s), so no question waits for it
     try:
         yield

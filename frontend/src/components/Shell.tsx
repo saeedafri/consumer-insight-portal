@@ -114,6 +114,13 @@ export default function Shell() {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
+  // Azure closes an idle connection after about 4 minutes (measured 12 Nov 2026: kept after 125 s, closed by 245 s), and a
+  // new one costs ~0.5-0.7 s of TLS handshake from India. While the tab is in view, a tiny HEAD every 2 minutes keeps it
+  // open, so the next question or page pays only the distance (~0.26 s). Hidden tabs send nothing.
+  useEffect(() => {
+    const warm = setInterval(() => { if (document.visibilityState === "visible") fetch("/healthz", { method: "HEAD", cache: "no-store" }).catch(() => {}); }, 120_000);
+    return () => clearInterval(warm);
+  }, []);
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
   const waves = useWaves();
   const me = useMe().data;

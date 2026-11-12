@@ -33,14 +33,17 @@ PUBLISHED = ROOT / "data" / "published" / "current" / "api" / "v1"
 GOLDEN = ROOT / "scripts" / "ask_golden.yml"
 
 
-def score(item: dict, found: dict) -> list[str]:
-    """What is wrong with one answer (empty when right): the question found, a figure, a chart, the check asked for."""
+def score(item: dict, found: dict, countries: dict) -> list[str]:
+    """What is wrong with one answer (empty when right): the country, the question found, a figure, a chart, the check."""
     if item["want"] == "none":
         return [] if found["mode"] == "none" else [f"answered from {found['sources'][0]['qcode']}"]
     if found["mode"] != "figures":
         return ["no answer"]
     text = found["sources"][0]["question"].lower()
     problems = [] if any(w in text for w in item["want"]) else [f"wrong question: {text[:70]}"]
+    country = countries.get(found["sources"][0]["survey_id"], "US")
+    if country != item.get("country", "US"):   # a US question answered from China's waves, or the other way round
+        problems.append(f"{country} survey")
     if not found.get("chart"):
         problems.append("no chart")
     check = item.get("check")
@@ -57,19 +60,21 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--only", type=int, default=0)
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument("--published", type=Path, default=PUBLISHED, help="another publish's api/v1 (staging's data, built with etl.publish --root)")
     args = ap.parse_args()
     golden = yaml.safe_load(GOLDEN.read_text())[:args.only or None]
-    waves = json.loads(gzip.decompress((PUBLISHED / "waves.json.gz").read_bytes()))
-    index = Index(PUBLISHED / "questions", waves)
+    waves = json.loads(gzip.decompress((args.published / "waves.json.gz").read_bytes()))
+    index = Index(args.published / "questions", waves)
     print(f"Model {'off (quick)' if args.quick else 'on (' + ask_model.model() + ')' if ask_model.ready() else 'off (rules only)'} · {len(golden)} questions\n")
     visible = {w["survey_id"] for w in waves}
+    countries = {w["survey_id"]: w.get("country") or "US" for w in waves}
     before = ask_model.spent()["usd"]
     right, times = 0, []
     for item in golden:
         started = time.perf_counter()
         found = assistant.answer(item["q"], index, visible, args.quick)
         times.append(time.perf_counter() - started)
-        problems = score(item, found)
+        problems = score(item, found, countries)
         right += not problems
         code = found["sources"][0]["qcode"] if found["sources"] else "-"
         print(f"{'ok  ' if not problems else 'MISS'} {times[-1]:4.1f}s {item['q'][:60]:<60} → {code:<6} {found.get('understood', '-'):<8} {'; '.join(problems)}")

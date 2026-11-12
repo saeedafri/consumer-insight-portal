@@ -142,6 +142,7 @@ class Index:
         self.cached_bytes = 0
         self.synonyms = synonym_groups()
         known = {w["survey_id"]: {**w, "wave_date": str(w["wave_date"])[:10]} for w in waves}   # the API's list has dates
+        self.country = {sid: w.get("country") or "US" for sid, w in known.items()}   # api/assistant.py answer: one country a question
         topics = topic_words()
         parts: dict[str, dict] = {}                        # one per file and wording: where the counts are
         part_words: dict[str, dict[str, str]] = {}         # its searchable fields

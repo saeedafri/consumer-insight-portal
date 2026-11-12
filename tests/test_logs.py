@@ -59,10 +59,11 @@ def test_the_dashboard_counts_traffic_per_minute_and_reads_each_line_once(tmp_pa
         return js.dumps({"time": f"{now}:01+00:00", "client": client, "path": path, "status": status, "bytes": 100,
                          "seconds": seconds, "api_seconds": api, "cache": cache}) + "\n"
     access.write_text(line(200, 0.0) * 8 + line(200, 0.004, cache="HIT", path="/api/v1/waves/7/crosstab?q=x")
-                      + line(503, 0.3, api="0.3") + line(200, 0.0, client="127.0.0.1") + '{"time": "half-writ')
+                      + line(503, 0.3, api="0.3") + line(200, 0.0, client="127.0.0.1")
+                      + line(200, 0.001, path="/healthz") + '{"time": "half-writ')
     first = metrics.metrics(60, ADMIN)
     t = first["totals"]
-    assert (t["requests"], t["2xx"], t["5xx"], t["hit"], t["file"], t["api"]) == (10, 9, 1, 1, 8, 1)   # the probe is left out
+    assert (t["requests"], t["2xx"], t["5xx"], t["hit"], t["file"], t["api"]) == (10, 9, 1, 1, 8, 1)   # the probe and the keep-warm ping are left out
     assert t["p50_ms"] == 0.5 and t["p99_ms"] == 500 and t["under_1ms"] == 80.0
     assert first["pages"][0] == {"page": "/api/v1/waves/:id/book", "name": "A wave's full question book", "requests": 9,
                                  "share_pct": 90.0, "average_ms": 33.3, "slowest_ms": 300.0, "without_python_pct": 88.9}
@@ -89,6 +90,8 @@ def test_the_dashboard_reads_the_machine_samples(tmp_path, monkeypatch):
     (tmp_path / "machine.log").write_text('{"time":"2020-01-01T00:00:00Z","cpu_pct":1}\nnot json\n'
                                           f'{{"time":"{now}","cpu_pct":99,"working_set_mb":3800}}\n'   # before 5 Nov 2026: the whole host, no source
                                           f'{{"time":"{now}","source":"cgroup1","cpu_pct":42.5,"working_set_mb":300}}\n')
+    metrics.read_log_lists()
+    (tmp_path / "machine.log").unlink()   # a refresh answers from what the minute loop read, never from the file (2 s on Azure)
     assert [s["cpu_pct"] for s in metrics.metrics(60, ADMIN)["machine"]] == [42.5]   # old, broken and host-wide lines skipped
 
 
@@ -107,6 +110,7 @@ def test_the_dashboard_names_visitors_and_explains_problems(tmp_path, monkeypatc
     (tmp_path / "nginx-error.log").write_text(f"{stamp.replace('-', '/')} [error] 20#20: *1 upstream prematurely closed connection\n")
     (tmp_path / "container.log").write_text(f"{now.strftime('%Y-%m-%dT%H:%M:%SZ')} start.sh: started nginx and the API, ETL scheduler on (build abc123)\n"
                                             f"{now.strftime('%Y-%m-%dT%H:%M:%SZ')} machine-log.sh: numbers from cgroup1\n")
+    metrics.read_log_lists()
     m = metrics.metrics(60, ADMIN)
     who = {c["client"]: c["user"] for c in m["clients"]}
     assert who == {"1.2.3.4": "ana@coresight.com", "5.6.7.8": ""}   # a refused (401) cookie never names anyone
@@ -123,6 +127,7 @@ def test_the_dashboard_lists_who_signed_in_and_from_where(tmp_path, monkeypatch)
     stamp = metrics.datetime.now(metrics.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     (tmp_path / "api.log").write_text(f"{stamp},101 INFO    cip.api | GET /api/v1/me\n"
                                       f"{stamp},202 INFO    cip.signin | sign-in: ana@coresight.com role=analyst via demo from 10.1.2.3\n")
+    metrics.read_log_lists()
     assert metrics.metrics(60, ADMIN)["sign_ins"] == [{"time": stamp, "email": "ana@coresight.com", "role": "analyst",
                                                        "method": "demo", "address": "10.1.2.3", "place": ""}]
 

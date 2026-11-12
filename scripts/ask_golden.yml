@@ -5,6 +5,7 @@
 #   q      the question as an analyst would type it
 #   want   phrases, any one of which the right survey question's wording contains (lower case); "none" when no
 #          survey asks it (the answer must say so)
+#   country optional: CN for the China survey; else the answer must come from US waves
 #   check  optional: trend (a line over periods), cut (grouped by the group asked), top (a ranked list), count
 #
 # Not to be copied into config/ask_verified.yml: a verified answer for a golden question would test nothing.
@@ -180,3 +181,10 @@
 - {q: "Best pizza recipe", want: none}
 - {q: "Weather in New York tomorrow", want: none}
 - {q: "Translate hello into Spanish", want: none}
+
+# --- Asked on staging 12 Nov 2026 and answered wrong there (written before any fix, never tuned on)
+- {q: "How has consumer sentiment about the economy changed over the last 3 months?", want: ["economy overall"]}
+- {q: "How do Chinese consumers feel about the economy?", want: ["expectations for the economy"], country: CN}
+- {q: "Which retailers do Gen Z shop at most?", want: ["nonfood products from", "food products from"], check: cut}
+- {q: "What percentage of consumers plan to spend more this holiday season vs last year?", want: ["holiday spending in 20"]}
+- {q: "Are people cutting back on dining out because of tariffs?", want: none}

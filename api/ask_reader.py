@@ -4,7 +4,7 @@ Who calls it: api/assistant.py. Rules only, no model: about a millisecond. What 
 question and its answers) is found afterwards by api/ask_index.py from the words left over (`about`).
 
 A plan: {kind: share|count|top|trend|change, when: [period spec, ...] (two when comparing), grain: wave|biweek|
-4week|month|quarter|year|None, cuts: {dim: [values] or "all"}, top: n, about: str}. A period spec is one of
+4week|month|quarter|year|None, cuts: {dim: [values] or "all"}, top: n, country: US|CN (config/countries.yml), about: str}. A period spec is one of
 {"latest": k} (the k-th latest wave, 1 = latest), {"first": k}, {"last": n, "unit": wave|week|month|year},
 {"year": y}, {"month": (y, m)}, {"quarter": (y, q)}, {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD"} or {"all": True}.
 """
@@ -12,7 +12,12 @@ from __future__ import annotations
 
 import calendar
 import re
+from pathlib import Path
 
+import yaml
+
+COUNTRY_WORDS = {code: re.compile(r"\b(" + "|".join(re.escape(w) for w in c.get("ask_words", [])) + r")(?![a-z])")
+                 for code, c in yaml.safe_load((Path(__file__).resolve().parents[1] / "config" / "countries.yml").read_text()).items()}
 MONTHS = {name.lower(): i for i, name in enumerate(calendar.month_name) if name} | \
          {name.lower(): i for i, name in enumerate(calendar.month_abbr) if name} | {"sept": 9}
 ORDINALS = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3, "fourth": 4, "4th": 4, "fifth": 5, "5th": 5}
@@ -132,11 +137,15 @@ def read(question: str) -> dict:
         if re.search(pattern, text) and cuts.get(dim) != "all":
             cuts.setdefault(dim, []).append(value)
     top = re.search(r"\btop\s+(\d+|three|five|ten)\b", text)
+    # waves are only ever compared within one country (config/countries.yml): "China" asks the China survey, no name the first
+    country = next((code for code, words in COUNTRY_WORDS.items() if words.search(text)), next(iter(COUNTRY_WORDS)))
     about = rest
+    for words in COUNTRY_WORDS.values():
+        about = words.sub(" ", about)
     for pattern, *_ in CUT_DIMS + CUT_VALUES + GRAINS + KINDS:   # before the filler words: "by generation" is one phrase
         about = re.sub(pattern, " ", about)
     about = FILLER.sub(" ", re.sub(r"\b(20[12]\d|q[1-4]|\d+)\b", " ", about))
     about = re.sub(rf"\b({'|'.join(MONTHS)})\b", " ", about)
-    return {"question": text, "kind": kind, "when": when, "grain": grain, "cuts": cuts, "top": number(top[1]) if top else None,
+    return {"question": text, "country": country, "kind": kind, "when": when, "grain": grain, "cuts": cuts, "top": number(top[1]) if top else None,
             "compare": len(when) >= 2 or bool(re.search(r"\b(compare|compared|versus|vs\.?|against)\b", text)),
             "about": " ".join(re.findall(r"[a-z0-9$%'-]+", about))}

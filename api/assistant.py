@@ -35,7 +35,10 @@ CURRENT_DAYS = 365                   # "latest"/"last N weeks": only questions a
 CANDIDATES = 10                      # survey questions the model chooses between (api/ask_index.py retrieve)
 TREND_FROM = 3                       # with no time named, a question asked in this many waves or more is shown as a trend
 OWN_WORDING = 0.8                    # a question with this share of a survey question's words is that question: no model
-NEAR_FLOOR = 0.6                     # closeness in meaning (0-1, local model) below which no survey question is near: "capital of France" 0.55
+NEAR_FLOOR = 0.64                    # closeness in meaning (0-1, local model) below which no survey question is near, unless every
+                                     # word is found (a misspelling corrected: "walmrt shoppers" 0.597). Golden set, 12 Nov 2026: off-topic
+                                     # 0.55-0.63 ("Weather in New York tomorrow" 0.626), real 0.652 and up ("Movie theater visits over time")
+EVERY_WORD = 1.0                     # keyword match share at which every word of the question was found
 NEAR_EQUAL = 0.8                     # rules only: a match scoring this share of the best counts as near-equal
 EVENT = re.compile(r"\b(prime day|big deal|deal days|black friday|cyber monday|holidays?|valentine'?s?|easter|halloween|thanksgiving|"
                    r"back.to.school|mother'?s day|father'?s day)\b")   # a survey question about one answers only a question naming one
@@ -44,6 +47,7 @@ SAME_ANSWERS = 0.5                   # share of answers alike for two questions 
 JUNK_BELOW = 0.35                    # below this share of words matched, no survey asks it: free, no model
 MIN_MATCH = 0.45                     # share of the question's words found below which it is "not in the surveys" (scripts/ask_bench.py)
 NOTE_STARTS = ("Note", "Not asked", "Asked under", "Shown by")   # sentences that qualify the answer, shown apart
+SMALL_BASE = 50                      # config/methodology.yml: a figure on fewer people is marked small base, read with caution
 DONUT_MAX = 8                        # a single-choice question with this many answers or fewer is a donut
 SKIP = re.compile(r"^(none of (these|the above)|other( - please specify)?|prefer not to say|don'?t know|not sure)$", re.I)
 INDEX: dict = {"version": None, "index": None}
@@ -172,6 +176,10 @@ def write(plan: dict, fig: dict, doc: dict, named: list[int]) -> tuple[list[str]
             say.append(f"In {when}{among}, {lead} answered “{fig['answers'][a]}”.")
     if len(doc.get("codes", [])) > 1 and len({v for p in periods for v in p["versions"]}) > 1:
         say.append(f"Asked under the codes {', '.join(doc['codes'])} over the years: their waves are joined as one series.")
+    few = fig["bases"][:, :, shown]
+    few = few[(few > 0) & (few < SMALL_BASE)]
+    if few.size:
+        say.append(f"Note: small base, as few as {int(few.min()):,} respondents: read with caution.")
     gaps = [p["label"] for p in periods if not p["waves"]]
     if gaps:
         say.append(f"Not asked in: {', '.join(gaps[:12])}{'…' if len(gaps) > 12 else ''} (gaps in the chart).")
@@ -235,6 +243,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
     asks again without quick to have it read (the Ask page shows the quick answer meanwhile)."""
     question = " ".join(str(question).split())[:500]
     plan = ask_reader.read(question)
+    visible = {s for s in visible if index.country.get(s, "US") == plan["country"]}   # a US question never reads China's waves
     hits = []   # the topic words, and the whole question (a cut can be the subject: "What is your age group?"), best kept
     if len(question) >= 3:
         best = {}
@@ -266,7 +275,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
             verified = None
     candidates = index.retrieve(subject, plan, CANDIDATES, visible, asked) if unsure and asked is not None and not verified else []
     closeness = [c["near"] for c in candidates if "near" in c]   # only the ones found by meaning carry a closeness
-    if closeness and max(closeness) < NEAR_FLOOR and hits[0]["match"] < MIN_MATCH:   # nothing close in meaning or words ("walmrt" is corrected): free, no model
+    if closeness and max(closeness) < NEAR_FLOOR and hits[0]["match"] < EVERY_WORD:   # nothing close in meaning or words ("walmrt" is corrected): free, no model
         return {"answer": "None of the surveys asks this. The closest questions are below.", "chart": None, "table": None,
                 "sources": [], "plan": plan, "mode": "none", "no_source": True, "understood": "meaning",
                 "suggestions": [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]}
@@ -373,7 +382,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
     rest = question   # words the survey itself uses ("compare to last year", an answer "Spent more than last year") are
     for a in named:   # the question's wording, not a period: without them, the plan is read again
         rest = re.sub(re.escape(fig["answers"][a]), " ", rest, flags=re.I)
-    own = " ".join(re.findall(r"[a-z0-9]+", doc["text"].lower()))
+    own = " ".join(re.findall(r"[a-z0-9]+", " ".join([doc["text"]] + fig["answers"]).lower()))   # "than last year" in an answer too
     for phrase in set(re.findall(r"\b(?:this|last|past|previous|next)\s+(?:\d+\s+|two\s+|three\s+|twelve\s+|few\s+)?(?:weeks?|months?|years?|days?|holiday season)\b", rest.lower())):
         if phrase in own:
             rest = re.sub(re.escape(phrase), " ", rest, flags=re.I)
