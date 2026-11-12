@@ -62,6 +62,7 @@ def index_for(root: Path, version: str, waves: list[dict]) -> Index:
     with INDEX_LOCK:
         if INDEX["version"] != version or not INDEX["index"].docs:   # empty: built before a deploy restored the files
             INDEX.update(version=version, index=Index(root, waves))
+            threading.Thread(target=INDEX["index"].add_vectors, daemon=True, name="ask-vectors").start()
             with ANSWERS_LOCK:
                 ANSWERS.clear()
         return INDEX["index"]

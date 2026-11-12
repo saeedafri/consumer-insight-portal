@@ -72,7 +72,9 @@ export class Busy extends Error { constructor() { super("The portal is busy; ret
 /** One query cache for the app: writes anywhere refresh the lists they change. */
 export const queries = new QueryClient({ defaultOptions: { queries: {
   refetchOnWindowFocus: false,
-  retry: (count, error) => (error instanceof Busy ? count < 3 : count < 1),   // busy: up to 3 tries, 3 s apart
+  // busy: every 3 s for up to 90 s, longer than a new container takes to restore the published views (~75 s, 12 Nov 2026);
+  // an empty Sectors or Retailer databank after a deploy came from giving up at once
+  retry: (count, error) => (error instanceof Busy ? count < 30 : count < 1),
   retryDelay: (_, error) => (error instanceof Busy ? 3000 : 800),
 } } });
 
@@ -176,7 +178,7 @@ export const useReport = (id: number) =>
 
 /** The waves with a weekly report (etl/weekly_report.py): the left menu shows the link only for them. */
 export const useReportWaves = () =>
-  useQuery({ queryKey: ["report-waves"], queryFn: () => get<number[]>("/api/v1/reports"), ...forever, retry: false });
+  useQuery({ queryKey: ["report-waves"], queryFn: () => get<number[]>("/api/v1/reports"), ...forever });
 
 /** The Databank's sector tables (etl/sectors.py): one column per wave the sector ran. */
 export interface Sector {
@@ -186,7 +188,7 @@ export interface Sector {
   tables: { title: string; question: string; bases: (number | null)[]; rows: { label: string; values: (number | null)[] }[] }[];
 }
 export const useSectors = () =>
-  useQuery({ queryKey: ["sectors"], queryFn: () => get<{ sectors: Sector[] }>("/api/v1/sectors"), ...forever, retry: false });
+  useQuery({ queryKey: ["sectors"], queryFn: () => get<{ sectors: Sector[] }>("/api/v1/sectors"), ...forever });
 
 /** The retail databank (etl/retailers.py): counts per week, added up in the browser for whichever weeks are chosen.
  *  A retailer's counts: weekly market [shoppers, food, nonfood, ...profile]; a sector [shoppers, ...profile]; profile is
@@ -204,7 +206,7 @@ export interface Retailers {
   markets: RetailMarket[];
 }
 export const useRetailers = () =>
-  useQuery({ queryKey: ["retailers"], queryFn: () => get<Retailers>("/api/v1/retailers"), ...forever, retry: false });
+  useQuery({ queryKey: ["retailers"], queryFn: () => get<Retailers>("/api/v1/retailers"), ...forever });
 
 /** Retail events, expected vs actual (etl/expectations.py). */
 export interface SpendSide { median: number; answers: number; spenders: number | null; market_billions: number | null }
@@ -218,7 +220,7 @@ export interface EventComparison {
   spend: { expected: SpendSide | null; actual: SpendSide | null } | null;
 }
 export const useExpectations = () =>
-  useQuery({ queryKey: ["expectations"], ...forever, retry: false,
+  useQuery({ queryKey: ["expectations"], ...forever,
     queryFn: () => get<{ us_adults_millions: number; events: { name: string; comparisons: EventComparison[] }[]; outlooks: Outlook[] }>("/api/v1/expectations") });
 /** An outlook question asked survey after survey (holiday spending, finances): each survey's answers and net score. */
 export interface Outlook { title: string; question: string; dates: string[]; bases: number[]; net: (number | null)[]; rows: { label: string; values: (number | null)[] }[] }

@@ -224,6 +224,7 @@ def main() -> int:
     index_waves.update(w["survey_id"] for w in waves)
     started = time.perf_counter()
     index = Index(ROOT / "questions", waves)
+    index.add_vectors()
     built = time.perf_counter() - started
     raws = RAWS
     docs = list(index.docs.values())

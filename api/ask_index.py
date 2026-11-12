@@ -216,30 +216,36 @@ class Index:
                         held = self.postings.setdefault(s, {})
                         held[key] = max(held.get(key, 0.0), FIELDS[field])
         self.parts = parts
-        # meaning: one vector per question (api/ask_model.py), from its wording, answers and topic words, and one per
-        # analyst's ask (config/ask_semantic.json): a question's closeness joins its own and its nearest ask's (ASK_WEIGHT)
+        self.vectors = self.verified_vectors = None   # keyword ranking until add_vectors has run (retrieve, verified_for)
+        self.vector_keys, self.verified = [], []
         self.embed_text = {key: f"{doc['name']}; {'; '.join(doc['aliases'])}. {doc['text']} | answers: {'; '.join(doc['labels'])[:300]}"
                            for key, doc in self.docs.items()}
-        asks = {f"ask {a}": a for doc in self.docs.values() for a in doc.get("asks", [])}
-        found = ask_model.question_vectors({**self.embed_text, **asks}, prune=True)
-        self.vector_keys = [k for k in self.docs if k in found]
-        self.vectors = np.array([found[k] for k in self.vector_keys], np.float32) if self.vector_keys else None
-        owners = [(i, f"ask {a}") for i, k in enumerate(self.vector_keys) for a in self.docs[k].get("asks", []) if f"ask {a}" in found]
-        self.ask_owner = np.array([i for i, _ in owners], np.int32)
-        self.ask_vectors = np.array([found[a] for _, a in owners], np.float32) if owners else None
-        areas = ask_model.question_vectors({a: f"survey questions about {a}" for a in AREAS}) if self.vector_keys else {}
-        self.area_vectors = np.array([areas[a] for a in AREAS], np.float32) if len(areas) == len(AREAS) else None
-        self.load_verified()
-        newest = date.fromisoformat(max((d["last"] for d in self.docs.values()), default="2000-01-01"))
-        self.standing = np.array([STANDING * (min(math.log1p(self.docs[k]["waves"]) / math.log1p(52), 1.0)
-                                              + math.exp(-(newest - date.fromisoformat(self.docs[k]["last"])).days / 365)) / 2
-                                  for k in self.vector_keys], np.float32)
         total = max(len(self.docs), 1)
         self.idf = {s: math.log(1 + total / len(keys)) for s, keys in self.postings.items()}
         self.vocabulary = sorted({w for d in self.docs.values() for w in re.findall(r"[a-z]{4,}", d["text"].lower())}
                                  | {w for g in self.synonyms.values() for w in g if len(w) >= 4})   # whole words, to correct spelling
         self.newest = max((d["last"] for d in self.docs.values()), default="2000-01-01")
         log.info("Ask CIP index: %d questions, %d words, from %s", len(self.docs), len(self.postings), root)
+
+    def add_vectors(self) -> None:
+        """Meaning: one vector per question (api/ask_model.py), from its wording, answers and topic words, and one per
+        analyst's ask (config/ask_semantic.json); a question's closeness joins its own and its nearest ask's (ASK_WEIGHT).
+        api/assistant.py index_for runs it in the background: a deploy that brings ~18,000 new texts embeds them on one
+        thread for minutes (12 Nov 2026), and asks are answered by the keyword ranking meanwhile, never kept waiting."""
+        found = ask_model.question_vectors({**self.embed_text, **{f"ask {a}": a for doc in self.docs.values() for a in doc.get("asks", [])}}, prune=True)
+        keys = [k for k in self.docs if k in found]
+        owners = [(i, f"ask {a}") for i, k in enumerate(keys) for a in self.docs[k].get("asks", []) if f"ask {a}" in found]
+        self.ask_owner = np.array([i for i, _ in owners], np.int32)
+        self.ask_vectors = np.array([found[a] for _, a in owners], np.float32) if owners else None
+        areas = ask_model.question_vectors({a: f"survey questions about {a}" for a in AREAS}) if keys else {}
+        self.area_vectors = np.array([areas[a] for a in AREAS], np.float32) if len(areas) == len(AREAS) else None
+        newest = date.fromisoformat(max((d["last"] for d in self.docs.values()), default="2000-01-01"))
+        self.standing = np.array([STANDING * (min(math.log1p(self.docs[k]["waves"]) / math.log1p(52), 1.0)
+                                              + math.exp(-(newest - date.fromisoformat(self.docs[k]["last"])).days / 365)) / 2
+                                  for k in keys], np.float32)
+        self.vector_keys = keys
+        self.vectors = np.array([found[k] for k in keys], np.float32) if keys else None   # last: retrieve reads it first
+        self.load_verified()
         model = ask_model.status()
         (log.info if model["on"] else log.warning)("Ask model %s: %s; %d questions with vectors", "ON" if model["on"] else "OFF",
                                                    f"key from {model['key_from']}, {model['model']}" if model["on"] else model["why_off"],

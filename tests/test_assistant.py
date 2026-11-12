@@ -43,7 +43,9 @@ def index(tmp_path):
         ["Are you allowed to use generative AI tools at work?", "Which of these ways to save money do you use?"],
         [["", 1, "Yes"], ["", 2, "No"], ["", 3, "Coupons"], ["", 4, "Store brands"]], [["total", "Total"]], reused)).encode()))
     waves = [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping and Spending", "modules": []} for i, d in enumerate(DATES)]
-    return Index(tmp_path / "questions", waves)
+    index = Index(tmp_path / "questions", waves)
+    index.add_vectors()
+    return index
 
 
 EVERYONE = {100 + i for i in range(8)}
@@ -208,8 +210,15 @@ def test_a_question_reads_only_its_countrys_waves_and_marks_a_small_base(tmp_pat
     waves = [{"survey_id": 100, "wave_date": DATES[-1], "title": "US", "modules": [], "country": "US"},
              {"survey_id": 900, "wave_date": DATES[-1], "title": "China", "modules": [], "country": "CN"}]
     index = Index(tmp_path / "questions", waves)
+    index.add_vectors()
     us = assistant.answer("What share bought from Amazon?", index, {100, 900})
     china = assistant.answer("What share of Chinese consumers bought from Amazon?", index, {100, 900})
     assert us["sources"][0]["family"] == "CSI-US" and figure(us, "Amazon") == [42.5]
     assert china["sources"][0]["family"] == "CSI-CN" and figure(china, "Amazon") == [30.0]
     assert "small base" not in us["answer"] and "as few as 30 respondents" in china["answer"]   # config/methodology.yml: under 50
+
+
+def test_asks_are_answered_by_words_while_the_vectors_are_built(index):
+    index.vectors = index.verified_vectors = None   # api/assistant.py index_for: add_vectors still running after a deploy
+    found = assistant.answer("What share bought from Amazon in the latest wave?", index, EVERYONE)
+    assert found["sources"][0]["qcode"] == "XQ1" and figure(found, "Amazon") == [42.5]

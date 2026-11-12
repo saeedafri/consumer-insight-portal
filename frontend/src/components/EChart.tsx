@@ -22,6 +22,9 @@ const look = (t: typeof LIGHT) => ({
   valueAxis: { axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: t.ink3, fontSize: 12 }, splitLine: { lineStyle: { color: t.line } } },
   timeAxis: { axisLine: { lineStyle: { color: t.lineStrong } }, axisLabel: { color: t.ink3, fontSize: 12, hideOverlap: true }, splitLine: { show: false } },
   line: { symbol: "circle", symbolSize: 5, lineStyle: { width: 1.5 } },
+  // value labels in the theme's ink with no outline: ECharts' own halo, drawn for a light page, smeared them in dark (12 Nov 2026)
+  bar: { label: { color: t.ink2, textBorderWidth: 0, textShadowBlur: 0 } },
+  pie: { label: { color: t.ink2, textBorderWidth: 0, textShadowBlur: 0 } },
   legend: { textStyle: { color: t.ink2, fontSize: 12 }, icon: "roundRect", itemWidth: 10, itemHeight: 10 },
   tooltip: { backgroundColor: t.raised, borderColor: t.line, borderWidth: 1, textStyle: { color: t.ink, fontSize: 12 } },
 });

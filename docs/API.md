@@ -93,7 +93,7 @@ The full machine-readable description is at `GET /api/v1/openapi.json`.
 
 **Question codes** may be written in any case (`XM3` or `xm3`). **Answers.** JSON, gzip-compressed when you accept it. Errors are `{"detail": "…", "status": n}`: `401` no or revoked
 key, `403` not on your menu ("Not included in your subscription") or a survey you may not see, `404` not found, `429`
-too many requests, `503` busy (retry after the seconds in `Retry-After`).
+too many requests, `503` busy or, for a few seconds after a restart, being published (retry after the seconds in `Retry-After`).
 
 ## 4. The MCP connector (Claude and other AI assistants)
 

@@ -62,12 +62,13 @@ export default function Report() {
   </div>;
 }
 
-/** "Three data points to watch this week": the three biggest significant three-month moves, one per table, a card each
+/** "Three data points to watch this week": the biggest significant long moves, one per table first (fewer in a quiet
+ *  week, and the heading says how many), a card each
  *  (as the figure cards on other pages): the table it is from, the change in green (rose) or red (fell), then what moved. */
 function ThreePoints({ report }: { report: WeeklyReport }) {
   if (!report.three_points.length) return null;
   return <section aria-labelledby="three-points">
-    <h2 className="report-section" id="three-points">Three data points to watch this week</h2>
+    <h2 className="report-section" id="three-points">{["One data point", "Two data points", "Three data points"][report.three_points.length - 1]} to watch this week</h2>
     <ol className="grid g3 three-points">
       {report.three_points.map(p => <li key={`${p.section}-${p.label}`} className={`card kpi ${p.change > 0 ? "rise" : "fall"}`}>
         <div className="k-label">{p.section}</div>

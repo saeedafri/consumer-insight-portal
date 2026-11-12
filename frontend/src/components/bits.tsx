@@ -213,20 +213,11 @@ export async function copyLink(button: HTMLButtonElement) {
   setTimeout(() => { target.textContent = original; }, 1800);
 }
 
-/** A small menu on native <details>: Escape or a click elsewhere closes it; `keep` leaves it open after a choice. */
+/** A small menu on native <details>: Escape or a click elsewhere closes it (Shell's closeDropdowns); `keep` leaves it
+ *  open after a choice. */
 export function Menu({ label, icon, children, keep = false, name, className = "" }:
   { label: string; icon?: ReactNode; children: ReactNode; keep?: boolean; name?: string; className?: string }) {
   const menu = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const close = (e: Event) => {
-      const d = menu.current;
-      if (!d?.open) return;
-      if (e instanceof KeyboardEvent ? e.key === "Escape" : !d.contains(e.target as Node)) { d.open = false; if (e instanceof KeyboardEvent) d.querySelector("summary")?.focus(); }
-    };
-    document.addEventListener("pointerdown", close);
-    document.addEventListener("keydown", close);
-    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", close); };
-  }, []);
   return <details ref={menu} className={`menu ${className}`}>
     <summary className="btn" aria-label={icon && !label ? name ?? "More actions" : undefined} title={name}>{icon}{label}{label && <span aria-hidden className="caret">▾</span>}</summary>
     <div className="menu-list" onClick={e => { if (!keep && (e.target as HTMLElement).closest("button, a")) menu.current!.open = false; }}>{children}</div>

@@ -306,18 +306,20 @@ def appendix(question: Question, end: int) -> dict:
 
 
 def three_points(tables: list[dict]) -> list[dict]:
-    """The three biggest significant three-month moves of the week, at most one per table so the three tell three
-    different stories: the PDF's "Three Data Points To Watch This Week"."""
-    best = []
+    """The three biggest significant long moves of the week, the PDF's "Three Data Points To Watch This Week": each
+    table's biggest first so the three tell different stories, then, when fewer than three tables moved, the next
+    biggest from any table (China, 26 Oct 2026: only Bought in store moved, twice). Never a move that is not significant,
+    so a quiet week shows fewer than three (85 of the 149 China weeks show none)."""
+    moves = []
     for data in tables:
-        moves = [r for r in data["rows"] if r["quarter_significant"]]
-        if moves:
-            row = max(moves, key=lambda r: abs(r["quarter_change"]))
-            back = date.fromisoformat(data["dates"][-1]) - timedelta(weeks=settings()["change_weeks"])
-            best.append({"section": data["name"], "label": row["label"], "change": row["quarter_change"],
-                         "from": round(row["values"][-1] - row["quarter_change"], 1), "to": row["values"][-1],
-                         "from_date": back.isoformat(), "to_date": data["dates"][-1]})   # US: the table's first week
-    return sorted(best, key=lambda p: -abs(p["change"]))[:3]
+        back = date.fromisoformat(data["dates"][-1]) - timedelta(weeks=settings()["change_weeks"])
+        rows = sorted((r for r in data["rows"] if r["quarter_significant"]), key=lambda r: -abs(r["quarter_change"]))
+        moves += [(rank > 0, {"section": data["name"], "label": row["label"], "change": row["quarter_change"],
+                              "from": round(row["values"][-1] - row["quarter_change"], 1), "to": row["values"][-1],
+                              "from_date": back.isoformat(), "to_date": data["dates"][-1]})
+                  for rank, row in enumerate(rows)]
+    best = sorted(moves, key=lambda m: (m[0], -abs(m[1]["change"])))[:3]
+    return sorted((point for _, point in best), key=lambda p: -abs(p["change"]))
 
 
 def margin_of_error(base: int) -> float:

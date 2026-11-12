@@ -231,7 +231,7 @@ def test_the_weekly_report_is_served_as_published_and_a_wave_without_one_says_so
 
 def test_the_tracker_views_are_served_as_published_and_say_so_before_the_first_publish(portal):
     for name in ("sectors", "expectations"):
-        assert call(f"/api/v1/{name}", signed("ana@coresight.com"))[0] == 404              # not published yet
+        assert call(f"/api/v1/{name}", signed("ana@coresight.com"))[0] == 503              # being published: the screen retries
         put(portal, name, {"sectors": [], "events": []})
         status, _, body = call(f"/api/v1/{name}", signed("pat@acme.com"))                 # a client who sees every tracker wave
         assert status == 200 and "sectors" in json.loads(body)

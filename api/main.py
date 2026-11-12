@@ -489,8 +489,8 @@ async def tracker_view(request: Request, who: dict, name: str) -> Response:
     if not all(access.sees(who, w) for w in tracker):
         raise HTTPException(403, "Not included in your subscription: this view covers every weekly tracker survey")
     found = published_file(name)
-    if found is None:
-        raise HTTPException(404, "Not published yet")
+    if found is None:   # a new container restores the published files in the background (~75 s, deploy/start.sh, 12 Nov
+        raise HTTPException(503, "Being published: retry in a few seconds", headers={"Retry-After": "5"})   # 2026): the screens retry
     return send_payload(request, found)
 
 

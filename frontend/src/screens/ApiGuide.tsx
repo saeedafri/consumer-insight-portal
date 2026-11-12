@@ -102,7 +102,7 @@ curl -H "Authorization: Bearer cip_…" "${portal}/api/v1/waves/532/results?q=q4
       <h3 className="details-head">Your team's items</h3>
       <p className="small">The same boards, saved views, alerts and audiences as on the screens; you can remove only what you made.</p>
       <Table head={["Method and address", "What it does", "Needs on your menu"]} rows={TEAM} code />
-      <p className="muted small">Question codes may be written in any case (XM3 or xm3). Answers are JSON. Errors are {"{\"detail\": \"…\", \"status\": n}"}: 401 no or revoked key, 403 not on your menu or a survey you may not see, 404 not found, 429 too many requests, 503 busy (retry after Retry-After seconds).</p>
+      <p className="muted small">Question codes may be written in any case (XM3 or xm3). Answers are JSON. Errors are {"{\"detail\": \"…\", \"status\": n}"}: 401 no or revoked key, 403 not on your menu or a survey you may not see, 404 not found, 429 too many requests, 503 busy or, for a few seconds after a restart, being published (retry after Retry-After seconds).</p>
     </Card>
     <Card title="4. The MCP connector (Claude and other AI assistants)" sub={`Address ${portal}/mcp (MCP streamable HTTP, protocol 2025-06-18), with the same Authorization header.`}>
       <pre className="guide-code">{`claude mcp add --transport http cip ${portal}/mcp --header "Authorization: Bearer cip_…"`}</pre>

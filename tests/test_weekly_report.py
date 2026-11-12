@@ -103,6 +103,9 @@ def test_the_three_data_points_are_the_biggest_significant_moves_one_per_table()
     assert [(p["section"], p["label"], p["change"]) for p in points] == [
         ("Activities", "Dining out", -6.2), ("Food", "Amazon", 6.0), ("Online", "Food", 5.6)]
     assert (points[0]["from"], points[0]["from_date"]) == (20.0, "2026-08-03")   # US: 12 weeks before Oct 26
+    # one table moved (China, 26 Oct 2026): its two significant moves, never the one that is not significant
+    quiet = [tables[0], {**tables[1], "rows": [row("Toys", 9.9, False)]}]
+    assert [p["label"] for p in report.three_points(quiet)] == ["Amazon", "Walmart"]
 
 
 def test_margins_of_error_match_the_report_methodology():

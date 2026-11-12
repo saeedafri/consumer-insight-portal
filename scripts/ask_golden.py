@@ -65,6 +65,7 @@ def main() -> int:
     golden = yaml.safe_load(GOLDEN.read_text())[:args.only or None]
     waves = json.loads(gzip.decompress((args.published / "waves.json.gz").read_bytes()))
     index = Index(args.published / "questions", waves)
+    index.add_vectors()
     print(f"Model {'off (quick)' if args.quick else 'on (' + ask_model.model() + ')' if ask_model.ready() else 'off (rules only)'} · {len(golden)} questions\n")
     visible = {w["survey_id"] for w in waves}
     countries = {w["survey_id"]: w.get("country") or "US" for w in waves}

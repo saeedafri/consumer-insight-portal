@@ -114,6 +114,18 @@ export default function Shell() {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
+  // closeDropdowns: an open menu or picker (<details class="menu|picker">) closes on Escape or a click outside it, as a
+  // select does; native <details> stays open until its own summary is clicked (the Retailer databank pickers, 12 Nov 2026)
+  useEffect(() => {
+    const closeDropdowns = (e: Event) => document.querySelectorAll<HTMLDetailsElement>("details.menu[open], details.picker[open]").forEach(d => {
+      if (e instanceof KeyboardEvent ? e.key !== "Escape" : d.contains(e.target as Node)) return;
+      d.open = false;
+      if (e instanceof KeyboardEvent) d.querySelector("summary")?.focus();
+    });
+    document.addEventListener("pointerdown", closeDropdowns);
+    document.addEventListener("keydown", closeDropdowns);
+    return () => { document.removeEventListener("pointerdown", closeDropdowns); document.removeEventListener("keydown", closeDropdowns); };
+  }, []);
   // Azure closes an idle connection after about 4 minutes (measured 12 Nov 2026: kept after 125 s, closed by 245 s), and a
   // new one costs ~0.5-0.7 s of TLS handshake from India. While the tab is in view, a tiny HEAD every 2 minutes keeps it
   // open, so the next question or page pays only the distance (~0.26 s). Hidden tabs send nothing.
