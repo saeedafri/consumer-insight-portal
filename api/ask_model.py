@@ -65,7 +65,9 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["q", "r"
                          "p": {"type": "string", "enum": ["named", "latest", "all", "previous", "first_vs_latest"]}}}
 # every word here is paid for on every new question (~200 tokens); each rule is one the measured misses needed
 SYSTEM = ("You map an analyst's question about Coresight's US consumer surveys to ONE numbered candidate survey question "
-          "(q; null if none answers it); r: a second candidate only if it is just as likely, else null. Prefer the weekly tracker and questions asked in many waves (w) and recently, "
+          "(q; null if none answers it, or if the question names a specific thing, such as an activity, product or reason, that "
+          "no candidate's wording or answers include; a topic alone, such as 'tariffs', means its main question); r: a second "
+          "candidate only if it is just as likely, else null. Prefer the weekly tracker and questions asked in many waves (w) and recently, "
           "unless a study, holiday or time is named; when candidates ask the same thing, the one with most waves. For how "
           "many or what share of people use, own, have or do X, pick the question asking whether people do X, not a "
           "follow-up asked only of those who do (how much, why, how often). A retailer or brand named (Amazon, Walmart) "
@@ -314,7 +316,8 @@ def plan(question: str, candidates: list[dict]) -> dict | None:
         return None
     # every word sent is paid for: ~40 tokens a candidate (waves, years, wording to 110 letters, 6 short answers)
     listing = "\n".join(f"{c['number']}. ({c['waves']}w {c['first'][2:4]}-{c['last'][2:4]}) {c.get('name') or ''}: {c['text'][:90]} | "
-                        f"{'; '.join(a[:20] for a in c['answers'][:6])}" for c in candidates)   # the business name first
+                        f"{'; '.join(a[:32] for a in c['answers'][:6])}" for c in candidates)   # the business name first; 20 letters cut
+    # "I have started but not finished" to "I have started but n" (13 Nov 2026)
     try:
         started = time.perf_counter()
         reply = call("chat/completions", {

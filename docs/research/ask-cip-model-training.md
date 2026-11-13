@@ -767,31 +767,67 @@ step, and one kept-open connection as a browser uses), the server stage by stage
 questions), the page's code bundle (REA's JavaScript analysis of `frontend/out`, evidence
 `ev_66a5b01823d638442eb3a5536dc13d563813271c7820b495f35d0e1d5157fa81`), and every question still wrong, one by one.
 
-### Will v4 give 99.99%? Do we need v5, v6, v7, v8?
+### The one number: right answers
 
-**No notebook, v4 or any later one, gives 99.99% on its own.** 99.99% means one wrong answer in 10,000 freely worded
-questions. The evidence:
+**Right answers** = of the questions people ask, the share where the answer Ask finally shows is the correct one (the right
+survey question, period, group and kind; or "not in the surveys" when that is true). Measured on the 161 hand-written
+questions (the final exam), the way the page asks: the instant answer, then the AI check where Ask is unsure.
 
-| Fact | Measured |
+| When | Right answers |
 |---|---|
-| Three training rounds (v1-v3) | each improved the search alone, none improved Ask as a whole beyond ~84-89% on the final exam |
-| The best large re-reader we can run (bge-reranker-v2-m3, 568M dials) picking alone | ~70% of hand-written questions |
-| The AI check itself (gpt-4o-mini) | picked wrong in 5 of the 17 questions still wrong, where the right question was first in its list |
-| The exam's own answer key | 4 answers under human review; 27.5% of the misses read by hand had no single right answer |
+| Staging, 12 Nov (old code) | 91% |
+| 13 Nov, learned answers kept by key, today's AI check (gpt-4o-mini) | 91.3% |
+| 13 Nov, rules fixed, each survey question shown to the AI once, answers it names first | 93.8% |
+| The same, with gpt-4.1 as the AI check (a setting, no code) | **96.3%** (155 of 161) |
+| Goal | 99% |
 
-**What does reach 99%+ is the system around the model**, and it is already built:
+What 99% needs, from what is still wrong (6 of 161 with gpt-4.1):
 
-| How the answer was found | Right on the final exam |
-|---|---|
-| The survey question's own name ("named") | 18 of 18 |
-| An answer an admin saved ("verified") | 5 of 5 |
-| A question the AI settled before ("learned", reused at once, no AI) | the AI's own result, every time |
-| A best match, with the AI check behind it | 88% overall; the rest are shown as "Best match" with the alternatives |
+| Still wrong | Why | What fixes it |
+|---|---|---|
+| "How do Chinese consumers feel about the economy?" | this laptop has no China surveys | right on staging, which has them (to confirm after deploy) |
+| "Economic outlook by generation" | the alias "Economic outlook" was given to an inflation question | the per-publish renaming on staging (to confirm) |
+| "Which retailers do Gen Z prefer?" | "prefer" fits both the feelings question and the shopping lists | a judgement call: the answer key's choice (shopping lists) to be confirmed by an analyst |
+| "walmrt shoppers" | a typo hides "Walmart" from the retailer rule; the AI picked the mass-merchants question | v5 (it learns typos from practice questions) |
+| "What share of women started holiday shopping" | "started" fits "when do you expect to start" better in words than "status of your holiday shopping" | v5 (contrast practice questions) |
+| "Are people cutting back on dining out because of tariffs?" | no survey asks it; the AI still answers from the nearest tariff question | v5's "none of these" score |
 
-So the honest target is: **99%+ on answers labelled Verified, and every other answer labelled Best match with the
-alternatives one click away.** Coverage grows with use: every question the AI settles once is answered at once forever
-after, every admin "Save as verified" fixes every later question worded like it, and once a month the same v5 notebook is
-run again on those real questions. **v5 is the last notebook to design; there is no v6, v7 or v8**, only monthly re-runs.
+**Why no notebook alone reaches 99%:** a model can only choose among the candidates the search found (the right one is
+among the nearest 10 for 95.4%, 20 for 97.4%, 30 for 98.7%), and a stronger AI alone did not help (gpt-4.1 90.7% vs
+gpt-4o-mini 91.3% before the fixes): the misses were mostly *our own rules overruling a right pick* (below), and answer
+keys, and judgement calls. v5 is the last notebook to design; after it, the same notebook re-runs monthly on real
+questions.
+
+### 13 November, deeper debug: the AI picked right, and our rules overruled it
+
+The AI's own pick was compared with the final answer for every question it read (128 of 161):
+
+| | gpt-4.1 | gpt-4o-mini |
+|---|---|---|
+| AI right, final right | 108 | 106 |
+| **AI right, final wrong (a rule overruled it)** | **7** | **5** |
+| AI wrong, final right (a rule rescued it) | 5 | 8 |
+
+So the rules rescued about as many as they broke: removing them would not help; fixing the ones that broke did. Fixed, each
+checked on the final exam and the 38,316-question bank (bank with no AI: 77.8% → 80.7%; 1,122 questions fixed, 26 worse):
+
+| Rule | What went wrong | Now |
+|---|---|---|
+| A retailer named → the long-running retailer list | "How do people feel about Target?" answered from the purchases list | not when the pick shares more of the question's words |
+| Few waves → the same answers asked over more waves | "your finances" answered from "the economy" (both much better … much worse); "Don’t know" with a curly apostrophe was not seen as generic | a 5-point scale must also match in wording |
+| A trend → the first question with history | "online grocery trend" answered from grocery categories (3 waves) | the one with history that names most of the question |
+| Not asked in the period → only a retailer's other list | "online last month" said "not asked" | the same question in another study too |
+| The AI's list | one question filled 4 of 14 places; answers cut to 6 × 20 letters ("movie theater" was 13th) | each question once; the answers the question names first, 32 letters |
+| A learned answer | saved by a code 115 codes share: 13 of 161 came back from the wrong study | saved by the question's key |
+| A top list for one group | "Top 5 in 9 Nov" for Gen Z alone read as everyone's | "Top 5 among Gen Z" |
+
+Two answer keys were wrong (Ask was right): "Satisfaction with shopping in AI platforms" (*How satisfied were you with the
+shopping experience in the GenAI platform?*) and "How has weight loss medication changed apparel purchases?" (AP11).
+
+**v4, tested inside Ask:** with today's search model and the confidence check, 85 of 161 are answered at once and 98.8%
+of those are right; with v4's reranker, at no threshold were 98% of those answered at once right (best 97.3%, on 73), and it
+added 44 ms and 93 MB. v4 is not used. The reason is in its design: it learned only the order of candidates, from a teacher
+right 70% of the time, so its scores do not say how sure it is. v5 changes exactly that.
 
 ### Where the time goes (one question, from India)
 
@@ -808,32 +844,6 @@ Measured on staging over one kept-open connection: **235-310 ms per question**, 
 measured earlier included opening a new connection for every question, which a browser does not do. The 7-minute
 question was the lock fixed in Part 17. **The server is already milliseconds; what is left is the distance to Central
 US**, which only hosting near the people asking would remove.
-
-### Accuracy now, by kind of question (final exam, current code, AI check on)
-
-| Kind | Questions | Right at once | Right after the AI check | Asked again later (no AI) |
-|---|---|---|---|---|
-| A share or how many | 95 | 93% | 95% | 95% |
-| A trend over time | 23 | 70% | 78% | 83% |
-| Which / top | 15 | 80% | 80% | 80% |
-| By a group (generation, gender) | 12 | 58% | 67% | 67% |
-| Not in the surveys | 9 | 78% | 89% | 78% |
-| A comparison | 7 | 86% | 86% | 86% |
-| **All** | **161** | **84%** | **88%** | **88%** |
-
-**A bug found and fixed on the way:** a question the AI settled was saved by its survey code (q2, D14, Q10), but 115
-codes are used by more than one study's question (972 questions involved). Asked again, 13 questions came back from the
-wrong study ("What categories are people buying in store?" → a 2020 question on places people avoid), so asking again
-was *worse* (81%) than asking the first time (88%). Saved answers now carry the question's own key; asked again, 88% with
-no AI call. A test keeps it fixed.
-
-### The 17 still wrong, by cause
-
-| Cause | Count | What fixes it |
-|---|---|---|
-| The right question was found 1st or 2nd; the final choice went wrong (the AI check, or a rule that prefers the long-running retailer list: "How do people feel about Target?") | 8 | a re-reader trained on our questions (v5), and the hand rules applied only when it is unsure |
-| The right question was 3rd to 10th: past the 5 a re-reader reads | 8 | v5 reads the nearest 20, and its search model is trained to *find* (top 20), not to be first |
-| Not in the surveys, answered with something close ("cutting back on dining out because of tariffs") | 1 | v5's re-reader also learns "none of these" |
 
 ### Why the answers read like a list, and the professional format
 
@@ -892,6 +902,27 @@ get theirs at publish (the naming step that already runs, ~$0.001 a survey). The
 | 6. The small re-reader (22M dials) learns the teacher's order **and** a yes/no per candidate, with off-topic questions all no | v4 learns only the order: its score cannot say "none of these" or how sure it is |
 | 7. Depth (5, 10 or 20), the gate (the lead needed to be right 99% of the time on unseen wording) and the floor (under it: "not in the surveys"), measured | thresholds belong to the model (Part 11) |
 | 8. Both shrunk to 8-bit, checked with the server's own code, timed on one CPU thread | memory and speed on the 1-CPU server |
+| 6, after v4: learns mostly from the known right answer (80%), the teacher's order 20% | v4's student copied its 70%-right teacher |
+| 6: a "wrong" candidate the teacher rates as good as the right one is not taught as wrong | the same thing asked another way (NVIDIA's NV-Retriever) |
+| 6-7: the epochs' weights averaged ("model soup"), kept if better on held-out wording | Qwen3 Embedding and Gemini Embedding both do this |
+
+How the large labs train, and what v5 takes from each (their published reports): Qwen3 Embedding trains first on ~150
+million pairs written by a large model, then on ~12 million kept by a quality filter, then averages checkpoints; Gemini
+Embedding has Gemini remove wrong examples and pick the hard "looks right but is not" examples; NVIDIA's NV-Retriever drops
+"wrong" examples scored nearly as high as the right one; Llama 3 is trained in six rounds, each adding the best of many
+answers chosen by a judge model. v5 is the same recipe at our size: practice questions written by Qwen, kept only if a
+judge agrees, hard look-alikes, near-equals not taught as wrong, checkpoints averaged, and a fixed exam it must beat.
+
+**The first run's checks (13 Nov, on an L4):** two of Qwen's outputs failed and were replaced before training.
+Qwen2.5-7B as the round-trip judge was right on only 67% of the final exam, so (as designed) its rejections were not
+used; and 948 of its 2,131 "off-topic" questions were ones a survey can answer ("What percentage of consumers read
+reviews before buying online?"), which would have taught the re-reader to refuse real questions. Done instead, on the Mac
+with the server's own search model: gpt-4.1 marked the answerable "off-topic" ones (1,111 truly off-topic kept, $0.09),
+and gpt-4.1-mini was the round-trip judge (right on 85% of the exam, names a wrong question 7.6% of the time, mostly the
+same question from another study; gpt-4.1 agreed with 74% of its rejections on a 300 sample). It removed 19,085 of the
+65,099 hard practice questions (29%, $8.57): mostly real labelling mistakes, such as "What is the main reason you have an
+Amazon Prime membership?" written for "Do you have Prime?". Every survey question keeps at least 5. The checked file is
+uploaded as `qwen-v5.json`, so a re-run skips Qwen (scratchpad `check_off.py`, `roundtrip.py`).
 
 Re-running monthly: upload staging's `logs/ask-learned.json` as `learned.json`; real questions count three times.
 

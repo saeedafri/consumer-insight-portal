@@ -294,3 +294,8 @@ def test_a_reranker_reorders_the_nearest_and_decides_how_sure(index, monkeypatch
     assert len(texts) == 3 and found["sources"][0]["qcode"] == "Q14" and found["margin"] == pytest.approx(0.7)   # its order, its scale
     monkeypatch.setattr(assistant.ask_model, "reranker", lambda: (None, None, {"gate": 0.8}))   # a lead under its own gate: unsure
     assert assistant.answer(question, index, EVERYONE, quick=True)["mode"] == "choose"
+
+
+def test_dont_know_with_a_curly_apostrophe_is_left_out_like_a_straight_one():
+    # survey files spell it both ways; the curly one was ranked as an answer and read as a specific answer (13 Nov 2026)
+    assert assistant.SKIP.match("Don’t know") and assistant.GENERIC.match("Don’t know / not sure")

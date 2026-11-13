@@ -89,7 +89,7 @@
 - {q: "Is AI used for work or personally?", want: ["ai for work", "personal, for work, or both"]}
 - {q: "Are people allowed to use GenAI at work?", want: ["allowed to use genai"]}
 - {q: "Have people bought something inside an AI platform?", want: ["purchase within one of these ai platforms", "purchased something within a genai platform"]}
-- {q: "Satisfaction with shopping in AI platforms", want: ["satisfied with the shopping experience", "satisfied were you with the purchase"]}
+- {q: "Satisfaction with shopping in AI platforms", want: ["satisfied with the shopping experience", "satisfied were you with the shopping experience", "satisfied were you with the purchase"]}
 - {q: "Where can GenAI have a positive impact?", want: ["positive impact"]}
 - {q: "Which AI assistants help people shop?", want: ["help you shop"]}
 # --- Health and GLP-1
@@ -98,7 +98,7 @@
 - {q: "Why do people take GLP-1 medication?", want: ["why are you currently taking a glp-1"]}
 - {q: "Do GLP-1 users eat less?", want: ["eating more or less", "eat less"]}
 - {q: "Which foods do GLP-1 users eat more or less?", want: ["food categories"]}
-- {q: "How has weight loss medication changed apparel purchases?", want: ["weight loss medications such as ozempic", "fit/comfort"]}
+- {q: "How has weight loss medication changed apparel purchases?", want: ["weight loss medications such as ozempic", "weight loss medications or treatments, such as ozempic", "fit/comfort"]}
 # --- Holidays and events
 - {q: "Holiday shopping progress by generation", want: ["status of your holiday shopping"], check: cut}
 - {q: "What share of women started holiday shopping", want: ["status of your holiday shopping"], check: cut}

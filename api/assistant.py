@@ -55,14 +55,15 @@ EVERY_WORD = 1.0                     # keyword match share at which every word o
 NEAR_EQUAL = 0.8                     # rules only: a match scoring this share of the best counts as near-equal
 EVENT = re.compile(r"\b(prime day|big deal|deal days|black friday|cyber monday|holidays?|valentine'?s?|easter|halloween|thanksgiving|"
                    r"back.to.school|mother'?s day|father'?s day)\b")   # a survey question about one answers only a question naming one
-GENERIC = re.compile(r"^(yes|no|none of (these|the above)|other.*|don'?t know.*|not sure|prefer not to say|n/?a)$", re.I)   # alike in any question
+GENERIC = re.compile(r"^(yes|no|none of (these|the above)|other.*|don['’]?t know.*|not sure|prefer not to say|n/?a)$", re.I)   # alike in any question
 SAME_ANSWERS = 0.5                   # share of answers alike for two questions to be the same one asked under other codes
+SCALE_ANSWERS = 5                    # an answer list this short (a rating scale) proves nothing alone: the wording must match too
 JUNK_BELOW = 0.35                    # below this share of words matched, no survey asks it: free, no model
 MIN_MATCH = 0.45                     # share of the question's words found below which it is "not in the surveys" (scripts/ask_bench.py)
 NOTE_STARTS = ("Note", "Not asked", "Asked under", "Shown by")   # sentences that qualify the answer, shown apart
 SMALL_BASE = 50                      # config/methodology.yml: a figure on fewer people is marked small base, read with caution
 DONUT_MAX = 8                        # a single-choice question with this many answers or fewer is a donut
-SKIP = re.compile(r"^(none of (these|the above)|other( - please specify)?|prefer not to say|don'?t know|not sure)$", re.I)
+SKIP = re.compile(r"^(none of (these|the above)|other( - please specify)?|prefer not to say|don['’]?t know|not sure)$", re.I)
 INDEX: dict = {"version": None, "index": None}
 INDEX_LOCK = threading.Lock()
 ANSWERS: OrderedDict = OrderedDict()
@@ -183,13 +184,13 @@ def write(plan: dict, fig: dict, doc: dict, named: list[int]) -> tuple[list[str]
                        f"{' — a significant change' if change[1] else ', not a significant change'}.")
     else:
         when = periods[0]["label"] + (f" ({len(periods[0]['waves'])} waves pooled)" if len(periods[0]["waves"]) > 1 else "")
-        if kind == "top":
-            say.append(f"Top {len(shown)} in {when}: " + "; ".join(
+        among = f" among {columns[0][1]}" if columns[0][0] != "total" else ""   # one cut value asked for: "Gen Z"
+        if kind == "top":   # the group named too: "Top 5 in 9 Nov" for Gen Z alone read as everyone's (13 Nov 2026)
+            say.append(f"Top {len(shown)}{among} in {when}: " + "; ".join(
                 f"{i + 1}. {fig['answers'][a]} {fmt(fig['pct'][0, 0, a])}" for i, a in enumerate(shown)) + ".")
         for a in shown if kind != "top" else shown[:1]:
             if math.isnan(fig["pct"][0, 0, a]):
                 continue
-            among = f" among {columns[0][1]}" if columns[0][0] != "total" else ""   # one cut value asked for: "Gen Z"
             say.append(f"{people(0, 0, a):,} of {base(0, 0, a):,} respondents{among} ({fmt(fig['pct'][0, 0, a])}) answered “{fig['answers'][a]}” in {when}."
                        if kind == "count" else
                        f"{fmt(fig['pct'][0, 0, a])}{among} answered “{fig['answers'][a]}” in {when} ({people(0, 0, a):,} of {base(0, 0, a):,} respondents).")
@@ -278,6 +279,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
     asks again without quick to have it read (the Ask page shows the quick answer meanwhile)."""
     question = " ".join(str(question).split())[:500]
     plan = ask_reader.read(question)
+    topic = {w for w in stems(question) if len(w) >= 4}   # the question's own words: which answers and questions name it
     visible = {s for s in visible if index.country.get(s, "US") == plan["country"]}   # a US question never reads China's waves
     hits = []   # the topic words, and the whole question (a cut can be the subject: "What is your age group?"), best kept
     if len(question) >= 3:
@@ -335,6 +337,13 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
                    and not visible.isdisjoint(d["surveys"]) and focus(question, d.get("labels", []))][:3]
     if not EVENT.search(question.lower()):   # "Walmart shoppers" is not the holiday retailers question
         candidates = [c for c in candidates if not EVENT.search(c["text"].lower())] or candidates
+    # the same wording asked by several studies is one choice, the longest-running standing for it: four of fourteen
+    # places the AI read held "When do you expect to start holiday shopping?" (13 Nov 2026)
+    longest_of = {}
+    for c in candidates:
+        if c["waves"] > longest_of.get(c["text"].lower(), {"waves": -1})["waves"]:
+            longest_of[c["text"].lower()] = c
+    candidates = list({c["text"].lower(): longest_of[c["text"].lower()] for c in candidates}.values())
     # second stage, when a reranker is installed (api/ask_model.py rerank): the nearest RERANK_TOP read together with the
     # question and put in its order; its probabilities then decide how sure the pick is (margin, gate)
     sure = ask_model.rerank(question, [index.embed_text.get(c["key"], c["text"]) for c in candidates[:RERANK_TOP]]) if candidates else None
@@ -349,7 +358,8 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
     if candidates and not quick:   # the model reads the question over the retrieved candidates; rules keep any dates it names
         reading = ask_model.plan(question, [{"number": i, "text": c["text"], "name": c.get("name", ""), "family": FAMILY.get(c["family"], c["family"]),
                                              "waves": c["waves"], "first": c["first"], "last": c["last"],
-                                             "answers": c.get("labels", [])} for i, c in enumerate(candidates)])
+                                             "answers": sorted(c.get("labels", []), key=lambda l: -len(topic & set(stems(l))))}   # the answers the question
+                                            for i, c in enumerate(candidates)])   # names first: the AI sees six ("movie theater" was 13th of 15, 13 Nov)
     if verified:
         understood = "learned" if verified.get("learned") else "verified"
         reading = {"pick": None, "focus": verified.get("focus", []), "kind": verified.get("kind", "share"),
@@ -372,16 +382,25 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         names = [longest["labels"][i] for i in focus(question, longest["labels"])] if longest else []
         rest = {s for s in stems(question) if len(s) >= 4} - {s for n in names for s in stems(n)}   # quick: "Costco shoppers" is not "why Costco"
         own_name = any(n.lower() in chosen["text"].lower() for n in names) and bool(reading or rest & set(stems(chosen["text"])))
-        if longest and not own_name and not EVENT.search(question.lower()) and (   # "Amazon Prime" questions keep their own
+        # the pick shares more of the question's other words than the list: it asks what the question asks ("How do people
+        # feel about Target?" is the feelings question, not the purchases list that has Target among its answers, 13 Nov)
+        asks_else = longest is not None and len(rest & set(stems(chosen["text"]))) > len(rest & set(stems(longest["text"])))
+        if longest and not own_name and not asks_else and not EVENT.search(question.lower()) and (   # "Amazon Prime" questions keep their own
                 not focus(question, chosen.get("labels", [])) or chosen["waves"] * 3 < longest["waves"]):   # q5 (195 waves) over EC2 (22)
             chosen = longest
         if chosen["waves"] <= 2:   # the same question asked over more waves is the better source: most of its own,
             own = {a.lower() for a in chosen.get("labels", []) if not GENERIC.match(a)}   # specific answers alike
+            # a short list such as a 5-point scale (much better … much worse) is shared by different questions: then the
+            # wording must be alike too ("your finances" is not "the economy", 13 Nov 2026)
             longer = [c for c in candidates if c["waves"] >= TREND_FROM * 2 and len(own) >= 3
-                      and len(own & {a.lower() for a in c.get("labels", [])}) >= SAME_ANSWERS * len(own)]
+                      and len(own & {a.lower() for a in c.get("labels", [])}) >= SAME_ANSWERS * len(own)
+                      and (len(own) > SCALE_ANSWERS or index.alike(chosen["key"], c["key"]))]
             chosen = max(longer, key=lambda c: c["waves"], default=chosen)
         if (plan["grain"] or plan["kind"] == "trend" or (reading or {}).get("kind") == "trend") and chosen["waves"] < TREND_FROM:
-            chosen = next((c for c in candidates if c["waves"] >= TREND_FROM), chosen)
+            # the one with history that names most of what the question is about, then the longest-running: the first one
+            # found answered "online grocery trend" from grocery categories (3 waves), not online purchases (219, 13 Nov)
+            history = [c for c in candidates if c["waves"] >= TREND_FROM]
+            chosen = max(history, key=lambda c: (len(topic & set(stems(c["text"] + " " + " ".join(c.get("labels", []))))), c["waves"]), default=chosen)
         alternative = alternative if alternative and alternative["key"] != chosen["key"] else None
         # the next question that asks something else: a near-twin from another study (alike wording) is a right answer too
         scale = "rerank" if "rerank" in chosen else "near"   # how sure, on the reranker's scale when it read them
@@ -391,7 +410,8 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         # unsure between different questions: ask which was meant, but only when no AI check can follow. With one, the
         # best match shows at once and the check confirms or replaces it in about a second: "choose" first made half of
         # people's questions wait for the AI (49% of the golden set live on staging, 12 Nov 2026)
-        if understood == "meaning" and margin is not None and margin < gate and not (quick and ask_model.ready()):
+        # a stored name the question uses (shared) is decided by the name step below, not asked about (13 Nov 2026)
+        if understood == "meaning" and margin is not None and margin < gate and not shared and not (quick and ask_model.ready()):
             shown, texts = [], set()
             for c in [chosen] + by_meaning:
                 if c["text"].lower() not in texts and len(shown) < 3:
@@ -425,9 +445,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         if longer:
             hits = [max(longer, key=lambda h: h["waves"])] + [h for h in hits if h["key"] != max(longer, key=lambda h: h["waves"])["key"]]
     asked_plan = plan
-    for hit in hits[:4]:   # the pick, or when it was not asked in the period named the next match naming the same
-        if hit is not hits[0] and not focus(question, hit.get("labels", [])):   # retailer or brand that was ("Temu over
-            continue                                                             # the last year": the retailer lists)
+    # the pick, or when it was not asked in the period named the same question asked by another study, or the next match
+    # naming the same retailer or brand that was ("Temu over the last year": the retailer lists; "online last month": the
+    # weekly online categories, as the quarterly one stopped in September, 13 Nov 2026)
+    fallbacks = [h for h in hits[1:] if focus(question, h.get("labels", [])) or index.alike(hits[0]["key"], h["key"])]
+    for hit in hits[:1] + fallbacks[:3]:
         doc = index.docs[hit["key"]]
         plan = asked_plan
         if not plan["when"] and not plan["cuts"] and (plan["kind"] in ("share", "count", "change") or plan["grain"]) and doc["waves"] >= TREND_FROM:
