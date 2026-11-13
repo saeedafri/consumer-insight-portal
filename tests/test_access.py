@@ -637,19 +637,3 @@ def test_the_mcp_connector_asks_like_the_page_and_under_the_same_menu(portal, mo
     assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": without}).encode())[0] == 200
     answer = json.loads(call("/mcp", method="POST", body=asked.encode(), headers=bearer)[2])["result"]
     assert answer["isError"] and "subscription" in answer["content"][0]["text"]
-
-
-def test_admins_review_the_questions_people_asked_and_scripts_are_left_out(portal):
-    browser = "Mozilla/5.0 (Macintosh)"
-    rows = [{"email": e, "client": None, "role": "analyst", "action": "ask", "survey_id": None, "target": q, "detail": None,
-             "ip_hash": None, "user_agent": ua} for e, q, ua in [
-        ("ana@coresight.com", "Amazon Prime membership", browser), ("bo@coresight.com", "amazon prime membership ", browser),
-        ("ana@coresight.com", "Tariff concerns by generation", browser), ("bot@coresight.com", "Amazon Prime membership", "python-httpx/0.27")]]
-    audit.write_pending(rows)
-    boss, acme = signed("boss@coresight.com"), signed("pat@acme.com")
-    status, _, body = call("/api/v1/admin/ask/asked", boss)
-    asked = json.loads(body)
-    assert status == 200 and [(a["question"], a["times"], a["people"]) for a in asked] == \
-        [("amazon prime membership", 2, 2), ("tariff concerns by generation", 1, 1)]   # one entry however it was typed; the script's left out
-    assert asked[0]["verified"] is False and asked[0]["last"]
-    assert call("/api/v1/admin/ask/asked", acme)[0] == 403 and call("/api/v1/admin/ask/check", acme, "POST", b'{"question": "x"}')[0] == 403

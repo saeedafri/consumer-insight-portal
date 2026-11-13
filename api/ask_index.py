@@ -45,6 +45,7 @@ AREAS = ["retailers", "shopping categories", "online and ecommerce", "grocery an
 AREA_BOOST = 0.03   # retrieval: added for a question in the asked question's business area
 ASK_WEIGHT = 0.3    # retrieval: the nearest ask's share of closeness; golden set right first 109 alone, 118 at 0.3, 97 at max (12 Nov 2026)
 VERIFIED = CONFIG / "ask_verified.yml"   # approved question → answer plans (reviewed in git); admins add more at runtime
+LEARNED = ask_model.LOGS / "ask-learned.json"   # questions the AI check settled: the same or a close question is answered from them at once
 VERIFIED_NEAR = 0.91   # closeness in meaning (local model) from which a question is a verified one (with the same names and
                        # groups): "Holiday spending expectations" is 0.903 from the holiday finances one, a different question
 STANDING = 0.06     # retrieval: up to this added to a closeness (~0.5–0.8) for a question asked a year of waves and still asked
@@ -421,19 +422,22 @@ class Index:
         return (best, sure) if best is not None and all(able(best)[1:]) else (None, False)
 
     def load_verified(self) -> None:
-        """The verified questions (config/ask_verified.yml and the admins' additions in logs/ask-verified.json), each
-        resolved to its survey question by code and family, with its vector for matching."""
+        """The verified questions (config/ask_verified.yml and the admins' additions in logs/ask-verified.json) and the
+        learned ones (logs/ask-learned.json: questions the AI check settled, api/assistant.py learn), each resolved to its
+        survey question by key (by code and family for the reviewed list), with its vector for matching. An admin's reading wins over a learned one."""
         listed = (yaml.safe_load(VERIFIED.read_text()) or []) if VERIFIED.exists() else []
-        try:
-            listed += json.loads(ask_model.LOGS.joinpath("ask-verified.json").read_text())
-        except (OSError, ValueError):
-            pass
+        listed += read_json(ask_model.LOGS / "ask-verified.json") or []
+        mine = {str(v.get("question", "")).lower() for v in listed}
+        listed += [{**v, "learned": True} for v in read_json(LEARNED) or [] if str(v.get("question", "")).lower() not in mine]
         by_code = {}
         for key, doc in self.docs.items():
             for code in doc.get("codes", [doc["qcode"]]):
                 by_code.setdefault((doc["family"], code.lower()), key)
-        self.verified = [{**v, "key": by_code[(v.get("family", "CSI-US"), str(v["code"]).lower())]} for v in listed
-                         if (v.get("family", "CSI-US"), str(v.get("code", "")).lower()) in by_code]
+        # a code alone is ambiguous (115 codes are reused by different studies' questions: q2, D14, Q10), so the AI's and
+        # admins' entries carry the question's key; a learned entry without one resolved to the wrong study (13 Nov 2026)
+        resolved = [{**v, "key": v["key"] if v.get("key") in self.docs else
+                     None if v.get("learned") else by_code.get((v.get("family", "CSI-US"), str(v.get("code", "")).lower()))} for v in listed]
+        self.verified = [v for v in resolved if v["key"]]
         found = ask_model.question_vectors({v["question"]: v["question"] for v in self.verified}) if self.verified else {}
         self.verified = [v for v in self.verified if v["question"] in found]
         self.verified_vectors = np.array([found[v["question"]] for v in self.verified], np.float32) if self.verified else None

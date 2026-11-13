@@ -6,8 +6,8 @@ type Entry = { title: string; body: string; shot?: string; alt?: string; link?: 
 const RELEASES: { date: string; entries: Entry[] }[] = [{
   date: "13 November 2026",
   entries: [
-    { title: "For admins: review the questions people asked Ask Coresight, and make the right answers exact",
-      body: "The Logs page lists every question people typed into Ask Coresight in the last 90 days, most asked first, with how many times and by how many people (scripts and test runs left out). Check shows what Ask answers now; if it is right, Save as verified; if not, pick the right survey question from those offered. A verified question, and every later question worded like it, is then answered exactly and at once. Checking does not count as asking, so the list stays a true record of what people asked." },
+    { title: "Ask Coresight answers at once again, learns from every AI check, and leads with the number",
+      body: "The best answer now shows at once; where Ask is unsure, the AI check confirms or replaces it about a second later, and “Which did you mean?” appears only when no AI check can follow (asked live on 12 November, half of the 161 test questions had waited for the AI). Every question the AI check settles is kept, and the same or a close question is then answered from it at once, with no AI call, for everyone. Answers lead with the figure: “53.0% answered ‘I have an Amazon Prime membership myself’ in 12 Oct 2026, the latest (214 of 404 respondents)”. After a deploy that changes the search model, its vectors are rebuilt in a separate, low-priority process, so the portal's memory stays where it was (it had grown from 500 MB to 1.1 GB) and no question waits behind the rebuild (one had waited 7 minutes). Ask is ready for a second-stage reader trained on our survey questions, used when its files are installed." },
   ],
 }, {
   date: "12 November 2026",

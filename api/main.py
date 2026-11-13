@@ -32,7 +32,6 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Optional
 from pathlib import Path
@@ -921,33 +920,6 @@ async def forget_role(role: str, request: Request, who: dict = Depends(super_adm
         log.warning("Role %s not dropped: %s", role, exc)
         raise HTTPException(503, ROLE_SAVE_FAILED)
     return applied(request, who, role, None)
-
-
-@app.get("/api/v1/admin/ask/asked")
-async def ask_asked(days: int = Query(90, ge=1, le=730), who: dict = Depends(admin)) -> list:
-    """The questions people typed into Ask Coresight in the last `days` (browser sign-ins: scripts and test runs left out),
-    most asked first: [{question, times, people, last, verified}]. The admins' review list on the Logs page: each one
-    checked and saved as verified is answered exactly from then on, and so is every later question worded like it."""
-    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
-
-    def read() -> list:
-        with get_engine("app").connect() as conn:
-            return [dict(r) for r in conn.execute(text(
-                "SELECT LOWER(TRIM(target)) AS question, COUNT(*) AS times, COUNT(DISTINCT email) AS people, MAX(ts) AS last"
-                " FROM cip_access_log WHERE action = 'ask' AND target IS NOT NULL AND user_agent LIKE 'Mozilla%' AND ts >= :since"
-                " GROUP BY LOWER(TRIM(target)) ORDER BY times DESC, last DESC LIMIT 300"), {"since": since}).mappings()]
-    rows = await run_in_threadpool(read)
-    index, _ = await ask_index(who)
-    verified = {v["question"].lower() for v in index.verified}
-    return [{**r, "last": str(r["last"])[:19], "verified": r["question"] in verified} for r in rows]
-
-
-@app.post("/api/v1/admin/ask/check")
-async def ask_check(request: Request, who: dict = Depends(admin)) -> dict:
-    """What Ask answers now to a question on the review list (the quick answer, as the Ask page shows it first), with its
-    verify block and alternatives. Not audited and not counted against the per-minute limit: checking is not asking."""
-    body = await team.json_body(request)
-    return await ask_answer(who, str(body.get("question") or "")[:500], quick=True, check=True)
 
 
 @app.get("/api/v1/admin/ask/quality")

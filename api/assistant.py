@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 import threading
 from collections import OrderedDict
@@ -26,9 +27,13 @@ from datetime import date, timedelta
 import numpy as np
 
 from api import ask_figures, ask_model, ask_reader
-from api.ask_index import Index, name_key, stems
+from api.ask_index import LEARNED, Index, name_key, read_json, stems
 
 log = logging.getLogger("cip.assistant")
+RERANK_TOP = 5                       # candidates the reranker reads (a few milliseconds for five)
+RERANK_GATE = 0.15                   # its probability lead below which Ask is unsure, until its calibration.json says otherwise
+LEARNED_KEPT = 5000                  # questions the AI settled, kept to answer close ones at once (learn)
+LEARN_LOCK = threading.Lock()
 KEEP_ANSWERS = 500                   # answers kept in memory, newest used last out
 TOP, SERIES = 5, 5                   # answers listed for "top", lines on a trend chart
 CURRENT_DAYS = 365                   # "latest"/"last N weeks": only questions asked within this many days of the newest wave
@@ -150,9 +155,11 @@ def write(plan: dict, fig: dict, doc: dict, named: list[int]) -> tuple[list[str]
         for a in shown[:1]:   # the newest figure first: what an analyst asks "how many" or "what share" about
             if not math.isnan(fig["pct"][latest, 0, a]):
                 n, b = people(latest, 0, a), base(latest, 0, a)
-                lead = f"{n:,} of {b:,} respondents ({fmt(fig['pct'][latest, 0, a])})" if plan["kind"] == "count" else f"{fmt(fig['pct'][latest, 0, a])} ({n:,} of {b:,} respondents)"
                 among = f" among {columns[0][1]}" if columns[0][0] != "total" else ""
-                say.append(f"In {periods[latest]['label']}, the latest{among}, {lead} answered “{fig['answers'][a]}”.")
+                # the finding first, then when and of how many (Pew Research's headlines; the page shows this sentence first)
+                say.append(f"{n:,} of {b:,} respondents{among} ({fmt(fig['pct'][latest, 0, a])}) answered “{fig['answers'][a]}” in {periods[latest]['label']}, the latest."
+                           if plan["kind"] == "count" else
+                           f"{fmt(fig['pct'][latest, 0, a])}{among} answered “{fig['answers'][a]}” in {periods[latest]['label']}, the latest ({n:,} of {b:,} respondents).")
         say.append(f"{len(periods)} periods, {grain}, {periods[0]['label']} to {periods[-1]['label']}:")
         for a in shown:
             line = [(p, fig["pct"][p, 0, a]) for p in range(len(periods)) if not math.isnan(fig["pct"][p, 0, a])]
@@ -182,10 +189,10 @@ def write(plan: dict, fig: dict, doc: dict, named: list[int]) -> tuple[list[str]
         for a in shown if kind != "top" else shown[:1]:
             if math.isnan(fig["pct"][0, 0, a]):
                 continue
-            lead = (f"{people(0, 0, a):,} of {base(0, 0, a):,} respondents ({fmt(fig['pct'][0, 0, a])})" if kind == "count"
-                    else f"{fmt(fig['pct'][0, 0, a])} ({people(0, 0, a):,} of {base(0, 0, a):,} respondents)")
             among = f" among {columns[0][1]}" if columns[0][0] != "total" else ""   # one cut value asked for: "Gen Z"
-            say.append(f"In {when}{among}, {lead} answered “{fig['answers'][a]}”.")
+            say.append(f"{people(0, 0, a):,} of {base(0, 0, a):,} respondents{among} ({fmt(fig['pct'][0, 0, a])}) answered “{fig['answers'][a]}” in {when}."
+                       if kind == "count" else
+                       f"{fmt(fig['pct'][0, 0, a])}{among} answered “{fig['answers'][a]}” in {when} ({people(0, 0, a):,} of {base(0, 0, a):,} respondents).")
     if len(doc.get("codes", [])) > 1 and len({v for p in periods for v in p["versions"]}) > 1:
         say.append(f"Asked under the codes {', '.join(doc['codes'])} over the years: their waves are joined as one series.")
     few = fig["bases"][:, :, shown]
@@ -217,7 +224,7 @@ def period_of(when: list[dict]) -> str:
 def save_verified(entry: dict, index: Index) -> dict:
     """An admin's verified question (Ask page, "Save as verified"): kept in logs/ask-verified.json (on /home, so a
     deploy keeps it), and in use at once. config/ask_verified.yml is the reviewed list in git."""
-    keep = {k: entry[k] for k in ("question", "code", "family", "focus", "kind", "cut", "period") if k in entry}
+    keep = {k: entry[k] for k in ("question", "key", "code", "family", "focus", "kind", "cut", "period") if k in entry}
     if not str(keep.get("question", "")).strip() or not keep.get("code"):
         raise ValueError("a question and its survey question code are needed")
     path = ask_model.LOGS / "ask-verified.json"
@@ -232,6 +239,22 @@ def save_verified(entry: dict, index: Index) -> dict:
         ANSWERS.clear()
     index.load_verified()
     return {"saved": keep, "verified": len(index.verified)}
+
+
+def learn(reading: dict, index: Index) -> None:
+    """Keeps the AI check's reading of a question (logs/ask-learned.json, on /home so a deploy keeps it, newest LEARNED_KEPT)
+    and loads it at once: the same or a close question (Index.verified_for) is then answered from it with no AI call. The
+    small model learns from the large one as it is used ("Cache & Distil", ACL 2024); the file is also training data."""
+    keep = {k: reading[k] for k in ("question", "key", "code", "family", "focus", "kind", "cut", "period") if k in reading}
+    if not keep.get("question") or not keep.get("key"):
+        return
+    with LEARN_LOCK:
+        learned = [v for v in read_json(LEARNED) or [] if v.get("question", "").lower() != keep["question"].lower()]
+        LEARNED.parent.mkdir(exist_ok=True)
+        part = LEARNED.with_suffix(f".{os.getpid()}.part")
+        part.write_text(json.dumps((learned + [keep])[-LEARNED_KEPT:], indent=0))
+        os.replace(part, LEARNED)
+    index.load_verified()
 
 
 def read_with_model(plan: dict, reading: dict) -> dict:
@@ -281,9 +304,13 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         >= OWN_WORDING * len(set(re.findall(r"[a-z0-9]+", hits[0]["text"].lower())))
     unsure = bool(hits) and hits[0]["match"] >= JUNK_BELOW and not own_words and not named
     subject = plan["about"] if len(plan["about"]) >= 3 else question   # time and cut words are the rules'; search the subject
-    made = ask_model.embed([subject]) if unsure else None   # one vector per question (local, ~3 ms), used twice
+    # the subject's vector searches the survey questions; verified and learned questions are matched by subject and by the
+    # whole question (a subject alone missed an exact repeat of a learned question, 13 Nov 2026)
+    made = ask_model.embed([subject, question]) if unsure else None   # local, ~1.5 ms each
     asked = made[0] if made is not None else None
-    verified = index.verified_for(asked)
+    found = [v for v in (index.verified_for(asked), index.verified_for(made[1] if made is not None else None)) if v]
+    verified = max(found, key=lambda v: v["near"]) if found else None   # the closer of subject and whole question
+    # (a short question matches by its subject: "Top holiday retailers"; a repeat matches as a whole)
     if verified and visible.isdisjoint(index.docs[verified["key"]]["surveys"]):
         verified = None
     if verified:   # an approved question with the same names and groups: its plan, no model (Snowflake's verified queries)
@@ -308,7 +335,14 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
                    and not visible.isdisjoint(d["surveys"]) and focus(question, d.get("labels", []))][:3]
     if not EVENT.search(question.lower()):   # "Walmart shoppers" is not the holiday retailers question
         candidates = [c for c in candidates if not EVENT.search(c["text"].lower())] or candidates
-    by_meaning = list(candidates)   # the quick answer's order: nearest first
+    # second stage, when a reranker is installed (api/ask_model.py rerank): the nearest RERANK_TOP read together with the
+    # question and put in its order; its probabilities then decide how sure the pick is (margin, gate)
+    sure = ask_model.rerank(question, [index.embed_text.get(c["key"], c["text"]) for c in candidates[:RERANK_TOP]]) if candidates else None
+    if sure is not None:
+        for c, p in zip(candidates, sure):
+            c["rerank"] = float(p)
+        candidates = sorted(candidates[:RERANK_TOP], key=lambda c: -c["rerank"]) + candidates[RERANK_TOP:]
+    by_meaning = list(candidates)   # the quick answer's order: nearest first (or the reranker's)
     # a retailer or brand the question names among a question's answers ("Amazon" in the retailer lists) goes first, the
     # longest-running first: the model otherwise favours a question with the name in its wording (Amazon's Big Deal Days)
     candidates.sort(key=lambda c: (not focus(question, c.get("labels", [])), -c["waves"] if focus(question, c.get("labels", [])) else 0))
@@ -317,7 +351,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
                                              "waves": c["waves"], "first": c["first"], "last": c["last"],
                                              "answers": c.get("labels", [])} for i, c in enumerate(candidates)])
     if verified:
-        understood = "verified"
+        understood = "learned" if verified.get("learned") else "verified"
         reading = {"pick": None, "focus": verified.get("focus", []), "kind": verified.get("kind", "share"),
                    "grain": verified.get("grain", "auto"), "cut": verified.get("cut", "none"), "period": verified.get("period", "all")}
         chosen = {**index.docs[verified["key"]], "key": verified["key"]}
@@ -350,9 +384,14 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
             chosen = next((c for c in candidates if c["waves"] >= TREND_FROM), chosen)
         alternative = alternative if alternative and alternative["key"] != chosen["key"] else None
         # the next question that asks something else: a near-twin from another study (alike wording) is a right answer too
-        others = [c["near"] for c in candidates if "near" in c and c["key"] != chosen["key"] and not index.alike(chosen["key"], c["key"])]
-        margin = round(chosen["near"] - max(others), 3) if "near" in chosen and others else None
-        if understood == "meaning" and margin is not None and margin < GATE:   # unsure between different questions: ask
+        scale = "rerank" if "rerank" in chosen else "near"   # how sure, on the reranker's scale when it read them
+        others = [c[scale] for c in candidates if scale in c and c["key"] != chosen["key"] and not index.alike(chosen["key"], c["key"])]
+        margin = round(chosen[scale] - max(others), 3) if scale in chosen and others else None
+        gate = float(ask_model.reranker()[2].get("gate", RERANK_GATE)) if scale == "rerank" else GATE
+        # unsure between different questions: ask which was meant, but only when no AI check can follow. With one, the
+        # best match shows at once and the check confirms or replaces it in about a second: "choose" first made half of
+        # people's questions wait for the AI (49% of the golden set live on staging, 12 Nov 2026)
+        if understood == "meaning" and margin is not None and margin < gate and not (quick and ask_model.ready()):
             shown, texts = [], set()
             for c in [chosen] + by_meaning:
                 if c["text"].lower() not in texts and len(shown) < 3:
@@ -445,7 +484,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
     return {"answer": "\n".join(sentences), "headline": headline, "points": [x for x in points if x != headline], "notes": notes,
             "source_line": sentences[0], "weighting": "unweighted", "understood": understood,
             "check": quick and understood == "meaning" and ask_model.ready(), "margin": margin,
-            "verify": {"question": question, "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],
+            "verify": {"question": question, "key": doc["key"], "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],
                        "kind": plan["kind"], "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, "codes": doc.get("codes", [doc["qcode"]]),
             "chart": chart(fig, shown), "table": table, "plan": plan, "mode": "figures", "no_source": False,
             "suggestions": suggestions,
@@ -455,13 +494,16 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
 
 
 def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool = False) -> dict:
-    """answer(), kept per published version (the index), access scope, quick or not, and question wording."""
+    """answer(), kept per published version (the index), access scope, quick or not, and question wording; a question
+    the AI check settled is learned, so the same or a close question is answered at once next time, with no AI."""
     key = (id(index), scope, quick, " ".join(question.lower().split()))
     with ANSWERS_LOCK:
         if key in ANSWERS:
             ANSWERS.move_to_end(key)
             return ANSWERS[key]
     found = answer(question, index, visible, quick)
+    if found.get("understood") == "model" and found.get("mode") == "figures":
+        learn(found["verify"], index)
     with ANSWERS_LOCK:
         ANSWERS[key] = found
         while len(ANSWERS) > KEEP_ANSWERS:

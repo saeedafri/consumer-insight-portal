@@ -96,6 +96,7 @@ function Reply({ question, answer, weighted, checking, checked, onAsk }: { quest
   };
   // verified and named: right 99%+ in the per-survey checks (etl/ask_quality.py); the rest are best matches to check
   const how = { verified: "Verified answer", named: "Verified: the survey question's own name, figures computed",
+                learned: "Answered as a question settled earlier by the AI check, figures computed",
                 name: "Best match by name: other survey questions share this name (below)",
                 model: "Best match, understood by AI: check the question below", meaning: "Best match by meaning: check the question below",
                 rules: "Best match by words: check the question below" }[answer.understood ?? ""];

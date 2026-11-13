@@ -99,6 +99,9 @@ def own_ask_files(tmp_path, monkeypatch):
     from api import ask_index
     from etl import ask_quality, ask_semantic
     monkeypatch.setattr(ask_quality, "REPORT", tmp_path / "ask-quality.json")
+    from api import assistant
+    for module in (ask_index, assistant):
+        monkeypatch.setattr(module, "LEARNED", tmp_path / "ask-learned.json")
     for module in (ask_index, ask_quality, ask_semantic):
         monkeypatch.setattr(module, "SEMANTIC_ADDED", tmp_path / "ask-semantic.json")
 

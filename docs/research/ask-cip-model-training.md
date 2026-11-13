@@ -32,7 +32,9 @@ for the very end (Appendix), for engineers.
 14. [What happens next](#part-14-what-happens-next)
 15. [Log](#part-15-log)
 16. [Glossary in plain words](#part-16-glossary-in-plain-words)
-17. [Appendix for engineers](#appendix-for-engineers)
+17. [13 November: what the live test showed, and what changed](#part-17-13-november-what-the-live-test-showed-and-what-changed)
+18. [13 November, later: is 99.99% reachable, where the time goes, and the one notebook left (v5)](#part-18-13-november-later-is-9999-reachable-where-the-time-goes-and-the-one-notebook-left-v5)
+19. [Appendix for engineers](#appendix-for-engineers)
 
 ---
 
@@ -708,10 +710,9 @@ pause, and Ask would show "Choose one" instead.
 ## Part 14. What happens next
 
 1. **Shared nicknames renamed** automatically at staging's next publish (fixes questions like "Economic outlook").
-2. **Real questions as verified answers (built 13 Nov):** the Logs page lists every question people typed, most asked
-   first. An admin presses **Check**, sees Ask's answer, and presses **Right: save as verified** or picks the right survey
-   question. That question, and every later one worded like it, is then answered exactly and instantly. On staging the list
-   already shows the real top questions (for example "How worried are people about tariffs?", asked 25 times by 3 people).
+2. **Ask learns from every AI check (built 13 Nov):** when the AI settles a question, its reading is kept, and the same or a
+   close question is then answered from it at once, with no AI call, for everyone. AI use falls as people use Ask
+   (the "Cache & Distil" pattern from ACL 2024: the small model takes over what the large one has already settled).
 3. **Deploy** the safety check and the automatic survey checks to staging (waiting for the next push).
 
 ---
@@ -731,9 +732,174 @@ pause, and Ask would show "Choose one" instead.
 | 13 Nov 2026 | Training round 3 (v3): 36,570 practice questions by Qwen2.5-7B, teacher check passed (58.3% → 70.2%), v3a and v3b trained | inside Ask: v3a 134 vs 136, safety check 88.2% vs 97.6%; not used |
 | 13 Nov 2026 | Two-model vote tested; "meaning beats shared nickname" rule tested | vote 97.4% on 48% (no gain); rule +1 final exam, −128 big exam: undone |
 | 13 Nov 2026 | Decision | today's model + safety check stays; next: renaming on staging, verified real questions, review 4 final-exam answers |
-| 13 Nov 2026 | Admin review screen for real questions (Logs page): Check, Save as verified, or pick the right question | built; waiting for deploy |
+| 13 Nov 2026 | Live test on staging after the deploy: 52% right at once, 91% after the AI check, the AI called for 80% of questions; memory 500 MB → 1.1 GB and a 7-minute wait during a one-off vector rebuild | causes found and fixed (Part 17) |
+| 13 Nov 2026 | Instant answers again; Ask learns from AI checks; rebuilds in a separate process; number-first headlines; v4 reranker notebook | waiting for deploy / Colab run |
+| 13 Nov 2026 | Whole-app debug: time per stage, accuracy by kind, every remaining miss read; learned answers were saved by a code 115 codes share: fixed (saved by the question's own key); v5 notebook | second ask 81% → 88% with no AI; v5 ready (Part 18) |
 
 ---
+
+## Part 17. 13 November: what the live test showed, and what changed
+
+**What you saw on staging** (and why):
+
+| What | Why | Fixed by |
+|---|---|---|
+| CPU at ~54% and memory at 833 MB-1.1 GB right after the deploy | the saved "map of meaning" file was renamed (one file per model), so the server re-drew all 18,394 pins on its single CPU for 7 minutes, and kept the memory it used | re-drawing now happens in a separate helper program that gives its memory back when it finishes (measured: +341 MB instead of +1,086 MB) |
+| One question took 7 minutes | the AI check waited for a lock the re-drawing held the whole time | the lock is held only while reading or writing the file |
+| Answers felt slow | the "which did you mean?" check sent half of all questions to the AI (live: 79 of 161) | the best answer shows at once; the AI confirms or corrects it a second later |
+| The AI was used for 80% of questions | each unsure question asked the AI again, even if asked before | every AI decision is kept; the same or a close question is answered from it at once |
+
+**How the big systems keep AI use low** (research): a small fast model answers what it is sure of, a large model only
+the rest, and every large-model decision is stored and used to train the small model ("Cache & Distil", ACL 2024;
+semantic caching). The best search systems use two stages: a fast search, then a small "re-reader" that reads the
+question with each of the top few candidates (our test: 58% → 70% with a large re-reader). The v4 Colab notebook trains a
+small re-reader (22 million dials, a few milliseconds) from the large one, on far more and more varied practice
+questions, including "this one, not that look-alike" questions.
+
+**How answers are written** (research: Pew Research Center's headlines, Perplexity): the finding first, with its number
+and who was asked; then the evidence; the source one click away. Ask's first sentence now reads: *"53.0% answered 'I have
+an Amazon Prime membership myself' in 12 Oct 2026, the latest (214 of 404 respondents)."*
+
+## Part 18. 13 November, later: is 99.99% reachable, where the time goes, and the one notebook left (v5)
+
+Method: the whole app taken apart and measured, not guessed: the network from India to the server (curl's timing of each
+step, and one kept-open connection as a browser uses), the server stage by stage (a profiler over the 161 final-exam
+questions), the page's code bundle (REA's JavaScript analysis of `frontend/out`, evidence
+`ev_66a5b01823d638442eb3a5536dc13d563813271c7820b495f35d0e1d5157fa81`), and every question still wrong, one by one.
+
+### Will v4 give 99.99%? Do we need v5, v6, v7, v8?
+
+**No notebook, v4 or any later one, gives 99.99% on its own.** 99.99% means one wrong answer in 10,000 freely worded
+questions. The evidence:
+
+| Fact | Measured |
+|---|---|
+| Three training rounds (v1-v3) | each improved the search alone, none improved Ask as a whole beyond ~84-89% on the final exam |
+| The best large re-reader we can run (bge-reranker-v2-m3, 568M dials) picking alone | ~70% of hand-written questions |
+| The AI check itself (gpt-4o-mini) | picked wrong in 5 of the 17 questions still wrong, where the right question was first in its list |
+| The exam's own answer key | 4 answers under human review; 27.5% of the misses read by hand had no single right answer |
+
+**What does reach 99%+ is the system around the model**, and it is already built:
+
+| How the answer was found | Right on the final exam |
+|---|---|
+| The survey question's own name ("named") | 18 of 18 |
+| An answer an admin saved ("verified") | 5 of 5 |
+| A question the AI settled before ("learned", reused at once, no AI) | the AI's own result, every time |
+| A best match, with the AI check behind it | 88% overall; the rest are shown as "Best match" with the alternatives |
+
+So the honest target is: **99%+ on answers labelled Verified, and every other answer labelled Best match with the
+alternatives one click away.** Coverage grows with use: every question the AI settles once is answered at once forever
+after, every admin "Save as verified" fixes every later question worded like it, and once a month the same v5 notebook is
+run again on those real questions. **v5 is the last notebook to design; there is no v6, v7 or v8**, only monthly re-runs.
+
+### Where the time goes (one question, from India)
+
+| Step | Time | Who pays it |
+|---|---|---|
+| Opening the connection (first question of a visit) | ~460 ms | once per visit |
+| The trip to the server in Central US and back | ~230 ms | every question, from India (~30-60 ms from the US) |
+| The server: read, search, compute the figures, write the answer | **20 ms** typical, 39 ms at worst (95th), 63 ms max | every question |
+| The AI check, when the question is new | 1-3.4 s, *after* the answer is already on screen | new, unsure questions only; then learned |
+| The chart library (197 KB) | ~1.9 s, first visit only | cached for a year after |
+| The Ask page itself | an 11 KB file | once |
+
+Measured on staging over one kept-open connection: **235-310 ms per question**, of which ~230 ms is distance. The 790 ms
+measured earlier included opening a new connection for every question, which a browser does not do. The 7-minute
+question was the lock fixed in Part 17. **The server is already milliseconds; what is left is the distance to Central
+US**, which only hosting near the people asking would remove.
+
+### Accuracy now, by kind of question (final exam, current code, AI check on)
+
+| Kind | Questions | Right at once | Right after the AI check | Asked again later (no AI) |
+|---|---|---|---|---|
+| A share or how many | 95 | 93% | 95% | 95% |
+| A trend over time | 23 | 70% | 78% | 83% |
+| Which / top | 15 | 80% | 80% | 80% |
+| By a group (generation, gender) | 12 | 58% | 67% | 67% |
+| Not in the surveys | 9 | 78% | 89% | 78% |
+| A comparison | 7 | 86% | 86% | 86% |
+| **All** | **161** | **84%** | **88%** | **88%** |
+
+**A bug found and fixed on the way:** a question the AI settled was saved by its survey code (q2, D14, Q10), but 115
+codes are used by more than one study's question (972 questions involved). Asked again, 13 questions came back from the
+wrong study ("What categories are people buying in store?" → a 2020 question on places people avoid), so asking again
+was *worse* (81%) than asking the first time (88%). Saved answers now carry the question's own key; asked again, 88% with
+no AI call. A test keeps it fixed.
+
+### The 17 still wrong, by cause
+
+| Cause | Count | What fixes it |
+|---|---|---|
+| The right question was found 1st or 2nd; the final choice went wrong (the AI check, or a rule that prefers the long-running retailer list: "How do people feel about Target?") | 8 | a re-reader trained on our questions (v5), and the hand rules applied only when it is unsure |
+| The right question was 3rd to 10th: past the 5 a re-reader reads | 8 | v5 reads the nearest 20, and its search model is trained to *find* (top 20), not to be first |
+| Not in the surveys, answered with something close ("cutting back on dining out because of tariffs") | 1 | v5's re-reader also learns "none of these" |
+
+### Why the answers read like a list, and the professional format
+
+What Ask shows today, for *"Economy better or worse, every 4 weeks"*:
+
+> 24.8% answered "About the same" in 19 Oct 2026 – 9 Nov 2026, the latest (399 of 1,611 respondents).
+> • 29 periods, every four weeks, 25 Mar 2024 – 1 Apr 2024 to 19 Oct 2026 – 9 Nov 2026:
+> • "About the same": 31.2% (25 Mar 2024 – 1 Apr 2024) → 24.8% (…), -6.4 pts. Highest 31.4% (22 Jul 2024), lowest 15.8% …
+> • (four more lines like it)
+
+Five problems: the headline is the *middle* answer, not the finding; "answered" is used for every question; dates are
+ranges where a reader expects "4 weeks to 9 Nov 2026"; a scale (worse … better) is never added up into worse vs better;
+and each line packs six numbers. How professional research is written (Pew Research Center, Gallup, Morning Consult;
+Perplexity and ChatGPT for answers): **one sentence with the finding, then 2-4 key figures, the chart titled with what
+it shows, two short "what stands out" points, and the source and base in one line underneath.**
+
+The same answer, written that way (figures from the same data):
+
+> **Economic outlook, next 12 months**
+> **41.4% of US adults expect the economy to get worse over the next 12 months; 27.2% expect it to get better** (4 weeks to 9 Nov 2026).
+>
+> | Worse | Better | About the same |
+> |---|---|---|
+> | **41.4%** · −2.4 pts | **27.2%** · +3.0 pts | **24.8%** · −0.5 pts |
+> | vs the previous 4 weeks | | |
+>
+> *(line chart: worse vs better, Mar 2024 to Nov 2026)*
+>
+> **What stands out:** "Much worse" peaked at 21.4% (May 2026) and is at 18.0% now; the latest changes are not significant.
+>
+> Source: Coresight Research US Consumer Tracker, CS2 "And thinking about the economy overall over the next 12 months…",
+> 84 waves, Mar 2024 – Nov 2026, latest base 1,611 · unweighted · Open in Trends →
+
+And *"Top beauty retailers"*:
+
+> **Where people bought beauty products, past three months**
+> **Walmart leads: 42.8% bought beauty products there, ahead of Amazon.com (32.2%) and Bath & Body Works (16.7%)** (week of 28 Sep 2026, 264 respondents).
+
+What makes this possible without an AI call per question: each survey question needs a **chart title** and a
+**headline pattern** ("{share} bought beauty products from {answer}"), and for a scale which answers count as positive
+or negative. v5 has Qwen write and check them once for all 3,076 questions (free, on Colab); each new survey's questions
+get theirs at publish (the naming step that already runs, ~$0.001 a survey). The server fills in the numbers.
+
+### v5: one notebook, everything the analysis asked for
+
+`scripts/colab/train_search_model_v5.ipynb` (A100, ~80 minutes, ~15-20 compute units; ~25 minutes less with v4's
+`synthetic-v4.json` uploaded):
+
+| Step | Why (the measurement behind it) |
+|---|---|
+| 1. Today's search: is the right question in the top 1 / 5 / 10 / 20? | the re-reader can only pick what the search found |
+| 2. Qwen writes off-topic questions, and a chart title and headline pattern for every survey question (checked: one {share}, no numbers) | "not in the surveys" needs examples; the professional format needs the patterns |
+| 3. Round-trip check: a practice question is kept only if Qwen, shown its survey question among the 4 closest others, picks it; Qwen's own accuracy is printed, and its rejections are used only if it is right ≥ 80% on the final exam | v1-v3 learned from practice questions that fit two survey questions equally: confident and wrong |
+| 4. The search model trained to *find* (right one in the top 20); twins never in one batch; kept only if it finds more than today's | 8 misses were 3rd-10th |
+| 5. The large re-reader scores the nearest 20 for 60,000 practice questions | the teacher |
+| 6. The small re-reader (22M dials) learns the teacher's order **and** a yes/no per candidate, with off-topic questions all no | v4 learns only the order: its score cannot say "none of these" or how sure it is |
+| 7. Depth (5, 10 or 20), the gate (the lead needed to be right 99% of the time on unseen wording) and the floor (under it: "not in the surveys"), measured | thresholds belong to the model (Part 11) |
+| 8. Both shrunk to 8-bit, checked with the server's own code, timed on one CPU thread | memory and speed on the 1-CPU server |
+
+Re-running monthly: upload staging's `logs/ask-learned.json` as `learned.json`; real questions count three times.
+
+**Before v5 goes live** (after its zip comes back, as with every round): tested inside Ask on the final exam and the
+big exam; the server reads the depth, gate and floor from the re-reader's `calibration.json`, retrieves 20 candidates
+(today 14), and applies the retailer-list rule only when the re-reader is unsure. Memory: the 8-bit search model is
+about half today's file (34 vs 66 MB), the re-reader about 23 MB; together about what Ask uses today (~375 MB in one
+process). CPU: the re-reader adds ~20-40 ms to an unsure question, on the server's one CPU.
 
 ## Part 16. Glossary in plain words
 

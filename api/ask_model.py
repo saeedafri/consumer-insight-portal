@@ -45,6 +45,10 @@ EMBED_DIR = Path(os.environ.get("CIP_ASK_EMBED_DIR", Path(__file__).resolve().pa
 # (a shared file would have mixed two models' vectors after a model change, 12 Nov 2026)
 VECTORS = LOGS / f"ask-vectors-{EMBED_DIR.name}.npz"
 EMBED_BATCH = 64   # texts run through the model at once, shortest first so little is padding
+EMBED_TOKENS = 2048   # and at most ~this many tokens a batch: the model's working memory grows with batch × length², and
+                      # ONNX Runtime keeps its peak; 64 long texts at once left ~400 MB behind (12 Nov 2026)
+BULK = 200   # more new texts than this are encoded in a child process (embed_elsewhere): its memory goes when it exits
+             # (a model change re-encodes ~18,000 texts: in the web process that took it from 500 MB to 1.1 GB, 12 Nov 2026)
 PRICES = {"gpt-4o-mini": (0.15, 0.60), "gpt-5-nano": (0.05, 0.40),
           "gpt-4.1-mini": (0.40, 1.60), "gpt-5-mini": (0.25, 2.00)}   # $ per million tokens in, out (OpenAI, 11 Nov 2026)
 CALL_SECONDS = 6
@@ -148,14 +152,19 @@ def call(path: str, body: dict, seconds: float = CALL_SECONDS) -> dict:
         return json.load(reply)
 
 
-@functools.lru_cache(maxsize=1)
-def calibration() -> dict:
-    """The search model's own thresholds (calibration.json beside it: near_floor), {} when it has none. Each model scores
-    closeness on its own scale: a retrained one is calibrated on the golden set when it is made (12 Nov 2026)."""
+def read_calibration(folder: Path) -> dict:
+    """A model's own thresholds (calibration.json beside it), {} when it has none. Each model scores on its own scale,
+    so its thresholds are measured on the golden set when it is made (12 Nov 2026)."""
     try:
-        return json.loads((EMBED_DIR / "calibration.json").read_text())
+        return json.loads((folder / "calibration.json").read_text())
     except (OSError, ValueError):
         return {}
+
+
+@functools.lru_cache(maxsize=1)
+def calibration() -> dict:
+    """The search model's thresholds (near_floor, gate)."""
+    return read_calibration(EMBED_DIR)
 
 
 @functools.lru_cache(maxsize=1)
@@ -176,6 +185,44 @@ def encoder():
         return None
 
 
+RERANK_DIR = Path(os.environ.get("CIP_ASK_RERANK_DIR", Path(__file__).resolve().parents[1] / "models" / "ask-reranker"))
+
+
+@functools.lru_cache(maxsize=1)
+def reranker():
+    """The second-stage reader (tokenizer, ONNX session, its calibration): a small cross-encoder trained on our catalogue
+    (scripts/colab/train_search_model_v4.ipynb) that reads a question and a candidate survey question together, as the
+    large labs' two-stage search does. None when its files are absent: Ask then ranks by meaning alone."""
+    try:
+        import onnxruntime
+        import tokenizers
+        words = tokenizers.Tokenizer.from_file(str(RERANK_DIR / "tokenizer.json"))
+        words.enable_truncation(256)
+        words.enable_padding(pad_id=0, pad_token="[PAD]")
+        options = onnxruntime.SessionOptions()
+        options.intra_op_num_threads = options.inter_op_num_threads = 1
+        session = onnxruntime.InferenceSession(str(RERANK_DIR / "model_optimized.onnx"), options, providers=["CPUExecutionProvider"])
+        return words, session, read_calibration(RERANK_DIR)
+    except Exception:   # noqa: BLE001 — no reranker: meaning alone
+        return None
+
+
+def rerank(question: str, texts: list[str]) -> np.ndarray | None:
+    """How well each text answers the question, 0-1 (the reranker's probability), or None without a reranker. Five
+    candidates take a few milliseconds on one thread."""
+    model = reranker()
+    if model is None or not texts:
+        return None
+    words, session, _ = model
+    coded = words.encode_batch([(question, t) for t in texts])
+    ids = np.array([c.ids for c in coded], np.int64)
+    feed = {"input_ids": ids, "attention_mask": np.array([c.attention_mask for c in coded], np.int64),
+            "token_type_ids": np.array([c.type_ids for c in coded], np.int64)}
+    inputs = {i.name for i in session.get_inputs()}
+    logits = session.run(None, {k: v for k, v in feed.items() if k in inputs})[0].reshape(-1)
+    return 1 / (1 + np.exp(-logits))
+
+
 def embed(texts: list[str]) -> np.ndarray | None:
     """Unit vectors (len(texts) × 384) from the local model, or None without it. bge's own pooling: the first token."""
     model = encoder()
@@ -185,8 +232,11 @@ def embed(texts: list[str]) -> np.ndarray | None:
     inputs = {i.name for i in session.get_inputs()}
     order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
     out = np.zeros((len(texts), 384), np.float32)
-    for start in range(0, len(order), EMBED_BATCH):
-        batch = order[start:start + EMBED_BATCH]
+    start = 0
+    while start < len(order):
+        longest = len(texts[order[min(start + EMBED_BATCH, len(order)) - 1]]) // 4 + 2   # ~4 characters a token
+        batch = order[start:start + max(1, min(EMBED_BATCH, EMBED_TOKENS // longest))]
+        start += len(batch)
         coded = words.encode_batch([texts[i] for i in batch])
         ids = np.array([c.ids for c in coded], np.int64)
         feed = {"input_ids": ids, "attention_mask": np.array([c.attention_mask for c in coded], np.int64), "token_type_ids": np.zeros_like(ids)}
@@ -194,20 +244,44 @@ def embed(texts: list[str]) -> np.ndarray | None:
     return out / np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-9)
 
 
+def read_vectors() -> dict[str, np.ndarray]:
+    """The saved vectors by text hash ({} when there are none yet)."""
+    try:
+        with np.load(VECTORS) as kept:
+            return dict(zip(kept["hashes"], kept["vectors"].astype(np.float32)))
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
+def embed_elsewhere(texts: list[str]) -> np.ndarray | None:
+    """embed() in a child process at low priority (python -m api.ask_model): a few thousand texts cost this process
+    nothing but the result (~1.5 KB a text), and the web answers by keywords meanwhile."""
+    import subprocess
+    import sys
+    import tempfile
+    with tempfile.TemporaryDirectory() as folder:
+        given, made = Path(folder) / "texts.json", Path(folder) / "vectors.npy"
+        given.write_text(json.dumps(texts))
+        done = subprocess.run(["nice", "-n", "10", sys.executable, "-m", "api.ask_model", str(given), str(made)],
+                              cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True)
+        if done.returncode or not made.exists():
+            log.warning("Ask model: encoding in a child process failed: %s", (done.stderr or "")[-300:])
+            return None
+        return np.load(made)
+
+
 def question_vectors(texts: dict[str, str], prune: bool = False) -> dict[str, np.ndarray]:
     """key → vector for each text, reusing the saved vectors of texts already embedded (by text hash). prune: drop
     saved vectors of texts no longer asked for (only the full list of survey questions does, api/ask_index.py)."""
     digest = {k: hashlib.sha1(t.encode()).hexdigest()[:16] for k, t in texts.items()}
     with LOCK:
-        try:
-            with np.load(VECTORS) as kept:
-                saved = dict(zip(kept["hashes"], kept["vectors"].astype(np.float32)))
-        except (OSError, ValueError, KeyError):
-            saved = {}
-        missing = [k for k in texts if digest[k] not in saved]
-        made = embed([texts[k] for k in missing]) if missing else None
+        saved = read_vectors()
+    missing = [k for k in texts if digest[k] not in saved]
+    # encoded outside the lock: an AI check waiting on it waited 7 minutes behind a full re-encode (12 Nov 2026)
+    made = (embed_elsewhere if len(missing) > BULK else embed)([texts[k] for k in missing]) if missing else None
+    with LOCK:
         if made is not None:
-            saved.update({digest[k]: v for k, v in zip(missing, made)})
+            saved = {**read_vectors(), **{digest[k]: v for k, v in zip(missing, made)}}   # another process may have added some
             kept = set(digest.values())
             saved = {h: v for h, v in saved.items() if not prune or h in kept}
             try:
@@ -273,3 +347,8 @@ def plan(question: str, candidates: list[dict]) -> dict | None:
         except OSError:
             log.warning("Ask model: reading not saved")
     return found
+
+
+if __name__ == "__main__":   # embed_elsewhere's child: texts (JSON list) in, vectors (.npy) out
+    import sys
+    np.save(sys.argv[2], embed(json.loads(Path(sys.argv[1]).read_text())))

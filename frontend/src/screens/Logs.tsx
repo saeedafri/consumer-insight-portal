@@ -173,7 +173,6 @@ export default function Logs() {
           ? <>You are signed in as <b>{me?.email ?? "an account"}</b>, which is not an admin, so this page stays closed whatever the token. Only the super admin opens it (config/access.yml people: super_admin).</>
           : denied}</p></Card>}
       {metrics && <AskQuality headers={headers} token={token} />}
-      {metrics && <AskReview headers={headers} token={token} />}
       {metrics && <Dashboard m={metrics} headers={headers} />}
       <RawLogs headers={headers} token={token} />
       <Archives headers={headers} token={token} />
@@ -546,53 +545,6 @@ function AskQuality({ headers, token }: { headers: Record<string, string>; token
         <td className="num">{c.misses.length > 0 && <button className="btn" onClick={() => setOpen(open === c.survey_id ? null : c.survey_id)}>{open === c.survey_id ? "Hide" : "Misses"}</button>}</td></tr>)}</tbody>
     </table></div> : <p className="muted">{list ? "No survey checked yet: the check runs after the next publish." : "Loading…"}</p>}
     {shown && <ul className="small" style={{ marginTop: 12 }}>{shown.misses.map(m => <li key={m.question}>{m.verified && <b>Verified · </b>}{m.question} <span className="muted">→ {m.problem}</span></li>)}</ul>}
-  </Card>;
-}
-
-// ---- Ask Coresight, the questions people asked: check each, save the right reading as verified ----------------------
-// GET /api/v1/admin/ask/asked lists them; POST /api/v1/admin/ask/check shows what Ask answers now (not audited, so
-// checking never adds to the counts); POST /api/v1/admin/ask/verified saves it, and every later question worded like it
-// is then answered from that reading (api/assistant.py save_verified)
-interface Asked { question: string; times: number; people: number; last: string; verified: boolean }
-interface Checked { mode: "figures" | "none" | "choose"; answer: string; headline?: string; verify?: Record<string, unknown>;
-                    sources: { qcode: string; question: string; family: string }[]; suggestions: { qcode: string; text: string; family: string; key: string }[] }
-function AskReview({ headers, token }: { headers: Record<string, string>; token: string }) {
-  const [list, setList] = useState<Asked[] | null>(null);
-  const [checks, setChecks] = useState<Record<string, Checked | string>>({});
-  const post = (url: string, body: unknown) => fetch(url, { method: "POST", credentials: "same-origin", headers: { ...headers, "Content-Type": "application/json" },
-                                                         body: JSON.stringify(body) })
-    .then(async r => r.ok ? r.json() : Promise.reject(new Error((await r.json().catch(() => ({}))).detail ?? `${r.status}`)));
-  useEffect(() => {
-    fetch("/api/v1/admin/ask/asked", { credentials: "same-origin", headers }).then(r => r.ok ? r.json() : []).then(setList).catch(() => setList([]));
-  }, [token]);
-  const check = (question: string) => {
-    setChecks(c => ({ ...c, [question]: "Checking…" }));
-    post("/api/v1/admin/ask/check", { question }).then((a: Checked) => setChecks(c => ({ ...c, [question]: a })),
-                                                     (e: Error) => setChecks(c => ({ ...c, [question]: `Could not check: ${e.message}` })));
-  };
-  const save = (question: string, verify: Record<string, unknown>) => post("/api/v1/admin/ask/verified", { ...verify, question })
-    .then(() => { setList(l => l && l.map(x => x.question === question ? { ...x, verified: true } : x)); setChecks(c => ({ ...c, [question]: "Saved as verified." })); },
-          (e: Error) => setChecks(c => ({ ...c, [question]: `Not saved: ${e.message}` })));
-  const waiting = list?.filter(a => !a.verified).length ?? 0;
-  return <Card title="Ask Coresight: questions people asked" sub={`What people typed in the last 90 days, most asked first${list ? ` · ${waiting} to review` : ""}. Check a question to see what Ask answers now; if it is right, save it as verified, or pick the right survey question. A verified question, and any later one worded like it, is answered exactly from then on.`}>
-    {list?.length ? <div className="table-wrap"><table className="data">
-      <thead><tr><th>Question</th><th className="num">Times</th><th className="num">People</th><th>Last asked (IST)</th><th>Review</th></tr></thead>
-      <tbody>{list.map(a => { const c = checks[a.question]; return <tr key={a.question}>
-        <th scope="row" style={{ fontWeight: 500 }}>{a.question}</th><td className="num">{a.times}</td><td className="num">{a.people}</td><td>{ist(a.last.replace(" ", "T") + "Z")}</td>
-        <td>{a.verified ? <span className="chip">Verified</span>
-          : !c ? <button className="btn" onClick={() => check(a.question)}>Check</button>
-          : typeof c === "string" ? <span className="small muted">{c}</span>
-          : <div className="small">
-              {c.mode === "figures" && c.verify ? <>
-                <div><b>Ask answers from:</b> {c.sources[0]?.qcode}: {c.sources[0]?.question}</div>
-                <div className="muted">{c.headline}</div>
-                <button className="btn primary" style={{ marginTop: 6 }} onClick={() => save(a.question, c.verify!)}>Right: save as verified</button>
-              </> : <div className="muted">{c.answer}</div>}
-              {c.suggestions.length > 0 && <div style={{ marginTop: 6 }}>{c.mode === "figures" ? "Wrong? The right one is: " : "The right one is: "}
-                {c.suggestions.map(sug => <button key={sug.key} className="btn" style={{ margin: "4px 6px 0 0" }}
-                  onClick={() => save(a.question, { ...(c.verify ?? {}), code: sug.qcode, family: sug.family, focus: [] })}>{sug.qcode}: {sug.text.slice(0, 60)}</button>)}</div>}
-            </div>}</td></tr>; })}</tbody>
-    </table></div> : <p className="muted">{list ? "Nobody has asked Ask Coresight anything in the last 90 days." : "Loading…"}</p>}
   </Card>;
 }
 

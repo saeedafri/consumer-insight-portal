@@ -8,6 +8,7 @@ figures, only the waves a person may see, and no guess when nothing matches. A s
 import gzip
 import json
 
+import numpy as np
 import pytest
 
 from api import ask_figures, ask_reader, assistant
@@ -257,3 +258,39 @@ def test_a_question_too_close_to_call_asks_which_was_meant(index, monkeypatch):
     monkeypatch.setattr(assistant, "GATE", found["margin"] + 0.01)      # closer than the gate: never a silent guess
     unsure = assistant.answer("What share bought from Amazon in the latest wave?", index, EVERYONE, quick=True)
     assert unsure["mode"] == "choose" and unsure["sources"] == [] and unsure["suggestions"][0]["qcode"] == "XQ1"
+
+
+def test_a_question_the_ai_settled_is_answered_at_once_next_time_with_no_ai(index, monkeypatch):
+    if index.vectors is None:   # matched by closeness in meaning: it needs the local search model
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    calls = []
+    monkeypatch.setattr(assistant.ask_model, "ready", lambda: True)
+    monkeypatch.setattr(assistant.ask_model, "plan", lambda q, c: calls.append(q) or {
+        "pick": next(i for i, x in enumerate(c) if "retailers" in x["text"]), "alt": None, "focus": [], "kind": "share",
+        "grain": "auto", "cut": "none", "period": "latest"})
+    question = "What share bought from Amazon in the latest wave?"
+    settled = assistant.ask(question, index, EVERYONE, "all", quick=False)   # the page's check: the AI reads it
+    assert settled["understood"] == "model" and settled["sources"][0]["qcode"] == "XQ1" and len(calls) == 1
+    again = assistant.ask(question, index, EVERYONE, "someone else", quick=True)   # another person, the quick answer
+    assert again["understood"] == "learned" and again["sources"][0]["qcode"] == "XQ1" and len(calls) == 1 and not again["check"]
+    saved = json.loads(assistant.LEARNED.read_text())[-1]   # kept by key: 115 codes are reused by other studies (q2, D14),
+    assert saved["key"] == settled["sources"][0]["key"]     # and by code alone 13 golden answers came back wrong (13 Nov 2026)
+    assistant.LEARNED.write_text(json.dumps([{k: v for k, v in saved.items() if k != "key"}]))
+    index.load_verified()
+    assert not any(v.get("learned") for v in index.verified)   # a learned entry without its key is never guessed from its code
+
+
+
+def test_a_reranker_reorders_the_nearest_and_decides_how_sure(index, monkeypatch):
+    if index.vectors is None:
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    question = "What share bought from Amazon in the latest wave?"
+    assert assistant.answer(question, index, EVERYONE, quick=True)["sources"][0]["qcode"] == "XQ1"
+    texts = []
+    reader = lambda q, ts: texts.extend(ts) or np.array([0.95 if "save money" in t else 0.25 if "generative" in t.lower() else 0.2 for t in ts])
+    monkeypatch.setattr(assistant.ask_model, "rerank", reader)
+    monkeypatch.setattr(assistant.ask_model, "reranker", lambda: (None, None, {"gate": 0.15}))
+    found = assistant.answer(question, index, EVERYONE, quick=True)
+    assert len(texts) == 3 and found["sources"][0]["qcode"] == "Q14" and found["margin"] == pytest.approx(0.7)   # its order, its scale
+    monkeypatch.setattr(assistant.ask_model, "reranker", lambda: (None, None, {"gate": 0.8}))   # a lead under its own gate: unsure
+    assert assistant.answer(question, index, EVERYONE, quick=True)["mode"] == "choose"
