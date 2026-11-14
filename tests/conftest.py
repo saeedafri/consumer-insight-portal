@@ -85,6 +85,14 @@ def own_ask_vectors():
 
 
 @pytest.fixture(autouse=True)
+def no_ask_reader(monkeypatch):
+    """Ask's own reader (models/ask-reader) is off in tests: its picks on test questions are a trained model's, not a
+    rule a test can state. A test that needs it sets api/ask_model.py read_pick itself."""
+    from api import ask_model
+    monkeypatch.setattr(ask_model, "reader", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def own_notify_state(tmp_path, monkeypatch):
     """Tests' fake failures must never fill the real throttle (logs/notify-state.json): it would
     silence a real alert for 6 hours."""

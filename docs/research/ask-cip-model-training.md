@@ -1011,6 +1011,42 @@ Ask, the gate off:
   questions: the room left is there, not in the teacher.
 - Not used yet: the server change (the re-reader's pick replacing the rules' choice when there is no AI) waits for a yes.
 
+**v6 in Ask (14 Nov 2026, same day).** L6 became Ask's own reader (`models/ask-reader`, `api/ask_model.py read_pick`):
+it reads every candidate's line (`line`, the one the AI reads) and picks, or says "none of these", in ~70 ms. Its lead
+over the next choice (logits; "none" = 0) decides whether the AI is asked: from a lead of 2 (`calibration.json` "sure")
+its pick is final. That line was set on the notebook's 900 held-out practice questions, not on the tests: there a lead of
+2 or more is 51% of questions, 90% agreeing with the teacher (6 or more: 11%, 99%); on the final exam it was 52% at 98.5%.
+Without a key the reader's pick always stands; the quick answer shows it at once and asks for the AI check only when it
+is unsure. Fixed on the way, each a general rule: the alias "Economic outlook" was on a 2023 inflation question and a 2022
+one-off, now on the weekly economy question CS2 (84 waves) (`config/ask_semantic.json`); a misspelt retailer or brand is
+put right (`ask_index.py spelled`: only toward the answers of long-running retailer, brand or store lists; correcting
+every unknown word changed "having" to "behaving" in the bank, this changes 6 words of 38,477 questions); a trend's
+question with history counts a word no candidate uses by its synonyms ("dining out" → "Gone to a restaurant").
+
+Live in Ask on the Mac (`scripts/ask_v6.py score … --reader`; the teacher's recorded replies stand in for the AI, as
+OpenAI was not used):
+
+| | Final exam (161) | Big exam (3,000) | AI asked |
+|---|---|---|---|
+| Rules only (today without a key) | 139 (86.3%) | 2,493 (83.1%) | none |
+| Ask's reader, no AI | 154 (95.7%) | 2,482 (82.7%) | none |
+| Ask's reader, the AI where it is unsure | 156 (96.9%) | 2,503 (83.4%) | 61 of 161 (38%) · 381 of 3,000 (13%) |
+
+Quick answer on the Mac: median 13 → 76 ms, 95th 28 → 109 ms; memory +78 MB. Today's AI reads ~80% of questions.
+
+**What 99% needs** (at most 1 miss of 161). The China question is right on staging (China Consumer Survey Q9, 149 waves;
+the Mac has no China waves), so 157 of 161 there (97.5%). Left:
+
+| Miss | Why | Fix |
+|---|---|---|
+| "Amazon in 2025 vs 2026" | the reader was right but unsure; the AI changed it to Prime membership | a better AI on the unsure third (gpt-4.1 scored 155 vs gpt-4o-mini's 151 on the whole set), or a better reader |
+| "What share of women started holiday shopping" | the same: the AI changed a right pick | the same |
+| "Why buy on social media instead of a store?" | the reader is sure of "why do you give up a purchase" | a retrained reader (thinking fixed: 4,096 tokens) |
+| "Are people cutting back on dining out because of tariffs?" | no survey asks it; reader and AI answer from a tariff question | a "none of these" the AI and reader both learn |
+
+Even then, 99% on 161 questions is ±1.5 points: these fixes were found on the final exam, so it no longer measures new
+questions fairly. A fresh set of analysts' questions, never looked at, is the honest test of 99%.
+
 ## Part 16. Glossary in plain words
 
 | Word | Plain meaning | Everyday comparison |

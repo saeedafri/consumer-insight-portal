@@ -281,19 +281,57 @@ def test_a_question_the_ai_settled_is_answered_at_once_next_time_with_no_ai(inde
 
 
 
-def test_a_reranker_reorders_the_nearest_and_decides_how_sure(index, monkeypatch):
+def test_the_reader_picks_and_the_ai_is_asked_only_when_the_reader_is_unsure(index, monkeypatch):
     if index.vectors is None:
         pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
     question = "What share bought from Amazon in the latest wave?"
-    assert assistant.answer(question, index, EVERYONE, quick=True)["sources"][0]["qcode"] == "XQ1"
-    texts = []
-    reader = lambda q, ts: texts.extend(ts) or np.array([0.95 if "save money" in t else 0.25 if "generative" in t.lower() else 0.2 for t in ts])
-    monkeypatch.setattr(assistant.ask_model, "rerank", reader)
-    monkeypatch.setattr(assistant.ask_model, "reranker", lambda: (None, None, {"gate": 0.15}))
-    found = assistant.answer(question, index, EVERYONE, quick=True)
-    assert len(texts) == 3 and found["sources"][0]["qcode"] == "Q14" and found["margin"] == pytest.approx(0.7)   # its order, its scale
-    monkeypatch.setattr(assistant.ask_model, "reranker", lambda: (None, None, {"gate": 0.8}))   # a lead under its own gate: unsure
-    assert assistant.answer(question, index, EVERYONE, quick=True)["mode"] == "choose"
+    calls, lead = [], {"now": 3.0}
+    monkeypatch.setattr(assistant.ask_model, "ready", lambda: True)
+    monkeypatch.setattr(assistant.ask_model, "plan", lambda q, c: calls.append(q) or {
+        "pick": next(x["number"] for x in c if "retailers" in x["text"]), "alt": None, "focus": [], "kind": "share",
+        "grain": "auto", "cut": "none", "period": "latest"})
+    monkeypatch.setattr(assistant.ask_model, "read_pick", lambda q, c: (next(x["number"] for x in c if "save money" in x["text"]), lead["now"]))
+    sure = assistant.answer(question, index, EVERYONE)
+    assert sure["understood"] == "reader" and sure["sources"][0]["qcode"] == "Q14" and not calls   # sure: no AI call
+    lead["now"] = assistant.READER_SURE - 0.5
+    quick = assistant.answer(question, index, EVERYONE, quick=True)
+    assert quick["understood"] == "reader" and quick["check"] is True and not calls   # unsure: shown at once, the AI asked after
+    checked = assistant.answer(question, index, EVERYONE)
+    assert checked["understood"] == "model" and checked["sources"][0]["qcode"] == "XQ1" and len(calls) == 1
+    monkeypatch.setattr(assistant.ask_model, "plan", lambda q, c: None)   # no key (or the AI failed): the reader's pick stands
+    assert assistant.answer(question, index, EVERYONE)["sources"][0]["qcode"] == "Q14"
+
+
+def test_a_misspelt_retailer_is_put_right_and_other_words_are_left_alone(tmp_path, index, monkeypatch):
+    from api import ask_index
+    monkeypatch.setattr(ask_index, "BRAND_WAVES", 8)   # the test retailer list has 8 waves; the real ones 15 or more
+    waves = [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping and Spending", "modules": []} for i, d in enumerate(DATES)]
+    again = Index(tmp_path / "questions", waves)
+    assert again.brand_words == ["amazon", "walmart"]   # the retailer list's answers, not Q14's (no "retailer" in its wording)
+    assert again.correct_spelling("Walmrt shoppers") == "Walmart shoppers"
+    assert again.correct_spelling("What share bought from Amazon in the latest wave?") == "What share bought from Amazon in the latest wave?"
+
+
+def test_the_reader_scores_none_of_these_as_zero_and_gives_its_lead(monkeypatch):
+    from api import ask_model
+
+    class Words:   # the tokenizer's shape: ids, mask and type ids for each pair
+        def encode_batch(self, pairs):
+            return [type("Coded", (), {"ids": [1, 2], "attention_mask": [1, 1], "type_ids": [0, 1]})() for _ in pairs]
+
+    class Session:
+        def __init__(self, logits):
+            self.logits = logits
+
+        def run(self, names, feed):
+            return [np.array(self.logits, np.float32).reshape(-1, 1)]
+
+    candidates = [{"number": n, "text": t, "name": "", "waves": 9, "first": "2024-01-01", "last": "2026-11-01", "answers": []}
+                  for n, t in ((4, "a"), (7, "b"))]
+    monkeypatch.setattr(ask_model, "reader", lambda: (Words(), Session([1.0, 3.5]), {}))
+    assert ask_model.read_pick("q", candidates) == (7, pytest.approx(2.5))   # its number, ahead of the next by 2.5
+    monkeypatch.setattr(ask_model, "reader", lambda: (Words(), Session([-1.0, -3.0]), {}))
+    assert ask_model.read_pick("q", candidates) == (None, pytest.approx(1.0))   # both under "none of these" (0)
 
 
 def test_dont_know_with_a_curly_apostrophe_is_left_out_like_a_straight_one():

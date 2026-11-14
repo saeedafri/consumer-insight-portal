@@ -4,6 +4,12 @@ Every feature, enhancement and update, newest first: the same entries as the por
 (`frontend/src/screens/WhatsNew.tsx`). Add each change to both; `tests/test_docs.py` fails if they differ.
 The API and the MCP connector are documented in [API.md](API.md).
 
+## 14 November 2026
+
+### Ask Coresight picks the survey question with its own model, and asks the AI only when that model is unsure
+
+Ask Coresight now has its own small model on our server that reads a question with the closest survey questions and picks the one that answers it, as the AI check did, in about 70 milliseconds and at no cost. It learnt from 12,281 practice questions answered by a large open model (Qwen3-32B) on Google Colab, with no OpenAI. When it is sure, its pick is final; only when it is unsure, and an AI key is set, does the AI check read the question: on the 3,000-question test the AI was asked for 13% of questions and on the 161 hand-written ones for 38%, where it used to read about 80%. With no AI key at all, right answers on the hand-written questions go from 86.3% to 95.7% (154 of 161); with a large model checking the unsure ones, 96.9%. Also fixed: Economic outlook now means the weekly economy question (84 waves), not a 2023 inflation question; a misspelt retailer such as walmrt is read as Walmart; and a trend in dining out comes from the weekly activities question (Gone to a restaurant).
+
 ## 13 November 2026
 
 ### Ask Coresight no longer overrules a right pick, and says which group a top list is for

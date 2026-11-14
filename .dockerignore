@@ -16,6 +16,7 @@
 !frontend/public/**
 !frontend/scripts/**
 !deploy/**
+!models/ask-reader/**
 !DigiCertGlobalRootG2.crt.pem
 !data/coded/**
 **/__pycache__

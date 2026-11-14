@@ -1,10 +1,12 @@
 """Ask CIP: a question in plain words, answered from the portal's own published survey figures, with a chart.
 
-Who calls it: api/main.py ask (POST /api/v1/ask). No AI model and no database: in about a millisecond to tens of
-milliseconds, and at no cost per question.
+Who calls it: api/main.py ask (POST /api/v1/ask). No database, and no AI needed: our own small models on this CPU (the
+search's and the reader's, api/ask_model.py) answer in about 100 ms at no cost; the AI (optional, a key) is asked
+only when the reader is unsure.
 
   1. read     api/ask_reader.py   the periods, grain, cuts and kind of question, by rules
-  2. find     api/ask_index.py    the survey question it is about (its words, answers, topic and sector words)
+  2. find     api/ask_index.py    the survey question it is about (its words, answers, topic and sector words), then
+              api/ask_model.py    Ask's own reader picks among the closest (the AI only when the reader is unsure)
   3. compute  api/ask_figures.py  exact pooled figures from the published counts, for the waves this person may see
   4. write    here                sentences from the figures, the chart that fits, the sources, other matches
 
@@ -30,8 +32,10 @@ from api import ask_figures, ask_model, ask_reader
 from api.ask_index import LEARNED, Index, name_key, read_json, stems
 
 log = logging.getLogger("cip.assistant")
-RERANK_TOP = 5                       # candidates the reranker reads (a few milliseconds for five)
-RERANK_GATE = 0.15                   # its probability lead below which Ask is unsure, until its calibration.json says otherwise
+# the reader's lead (logits) from which its pick is final and the AI is not asked: at 2, half the golden set's questions
+# that reach this step (52%), and 98.5% of those agree with Qwen3-32B; on 900 held-out practice questions 51% at 90%
+# (scripts/ask_v6.py, 14 Nov 2026). The reader's own scale, so it is read from its calibration.json
+READER_SURE = float(ask_model.read_calibration(ask_model.READER_DIR).get("sure", 2.0))
 LEARNED_KEPT = 5000                  # questions the AI settled, kept to answer close ones at once (learn)
 LEARN_LOCK = threading.Lock()
 KEEP_ANSWERS = 500                   # answers kept in memory, newest used last out
@@ -277,7 +281,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
     in the surveys matches (then suggestions lists the closest questions, if any). quick: the nearest survey question by
     meaning and the rules, no model (~100 ms); check is then true when the model's reading may differ, and the page
     asks again without quick to have it read (the Ask page shows the quick answer meanwhile)."""
-    question = " ".join(str(question).split())[:500]
+    question = index.correct_spelling(" ".join(str(question).split())[:500])   # "walmrt shoppers" is Walmart's
     plan = ask_reader.read(question)
     topic = {w for w in stems(question) if len(w) >= 4}   # the question's own words: which answers and questions name it
     visible = {s for s in visible if index.country.get(s, "US") == plan["country"]}   # a US question never reads China's waves
@@ -344,22 +348,23 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         if c["waves"] > longest_of.get(c["text"].lower(), {"waves": -1})["waves"]:
             longest_of[c["text"].lower()] = c
     candidates = list({c["text"].lower(): longest_of[c["text"].lower()] for c in candidates}.values())
-    # second stage, when a reranker is installed (api/ask_model.py rerank): the nearest RERANK_TOP read together with the
-    # question and put in its order; its probabilities then decide how sure the pick is (margin, gate)
-    sure = ask_model.rerank(question, [index.embed_text.get(c["key"], c["text"]) for c in candidates[:RERANK_TOP]]) if candidates else None
-    if sure is not None:
-        for c, p in zip(candidates, sure):
-            c["rerank"] = float(p)
-        candidates = sorted(candidates[:RERANK_TOP], key=lambda c: -c["rerank"]) + candidates[RERANK_TOP:]
-    by_meaning = list(candidates)   # the quick answer's order: nearest first (or the reranker's)
+    by_meaning = list(candidates)   # the order with no reader and no AI: nearest first
     # a retailer or brand the question names among a question's answers ("Amazon" in the retailer lists) goes first, the
     # longest-running first: the model otherwise favours a question with the name in its wording (Amazon's Big Deal Days)
     candidates.sort(key=lambda c: (not focus(question, c.get("labels", [])), -c["waves"] if focus(question, c.get("labels", [])) else 0))
-    if candidates and not quick:   # the model reads the question over the retrieved candidates; rules keep any dates it names
-        reading = ask_model.plan(question, [{"number": i, "text": c["text"], "name": c.get("name", ""), "family": FAMILY.get(c["family"], c["family"]),
-                                             "waves": c["waves"], "first": c["first"], "last": c["last"],
-                                             "answers": sorted(c.get("labels", []), key=lambda l: -len(topic & set(stems(l))))}   # the answers the question
-                                            for i, c in enumerate(candidates)])   # names first: the AI sees six ("movie theater" was 13th of 15, 13 Nov)
+    listed = [{"number": i, "text": c["text"], "name": c.get("name", ""), "family": FAMILY.get(c["family"], c["family"]),
+               "waves": c["waves"], "first": c["first"], "last": c["last"],
+               "answers": sorted(c.get("labels", []), key=lambda l: -len(topic & set(stems(l))))}   # the answers the question
+              for i, c in enumerate(candidates)]   # names first: six are read ("movie theater" was 13th of 15, 13 Nov)
+    # Ask's own reader picks from the lines the AI reads (~70 ms, no cost); the AI reads the question only when the
+    # reader is unsure (or absent) and a key is set; rules keep any dates the question names
+    reader_pick = ask_model.read_pick(question, listed)   # (number or None, lead), None without the reader
+    reader_sure = reader_pick is not None and reader_pick[1] >= READER_SURE
+    if listed and not quick and not reader_sure:
+        reading = ask_model.plan(question, listed)
+    by_reader = reading is None and reader_pick is not None
+    if by_reader:   # its pick only: the rules read the kind, period and group, as the reading's defaults say
+        reading = {"pick": reader_pick[0], "alt": None, "focus": [], "kind": "share", "grain": "auto", "cut": "none", "period": "all"}
     if verified:
         understood = "learned" if verified.get("learned") else "verified"
         reading = {"pick": None, "focus": verified.get("focus", []), "kind": verified.get("kind", "share"),
@@ -367,11 +372,12 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         chosen = {**index.docs[verified["key"]], "key": verified["key"]}
         hits = [chosen] + [h for h in hits if h["key"] != chosen["key"]]
         plan = read_with_model(plan, reading)
-    if candidates and not verified:   # the model's pick, or with no model the nearest by meaning
-        understood = "model" if reading else "meaning"
+    if candidates and not verified:   # the reader's or the AI's pick, or with neither the nearest by meaning
+        understood = "reader" if by_reader else "model" if reading else "meaning"
         if reading and reading["pick"] is None:
             return {"answer": "None of the surveys asks this. The closest questions are below.", "chart": None, "table": None,
                     "sources": [], "plan": plan, "mode": "none", "no_source": True, "understood": understood,
+                    "check": quick and not reader_sure and ask_model.ready(),   # an unsure "none": the AI may find one
                     "suggestions": [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]}
         chosen = candidates[reading["pick"]] if reading else by_meaning[0]
         alternative = candidates[reading["alt"]] if reading and reading.get("alt") is not None and reading["alt"] != reading["pick"] else None
@@ -400,18 +406,20 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
             # the one with history that names most of what the question is about, then the longest-running: the first one
             # found answered "online grocery trend" from grocery categories (3 waves), not online purchases (219, 13 Nov)
             history = [c for c in candidates if c["waves"] >= TREND_FROM]
-            chosen = max(history, key=lambda c: (len(topic & set(stems(c["text"] + " " + " ".join(c.get("labels", []))))), c["waves"]), default=chosen)
+            # a word none of them uses counts by its synonyms ("dining out" is "Gone to a restaurant (dine in)"); a word one
+            # uses counts alone (by its synonyms, "online" found "app" in a beauty retailer list, 14 Nov 2026)
+            said = {c["key"]: set(stems(c["text"] + " " + " ".join(c.get("labels", [])))) for c in history}
+            wanted = topic | {s for w in topic - set().union(*said.values()) for s in index.synonyms.get(w, ())}
+            chosen = max(history, key=lambda c: (len(wanted & said[c["key"]]), c["waves"]), default=chosen)
         alternative = alternative if alternative and alternative["key"] != chosen["key"] else None
         # the next question that asks something else: a near-twin from another study (alike wording) is a right answer too
-        scale = "rerank" if "rerank" in chosen else "near"   # how sure, on the reranker's scale when it read them
-        others = [c[scale] for c in candidates if scale in c and c["key"] != chosen["key"] and not index.alike(chosen["key"], c["key"])]
-        margin = round(chosen[scale] - max(others), 3) if scale in chosen and others else None
-        gate = float(ask_model.reranker()[2].get("gate", RERANK_GATE)) if scale == "rerank" else GATE
+        others = [c["near"] for c in candidates if "near" in c and c["key"] != chosen["key"] and not index.alike(chosen["key"], c["key"])]
+        margin = round(chosen["near"] - max(others), 3) if "near" in chosen and others else None
         # unsure between different questions: ask which was meant, but only when no AI check can follow. With one, the
         # best match shows at once and the check confirms or replaces it in about a second: "choose" first made half of
         # people's questions wait for the AI (49% of the golden set live on staging, 12 Nov 2026)
         # a stored name the question uses (shared) is decided by the name step below, not asked about (13 Nov 2026)
-        if understood == "meaning" and margin is not None and margin < gate and not shared and not (quick and ask_model.ready()):
+        if understood == "meaning" and margin is not None and margin < GATE and not shared and not (quick and ask_model.ready()):
             shown, texts = [], set()
             for c in [chosen] + by_meaning:
                 if c["text"].lower() not in texts and len(shown) < 3:
@@ -505,7 +513,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
     headline = next((x for x in points if "%" in x), points[0] if points else "")   # the first sentence with a figure
     return {"answer": "\n".join(sentences), "headline": headline, "points": [x for x in points if x != headline], "notes": notes,
             "source_line": sentences[0], "weighting": "unweighted", "understood": understood,
-            "check": quick and understood == "meaning" and ask_model.ready(), "margin": margin,
+            "check": quick and understood in ("meaning", "reader") and not reader_sure and ask_model.ready(), "margin": margin,
             "verify": {"question": question, "key": doc["key"], "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],
                        "kind": plan["kind"], "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, "codes": doc.get("codes", [doc["qcode"]]),
             "chart": chart(fig, shown), "table": table, "plan": plan, "mode": "figures", "no_source": False,

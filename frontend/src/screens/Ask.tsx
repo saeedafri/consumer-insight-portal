@@ -98,7 +98,8 @@ function Reply({ question, answer, weighted, checking, checked, onAsk }: { quest
   const how = { verified: "Verified answer", named: "Verified: the survey question's own name, figures computed",
                 learned: "Answered as a question settled earlier by the AI check, figures computed",
                 name: "Best match by name: other survey questions share this name (below)",
-                model: "Best match, understood by AI: check the question below", meaning: "Best match by meaning: check the question below",
+                model: "Best match, understood by AI: check the question below", reader: "Best match, read by Ask's own model: check the question below",
+                meaning: "Best match by meaning: check the question below",
                 rules: "Best match by words: check the question below" }[answer.understood ?? ""];
   const drawn = useRef<Chart | null>(null);
   const file = `ask-${(source?.qcode ?? "answer").toLowerCase()}`;

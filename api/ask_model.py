@@ -11,10 +11,13 @@ retrieved, the answers to focus on, the kind of answer, the grain and the cut. D
             golden questions, OpenAI's text-embedding-3-small for 135 at ~0.7 s a call (12 Nov 2026). Every survey
             question's vector is kept in VECTORS (logs/ask-vectors-<model>.npz) by the hash of its text, so a publish only
             embeds the questions that are new.
-  plan()    gpt-4o-mini (CIP_ASK_MODEL) with a strict JSON schema: ~1,500 tokens in, ~60 out, about $0.0003.
+  read_pick() Ask's own reader (models/ask-reader, MiniLM L6 8-bit, 23 MB) picks one of the candidates, or "none of
+            these", from the same lines the AI reads: ~70 ms on one thread, no cost. It learnt the picks of Qwen3-32B
+            (scripts/colab/train_search_model_v6.ipynb); with no AI it took the golden set from 139 to 152 of 161.
+  plan()    gpt-4o-mini (CIP_ASK_MODEL) with a strict JSON schema: ~1,500 tokens in, ~60 out, about $0.0003. Optional.
 
-Cost guard: the search costs nothing (local). api/assistant.py asks the model only when the rules are unsure, and the
-Ask page only after showing the quick answer (the check); every reading is kept in
+Cost guard: the search and the reader cost nothing (local). api/assistant.py asks the AI only when the reader is unsure
+(its calibration.json "sure"), and the Ask page only after showing the quick answer (the check); every reading is kept in
 logs/ask-readings.json, so a question is never paid for twice; every call's price is added to logs/ask-spend.json for
 the month, and past CIP_ASK_BUDGET_USD (default $0.50) the
 model is not called until the next month and the rules answer alone. Key: OPENAPI_KEY (or OPENAI_API_KEY); without it,
@@ -187,42 +190,54 @@ def encoder():
         return None
 
 
-RERANK_DIR = Path(os.environ.get("CIP_ASK_RERANK_DIR", Path(__file__).resolve().parents[1] / "models" / "ask-reranker"))
+READER_DIR = Path(os.environ.get("CIP_ASK_READER_DIR", Path(__file__).resolve().parents[1] / "models" / "ask-reader"))
+
+
+def describe_candidate(c: dict) -> str:
+    """One candidate as the AI and Ask's own reader read it: waves, years, business name, wording to 90 letters, six
+    answers to 32 (the reader learnt from exactly this line: change it and the reader must be retrained). api/assistant.py
+    answer builds the candidates; read_pick and plan read them."""
+    return (f"({c['waves']}w {c['first'][2:4]}-{c['last'][2:4]}) {c.get('name') or ''}: {c['text'][:90]} | "
+            f"{'; '.join(a[:32] for a in c['answers'][:6])}")
 
 
 @functools.lru_cache(maxsize=1)
-def reranker():
-    """The second-stage reader (tokenizer, ONNX session, its calibration): a small cross-encoder trained on our catalogue
-    (scripts/colab/train_search_model_v4.ipynb) that reads a question and a candidate survey question together, as the
-    large labs' two-stage search does. None when its files are absent: Ask then ranks by meaning alone."""
+def reader():
+    """Ask's own reader (tokenizer, ONNX session, calibration): a small cross-encoder (MiniLM L6, 8-bit, 23 MB) that
+    learnt Qwen3-32B's picks for 12,281 practice questions (scripts/colab/train_search_model_v6.ipynb), reading each
+    candidate's line as the AI does. None when its files are absent: then the AI, else the nearest by meaning, picks."""
     try:
         import onnxruntime
         import tokenizers
-        words = tokenizers.Tokenizer.from_file(str(RERANK_DIR / "tokenizer.json"))
-        words.enable_truncation(256)
+        settings = read_calibration(READER_DIR)
+        words = tokenizers.Tokenizer.from_file(str(READER_DIR / "tokenizer.json"))
+        words.enable_truncation(int(settings.get("length", 192)))   # as trained
         words.enable_padding(pad_id=0, pad_token="[PAD]")
         options = onnxruntime.SessionOptions()
-        options.intra_op_num_threads = options.inter_op_num_threads = 1
-        session = onnxruntime.InferenceSession(str(RERANK_DIR / "model_optimized.onnx"), options, providers=["CPUExecutionProvider"])
-        return words, session, read_calibration(RERANK_DIR)
-    except Exception:   # noqa: BLE001 — no reranker: meaning alone
+        options.intra_op_num_threads = options.inter_op_num_threads = 1   # one vCPU on Azure: never crowd the API
+        session = onnxruntime.InferenceSession(str(READER_DIR / "model_optimized.onnx"), options, providers=["CPUExecutionProvider"])
+        return words, session, settings
+    except Exception:   # noqa: BLE001 — no reader: the AI, else meaning, picks
         return None
 
 
-def rerank(question: str, texts: list[str]) -> np.ndarray | None:
-    """How well each text answers the question, 0-1 (the reranker's probability), or None without a reranker. Five
-    candidates take a few milliseconds on one thread."""
-    model = reranker()
-    if model is None or not texts:
+def read_pick(question: str, candidates: list[dict]) -> tuple[int | None, float] | None:
+    """The reader's choice over numbered candidates: (its number, or None for "none of these"; its lead over the next
+    choice in logits, "none of these" scoring 0 as trained), or None without the reader. ~70 ms for 12 on one thread."""
+    model = reader()
+    if model is None or not candidates:
         return None
     words, session, _ = model
-    coded = words.encode_batch([(question, t) for t in texts])
-    ids = np.array([c.ids for c in coded], np.int64)
-    feed = {"input_ids": ids, "attention_mask": np.array([c.attention_mask for c in coded], np.int64),
+    coded = words.encode_batch([(question, describe_candidate(c)) for c in candidates])
+    feed = {"input_ids": np.array([c.ids for c in coded], np.int64), "attention_mask": np.array([c.attention_mask for c in coded], np.int64),
             "token_type_ids": np.array([c.type_ids for c in coded], np.int64)}
-    inputs = {i.name for i in session.get_inputs()}
-    logits = session.run(None, {k: v for k, v in feed.items() if k in inputs})[0].reshape(-1)
-    return 1 / (1 + np.exp(-logits))
+    try:
+        choices = np.concatenate([[0.0], session.run(None, feed)[0].reshape(-1)])
+    except Exception as exc:   # noqa: BLE001 — a reader that cannot run (another model's inputs): the AI, else meaning, picks
+        log.warning("Ask reader failed: %s", type(exc).__name__)
+        return None
+    best, second = np.argsort(-choices)[:2]
+    return (candidates[best - 1]["number"] if best else None), float(choices[best] - choices[second])
 
 
 def embed(texts: list[str]) -> np.ndarray | None:
@@ -314,10 +329,9 @@ def plan(question: str, candidates: list[dict]) -> dict | None:
         return {**kept[memo], "usd": 0.0, "seconds": 0.0}
     if not ready():
         return None
-    # every word sent is paid for: ~40 tokens a candidate (waves, years, wording to 110 letters, 6 short answers)
-    listing = "\n".join(f"{c['number']}. ({c['waves']}w {c['first'][2:4]}-{c['last'][2:4]}) {c.get('name') or ''}: {c['text'][:90]} | "
-                        f"{'; '.join(a[:32] for a in c['answers'][:6])}" for c in candidates)   # the business name first; 20 letters cut
-    # "I have started but not finished" to "I have started but n" (13 Nov 2026)
+    # every word sent is paid for: ~40 tokens a candidate (waves, years, wording to 90 letters, 6 answers to 32: 20 cut
+    # "I have started but not finished" to "I have started but n", 13 Nov 2026)
+    listing = "\n".join(f"{c['number']}. {describe_candidate(c)}" for c in candidates)
     try:
         started = time.perf_counter()
         reply = call("chat/completions", {

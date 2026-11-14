@@ -10,6 +10,9 @@ config/sectors.yml, and the synonyms of config/search_synonyms.yml. Nothing here
             is corrected to the closest known one. Then what the question asks moves the ranking: a recent question
             for "latest"/"last N", one asked in the period named, one asked over many waves for a trend.
             An inverted index (word → questions): a few milliseconds for thousands of questions.
+  correct_spelling()  a misspelt retailer or brand put right before anything reads the question ("walmrt" →
+            "walmart"), toward the answers of long-running retailer, brand and store lists only; api/assistant.py
+            answer calls it first, for every question.
   versions  a code that older surveys reused for a different question (Q14 was once GenAI at work, once ways to save)
             is split by wording: wordings at least SAME_WORDING alike stay one question (a year or a brand changed in
             the text), others become their own entry, each with only its own waves and answers.
@@ -50,6 +53,7 @@ VERIFIED_NEAR = 0.91   # closeness in meaning (local model) from which a questio
                        # groups): "Holiday spending expectations" is 0.903 from the holiday finances one, a different question
 STANDING = 0.06     # retrieval: up to this added to a closeness (~0.5–0.8) for a question asked a year of waves and still asked
 SAME_ANSWERS = 0.6   # share of a wave's answers that must be the question's own for the wave to join its series
+BRAND_WAVES = 15     # a retailer, brand or store list asked this often holds the names a misspelt word is put right to (correct_spelling)
 SAME_WORDING = 0.5   # shared words / all words: "holiday 2025" vs "holiday 2026" stays one question, a reused code does not
 UNIT_ONLY = {"$", "%", "#"}   # a typed-number question loaded without its numbers: its one "answer" is the unit, chosen by 100%
 COUNT_CACHE_MB = 48   # parsed question files kept in memory; the largest (q1, every tracker wave) is ~4 MB
@@ -274,6 +278,8 @@ class Index:
         self.idf = {s: math.log(1 + total / len(keys)) for s, keys in self.postings.items()}
         self.vocabulary = sorted({w for d in self.docs.values() for w in re.findall(r"[a-z]{4,}", d["text"].lower())}
                                  | {w for g in self.synonyms.values() for w in g if len(w) >= 4})   # whole words, to correct spelling
+        self.brand_words = sorted({w for d in self.docs.values() if d["waves"] >= BRAND_WAVES and re.search(r"retailer|brand|store", d["text"].lower())
+                                   for label in d["labels"] for w in re.findall(r"[a-z]{5,}", label.lower())})   # Walmart, Costco…
         self.newest = max((d["last"] for d in self.docs.values()), default="2000-01-01")
         log.info("Ask CIP index: %d questions, %d words, from %s", len(self.docs), len(self.postings), root)
 
@@ -310,6 +316,21 @@ class Index:
             return None
         close = difflib.get_close_matches(word, self.vocabulary, n=1, cutoff=0.85)   # whole words: "submarine" stays unknown
         return close[0][:5] if close and close[0][:5] in self.postings else None
+
+    def correct_spelling(self, question: str) -> str:
+        """The question with a misspelt retailer or brand put right ("walmrt shoppers" → "walmart shoppers"): a word of
+        5+ letters no survey question uses, closest (0.85) to a word of a long-running retailer, brand or store list's
+        answers. Only those: correcting every unknown word made "having" "behaving" and "shaping" "sharing" in the 38,477
+        questions of the big exam, while this changes 6 (14 Nov 2026)."""
+        def fix(found: re.Match) -> str:
+            word = found.group(0).lower()
+            if len(word) < 5 or word[:5] in self.postings or word in self.vocabulary or word in STOP:
+                return found.group(0)
+            close = difflib.get_close_matches(word, self.brand_words, n=1, cutoff=0.85)
+            if not close:
+                return found.group(0)
+            return close[0].capitalize() if found.group(0)[0].isupper() else close[0]   # "Walmrt" → "Walmart"
+        return re.sub(r"[A-Za-z]+", fix, question)
 
     def find(self, words: str, plan: dict | None = None, limit: int = 8, visible: set[int] | None = None) -> list[dict]:
         """The best-matching questions, best first, each with its score; [] when no word of the question is known."""

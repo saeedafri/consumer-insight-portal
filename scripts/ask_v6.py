@@ -3,13 +3,16 @@
     python scripts/ask_v6.py export ~/Downloads/cip-colab     # v6-train.json, v6-tests.json into that folder
     python scripts/ask_v6.py score replies.json golden        # Ask's score with these picks in the AI's place
     python scripts/ask_v6.py score replies.json bank          # the same on the big exam's 3,000 (seed 11)
+    python scripts/ask_v6.py score replies.json golden --reader   # Ask as served: its reader (models/ask-reader) picks,
+                                                                  # the replies stand in for the AI only where it is unsure
 
 export: practice questions (catalogue asks, the checked Qwen practice questions, the off-topic ones; files in the folder,
 as uploaded to Colab for v5) go through Ask, and the request Ask would send its AI is recorded instead of sent: the
 question, the numbered candidate lines the AI reads, each candidate's survey key. The golden set and the big exam are
 written apart (v6-tests.json) and never trained on.
 score: the replies (the request's text → the AI's JSON, from the notebook) are given to Ask as its AI's, and the final
-answer is scored as scripts/ask_golden.py scores it (golden) or as the big exam's key says (bank).
+answer is scored as scripts/ask_golden.py scores it (golden) or as the big exam's key says (bank). Without --reader the
+reader is off, so every request reaches the replies; with it, Ask runs as served (an empty {} file: the reader alone).
 No OpenAI either way: the key is removed and api/ask_model.py call is replaced, so nothing reaches the network.
 Run from the repo root with PYTHONPATH=. (14 Nov 2026: Qwen3-32B's picks scored 154 of 161 this way).
 """
@@ -38,9 +41,9 @@ BANK_SAMPLE, BANK_SEED = 3000, 11   # the sample every round since v4 was tested
 PUBLISHED = ROOT / "data/published/current/api/v1"
 
 
-def without_api(replies: dict | None, scratch: Path) -> dict:
-    """Ask with no OpenAI: the key gone, the AI step recording its candidates (export) or answering from replies (score).
-    The record of the last AI step is returned (and refilled on each question)."""
+def without_api(replies: dict | None, scratch: Path, reader: bool = False) -> dict:
+    """Ask with no OpenAI: the key gone, the AI step recording its candidates (export) or answering from replies (score),
+    Ask's own reader on or off. The record of the last AI step is returned (and refilled on each question)."""
     for name in list(os.environ):
         if name.upper() in ask_model.KEY_NAMES:
             os.environ.pop(name)
@@ -60,6 +63,8 @@ def without_api(replies: dict | None, scratch: Path) -> dict:
         return plan(question, candidates)
 
     ask_model.call, ask_model.ready, ask_model.key, ask_model.plan = call, lambda: True, lambda: "none", recording_plan
+    if not reader:   # every request reaches the AI step
+        ask_model.reader = lambda: None
     ask_model.READINGS, ask_model.SPEND = scratch / "v6-readings.json", scratch / "v6-spend.json"
     ask_model.READINGS.unlink(missing_ok=True)   # never an earlier reading
     ask_index.LEARNED = assistant.LEARNED = scratch / "v6-no-learned.json"
@@ -121,10 +126,10 @@ def export(folder: Path, per: int) -> None:
           f"big exam {len(tests['bank'])} of {BANK_SAMPLE}")
 
 
-def score_replies(replies_file: Path, test: str) -> None:
+def score_replies(replies_file: Path, test: str, reader: bool) -> None:
     """Ask's final answers with the replies in the AI's place: right of the golden set or the big-exam sample."""
     replies = json.loads(replies_file.read_text())
-    last = without_api(replies, replies_file.parent)
+    last = without_api(replies, replies_file.parent, reader)
     index, visible, countries = load_index()
     asked = without = right = 0
     if test == "golden":
@@ -149,7 +154,7 @@ def score_replies(replies_file: Path, test: str) -> None:
             asked += "user" in last
             without += "user" in last and last["user"] not in replies
     print(f"{replies_file.name} on {test}: right {right} of {len(items)} ({right / len(items):.1%}) · AI step reached {asked}, "
-          f"of which without a reply {without} (the rules answered those)")
+          f"of which without a reply {without} (the reader's pick, or the rules, answered those)")
 
 
 def main() -> int:
@@ -161,12 +166,13 @@ def main() -> int:
     s = sub.add_parser("score")
     s.add_argument("replies", type=Path)
     s.add_argument("test", choices=("golden", "bank"))
+    s.add_argument("--reader", action="store_true", help="Ask's own reader on: the replies only where it is unsure")
     args = ap.parse_args()
-    assistant.GATE = assistant.RERANK_GATE = -1.0   # always the best answer: no "which did you mean?" in a score
+    assistant.GATE = -1.0   # always the best answer: no "which did you mean?" in a score
     if args.do == "export":
         export(args.folder.expanduser(), args.per)
     else:
-        score_replies(args.replies, args.test)
+        score_replies(args.replies, args.test, args.reader)
     return 0
 
 
