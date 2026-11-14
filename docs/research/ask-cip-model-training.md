@@ -1107,6 +1107,23 @@ question). `v7-train.json` (12,519 practice questions with their labels; the hel
 `Downloads/cip-colab`; `scripts/colab/train_search_model_v7.ipynb` trains MiniLM L6 and the smaller L4 on it with no
 teacher (an L4 GPU, ~1-1½ hours), scored on the Mac inside Ask as before.
 
+**v7's run (14 Nov 2026, night; `ask-v7.zip`): no gain, not used.** Inside Ask on the Mac (golden · big exam; the AI
+column with Qwen's recorded replies standing in; today's reader with the retailer and learned-answer fixes for comparison):
+
+| Reader | No AI | AI where unsure | AI asked (golden · big exam) | Quick answer, median · 95th |
+|---|---|---|---|---|
+| v6 second run (installed) | 154 · 2,495 | 159 · 2,503 | 54 · 380 | 75 · 110 ms |
+| v7 L6 | 154 · 2,499 | 158 · 2,503 | 65 · 354 | (same size) |
+| v7 L4 | 154 · 2,504 | 157 · 2,503 | 71 · 364 | 56 · 77 ms |
+
+Held out, the students agree with the new labels 74.8% (L6) and 72.4% (L4); a lead of 2 is ~50% of questions at 93-94%.
+Each still misses 7 golden questions with no AI, but different ones: L6 fixed the AI-assistants question and broke
+"Warehouse club shoppers"; L4 fixed four and broke four, among them "Walmart in October 2026" read as "none of these".
+Dining out over tariffs is still answered from TF5 (the no-answer lessons left tariffs out on purpose). Better labels on
+1,000 hard practice questions did not lift the final exam: at ~154-155 of 161 without AI, the small reader is at its
+ceiling for this data; L4 saves ~20 ms a question, which the ~1 s network trip from India hides, and its new mistakes are
+on plain retailer questions, so it is not swapped in either.
+
 Even then, 99% on 161 questions is ±1.5 points: these fixes were found on the final exam, so it no longer measures new
 questions fairly. A fresh set of analysts' questions, never looked at, is the honest test of 99%.
 
