@@ -449,7 +449,10 @@ class Index:
         listed = (yaml.safe_load(VERIFIED.read_text()) or []) if VERIFIED.exists() else []
         listed += read_json(ask_model.LOGS / "ask-verified.json") or []
         mine = {str(v.get("question", "")).lower() for v in listed}
-        listed += [{**v, "learned": True} for v in read_json(LEARNED) or [] if str(v.get("question", "")).lower() not in mine]
+        # an AI's earlier readings only while that model is the AI: a new model starts clean, the file is kept (staging's
+        # gpt-4o-mini answers, untagged, caused 5 of its 7 golden misses, 14 Nov 2026)
+        listed += [{**v, "learned": True} for v in read_json(LEARNED) or []
+                   if str(v.get("question", "")).lower() not in mine and v.get("model") == ask_model.model()]
         by_code = {}
         for key, doc in self.docs.items():
             for code in doc.get("codes", [doc["qcode"]]):

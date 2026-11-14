@@ -275,6 +275,11 @@ def test_a_question_the_ai_settled_is_answered_at_once_next_time_with_no_ai(inde
     assert again["understood"] == "learned" and again["sources"][0]["qcode"] == "XQ1" and len(calls) == 1 and not again["check"]
     saved = json.loads(assistant.LEARNED.read_text())[-1]   # kept by key: 115 codes are reused by other studies (q2, D14),
     assert saved["key"] == settled["sources"][0]["key"]     # and by code alone 13 golden answers came back wrong (13 Nov 2026)
+    model = assistant.ask_model.model
+    monkeypatch.setattr(assistant.ask_model, "model", lambda: "another-model")   # a new AI: the last one's readings are not reused
+    index.load_verified()
+    assert not any(v.get("learned") for v in index.verified)
+    monkeypatch.setattr(assistant.ask_model, "model", model)
     assistant.LEARNED.write_text(json.dumps([{k: v for k, v in saved.items() if k != "key"}]))
     index.load_verified()
     assert not any(v.get("learned") for v in index.verified)   # a learned entry without its key is never guessed from its code

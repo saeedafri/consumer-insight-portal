@@ -251,6 +251,7 @@ def learn(reading: dict, index: Index) -> None:
     and loads it at once: the same or a close question (Index.verified_for) is then answered from it with no AI call. The
     small model learns from the large one as it is used ("Cache & Distil", ACL 2024); the file is also training data."""
     keep = {k: reading[k] for k in ("question", "key", "code", "family", "focus", "kind", "cut", "period") if k in reading}
+    keep["model"] = ask_model.model()   # reused only while this model is the AI (Index.load_verified)
     if not keep.get("question") or not keep.get("key"):
         return
     with LEARN_LOCK:
