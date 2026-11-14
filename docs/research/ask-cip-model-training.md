@@ -1124,6 +1124,104 @@ Dining out over tariffs is still answered from TF5 (the no-answer lessons left t
 ceiling for this data; L4 saves ~20 ms a question, which the ~1 s network trip from India hides, and its new mistakes are
 on plain retailer questions, so it is not swapped in either.
 
+**The fresh test: the questions people really type (14 Nov 2026, night).** Staging's audit log (65,688 asks since
+23 Oct) is mostly the 10 Nov load test (51 accounts, 13 fixed questions and numbered variants); real people are 4
+accounts, with 55 distinct questions outside the golden set. 50 of them (four near-repeats and the hand-fixed "Economic
+outlook" left out), each answer written by reading its candidates, are `scripts/ask_fresh.yml`
+(`python scripts/ask_golden.py --questions scripts/ask_fresh.yml`). With no AI, Ask's own model answered **41 of 50
+(82%)**: golden's 95.7% flatters it, as golden has been tuned on. Three general fixes from its misses, **43 of 50 (86%)**
+after: an event question (now also Labor Day, Memorial Day, Super Bowl, Presidents' Day, the Fourth of July, New Year,
+Singles' Day, Christmas) answers only a question naming the event (`assistant.py EVENT`; "personal finances better or
+worse quarterly" was the Labor Day question); "the all wave" reads as every wave (`ask_reader.py`); four event-spending
+questions lost the alias "Holiday spending" (`config/ask_semantic.json`). Golden with no AI stays 154, the big exam 2,495
+→ 2,496. (The replayed-AI scores moved because the event fix changed 2 golden and 40 big-exam requests, which then had no
+recorded reply: not a measure.) Still wrong with no AI: "holiday spending" (the stored name step), "Ama Prime", holiday
+groceries, two "bought Amazon Prime" (read as Amazon's retailer share), Prime "in all Waves" (none), tariff worry over 6
+months. Eight common questions people asked are now verified answers (`config/ask_verified.yml`, by key: these codes are
+reused by other studies); three more were dropped as they would answer golden questions. The fresh set has now been used
+for these fixes: real questions added later, unseen, keep it honest.
+
+**Ready for an AI key.** Saved AI answers carry the model that made them and are reused only while it is the AI
+(`ask_index.py load_verified`), so a new model starts clean. The scratchpad's `openai_all.sh` tests gpt-6-luna,
+gpt-4o-mini, gpt-4.1-mini, gpt-6.1-terra and gpt-4.1 in turn (each's cheapest accepted settings probed first) on golden and
+the fresh set, only the reader's unsure questions sent, $1 cap in all; `claude_golden.py` does Haiku, Sonnet and Opus 5.5
+($1.50 cap) once the Anthropic account has credit. A new survey needs no step: a publish rebuilds Ask's index, the vectors
+of new questions are computed and kept on /home (`logs/`), after_publish names the new questions (with a working key; the
+backlog is named on the next publish once it has one) and checks each new survey (Logs page), and the reader reads any new
+question as it is, with no retraining. Everything saved (learned and verified answers, readings, vectors, spend, quality)
+lives in `logs/`, which is /home/cip/logs on Azure (`deploy/start.sh`), on disk, not in memory.
+
+**Would a vector database, a fuller RAG pipeline or more training help? Where the answers are lost (14 Nov 2026, night;
+scratchpad `rag_test.py`, no AI).** Ask is already retrieval-augmented: the question's vector against every survey
+question's and its analysts' asks', joined with a keyword ranking, a little for long-running questions and the question's
+area; then the reader picks; then the figures are computed from the survey cells, never written by a model.
+
+| | Golden | Fresh (real) | Big exam |
+|---|---|---|---|
+| Right answers, no AI | 154 of 161 | 43 of 50 | 2,500 of 3,000 |
+| Right one first, by vectors alone (what any vector database returns with these embeddings) | 57% | 51% | 63% |
+| ... in the first 10, vectors alone | 83% | 74% | 91% |
+| Right one first, Ask's hybrid retrieval | 80% | 57% | 62% |
+| Right one in the reader's list (≤14) | 97% | 91% | 97% |
+| The reader's pick when it is in the list | 97% | 84% | 85% |
+
+- **A vector database would not raise accuracy**: it returns at best the exact nearest vectors, which here rank the right
+  question first 51-63% of the time against the hybrid's 57-80%. Speed: the exact search over today's 3,076 vectors (4.7 MB
+  in memory) takes 0.07 ms; 100,000 would take 3 ms and 1,000,000 59 ms on this Mac, so a database (with its network hop,
+  service and cost) pays only past a million vectors. Embedding a question: 3.3 ms.
+- **Retrieval loses 3-9%** (the right question not among the 14: golden 4, fresh 4, big exam 98). Perfect retrieval would
+  add at most ~4 golden, ~3 fresh and ~2.8 points of the big exam (at the reader's pick rate); a larger embedding model
+  (bge-base/large, e5, gte: 2-4 times slower, +100-400 MB) is the only lever there.
+- **The pick loses most**: 15-16% of real and big-exam questions whose right answer is in the list are picked wrong. Bigger
+  readers (L12) and better labels (v7) did not move it; the AI on unsure questions and verified answers do.
+- **Tokenization is no limit**: the reader's inputs are 74 tokens at the median and 128 at most (8,037 measured): none is
+  cut at 192.
+- **Generation** (an LLM writing the answer, the "G" of RAG) is left out on purpose: every figure is computed from the
+  survey data, so no number can be invented; a model could only reword the text, at a cost.
+
+**v8: bigger search models and bigger readers, on our own questions (14 Nov 2026, night; ready to run).** What the
+field says (searched 14 Nov): under 1B parameters, Qwen3-Embedding-0.6B leads MTEB English v2 (~70.5, Apache 2.0) and
+EmbeddingGemma-300M leads under 500M (gated licence, not tried); IBM Granite Embedding R2 (149M, ModernBERT, Apache 2.0)
+and the bge family are the small open ones. For readers, Granite's reranker R2 and Alibaba's GTE ModernBERT reranker
+(149M each, ~55 BEIR nDCG@10) are the newest small cross-encoders; a 2026 study (arXiv 2603.04816) finds reranking
+quality follows a power law in model size (17M to 1B, the Ettin series) with diminishing returns. Products that answer
+data questions in plain words reach high accuracy the way Ask's verified answers do: Snowflake Cortex Analyst's
+verified query repository (and, since Oct 2025, suggestions from users' own questions) and Databricks Genie's trusted
+assets; both keep their benchmark questions apart from what guides the answers (a verified query is ground truth or a
+guide, not both), as `scripts/ask_fresh.yml` is kept apart from `config/ask_verified.yml`.
+
+`scripts/colab/train_search_model_v8.ipynb` (A100, ~2-2½ hours; data: `python scripts/ask_v6.py export-search
+~/Downloads/cip-colab` writes `v8-search.json`, 3,076 survey questions with 24,608 asks, 11,427 labelled practice
+questions, the three tests; and `v8-tests.json`, the requests the reader reads; with `v7-train.json`) scores 12 search
+models as Ask ranks (each model read as its card says; the asks' weight chosen per model on 2,000 practice questions
+that are not word for word an embedded ask: 6,517 of 11,427 are, and would match themselves), fine-tunes the best two
+small ones with hard negatives, trains three bigger readers on v7's labels against L6 retrained the same way, and
+exports the winners as Ask loads them, with a `calibration.json` (pooling, prefixes, the asks' weight, and today's
+thresholds mapped to the model's scale: absolute ones by the same share of tuning questions, added ones by its spread).
+Checked on the Mac before spending units: its score gives Ask's own numbers with bge-small (golden right one first 78.8%,
+in the first 14 98.0%; fresh 59.6%, 91.5%; big exam 64.9%, 96.4%), its copy of the server's embed gives Ask's vectors
+(cosine 1.0), and the mapping maps bge-small's scale onto itself (near floor 0.64 → 0.640).
+
+Made ready in Ask for it (today's models behave as before: golden 154, fresh 43, big exam 2,496): `api/ask_model.py`
+reads a search model's pooling (cls, mean, last), prefixes, kept dims, length and pad token from its calibration.json,
+and `api/ask_index.py` its thresholds (verified_near, ask_weight, standing, area_boost; near_floor and gate already);
+the reader feeds only the inputs its model has (ModernBERT readers take no token type ids) and pads with its own token.
+Verified answers when a new survey arrives: a saved or verified answer keeps its survey question's wording and is found
+again when a publish renumbers a reused code (EC6 → EC6#1); `etl/ask_quality.py check_verified` asks every verified
+question again after each publish (`logs/ask-verified-check.json`, warnings in the publish log). Its first run found one
+wrong: "Categories purchased online in the latest survey" (verified: the weekly q3, 219 waves) was answered from EC4
+(8 waves) because its words are EC4's stored name, and the name step ran before the verified ones; a verified answer
+now wins over a stored name (an AI-saved one does not): 37 of 37.
+
+Sources: [Qwen3/EmbeddingGemma on MTEB](https://www.cognee.ai/best-embedding-models),
+[EmbeddingGemma](https://arxiv.org/pdf/2509.20354), [Granite Embedding R2](https://arxiv.org/pdf/2508.21085),
+[Granite reranker R2](https://huggingface.co/ibm-granite/granite-embedding-reranker-english-r2),
+[Scaling laws for cross-encoder reranking](https://arxiv.org/pdf/2603.04816),
+[Cortex Analyst verified queries](https://docs.snowflake.com/en/user-guide/views-semantic/verified-query-repository),
+[verified query suggestions](https://docs.snowflake.com/release-notes/2025/other/2025-10-09-verified-query-suggestions),
+[Genie best practices](https://learn.microsoft.com/azure/databricks/genie/best-practices),
+[hard negatives for domain fine-tuning](https://tianpan.co/blog/2026-05-05-embedding-fine-tuning-gap-domain-specific-relevance).
+
 Even then, 99% on 161 questions is ±1.5 points: these fixes were found on the final exam, so it no longer measures new
 questions fairly. A fresh set of analysts' questions, never looked at, is the honest test of 99%.
 

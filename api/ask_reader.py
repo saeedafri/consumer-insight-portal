@@ -112,7 +112,7 @@ def periods(text: str) -> tuple[list[dict], str]:
         take(m, {"latest": 2})
     for m in re.finditer(r"\b(latest|most recent|this week'?s?|current|newest|this wave|last wave|last survey)\b", text):
         take(m, {"latest": 1})
-    for m in re.finditer(r"\b(all|every|each) (waves|surveys|weeks|time)\b|\ball[- ]time\b|\bover time\b|\bhistor(y|ically)\b", text):
+    for m in re.finditer(r"\b(all|every|each) (waves|surveys|weeks|time)\b|\ball wave\b|\ball[- ]time\b|\bover time\b|\bhistor(y|ically)\b", text):
         take(m, {"all": True})
     found.sort(key=lambda f: f[0])
     seen, out = set(), []

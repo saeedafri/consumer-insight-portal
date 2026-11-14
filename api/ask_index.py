@@ -45,13 +45,15 @@ WORD_CANDIDATES = 4  # retrieval: candidates from the keyword ranking the meanin
 AREAS = ["retailers", "shopping categories", "online and ecommerce", "grocery and food", "apparel", "beauty", "home",
          "holidays and events", "deals and promotions", "genai and technology", "health and glp-1", "personal finances",
          "economy and prices", "tariffs", "social media shopping", "travel and leisure", "demographics", "other"]   # etl/ask_semantic.py TOPICS
-AREA_BOOST = 0.03   # retrieval: added for a question in the asked question's business area
-ASK_WEIGHT = 0.3    # retrieval: the nearest ask's share of closeness; golden set right first 109 alone, 118 at 0.3, 97 at max (12 Nov 2026)
+# closeness is on the search model's own scale: these are bge-small's, and another model's calibration.json gives its own
+AREA_BOOST = float(ask_model.calibration().get("area_boost", 0.03))   # retrieval: added for a question in the asked question's area
+ASK_WEIGHT = float(ask_model.calibration().get("ask_weight", 0.3))    # retrieval: the nearest ask's share of closeness; golden set
+                                                                       # right first 109 alone, 118 at 0.3, 97 at max (12 Nov 2026)
 VERIFIED = CONFIG / "ask_verified.yml"   # approved question → answer plans (reviewed in git); admins add more at runtime
 LEARNED = ask_model.LOGS / "ask-learned.json"   # questions the AI check settled: the same or a close question is answered from them at once
-VERIFIED_NEAR = 0.91   # closeness in meaning (local model) from which a question is a verified one (with the same names and
+VERIFIED_NEAR = float(ask_model.calibration().get("verified_near", 0.91))   # closeness from which a question is a verified one (with the same names and
                        # groups): "Holiday spending expectations" is 0.903 from the holiday finances one, a different question
-STANDING = 0.06     # retrieval: up to this added to a closeness (~0.5–0.8) for a question asked a year of waves and still asked
+STANDING = float(ask_model.calibration().get("standing", 0.06))   # retrieval: up to this added to a closeness (~0.5–0.8) for a question asked a year of waves and still asked
 SAME_ANSWERS = 0.6   # share of a wave's answers that must be the question's own for the wave to join its series
 BRAND_WAVES = 15     # a retailer, brand or store list asked this often holds the names a misspelt word is put right to (correct_spelling)
 SAME_WORDING = 0.5   # shared words / all words: "holiday 2025" vs "holiday 2026" stays one question, a reused code does not
@@ -252,7 +254,7 @@ class Index:
                         held[key] = max(held.get(key, 0.0), FIELDS[field])
         self.parts = parts
         self.vectors = self.verified_vectors = None   # keyword ranking until add_vectors has run (retrieve, verified_for)
-        self.vector_keys, self.verified = [], []
+        self.vector_keys, self.verified, self.unresolved = [], [], []
         self.embed_text = {key: f"{doc['name']}; {'; '.join(doc['aliases'])}. {doc['text']} | answers: {'; '.join(doc['labels'])[:300]}"
                            for key, doc in self.docs.items()}
         # the stored patterns: each survey question's analyst name and aliases, as a question's subject reads (name_key),
@@ -288,12 +290,13 @@ class Index:
         analyst's ask (config/ask_semantic.json); a question's closeness joins its own and its nearest ask's (ASK_WEIGHT).
         api/assistant.py index_for runs it in the background: a deploy that brings ~18,000 new texts embeds them on one
         thread for minutes (12 Nov 2026), and asks are answered by the keyword ranking meanwhile, never kept waiting."""
-        found = ask_model.question_vectors({**self.embed_text, **{f"ask {a}": a for doc in self.docs.values() for a in doc.get("asks", [])}}, prune=True)
+        found = ask_model.question_vectors({**{k: ask_model.as_survey_question(t) for k, t in self.embed_text.items()},
+                                            **{f"ask {a}": ask_model.as_query(a) for doc in self.docs.values() for a in doc.get("asks", [])}}, prune=True)
         keys = [k for k in self.docs if k in found]
         owners = [(i, f"ask {a}") for i, k in enumerate(keys) for a in self.docs[k].get("asks", []) if f"ask {a}" in found]
         self.ask_owner = np.array([i for i, _ in owners], np.int32)
         self.ask_vectors = np.array([found[a] for _, a in owners], np.float32) if owners else None
-        areas = ask_model.question_vectors({a: f"survey questions about {a}" for a in AREAS}) if keys else {}
+        areas = ask_model.question_vectors({a: ask_model.as_survey_question(f"survey questions about {a}") for a in AREAS}) if keys else {}
         self.area_vectors = np.array([areas[a] for a in AREAS], np.float32) if len(areas) == len(AREAS) else None
         newest = date.fromisoformat(max((d["last"] for d in self.docs.values()), default="2000-01-01"))
         self.standing = np.array([STANDING * (min(math.log1p(self.docs[k]["waves"]) / math.log1p(52), 1.0)
@@ -385,7 +388,7 @@ class Index:
         if self.vectors is None:
             return words
         if asked is None:
-            made = ask_model.embed([question])
+            made = ask_model.embed([ask_model.as_query(question)])
             asked = made[0] if made is not None else None
         if asked is None:
             return words
@@ -453,16 +456,26 @@ class Index:
         # gpt-4o-mini answers, untagged, caused 5 of its 7 golden misses, 14 Nov 2026)
         listed += [{**v, "learned": True} for v in read_json(LEARNED) or []
                    if str(v.get("question", "")).lower() not in mine and v.get("model") == ask_model.model()]
-        by_code = {}
+        by_code, by_text = {}, {}
         for key, doc in self.docs.items():
             for code in doc.get("codes", [doc["qcode"]]):
                 by_code.setdefault((doc["family"], code.lower()), key)
-        # a code alone is ambiguous (115 codes are reused by different studies' questions: q2, D14, Q10), so the AI's and
-        # admins' entries carry the question's key; a learned entry without one resolved to the wrong study (13 Nov 2026)
-        resolved = [{**v, "key": v["key"] if v.get("key") in self.docs else
-                     None if v.get("learned") else by_code.get((v.get("family", "CSI-US"), str(v.get("code", "")).lower()))} for v in listed]
+            by_text.setdefault((doc["family"], doc["text"].lower()), key)
+
+        def resolve(v: dict) -> str | None:
+            # a code alone is ambiguous (115 codes are reused by different studies' questions: q2, D14, Q10), so the AI's
+            # and admins' entries carry the question's key; a learned entry without one resolved to the wrong study (13 Nov
+            # 2026). A key a publish renumbered (a new survey reusing a code: EC6 becomes EC6#1) is found by its wording
+            if v.get("key") in self.docs:
+                return v["key"]
+            family = v.get("family", "CSI-US")
+            moved = by_text.get((family, str(v.get("text", "")).lower()))
+            return moved or (None if v.get("learned") else by_code.get((family, str(v.get("code", "")).lower())))
+
+        resolved = [{**v, "key": resolve(v)} for v in listed]
+        self.unresolved = [v["question"] for v in resolved if not v["key"] and not v.get("learned")]   # etl/ask_quality.py reports them
         self.verified = [v for v in resolved if v["key"]]
-        found = ask_model.question_vectors({v["question"]: v["question"] for v in self.verified}) if self.verified else {}
+        found = ask_model.question_vectors({v["question"]: ask_model.as_query(v["question"]) for v in self.verified}) if self.verified else {}
         self.verified = [v for v in self.verified if v["question"] in found]
         self.verified_vectors = np.array([found[v["question"]] for v in self.verified], np.float32) if self.verified else None
         log.info("Ask verified questions: %d", len(self.verified))

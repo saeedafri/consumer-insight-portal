@@ -18122,8 +18122,7 @@
 "7b104ffd4376": {
 "aliases": [
 "Super Bowl budget",
-"Spending on Super Bowl",
-"Holiday spending"
+"Spending on Super Bowl"
 ],
 "asks": [
 "What was your total spending for Super Bowl 2024?",
@@ -18982,8 +18981,7 @@
 "7f619e7c8e62": {
 "aliases": [
 "Memorial Day budget",
-"Spending on Memorial Day",
-"Holiday spending"
+"Spending on Memorial Day"
 ],
 "asks": [
 "How much did you spend on Memorial Day?",
@@ -26662,8 +26660,7 @@
 "aaf151441969": {
 "aliases": [
 "Single's Day budget",
-"Spending on promotions",
-"Holiday spending"
+"Spending on promotions"
 ],
 "asks": [
 "What was your total spending on Single's Day this year?",
@@ -31241,7 +31238,6 @@
 "ca0349628167": {
 "aliases": [
 "Thanksgiving plans",
-"Holiday spending",
 "Celebration intentions"
 ],
 "asks": [

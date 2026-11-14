@@ -14,3 +14,20 @@ def test_a_survey_is_checked_question_by_question(survey, tmp_path):
     report, = ask_quality.check_surveys(published, [107])
     assert report["survey_id"] == 107 and report["questions"] == 1 and report["asked"] >= 5   # XQ1: latest, trend, by generation…
     assert 0 < report["right"] <= report["asked"] and len(report["misses"]) == report["asked"] - report["right"]
+
+
+def test_every_verified_answer_is_asked_again_and_one_no_longer_found_is_listed(survey, tmp_path, monkeypatch):
+    from api import ask_index
+    if survey.vectors is None:
+        import pytest
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    (tmp_path / "waves.json.gz").write_bytes(gzip.compress(json.dumps(
+        [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping and Spending", "modules": []} for i, d in enumerate(DATES)]).encode()))
+    reviewed = tmp_path / "ask_verified.yml"
+    reviewed.write_text('- {question: "Retailers people bought from recently", code: XQ1, kind: top, period: latest}\n'
+                        '- {question: "A question whose survey question is gone", code: ZZ9, kind: share, period: latest}\n')
+    monkeypatch.setattr(ask_index, "VERIFIED", reviewed)
+    ask_quality.check_surveys(tmp_path, [107])
+    check = json.loads(ask_quality.VERIFIED_REPORT.read_text())
+    assert check["verified"] == 1 and check["right"] == 1 and check["wrong"] == []   # still answered from XQ1
+    assert check["not_found"] == ["A question whose survey question is gone"]

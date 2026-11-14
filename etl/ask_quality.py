@@ -4,7 +4,9 @@ the survey question itself so the right answer is known before Ask is asked, the
 
 Who calls it: etl/publish.py publish, after every publish (after_publish): the surveys no check has seen yet are named
 (etl/ask_semantic.py) and checked, newest first, at low priority; the result per survey is kept in logs/ask-quality.json
-and shown to admins (GET /api/v1/admin/ask/quality, the Logs page). By hand, the whole catalogue (research, ~15 min):
+and shown to admins (GET /api/v1/admin/ask/quality, the Logs page). With them, every verified answer is asked again and
+must still give its own survey question (check_verified, logs/ask-verified-check.json; each failure a warning in the
+publish log). By hand, the whole catalogue (research, ~15 min):
 
     python -m etl.ask_quality --published <api/v1>             # ~50,000 questions → docs/research/ask-question-bank.csv.gz
     python -m etl.ask_quality --published <api/v1> --sample 5000   # the same 5,000 every run: a change measured in a minute
@@ -36,6 +38,7 @@ from etl import ask_semantic  # noqa: E402
 
 log = logging.getLogger("cip.ask_quality")
 REPORT = ask_model.LOGS / "ask-quality.json"   # one entry per survey checked, newest first
+VERIFIED_REPORT = ask_model.LOGS / "ask-verified-check.json"   # the verified answers, checked with the surveys (check_verified)
 NEW_PER_RUN = 6   # surveys checked after one publish (~10 s each on staging's one CPU); older ones by hand (--surveys)
 MISSES_KEPT = 20  # wrong answers listed per survey for the admin to read
 
@@ -176,6 +179,7 @@ def check_surveys(published: Path, ids: list[int]) -> list[dict]:
     index.add_vectors()
     prepare(index, hold_out=False)
     visible = {w["survey_id"] for w in waves}
+    VERIFIED_REPORT.write_text(json.dumps(check_verified(index, visible), indent=0))
     reports = []
     for wave in [w for w in waves if w["survey_id"] in ids]:
         keys = {k for k, d in index.docs.items() if wave["survey_id"] in d["surveys"]}
@@ -190,6 +194,24 @@ def check_surveys(published: Path, ids: list[int]) -> list[dict]:
                         "misses": [{"question": r["question"], "problem": r["problem"], "verified": r["understood"] == "named"}
                                    for r in rows if r["problem"]][:MISSES_KEPT]})
     return reports
+
+
+def check_verified(index: Index, visible: set[int]) -> dict:
+    """Every reviewed and admin-verified question asked as it is (the quick answer): each must still be answered from
+    its own survey question. A publish can renumber a reused code (EC6 becomes EC6#1: an entry with its wording is found
+    again, one with only a code may not be) or bring a closer verified question; those not found are listed too."""
+    wrong = []
+    entries = [v for v in index.verified if not v.get("learned")]
+    for v in entries:
+        found = assistant.answer(v["question"], index, visible, quick=True)
+        got = found["sources"][0]["key"] if found["sources"] else ""
+        if got != v["key"]:
+            wrong.append({"question": v["question"], "wanted": v["key"], "got": got, "understood": found.get("understood", "")})
+    for problem in [f"answered from {w['got'] or 'nothing'}, not {w['wanted']}: {w['question']}" for w in wrong] + \
+            [f"no longer found: {q}" for q in index.unresolved]:
+        log.warning("Ask verified answer %s", problem)
+    return {"checked": datetime.now(timezone.utc).isoformat(timespec="seconds"), "verified": len(entries),
+            "right": len(entries) - len(wrong), "wrong": wrong, "not_found": index.unresolved}
 
 
 def after_publish(out: Path) -> None:

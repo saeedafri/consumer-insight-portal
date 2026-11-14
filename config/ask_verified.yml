@@ -36,3 +36,13 @@
 - {question: "Social platforms used while shopping", code: SC2, kind: top, period: latest}
 - {question: "Awareness of artificial intelligence", code: G1, kind: share, period: latest}
 - {question: "Holiday-season personal finance expectations", code: HX5, kind: share, period: latest}
+# From the questions people typed on staging, 23 Oct - 14 Nov 2026 (scripts/ask_fresh.yml), worded independently; by key,
+# as these codes are reused by other studies
+- {question: "Share of people who bought from Amazon recently", key: CSI-US/tracker/q5#2, code: q5, focus: [Amazon], kind: share, period: latest}
+- {question: "Amazon shopping across every wave", key: CSI-US/tracker/q5#2, code: q5, focus: [Amazon], kind: trend, period: all}
+- {question: "Shoppers who shopped on Cyber Monday", key: CSI-US/tracker/CMR1, code: CMR1, kind: share, period: latest}
+- {question: "Expected change in holiday spending this season", key: CSI-US/tracker/HX2, code: HX2, kind: share, period: latest}
+- {question: "Expected pace of price increases", key: CSI-US/tracker/HX4, code: HX4, kind: share, period: latest}
+- {question: "Most important kinds of environmental sustainability", key: "CSI-US/tracker/Q19#53", code: Q19, kind: top, period: latest}
+- {question: "Holiday shopping status across every wave", key: "CSI-US/tracker/XM3#1", code: XM3, kind: trend, period: all}
+- {question: "GLP-1 drug use across every wave", key: CSI-US/tracker/GP1, code: GP1, kind: trend, period: all}

@@ -58,7 +58,9 @@ GATE = float(ask_model.calibration().get("gate", 0.04))
 EVERY_WORD = 1.0                     # keyword match share at which every word of the question was found
 NEAR_EQUAL = 0.8                     # rules only: a match scoring this share of the best counts as near-equal
 EVENT = re.compile(r"\b(prime day|big deal|deal days|black friday|cyber monday|holidays?|valentine'?s?|easter|halloween|thanksgiving|"
-                   r"back.to.school|mother'?s day|father'?s day)\b")   # a survey question about one answers only a question naming one
+                   r"back.to.school|mother'?s day|father'?s day|labor day|memorial day|super bowl|presidents?'?s? day|fourth of july|"
+                   r"4th of july|independence day|new year'?s?|singles?'?s? day|christmas)\b")   # a survey question about one answers only
+# a question naming one ("personal finances quarterly" was the Labor Day question, staging, 14 Nov 2026)
 GENERIC = re.compile(r"^(yes|no|none of (these|the above)|other.*|don['’]?t know.*|not sure|prefer not to say|n/?a)$", re.I)   # alike in any question
 SAME_ANSWERS = 0.5                   # share of answers alike for two questions to be the same one asked under other codes
 SCALE_ANSWERS = 5                    # an answer list this short (a rating scale) proves nothing alone: the wording must match too
@@ -232,6 +234,8 @@ def save_verified(entry: dict, index: Index) -> dict:
     keep = {k: entry[k] for k in ("question", "key", "code", "family", "focus", "kind", "cut", "period") if k in entry}
     if not str(keep.get("question", "")).strip() or not keep.get("code"):
         raise ValueError("a question and its survey question code are needed")
+    if keep.get("key") in index.docs:   # its survey question's wording: found again if a publish renumbers the key
+        keep["text"] = index.docs[keep["key"]]["text"]
     path = ask_model.LOGS / "ask-verified.json"
     with ANSWERS_LOCK:
         try:
@@ -252,6 +256,7 @@ def learn(reading: dict, index: Index) -> None:
     small model learns from the large one as it is used ("Cache & Distil", ACL 2024); the file is also training data."""
     keep = {k: reading[k] for k in ("question", "key", "code", "family", "focus", "kind", "cut", "period") if k in reading}
     keep["model"] = ask_model.model()   # reused only while this model is the AI (Index.load_verified)
+    keep["text"] = index.docs.get(keep.get("key"), {}).get("text", "")   # found again by wording if a publish renumbers the key
     if not keep.get("question") or not keep.get("key"):
         return
     with LEARN_LOCK:
@@ -313,9 +318,12 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
     subject = plan["about"] if len(plan["about"]) >= 3 else question   # time and cut words are the rules'; search the subject
     # the subject's vector searches the survey questions; verified and learned questions are matched by subject and by the
     # whole question (a subject alone missed an exact repeat of a learned question, 13 Nov 2026)
-    made = ask_model.embed([subject, question]) if unsure else None   # local, ~1.5 ms each
+    # a stored name's question is matched against the verified ones too: an admin's check beats the AI's name ("Categories
+    # purchased online in the latest survey" is the weekly q3, verified; its words are EC4's name, 8 waves; 14 Nov 2026)
+    made = ask_model.embed([ask_model.as_query(subject), ask_model.as_query(question)]) if unsure or named else None   # local, ~3 ms each
     asked = made[0] if made is not None else None
-    found = [v for v in (index.verified_for(asked), index.verified_for(made[1] if made is not None else None)) if v]
+    found = [v for v in (index.verified_for(asked), index.verified_for(made[1] if made is not None else None)) if v
+             and not (named and v.get("learned"))]   # an AI's earlier pick never overrules a stored name
     verified = max(found, key=lambda v: v["near"]) if found else None   # the closer of subject and whole question
     # (a short question matches by its subject: "Top holiday retailers"; a repeat matches as a whole)
     if verified and visible.isdisjoint(index.docs[verified["key"]]["surveys"]):

@@ -10,7 +10,8 @@ retrieved, the answers to focus on, the kind of answer, the grain and the cut. D
             here, ~3 ms a question and no cost; it found the right survey question in the top 10 for 144 of 148
             golden questions, OpenAI's text-embedding-3-small for 135 at ~0.7 s a call (12 Nov 2026). Every survey
             question's vector is kept in VECTORS (logs/ask-vectors-<model>.npz) by the hash of its text, so a publish only
-            embeds the questions that are new.
+            embeds the questions that are new. Another model is a folder (CIP_ASK_EMBED_DIR) with its calibration.json:
+            how it is read (pooling, prefixes) and its thresholds on its own scale (calibration; the v8 notebook exports one).
   read_pick() Ask's own reader (models/ask-reader, MiniLM L6 8-bit, 23 MB) picks one of the candidates, or "none of
             these", from the same lines the AI reads: ~70 ms on one thread, no cost. It learnt the picks of Qwen3-32B
             (scripts/colab/train_search_model_v6.ipynb); with no AI it took the golden set from 139 to 152 of 161.
@@ -168,26 +169,47 @@ def read_calibration(folder: Path) -> dict:
 
 @functools.lru_cache(maxsize=1)
 def calibration() -> dict:
-    """The search model's thresholds (near_floor, gate)."""
+    """The search model's own settings and thresholds (calibration.json beside it): how it reads (pooling: cls, mean or
+    last; query_prefix, doc_prefix; dims kept; length; pad_token) and its scale (near_floor, gate, verified_near,
+    ask_weight, standing, area_boost). bge-small has none: every default is its own, so swapping in another model is a
+    folder with its calibration (scripts/colab/train_search_model_v8.ipynb writes one)."""
     return read_calibration(EMBED_DIR)
+
+
+def padded(words, settings: dict, length: int):
+    """A model's tokenizer, cut at its length and padded with its own pad token ([PAD], id 0, for BERT; not ModernBERT's)."""
+    pad = settings.get("pad_token", "[PAD]")
+    words.enable_truncation(int(settings.get("length", length)))
+    words.enable_padding(pad_id=words.token_to_id(pad) or 0, pad_token=pad)
+    return words
 
 
 @functools.lru_cache(maxsize=1)
 def encoder():
-    """The local search model (tokenizer, ONNX session), loaded on first use (~150 MB of memory), or None when its files
-    are missing: Ask then searches by words alone."""
+    """The local search model (tokenizer, ONNX session, settings), loaded on first use (~150 MB of memory), or None when
+    its files are missing: Ask then searches by words alone."""
     try:
         import onnxruntime
         import tokenizers
-        words = tokenizers.Tokenizer.from_file(str(EMBED_DIR / "tokenizer.json"))
-        words.enable_truncation(512)   # the model's limit
-        words.enable_padding(pad_id=0, pad_token="[PAD]")
+        settings = calibration()
+        words = padded(tokenizers.Tokenizer.from_file(str(EMBED_DIR / "tokenizer.json")), settings, 512)
         options = onnxruntime.SessionOptions()
         options.intra_op_num_threads = options.inter_op_num_threads = 1   # one vCPU on Azure: never crowd the API
-        return words, onnxruntime.InferenceSession(str(EMBED_DIR / "model_optimized.onnx"), options, providers=["CPUExecutionProvider"])
+        return words, onnxruntime.InferenceSession(str(EMBED_DIR / "model_optimized.onnx"), options, providers=["CPUExecutionProvider"]), settings
     except Exception as exc:   # noqa: BLE001 — files missing or unreadable
         log.warning("Ask: no local search model in %s: %s", EMBED_DIR, type(exc).__name__)
         return None
+
+
+def as_query(text: str) -> str:
+    """A question (asked, an analyst's ask, a verified one) as the search model reads it: some models want a prefix on
+    questions (calibration.json query_prefix; bge-small: none). api/assistant.py answer, api/ask_index.py."""
+    return calibration().get("query_prefix", "") + text
+
+
+def as_survey_question(text: str) -> str:
+    """A survey question's text as the search model reads it (calibration.json doc_prefix; bge-small: none)."""
+    return calibration().get("doc_prefix", "") + text
 
 
 READER_DIR = Path(os.environ.get("CIP_ASK_READER_DIR", Path(__file__).resolve().parents[1] / "models" / "ask-reader"))
@@ -210,9 +232,7 @@ def reader():
         import onnxruntime
         import tokenizers
         settings = read_calibration(READER_DIR)
-        words = tokenizers.Tokenizer.from_file(str(READER_DIR / "tokenizer.json"))
-        words.enable_truncation(int(settings.get("length", 192)))   # as trained
-        words.enable_padding(pad_id=0, pad_token="[PAD]")
+        words = padded(tokenizers.Tokenizer.from_file(str(READER_DIR / "tokenizer.json")), settings, 192)   # as trained
         options = onnxruntime.SessionOptions()
         options.intra_op_num_threads = options.inter_op_num_threads = 1   # one vCPU on Azure: never crowd the API
         session = onnxruntime.InferenceSession(str(READER_DIR / "model_optimized.onnx"), options, providers=["CPUExecutionProvider"])
@@ -231,8 +251,9 @@ def read_pick(question: str, candidates: list[dict]) -> tuple[int | None, float]
     coded = words.encode_batch([(question, describe_candidate(c)) for c in candidates])
     feed = {"input_ids": np.array([c.ids for c in coded], np.int64), "attention_mask": np.array([c.attention_mask for c in coded], np.int64),
             "token_type_ids": np.array([c.type_ids for c in coded], np.int64)}
+    inputs = {i.name for i in session.get_inputs()}   # ModernBERT-based readers take no token_type_ids
     try:
-        choices = np.concatenate([[0.0], session.run(None, feed)[0].reshape(-1)])
+        choices = np.concatenate([[0.0], session.run(None, {k: v for k, v in feed.items() if k in inputs})[0].reshape(-1)])
     except Exception as exc:   # noqa: BLE001 — a reader that cannot run (another model's inputs): the AI, else meaning, picks
         log.warning("Ask reader failed: %s", type(exc).__name__)
         return None
@@ -241,14 +262,17 @@ def read_pick(question: str, candidates: list[dict]) -> tuple[int | None, float]
 
 
 def embed(texts: list[str]) -> np.ndarray | None:
-    """Unit vectors (len(texts) × 384) from the local model, or None without it. bge's own pooling: the first token."""
+    """Unit vectors (len(texts) × the model's size, or its calibration "dims") from the local model, or None without it,
+    pooled as the model was trained to be read (calibration "pooling": cls, bge's first token, the default; mean; or last,
+    the last real token, as Qwen3's embedders are read)."""
     model = encoder()
     if not texts or model is None:
         return None
-    words, session = model
+    words, session, settings = model
     inputs = {i.name for i in session.get_inputs()}
+    pooling = settings.get("pooling", "cls")
     order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
-    out = np.zeros((len(texts), 384), np.float32)
+    out = None
     start = 0
     while start < len(order):
         longest = len(texts[order[min(start + EMBED_BATCH, len(order)) - 1]]) // 4 + 2   # ~4 characters a token
@@ -256,8 +280,15 @@ def embed(texts: list[str]) -> np.ndarray | None:
         start += len(batch)
         coded = words.encode_batch([texts[i] for i in batch])
         ids = np.array([c.ids for c in coded], np.int64)
-        feed = {"input_ids": ids, "attention_mask": np.array([c.attention_mask for c in coded], np.int64), "token_type_ids": np.zeros_like(ids)}
-        out[batch] = session.run(None, {k: v for k, v in feed.items() if k in inputs})[0][:, 0]
+        mask = np.array([c.attention_mask for c in coded], np.int64)
+        hidden = session.run(None, {k: v for k, v in {"input_ids": ids, "attention_mask": mask, "token_type_ids": np.zeros_like(ids)}.items()
+                                    if k in inputs})[0]
+        pooled = (hidden if hidden.ndim == 2 else hidden[:, 0] if pooling == "cls"
+                  else hidden[np.arange(len(batch)), mask.sum(1) - 1] if pooling == "last"
+                  else (hidden * mask[..., None]).sum(1) / np.maximum(mask.sum(1, keepdims=True), 1))
+        if out is None:   # Matryoshka models keep their first "dims" numbers nearly as good, in less memory
+            out = np.zeros((len(texts), int(settings.get("dims") or pooled.shape[1])), np.float32)
+        out[batch] = pooled[:, :out.shape[1]]
     return out / np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-9)
 
 

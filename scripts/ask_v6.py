@@ -1,6 +1,7 @@
 """Ask CIP v6 without any AI API: the data for scripts/colab/train_search_model_v6.ipynb, and its score inside Ask.
 
     python scripts/ask_v6.py export ~/Downloads/cip-colab     # v6-train.json, v6-tests.json into that folder
+    python scripts/ask_v6.py export-search ~/Downloads/cip-colab   # v8-search.json, v8-tests.json: the v8 notebook's data
     python scripts/ask_v6.py score replies.json golden        # Ask's score with these picks in the AI's place
     python scripts/ask_v6.py score replies.json bank          # the same on the big exam's 3,000 (seed 11)
     python scripts/ask_v6.py score replies.json golden --reader   # Ask as served: its reader (models/ask-reader) picks,
@@ -34,9 +35,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from ask_golden import GOLDEN, score  # noqa: E402  (it reads the key from .env: removed below)
 
-from api import ask_index, ask_model, assistant  # noqa: E402
+from api import ask_index, ask_model, ask_reader, assistant  # noqa: E402
 
 BANK = ROOT / "docs/research/ask-question-bank.csv.gz"
+FRESH = ROOT / "scripts" / "ask_fresh.yml"   # real staging questions, never tuned on (scripts/ask_golden.py --questions)
 BANK_SAMPLE, BANK_SEED = 3000, 11   # the sample every round since v4 was tested on
 PUBLISHED = ROOT / "data/published/current/api/v1"
 
@@ -83,10 +85,9 @@ def bank_sample() -> list[dict]:
     return rows, random.Random(BANK_SEED).sample(rows, BANK_SAMPLE)
 
 
-def export(folder: Path, per: int) -> None:
-    """v6-train.json and v6-tests.json into folder (see the top of this file)."""
-    last = without_api(None, folder)
-    index, visible, _ = load_index()
+def recorder(index, visible: set[int], last: dict):
+    """request(question): the request Ask would send its AI for a question (its text, the numbered lines it reads, each
+    line's survey key and wording), or None when names, verified answers or the rules answer it with no AI step."""
     by_text = collections.defaultdict(list)
     for k, d in index.docs.items():
         by_text[d["text"]].append(k)
@@ -101,7 +102,14 @@ def export(folder: Path, per: int) -> None:
         keys = [next((k for k in by_text.get(c["text"], []) if index.docs[k]["waves"] == c["waves"] and index.docs[k]["first"] == c["first"]), None)
                 for c in cands]
         return {"user": last["user"], "lines": lines, "keys": keys, "texts": [c["text"] for c in cands]}
+    return request
 
+
+def export(folder: Path, per: int) -> None:
+    """v6-train.json and v6-tests.json into folder (see the top of this file)."""
+    last = without_api(None, folder)
+    index, visible, _ = load_index()
+    request = recorder(index, visible, last)
     cat = json.loads((folder / "catalogue.json").read_text())
     v3, v4, qwen = (json.loads((folder / f).read_text()) for f in ("synthetic.json", "synthetic-v4.json", "qwen-v5.json"))
     rejected = {(t, k) for t, k in qwen["rejected"]}   # the practice questions the round-trip check removed (Part 18)
@@ -124,6 +132,52 @@ def export(folder: Path, per: int) -> None:
     (folder / "v6-tests.json").write_text(json.dumps({**head, **tests}))
     print(f"{len(practice)} practice questions read · {len(train)} reach the AI step · tests: golden {len(tests['golden'])}, "
           f"big exam {len(tests['bank'])} of {BANK_SAMPLE}")
+
+
+def export_search(folder: Path, train: Path) -> None:
+    """v8-search.json and v8-tests.json into folder, for scripts/colab/train_search_model_v8.ipynb: every survey question
+    as the search reads it (wording with answers and topic, its analysts' asks, its standing), the golden, fresh and
+    big-exam questions with the survey questions that answer them, the practice questions with their checked labels
+    (v7-train.json: none of the tests), today's thresholds (bge-small's scale), and the requests Ask would send its AI
+    for the three tests, which a new reader is scored on."""
+    last = without_api(None, folder)
+    index, visible, _ = load_index()
+    keys = index.vector_keys
+    docs = [{"key": k, "text": index.docs[k]["text"], "embed": index.embed_text[k], "asks": index.docs[k].get("asks", []),
+             "waves": index.docs[k]["waves"], "standing": round(float(s), 5)} for k, s in zip(keys, index.standing)]
+
+    def subject(question):   # what Ask's search embeds (api/assistant.py answer): the question's subject, else itself
+        question = index.correct_spelling(" ".join(question.split())[:500])
+        about = ask_reader.read(question)["about"]
+        return about if len(about) >= 3 else question
+
+    def answering(want):   # the golden format's phrases: every survey question whose wording has one is a right answer
+        return None if want == "none" else sorted(k for k in keys if any(w in index.docs[k]["text"].lower() for w in want))
+
+    def bank_right(b):   # the big exam's key, the same wording, or the same question in the study it names
+        other = {o.strip() for o in b["other_study"].split(";") if o.strip()}
+        return sorted(k for k in keys if k == b["answer_key"] or index.docs[k]["text"].lower() == b["answer_question"].lower()
+                      or f"{index.docs[k]['family']} {index.docs[k]['qcode']}" in other)
+
+    golden, fresh = (yaml.safe_load(p.read_text()) for p in (GOLDEN, FRESH))
+    _, bank = bank_sample()
+    tests = {"golden": [{"q": g["q"], "subject": subject(g["q"]), "right": answering(g["want"])} for g in golden],
+             "fresh": [{"q": g["q"], "subject": subject(g["q"]), "right": answering(g["want"])} for g in fresh],
+             "bank": [{"q": b["question"], "subject": subject(b["question"]), "right": bank_right(b)} for b in bank]}
+    items = json.loads(train.read_text())["items"]
+    practice = [{"q": i["q"], "subject": subject(i["q"]), "key": i["keys"][i["label"]]} for i in items
+                if isinstance(i["label"], int) and i["label"] >= 0 and i["keys"][i["label"]] in index.docs]
+    scale = {"near_floor": assistant.NEAR_FLOOR, "gate": float(ask_model.calibration().get("gate", 0.04)),
+             "verified_near": ask_index.VERIFIED_NEAR, "ask_weight": ask_index.ASK_WEIGHT, "standing": ask_index.STANDING,
+             "area_boost": ask_index.AREA_BOOST}
+    (folder / "v8-search.json").write_text(json.dumps({"docs": docs, "tests": tests, "practice": practice, "bge_small": scale}))
+    request = recorder(index, visible, last)
+    reads = {"golden": [{"q": g["q"], "want": g["want"], **r} for g in golden if (r := request(g["q"]))],
+             "fresh": [{"q": g["q"], "want": g["want"], **r} for g in fresh if (r := request(g["q"]))],
+             "bank": [{"q": b["question"], "answer_key": b["answer_key"], **r} for b in bank if (r := request(b["question"]))]}
+    (folder / "v8-tests.json").write_text(json.dumps({"system": ask_model.SYSTEM, "schema": ask_model.SCHEMA, **reads}))
+    print(f"{len(docs)} survey questions ({sum(len(d['asks']) for d in docs)} asks) · {len(practice)} practice questions · tests: "
+          + ", ".join(f"{t} {len(tests[t])} ({len(reads[t])} reach the AI step)" for t in tests))
 
 
 def score_replies(replies_file: Path, test: str, reader: bool) -> None:
@@ -163,6 +217,9 @@ def main() -> int:
     e = sub.add_parser("export")
     e.add_argument("folder", type=Path)
     e.add_argument("--per", type=int, default=4, help="practice questions per survey question")
+    x = sub.add_parser("export-search")
+    x.add_argument("folder", type=Path)
+    x.add_argument("--train", type=Path, default=Path("~/Downloads/cip-colab/v7-train.json"), help="the practice questions, labelled")
     s = sub.add_parser("score")
     s.add_argument("replies", type=Path)
     s.add_argument("test", choices=("golden", "bank"))
@@ -171,6 +228,8 @@ def main() -> int:
     assistant.GATE = -1.0   # always the best answer: no "which did you mean?" in a score
     if args.do == "export":
         export(args.folder.expanduser(), args.per)
+    elif args.do == "export-search":
+        export_search(args.folder.expanduser(), args.train.expanduser())
     else:
         score_replies(args.replies, args.test, args.reader)
     return 0

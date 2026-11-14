@@ -280,9 +280,39 @@ def test_a_question_the_ai_settled_is_answered_at_once_next_time_with_no_ai(inde
     index.load_verified()
     assert not any(v.get("learned") for v in index.verified)
     monkeypatch.setattr(assistant.ask_model, "model", model)
-    assistant.LEARNED.write_text(json.dumps([{k: v for k, v in saved.items() if k != "key"}]))
+    assistant.LEARNED.write_text(json.dumps([{k: v for k, v in saved.items() if k not in ("key", "text")}]))   # its code alone
     index.load_verified()
     assert not any(v.get("learned") for v in index.verified)   # a learned entry without its key is never guessed from its code
+
+
+def test_a_verified_answer_beats_a_stored_name_and_an_ai_saved_one_does_not(index, tmp_path, monkeypatch):
+    from api import ask_index
+    if index.vectors is None:
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    q14 = next(k for k in index.docs if "Q14" in k)
+    index.names[name_key("Retailer purchases")] = [q14]   # a stored name that points elsewhere (EC4's, 14 Nov 2026)
+    assert assistant.answer("Retailer purchases", index, EVERYONE, quick=True)["sources"][0]["key"] == q14
+    reviewed = tmp_path / "ask_verified.yml"
+    reviewed.write_text('- {question: "Retailer purchases", code: XQ1, kind: share, period: latest}\n')
+    monkeypatch.setattr(ask_index, "VERIFIED", reviewed)
+    index.load_verified()
+    checked = assistant.answer("Retailer purchases", index, EVERYONE, quick=True)
+    assert checked["understood"] == "verified" and checked["sources"][0]["qcode"] == "XQ1"   # the admin's check wins
+    reviewed.write_text("")
+    assistant.LEARNED.write_text(json.dumps([{"question": "Retailer purchases", "key": "CSI-US/tracker/XQ1", "family": "CSI-US",
+                                              "kind": "share", "model": assistant.ask_model.model()}]))
+    index.load_verified()
+    assert assistant.answer("Retailer purchases", index, EVERYONE, quick=True)["sources"][0]["key"] == q14   # the AI's does not
+
+
+def test_a_saved_answer_whose_key_a_publish_renumbered_is_found_again_by_its_wording(index):
+    if index.vectors is None:
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    text = index.docs["CSI-US/tracker/XQ1"]["text"]   # a new survey reusing the code would make it XQ1#1: the old key is gone
+    assistant.LEARNED.write_text(json.dumps([{"question": "Who bought from which retailer?", "key": "CSI-US/tracker/XQ1#7",
+                                              "text": text, "family": "CSI-US", "kind": "top", "model": assistant.ask_model.model()}]))
+    index.load_verified()
+    assert [v["key"] for v in index.verified if v.get("learned")] == ["CSI-US/tracker/XQ1"]
 
 
 def test_a_learned_answer_gives_way_to_a_sure_reader_and_stands_for_an_unsure_one(index, monkeypatch):
@@ -361,10 +391,14 @@ def test_the_reader_scores_none_of_these_as_zero_and_gives_its_lead(monkeypatch)
             return [type("Coded", (), {"ids": [1, 2], "attention_mask": [1, 1], "type_ids": [0, 1]})() for _ in pairs]
 
     class Session:
-        def __init__(self, logits):
-            self.logits = logits
+        def __init__(self, logits, inputs=("input_ids", "attention_mask", "token_type_ids")):
+            self.logits, self.inputs = logits, inputs
+
+        def get_inputs(self):
+            return [type("Input", (), {"name": n})() for n in self.inputs]
 
         def run(self, names, feed):
+            assert set(feed) == set(self.inputs)   # only the inputs the model has
             return [np.array(self.logits, np.float32).reshape(-1, 1)]
 
     candidates = [{"number": n, "text": t, "name": "", "waves": 9, "first": "2024-01-01", "last": "2026-11-01", "answers": []}
@@ -373,6 +407,36 @@ def test_the_reader_scores_none_of_these_as_zero_and_gives_its_lead(monkeypatch)
     assert ask_model.read_pick("q", candidates) == (7, pytest.approx(2.5))   # its number, ahead of the next by 2.5
     monkeypatch.setattr(ask_model, "reader", lambda: (Words(), Session([-1.0, -3.0]), {}))
     assert ask_model.read_pick("q", candidates) == (None, pytest.approx(1.0))   # both under "none of these" (0)
+    modern = Session([1.0, 3.5], inputs=("input_ids", "attention_mask"))   # a ModernBERT reader: no token type ids
+    monkeypatch.setattr(ask_model, "reader", lambda: (Words(), modern, {}))
+    assert ask_model.read_pick("q", candidates)[0] == 7
+
+
+def test_a_search_model_is_pooled_and_cut_as_its_calibration_says(monkeypatch):
+    from api import ask_model
+
+    class Words:   # two texts of three tokens, the second padded after two
+        def encode_batch(self, texts):
+            return [type("Coded", (), {"ids": [1, 2, 3], "attention_mask": [1, 1, 1 - i]})() for i, _ in enumerate(texts)]
+
+    class Session:
+        def get_inputs(self):
+            return [type("Input", (), {"name": n})() for n in ("input_ids", "attention_mask")]
+
+        def run(self, names, feed):   # each token's vector: [position + 1, 10 × text, 1, 0]
+            return [np.array([[[p + 1, 10 * t, 1, 0] for p in range(3)] for t in range(2)], np.float32)]
+
+    unit = lambda v: np.array(v, np.float32) / np.linalg.norm(v)
+    for settings, first, second in (({}, [1, 0, 1, 0], [1, 10, 1, 0]),                         # cls: the first token
+                                    ({"pooling": "last"}, [3, 0, 1, 0], [2, 10, 1, 0]),        # the last real token
+                                    ({"pooling": "mean"}, [2, 0, 1, 0], [1.5, 10, 1, 0])):      # the real tokens' mean
+        monkeypatch.setattr(ask_model, "encoder", lambda: (Words(), Session(), settings))
+        out = ask_model.embed(["a", "b"])
+        assert np.allclose(out[0], unit(first)) and np.allclose(out[1], unit(second))
+    monkeypatch.setattr(ask_model, "encoder", lambda: (Words(), Session(), {"dims": 2}))
+    assert ask_model.embed(["a", "b"]).shape == (2, 2)   # Matryoshka: the first "dims" numbers kept
+    monkeypatch.setattr(ask_model, "calibration", lambda: {"query_prefix": "query: ", "doc_prefix": "passage: "})
+    assert ask_model.as_query("Amazon") == "query: Amazon" and ask_model.as_survey_question("Q5") == "passage: Q5"
 
 
 def test_dont_know_with_a_curly_apostrophe_is_left_out_like_a_straight_one():

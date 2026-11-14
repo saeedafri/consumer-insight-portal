@@ -107,11 +107,15 @@ def own_ask_files(tmp_path, monkeypatch):
     from api import ask_index
     from etl import ask_quality, ask_semantic
     monkeypatch.setattr(ask_quality, "REPORT", tmp_path / "ask-quality.json")
+    monkeypatch.setattr(ask_quality, "VERIFIED_REPORT", tmp_path / "ask-verified-check.json")
     from api import assistant
     for module in (ask_index, assistant):
         monkeypatch.setattr(module, "LEARNED", tmp_path / "ask-learned.json")
     for module in (ask_index, ask_quality, ask_semantic):
         monkeypatch.setattr(module, "SEMANTIC_ADDED", tmp_path / "ask-semantic.json")
+    # and its own kept answers: they are kept by the index's id(), which a later test's index can reuse once the first is
+    # freed (a test's ask() then got another test's answer, 14 Nov 2026). The server clears them with each new index.
+    assistant.ANSWERS.clear()
 
 
 @pytest.fixture(autouse=True)

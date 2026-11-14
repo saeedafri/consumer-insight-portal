@@ -4,6 +4,7 @@
     python scripts/ask_golden.py              # every question, a line each, then the score per step and the model spend
     python scripts/ask_golden.py --only 20    # the first 20 (a quick check)
     python scripts/ask_golden.py --quick      # the Ask page's first answer: by meaning and rules, no model
+    python scripts/ask_golden.py --questions scripts/ask_fresh.yml   # the fresh test: real staging questions, never tuned on
 
 Run before every push to staging, after any change to api/ask_*.py, the model prompt or config/ask_semantic.json.
 A repeat costs nothing: the model's readings are kept in logs/ask-readings.json.
@@ -60,9 +61,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--only", type=int, default=0)
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument("--questions", type=Path, default=GOLDEN, help="another question file in the same format (scripts/ask_fresh.yml)")
     ap.add_argument("--published", type=Path, default=PUBLISHED, help="another publish's api/v1 (staging's data, built with etl.publish --root)")
     args = ap.parse_args()
-    golden = yaml.safe_load(GOLDEN.read_text())[:args.only or None]
+    golden = yaml.safe_load(args.questions.read_text())[:args.only or None]
     waves = json.loads(gzip.decompress((args.published / "waves.json.gz").read_bytes()))
     index = Index(args.published / "questions", waves)
     index.add_vectors()

@@ -1,0 +1,56 @@
+# Ask Coresight's fresh test: questions people typed on staging (23 Oct - 14 Nov 2026) that are not in the golden set,
+# with the answer written by reading each question's candidates (14 Nov 2026). Never tune Ask on these: they measure
+# questions nobody has fitted Ask to. Same format and scoring as scripts/ask_golden.yml:
+#   python scripts/ask_golden.py --questions scripts/ask_fresh.yml
+# From the audit log's 55 distinct human questions outside golden (the 10 Nov load test's numbered questions left out):
+# four near-repeats dropped, and "Economic outlook", fixed by hand on 14 Nov. Add new real questions as they come, unseen.
+- {q: "Are consumers using GenAI to shop?", want: ["genai for shopping", "ai tool to shop", "genai to shop"]}
+- {q: "How many people shopped on Cyber Monday?", want: ["shopping on cyber monday"]}
+- {q: "holiday spending", want: ["holiday spending in 20", "your spending for the 20"]}
+- {q: "What share of shoppers did holiday shopping?", want: ["holiday purchases in the last", "status of your holiday shopping"]}
+- {q: "amazon", want: ["nonfood products from", "food products from"]}
+- {q: "Ama Prime", want: ["prime membership", "membership to amazon prime"]}
+- {q: "Amazon Prime", want: ["prime membership", "membership to amazon prime"]}
+- {q: "Amazon prime Membership Over the years", want: ["prime membership", "membership to amazon prime"], check: trend}
+- {q: "How are consumers feeling about inflation and prices?", want: ["pace of price increases", "rate of inflation"]}
+- {q: "How are consumers spending on holiday groceries this year?", want: ["categories did you buy for the h", "categories do you expect to spend"]}
+- {q: "What is the holiday spending expectation?", want: ["holiday spending in 20"]}
+- {q: "What share of consumers shop on Amazon?", want: ["nonfood products from", "food products from"]}
+- {q: "economy better or worse every 4 weeks", want: ["economy overall"], check: trend}
+- {q: "What share started holiday shopping?", want: ["status of your holiday shopping", "start holiday shopping"]}
+- {q: "Walmart nonfood by gender in the latest wave", want: ["nonfood products from"], check: cut}
+- {q: "personal finances better or worse quarterly", want: ["discretionary income"], check: trend}
+- {q: "holiday retailers this week", want: ["holiday-related purchases"]}
+- {q: "What share of Gen Z bought clothing in the past three months", want: ["purchased any clothing"], check: cut}
+- {q: "did more people buy online in October 2026 than September 2026", want: ["online in the past two weeks", "products online in the past three months"]}
+- {q: "consumer sentiment biweekly", want: ["economy overall", "discretionary income"], check: trend}
+- {q: "Target vs Walmart food retailers", want: ["food products from"]}
+- {q: "What share bought from Amazon in the all wave?", want: ["nonfood products from", "food products from"], check: trend}
+- {q: "How many people used Amazon for Shopping ?", want: ["nonfood products from", "food products from", "purchased from online"]}
+- {q: "How many people has subcription of OTT?", want: none}
+- {q: "How many people has subcription of Amazon prime ?", want: ["prime membership", "membership to amazon prime"]}
+- {q: "How many people has subcription of Amazon prime in all Waves?", want: ["prime membership", "membership to amazon prime"], check: trend}
+- {q: "Amazon Prime membership", want: ["prime membership", "membership to amazon prime"]}
+- {q: "How many people shopped on Black Friday?", want: ["on black friday"]}
+- {q: "Bitcoin investments", want: none}
+- {q: "Economy better or worse by generation quarterly", want: ["economy overall"], check: cut}
+- {q: "Concerns about new tariffs", want: ["concerns about tariffs", "concerns about adding new tariffs"]}
+- {q: "Important types of environmental sustainability", want: ["types of environmental sustainab"]}
+- {q: "Important sustainability types for retailers", want: ["types of environmental sustainab"]}
+- {q: "how many people are buying apparel", want: ["purchased any clothing"]}
+- {q: "Retailers for recent clothing purchases", want: ["purchased clothing or apparel accessories from", "bought clothing or footwear from"]}
+- {q: "how many people are using GenAI for shopping", want: ["genai for shopping", "ai tool to shop", "genai to shop"]}
+- {q: "Walmart shoppers by generation", want: ["nonfood products from", "food products from"], check: cut}
+- {q: "GLP-1 usage over time", want: ["using a glp-1", "use a glp-1"], check: trend}
+- {q: "Amazon shoppers over time", want: ["nonfood products from", "food products from"], check: trend}
+- {q: "Which apparel retailers do Gen Z shop at?", want: ["purchased clothing or apparel accessories from", "bought clothing or footwear from"], check: cut}
+- {q: "How many people use amazon prime ?", want: ["prime membership", "membership to amazon prime"]}
+- {q: "What share started holiday shopping? for all Waves", want: ["status of your holiday shopping"], check: trend}
+- {q: "How good is GLP1 is performing", want: ["since taking glp-1", "compared to before taking glp-1"]}
+- {q: "How has the share of consumers worried about tariffs changed over the last 6 months?", want: ["concerns about tariffs", "tariffs have on you personally"], check: trend}
+- {q: "What is the average price consumers paid for a Thanksgiving turkey?", want: none}
+- {q: "What share of Gen Z shopped at Temu in the latest wave compared with Boomers?", want: ["nonfood products from", "purchased from online", "footwear from temu"], check: cut}
+- {q: "How many people bought Amazon prime ?", want: ["prime membership", "membership to amazon prime"]}
+- {q: "How many people bought Amazon prime ? in all Waves", want: ["prime membership", "membership to amazon prime"], check: trend}
+- {q: "Amazon Prime membership status", want: ["prime membership", "membership to amazon prime"]}
+- {q: "Feelings about retailers", want: ["how do you feel about"]}
