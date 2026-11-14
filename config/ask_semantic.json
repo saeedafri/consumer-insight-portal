@@ -27062,8 +27062,7 @@
 "ad5c2a829c1c": {
 "aliases": [
 "Inflation outlook",
-"Price increase expectations",
-"Economic outlook"
+"Price increase expectations"
 ],
 "asks": [
 "How do you expect inflation to change by December 2023?",
@@ -35381,6 +35380,7 @@
 },
 "e3949cb5bc8d": {
 "aliases": [
+"Economic outlook",
 "Future economic expectations",
 "Economic situation predictions",
 "Outlook on economy"

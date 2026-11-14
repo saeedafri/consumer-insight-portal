@@ -932,6 +932,85 @@ big exam; the server reads the depth, gate and floor from the re-reader's `calib
 about half today's file (34 vs 66 MB), the re-reader about 23 MB; together about what Ask uses today (~375 MB in one
 process). CPU: the re-reader adds ~20-40 ms to an unsure question, on the server's one CPU.
 
+**v5 tested inside Ask, 14 Nov 2026: not shipped.** No OpenAI at all (the key removed, any call raises); every question
+answered with its margin kept (scratchpad `v5_test.py`, `v5_gate.py`). In Colab v5 found more (right one in the top 20:
+86% → 92% of the final exam) and its re-reader picked better than v4's (76% vs 72%), but inside Ask, where names, rules
+and retailer lists already decide much, it changed little:
+
+| Right answers, no AI, always answering | Final exam (161, people's wording) | Big exam (3,000 sampled) | Peak memory |
+|---|---|---|---|
+| Today (bge-small, no re-reader) | 86.3% | 83.1% | 463 MB |
+| v5 search alone | 82.6% | 84.5% | 475 MB |
+| v5 search + v5 re-reader (10) | 87.0% | 84.3% | 629 MB |
+| Today's search + v5 re-reader (5) | 87.0% | 84.2% | 519 MB |
+
+Answered at once (no AI) at the same accuracy, v5 is no better: today 53% of the final exam at 98.8% right (gate 0.04);
+today's search with v5's re-reader 48% at 97.4% (lead 0.5). Its own calibration says the same: to be right 99% of the
+time on unseen wording it needs a lead of 0.98, which 1.6% of questions reach. Why: a student copies its teacher, and
+the teacher (bge-reranker-v2-m3) is right on 77% of the final exam, below Ask's own 86%. On the big exam the errors are
+mostly in answers by name (81% of its questions, 91% right), which no search model changes. A better local model needs a
+better teacher: a large open model on Colab, measured on the final exam in Ask's own format before any training.
+
+**The teacher test, 14 Nov 2026** (`scripts/colab/test_teacher.ipynb`; scratchpad `teacher_ask.py`): the 128 requests
+Ask sends its AI for the final exam were saved on the Mac (nothing sent), answered on a Colab A100 by Qwen3-32B (4-bit,
+5 minutes), and its replies given back to Ask in the AI's place, no OpenAI. Right answers: **153 of 161 (95.0%)**, against
+139 with no AI, 151 with gpt-4o-mini and 155 with gpt-4.1. All 128 replies were valid JSON; 20 used "week" for the
+grain, which OpenAI's strict format would not allow, scored the same read as "wave" or "auto". It shares 4 misses with
+gpt-4.1, gets "walmrt shoppers" and "Gen Z prefer" right where gpt-4.1 does not, and misses 4 gpt-4.1 gets (dining-out
+trend, personal-finance outlook, tariff cut-backs, gas-price trend). Qwen2.5-32B did not load (neither copy). So an open
+model on Colab is good enough to teach the next round (v6); running it in Ask itself would need a GPU server.
+
+### v6: Ask picks on its own, no AI API (built and run 14 Nov 2026; results below)
+
+**Where the no-AI answers go wrong** (scratchpad `decompose.py`, no OpenAI): of the final exam's 22 misses, 19 are the
+*choice* (the right survey question is among the 10 candidates, the wrong one is picked), 2 are "not in the surveys"
+answered anyway, 1 is China (no China data on the Mac); none is the search (at 10 candidates the right one is always
+there) and none is the reading (period, group, kind). And Qwen3-32B's *pick alone*, the rules doing the rest, scored 154
+of 161 (one more than its full reply). So v6 has one job: pick the right candidate, or "none of these".
+
+**What v6 is** (`scripts/ask_v6.py export` on the Mac, then `scripts/colab/train_search_model_v6.ipynb`, ~2½-3 hours on
+an A100, then `scripts/ask_v6.py score` on the Mac): Ask builds the request it would send its AI for 12,281 practice
+questions (the analysts' asks, the checked practice questions, 602 off-topic; the golden set and the whole big exam kept
+out); Qwen3-32B (AWQ, on vLLM, its reply held to Ask's own JSON schema) picks for each; the hard ones are read again
+with thinking, only if thinking does better on the tests; a small cross-encoder (MiniLM L6 and L12, both trained) learns
+the picks from exactly the line the AI reads (waves, years, name, wording, answers: v5's never saw waves, and 3 of
+Qwen's 7 misses turn on them), with "none of these" as one of its choices. Both come back as 8-bit server files with
+their picks for the tests, scored inside Ask with no AI.
+
+**What it can reach, honestly.** The research (RankGPT: a 440M student trained on ChatGPT's rankings beat a 3B model;
+Microsoft's TnT-LLM: small classifiers trained on GPT-4's labels about equal GPT-4) says a student lands about at its
+teacher. The teacher here is 154 of 161 (95.7%); v6 at its best is about that, against 139 (86.3%) with no AI today.
+99% on the final exam means at most one miss, and the 7 the teacher misses are not all a model's to fix: China needs
+the China data (staging has it), "Economic outlook" a stored name, and three are one-off studies picked over the weekly
+tracker that asks the same thing. Ask stays answering either way: below its confidence it shows the closest questions.
+To be used, the server needs a small change (the re-reader reads the AI's line and its pick is final with no AI): made
+only if v6 beats today on the final exam and the big exam.
+
+**The run (14 Nov 2026, ask-v6.zip, scored on the Mac with `scripts/ask_v6.py score`, no OpenAI).** Right answers inside
+Ask, the gate off:
+
+| In the AI's place | Final exam (161) | Big exam (3,000) | Against the rules, final · big | ms a question (Mac, 1 thread) |
+|---|---|---|---|---|
+| Nothing (today's rules) | 139 (86.3%) | 2,493 (83.1%) | | |
+| Qwen3-32B, the teacher | 155 (96.3%) | 2,495 (83.2%) | +17 −1 · +71 −69 | (a GPU) |
+| v6 L6 (Colab's picks · the Mac's) | 152 · 151 (94.4% · 93.8%) | 2,479 · 2,482 | +15 −2 · +71 −85 | 71 (95th 102), 23 MB, ~230 MB with its runtime |
+| v6 L12 (Colab's · the Mac's) | 150 · 152 | 2,493 · 2,493 | +15 −4 · +74 −74 | 141 (95th 195), 34 MB |
+
+- **The final exam (hand-checked) gains 12-13 answers; the big exam does not move.** Its key names one question where a
+  near-twin is as good an answer, so its wins and losses are mostly noise: of L6's 85 losses, 53 are as good an answer by
+  hand (the same question another year, a near-twin wording, "brands" asked and the key wanting "retailers"), 32 real; of
+  its 71 wins, 35 real. Real: +35 −32, about even. 8 of the 32 real losses are "none of these" where the key exists.
+- **What v6 still misses** (L6, 9): China (no China data on the Mac) and "Economic outlook" (the stored name): data, not
+  the model; dining out by quarter and dining out over tariffs (the teacher misses them too); a typo ("walmrt shoppers",
+  read as "none of these"); 4 close picks.
+- **The same 8-bit file picks differently on the Mac (Arm) and on Colab (x86)**: 26 of 746 test picks for L6, 53 for L12,
+  some at 0.9-1.0 (8-bit arithmetic differs by processor), worth ±1-2 on the final exam. A server must be scored on its own
+  processor.
+- **Thinking did not run**: all 746 thinking replies were unreadable (2,048 tokens is too few for Qwen3 to think and then
+  answer), so no hard question was read again. The students agree with the teacher on 71-72% of held-out practice
+  questions: the room left is there, not in the teacher.
+- Not used yet: the server change (the re-reader's pick replacing the rules' choice when there is no AI) waits for a yes.
+
 ## Part 16. Glossary in plain words
 
 | Word | Plain meaning | Everyday comparison |
