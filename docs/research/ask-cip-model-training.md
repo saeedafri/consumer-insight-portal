@@ -1065,6 +1065,19 @@ the Mac has no China waves), so 159 of 161 there (98.8%) with the second run. Le
 Fixed by the second run: "What share of women started holiday shopping" (the reader is now sure and right) and "Why buy
 on social media instead of a store?" (now unsure, so the AI reads it, and is right).
 
+**Third run (14 Nov 2026, evening; `ask-v6 (2).zip`), not used.** The fixed notebook read the thinking check again
+with 4,096 tokens: all 746 replies unreadable again, so `teacher-v6.json` came back unchanged and the students were
+only trained again on the same labels. Its L6: 155 · 2,485 alone, 157 · 2,501 with the AI, the AI asked for 64 of 161;
+L12: 151 · 2,487, 156 · 2,506. Neither beats the second run. Why thinking fails is not in the files (the run's printed
+lines would show it); no further Colab run is planned.
+
+**"Amazon in 2025 vs 2026", fixed by a rule** (`api/assistant.py`, the retailer rule): a pick with the retailer in its
+wording (Prime membership) stood whenever the AI or the reader made it; now only when the question asks more than the
+retailer and a time (its subject, `plan["about"]`, has another word: "How many have Amazon Prime?" keeps Prime). The
+model was told this rule and broke it. Live on the Mac with the second run's reader: final exam 154 alone, **159 of 161
+(98.8%) with the AI on the unsure ones**; big exam 2,495 and 2,503, unchanged. On staging, with the China question,
+**160 of 161 (99.4%)**; the one left is dining out over tariffs (should be "none of these").
+
 Even then, 99% on 161 questions is ±1.5 points: these fixes were found on the final exam, so it no longer measures new
 questions fairly. A fresh set of analysts' questions, never looked at, is the honest test of 99%.
 

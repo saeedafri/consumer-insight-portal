@@ -312,6 +312,24 @@ def test_a_misspelt_retailer_is_put_right_and_other_words_are_left_alone(tmp_pat
     assert again.correct_spelling("What share bought from Amazon in the latest wave?") == "What share bought from Amazon in the latest wave?"
 
 
+def test_a_retailer_and_a_time_alone_is_the_retailer_list_even_when_the_ai_picks_a_question_naming_it(tmp_path, index, monkeypatch):
+    if index.vectors is None:
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    (tmp_path / "questions" / "CSI-US" / "tracker" / "PM1.json.gz").write_bytes(gzip.compress(json.dumps(question_file(
+        [[107, DATES[7], 1]], ["Do you have an Amazon Prime membership?"], [["", 1, "Yes"], ["", 2, "No"]],
+        [["total", "Total"]], [(0, 0, 0, 120, 400), (0, 0, 1, 280, 400)])).encode()))
+    waves = [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping and Spending", "modules": []} for i, d in enumerate(DATES)]
+    again = Index(tmp_path / "questions", waves)
+    again.add_vectors()
+    monkeypatch.setattr(assistant, "TREND_FROM", 1)   # XQ1's 8 waves count as long-running (the real lists: 195)
+    monkeypatch.setattr(assistant.ask_model, "ready", lambda: True)
+    monkeypatch.setattr(assistant.ask_model, "plan", lambda q, c: {   # the AI picks the question with Amazon in its wording
+        "pick": next(x["number"] for x in c if "Prime" in x["text"]), "alt": None, "focus": [], "kind": "share",
+        "grain": "auto", "cut": "none", "period": "all"})
+    assert assistant.answer("Amazon in October 2026", again, EVERYONE)["sources"][0]["qcode"] == "XQ1"
+    assert assistant.answer("How many have Amazon Prime?", again, EVERYONE)["sources"][0]["qcode"] == "PM1"
+
+
 def test_the_reader_scores_none_of_these_as_zero_and_gives_its_lead(monkeypatch):
     from api import ask_model
 
