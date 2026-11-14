@@ -4,6 +4,12 @@ Every feature, enhancement and update, newest first: the same entries as the por
 (`frontend/src/screens/WhatsNew.tsx`). Add each change to both; `tests/test_docs.py` fails if they differ.
 The API and the MCP connector are documented in [API.md](API.md).
 
+## 15 November 2026
+
+### Ask Coresight leads with the headline figures, draws the chart that fits, says what it tells us and where to go next
+
+An answer now opens with up to three headline figures, each with its base or group: the latest share, the change since the first wave and the latest change (significant or not), or the highest and lowest group and the gap between them, tested for significance. A group of fewer than 50 respondents is never called the highest or lowest, and a yes or a no is said with its question (Gas prices reducing spending: yes, 67.2%, 542 of 807 respondents). The chart is the form the figures need: a line for a trend (only the main answer for a yes or no), one segmented bar for a single choice in up to six parts, 100% stacked bars by group with each group's base (n), a heatmap for many answers by four or more groups with a Base (n) row, a dot plot for the first against the latest wave, and ranked bars otherwise. What this tells us gives the finding in one sentence, in the words people use (About two in three (67.2%) answered “Yes” to …), with dates as people say them (on 9 Nov 2026, in Nov 2026, over 9 Oct 2023 – 28 Sep 2026), and calls an answer the most common only when it leads all the answers, not just those named. Continue the analysis offers up to three follow-up questions (by generation, by income, over time, in the first and latest wave), made from templates with no extra computing and never stored; each is tied to its survey question and its survey's country, so it answers from that same question even where other surveys share the topic, and all 497 asked back in a test did. Client view shows the figures, chart, takeaway, notes and source, and when the AI is checking or has changed an answer; Analyst view adds every figure in sentences, how the question was read, Save as verified and the table of every figure and its base. All of it adds under a millisecond to an answer.
+
 ## 14 November 2026
 
 ### Ask Coresight's verified answers hold when new surveys arrive, and its search and reading models can be swapped

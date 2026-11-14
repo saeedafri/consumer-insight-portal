@@ -669,7 +669,7 @@ async def ask_index(who: dict):
     return index, {w["survey_id"] for w in waves if access.sees(who, w)}
 
 
-async def ask_answer(who: dict, question: str, quick: bool = False, check: bool = False) -> dict:
+async def ask_answer(who: dict, question: str, quick: bool = False, check: bool = False, key: str | None = None) -> dict:
     """Ask CIP for the page (POST /api/v1/ask) and the MCP connector's ask tool alike: Ask on the person's menu, their
     per-minute limit (config/access.yml limits.ask), and at most ASK_SLOTS questions computed at once per worker, so a
     burst queues briefly, then "busy", never slows the site. check: the page's second pass at a question it asked
@@ -684,7 +684,7 @@ async def ask_answer(who: dict, question: str, quick: bool = False, check: bool 
         raise HTTPException(503, "Ask Coresight is busy: try again in a few seconds", headers={"Retry-After": "5"})
     try:
         index, shown = await ask_index(who)
-        return await run_in_threadpool(assistant.ask, question, index, shown, access.scope(who), quick)
+        return await run_in_threadpool(assistant.ask, question, index, shown, access.scope(who), quick, key)
     finally:
         ASK_SLOTS.release()
 
@@ -706,10 +706,12 @@ async def ask_verified(request: Request, who: dict = Depends(admin)) -> dict:
 async def ask(request: Request, who: dict = Depends(user)) -> dict:
     """A question in plain words, answered from the published survey figures with a chart (api/assistant.py), no
     database. Only from the waves this person may see. {"quick": true}: by meaning and rules alone, in ~100 ms;
-    {"check": true}: the same question read by the model, asked after a quick answer that says check."""
+    {"check": true}: the same question read by the model, asked after a quick answer that says check; {"key": …}: a
+    "Continue the analysis" question, answered from that survey question (if this person may see it)."""
     body = await team.json_body(request)
     question = str(body.get("question") or "")
-    answer = await ask_answer(who, question, quick=body.get("quick") is True, check=body.get("check") is True)
+    key = body.get("key") if isinstance(body.get("key"), str) else None
+    answer = await ask_answer(who, question, quick=body.get("quick") is True, check=body.get("check") is True, key=key)
     audit.record(request, "ask", target=question[:300], detail={"mode": answer["mode"], "sources": [s["link"] for s in answer["sources"]]})
     return answer
 

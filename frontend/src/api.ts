@@ -251,13 +251,18 @@ export interface AudienceResult { qcode: string; multi: boolean; skipped: string
 export interface Distinctive { qcode: string; question: string; answer: string; pct: number; everyone: number; index: number; base: number }
 export interface AudienceProfile { size: number; skipped: string[]; over: Distinctive[]; under: Distinctive[] }
 /** Ask CIP's answer (api/assistant.py): sentences, the chart that fits, every figure as a table, and other matches. */
-export interface AskChart { type: "line" | "bar" | "grouped" | "donut"; categories: string[]; series: { name: string; data: (number | null)[] }[]; unit: string }
+export interface AskChart { type: "line" | "bar" | "grouped" | "split" | "stacked" | "heatmap" | "dumbbell";
+                            categories: string[]; series: { name: string; data: (number | null)[] }[]; unit: string;
+                            bases?: Record<string, number> }   // a chart by a cut: each group's n, by the group's name
+/** Ask's answer at a glance (api/assistant.py brief): stat tiles, what the figures tell, and follow-ups by survey question key. */
+export interface AskTile { label: string; value: string; note: string }
 export interface Answer { answer: string; no_source: boolean; mode: "figures" | "none" | "choose"; chart: AskChart | null;
                           headline?: string; points?: string[]; notes?: string[]; source_line?: string; codes?: string[];
                           table: { head: string[]; rows: (string | number | null)[][]; bases: number[] } | null;
                           sources: { id: string; key: string; survey_id: number; wave_date: string; qcode: string; question: string; family: string; waves: number; link: string }[];
                           suggestions: { qcode: string; text: string; family: string; key: string; alt?: boolean }[];
-                          understood?: string; check?: boolean; changed?: string; verify?: { question: string; key: string; code: string; family: string; focus: string[]; kind: string; cut: string; period: string } }
+                          understood?: string; check?: boolean; changed?: string; verify?: { question: string; key: string; code: string; family: string; focus: string[]; kind: string; cut: string; period: string };
+                          tiles?: AskTile[]; takeaway?: string; next?: { question: string; key: string }[] }
 export interface BoardSummary { board_id: number; name: string; created_by: string; created_at: string; items: number }
 export interface BoardComment { comment_id: number; author: string; body: string; created_at: string }
 export interface BoardItem { item_id: number; title: string; url: string; data_version: string; added_by: string; added_at: string;

@@ -1222,6 +1222,25 @@ Sources: [Qwen3/EmbeddingGemma on MTEB](https://www.cognee.ai/best-embedding-mod
 [Genie best practices](https://learn.microsoft.com/azure/databricks/genie/best-practices),
 [hard negatives for domain fine-tuning](https://tianpan.co/blog/2026-05-05-embedding-fine-tuning-gap-domain-specific-relevance).
 
+**A better teacher than Qwen3-32B? (searched 15 Nov 2026).** The open-weight leaders (Kimi K3 first on BenchLM's November
+ranking of 94 models, DeepSeek V4) need several 80 GB GPUs, so not Colab. Two that fit one Colab A100 (4-bit: about 15-18
+GB; 8-bit about 28-33 GB) and are newer and stronger on reasoning than Qwen3-32B (Apr 2025): **Qwen3.8-27B** (Alibaba,
+14 Aug 2026, Apache 2.0, dense; named the best single-GPU open model in November rankings; its scores are Alibaba's own,
+not yet reproduced) and **Gemma 4 31B** (Google, 2 Apr 2026, Apache 2.0; GPQA Diamond 84.3% by Google, 85.7% measured by
+Artificial Analysis, against Qwen3-32B's 54.6 / 68.4 with thinking). Aggregators disagree by several points, so neither
+is chosen on their numbers: each is first scored in Ask's own format on golden and the fresh set by
+`scripts/colab/test_teacher.ipynb` (adding them is its model list), as Qwen3-32B was (155 of 161), and replaces it only
+if it scores higher. Two teachers also allow a cheap label check: keep a practice question's label only when both pick
+the same survey question.
+
+Sources: [BenchLM open-weight ranking](https://benchlm.ai/best/open-source),
+[Best open-source LLMs, November 2026](https://www.morphllm.com/best-open-source-llm),
+[Qwen3.8-27B under Apache 2.0](https://www.eweek.com/news/alibaba-qwen3-8-27b-license-apac-china/),
+[Qwen3.8 on GitHub](https://github.com/QwenLM/Qwen3.8),
+[Gemma 4 under Apache 2.0](https://the-decoder.com/googles-gemma-4-is-now-available-with-apache-2-0-licensing-for-the-first-time/),
+[Gemma 4 announcement coverage](https://infoq.com/news/2026/04/google-gemm4),
+[Qwen3.5-27B vs Qwen3-32B](https://www.datalearner.com/en/benchmark-compare/qwen3-5-27b-dense/Qwen3-32B).
+
 Even then, 99% on 161 questions is ±1.5 points: these fixes were found on the final exam, so it no longer measures new
 questions fairly. A fresh set of analysts' questions, never looked at, is the honest test of 99%.
 

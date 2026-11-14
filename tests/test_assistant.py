@@ -230,6 +230,8 @@ def test_a_question_reads_only_its_countrys_waves_and_marks_a_small_base(tmp_pat
     assert us["sources"][0]["family"] == "CSI-US" and figure(us, "Amazon") == [42.5]
     assert china["sources"][0]["family"] == "CSI-CN" and figure(china, "Amazon") == [30.0]
     assert "small base" not in us["answer"] and "as few as 30 respondents" in china["answer"]   # config/methodology.yml: under 50
+    followed = assistant.answer("What share bought from Amazon over time", index, {100, 900}, key="CSI-CN/tracker/XQ1")
+    assert followed["sources"][0]["family"] == "CSI-CN"   # a follow-up names no country: its key's, not the US
 
 
 def test_asks_are_answered_by_words_while_the_vectors_are_built(index):
@@ -442,3 +444,81 @@ def test_a_search_model_is_pooled_and_cut_as_its_calibration_says(monkeypatch):
 def test_dont_know_with_a_curly_apostrophe_is_left_out_like_a_straight_one():
     # survey files spell it both ways; the curly one was ranked as an answer and read as a specific answer (13 Nov 2026)
     assert assistant.SKIP.match("Don’t know") and assistant.GENERIC.match("Don’t know / not sure")
+
+
+def test_a_share_and_a_period_are_said_as_people_say_them():
+    assert assistant.say_share(67.2) == "About two in three (67.2%)"
+    assert assistant.say_share(50.0) == "Half (50.0%)" and assistant.say_share(44.1) == "44.1%"
+    assert assistant.say_period("9 Nov 2026") == "on 9 Nov 2026" and assistant.say_period("Nov 2026") == "in Nov 2026"
+    assert assistant.say_period("9 Oct 2023 – 28 Sep 2026") == "over 9 Oct 2023 – 28 Sep 2026"
+
+
+def test_the_chart_fits_the_figures_as_the_dataviz_forms_say():
+    def fig(pct, answers, periods=1, columns=(("total", "Total"),), grain=None):
+        return {"pct": np.array(pct, float), "bases": np.full(np.shape(pct), 400), "answers": answers, "columns": list(columns),
+                "grain": grain, "periods": [{"label": f"P{p + 1}"} for p in range(periods)]}
+    yes_no = fig([[[60, 40]], [[55, 45]], [[67, 33]]], ["Yes", "No"], periods=3, grain="month")
+    assert [s["name"] for s in assistant.chart(yes_no, [0, 1])["series"]] == ["Yes"]   # the other line only mirrors it
+    three = fig([[[20, 30, 50]], [[25, 30, 45]], [[30, 30, 40]]], ["Better", "Worse", "Same"], periods=3, grain="month")
+    assert [s["name"] for s in assistant.chart(three, [0, 1])["series"]] == ["Better", "Worse"]   # two of three: both real
+    first_latest = fig([[[30, 70]], [[44, 56]]], ["Started", "Not started"], periods=2)
+    assert assistant.chart(first_latest, [0, 1])["type"] == "dumbbell"                 # two periods compared
+    assert assistant.chart({**first_latest, "grain": "quarter"}, [0, 1])["type"] == "line"   # a trend that has two
+    assert assistant.chart(fig([[[50, 30, 20]]], ["A", "B", "C"]), [0])["type"] == "split"   # one whole, few parts
+    many = fig([[[20, 15, 15, 10, 10, 10, 10, 10]]], list("ABCDEFGH"))
+    assert assistant.chart(many, [0])["type"] == "bar"                                 # too many parts: ranked bars
+    groups = (("generation", "GenZ"), ("generation", "Boomer"))
+    stacked = assistant.chart(fig([[[60, 40], [30, 70]]], ["Yes", "No"], columns=groups), [0])
+    assert stacked["type"] == "stacked" and stacked["categories"] == ["GenZ", "Boomer"]   # a single choice by a cut
+    assert stacked["bases"] == {"GenZ": 400, "Boomer": 400}                            # each group's n, shown beside it
+    four = tuple(("income_band", f"I{i}") for i in range(4))
+    grid = fig([[[40, 35, 30, 25, 20]] * 4], list("ABCDE"), columns=four)
+    assert assistant.chart(grid, [0])["type"] == "heatmap"                            # many answers by many groups
+
+
+def test_the_glance_never_names_a_small_group_and_says_a_lead_or_a_most_common_answer():
+    def fig(pct, bases, answers, columns):
+        pct, bases = np.array(pct, float), np.array(bases, float)
+        return {"pct": pct, "bases": bases, "people": pct * bases / 100, "answers": answers, "columns": columns,
+                "periods": [{"label": "9 Nov 2026"}], "grain": None}
+    by_generation = fig([[[60, 40], [30, 70], [90, 10]]], [[[200] * 2, [150] * 2, [30] * 2]], ["Yes", "No"],
+                        [("generation", "GenZ"), ("generation", "Boomer"), ("generation", "Silent")])
+    doc = {"text": "Did gas prices make you spend less?", "name": "Gas prices reducing spending"}
+    glance = assistant.brief({"kind": "share"}, by_generation, doc, [0])
+    assert [t["label"] for t in glance["tiles"]] == ["Highest: GenZ", "Lowest: Boomer", "Gap"]   # Silent: 30 people
+    assert glance["tiles"][0]["note"] == "Gas prices reducing spending: yes, 9 Nov 2026"         # a yes says what to
+    assert glance["tiles"][2] == {"label": "Gap", "value": "30.0 pts", "note": "GenZ vs Boomer, significant"}
+    assert glance["takeaway"] == ("“Yes” to “Did gas prices make you spend less?” runs from 30.0% among Boomer to 60.0% "
+                                  "among GenZ on 9 Nov 2026, a 30.0-point gap.")
+    total = [("total", "Total")]
+    split = fig([[[50, 30, 20]]], [[[400] * 3]], ["A", "B", "C"], total)
+    assert assistant.brief({"kind": "share"}, split, doc, [0, 1])["takeaway"] == "“A” is the most common answer at 50.0%, 20.0 points ahead of “B” (30.0%)."
+    listed = assistant.brief({"kind": "share"}, fig([[[50, 30, 45]]], [[[400] * 3]], ["A", "B", "C"], total), doc, [0, 1])
+    assert listed["takeaway"] == "“A” leads at 50.0%, 20.0 points ahead of “B” (30.0%)."    # several each: a lead
+    named = fig([[[20, 30, 50]]], [[[400] * 3]], ["Better", "Worse", "Same"], total)       # two named, “Same” first of all
+    assert assistant.brief({"kind": "share"}, named, doc, [0, 1])["takeaway"] == "“Worse” is at 30.0%, 10.0 points ahead of “Better” (20.0%)."
+    plain = fig([[[50, 50]]], [[[400] * 2]], ["Yes", "No"], total)
+    doc = {"text": "How much did you spend on Prime Day?", "name": "Previous year's Prime Day spending", "key": "K",
+           "cuts": {"generation": []}, "waves": 5}
+    follow = assistant.follow_ups({"cuts": {}}, plain, doc, [0])
+    assert [f["question"] for f in follow] == ["How much did you spend on Prime Day by generation",
+                                               "How much did you spend on Prime Day over time"]   # the name's period left out
+    assert assistant.follow_ups({"cuts": {}}, plain, {**doc, "text": "How much did you spend on Prime Day last year?"}, [0]) == []
+
+
+def test_an_answer_leads_with_tiles_a_takeaway_and_follow_ups_that_come_back_to_it(index):
+    found = assistant.answer("What share bought from Amazon in all waves?", index, EVERYONE)
+    amazon = next(r for r in found["table"]["rows"] if r[0] == "Amazon")
+    assert found["tiles"][0]["value"] == assistant.fmt(amazon[-1]) and found["tiles"][1]["label"].startswith("Change since")
+    assert "up" in found["takeaway"] and "“Amazon”" in found["takeaway"]
+    follow = next(f for f in found["next"] if f["question"].endswith("by generation"))
+    assert follow["key"] == "CSI-US/tracker/XQ1"
+    again = assistant.answer(follow["question"], index, EVERYONE, key=follow["key"])
+    assert again["sources"][0]["key"] == "CSI-US/tracker/XQ1" and set(again["plan"]["cuts"]) == {"generation"}
+    other = next(k for k in index.docs if k != "CSI-US/tracker/XQ1")
+    question = "What share bought from Amazon in all waves?"
+    assert assistant.ask(question, index, EVERYONE, "all")["sources"][0]["key"] == "CSI-US/tracker/XQ1"
+    assert assistant.ask(question, index, EVERYONE, "all", key=other)["sources"][0]["key"] == other   # not the kept answer
+    later = {s for s in EVERYONE if s not in index.docs[other]["surveys"]}   # waves where the other question was not asked
+    ignored = assistant.answer(question, index, later, key=other)   # the key ignored: found and read as any question
+    assert ignored["sources"][0]["key"] == "CSI-US/tracker/XQ1" and ignored["understood"] != "named"
