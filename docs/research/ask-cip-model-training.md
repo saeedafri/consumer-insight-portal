@@ -1091,6 +1091,22 @@ where the AI would be asked, so a sure reader's pick stands (`api/assistant.py a
 `test_a_learned_answer_gives_way_to_a_sure_reader_and_stands_for_an_unsure_one`). Lesson: the Mac harness turns learned
 answers off (`scripts/ask_v6.py without_api`), so a staging run is the only real test.
 
+**v7: better lessons, checked by Claude in the build session (14 Nov 2026, night; no API key, no credit).** Both AI
+accounts were out of credit, and more runs on Qwen's labels gave no gain (three runs, Part 18), so the labels were fixed
+instead. Of the 12,281 practice questions, the 1,000 where Qwen's pick is likeliest wrong (it differs from the survey
+question the practice question was written from, that question among the candidates, the reader siding with it first,
+then the most unsure; or Qwen's reply was unreadable; or an off-topic question got a pick) were labelled again by five
+Claude helpers in parallel, each reading only the question and its candidate lines with Ask's own rules, never Qwen's pick
+or the source (~2 million tokens in all, on the Claude Code plan). Added: 238 questions no survey answers (300 written: a
+surveyed topic with a reason no survey asks, company facts, opinions never asked; tariffs left out so the golden set's
+dining-out question stays a fair test; the 62 Ask's rules already answer "none" dropped). 40 hidden controls (Qwen, the
+reader and the source agreeing, the reader sure): the helpers agree on 39 (97.5%). They changed 725 of the 1,000 labels
+(the written-from question chosen in 429 of 769 where it was listed; the other picks more specific, e.g. the restaurant
+technology question for a restaurant question), kept 39, and labelled 228 of the 238 new questions "none" (10 do have a
+question). `v7-train.json` (12,519 practice questions with their labels; the helpers' labels in `v7-labels/`) is in
+`Downloads/cip-colab`; `scripts/colab/train_search_model_v7.ipynb` trains MiniLM L6 and the smaller L4 on it with no
+teacher (an L4 GPU, ~1-1½ hours), scored on the Mac inside Ask as before.
+
 Even then, 99% on 161 questions is ±1.5 points: these fixes were found on the final exam, so it no longer measures new
 questions fairly. A fresh set of analysts' questions, never looked at, is the honest test of 99%.
 
