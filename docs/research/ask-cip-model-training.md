@@ -1083,9 +1083,10 @@ connector: 154 of 161 (95.7%), not 160.** The projection assumed an AI as good a
 has gpt-4o-mini and its learned answers (`logs/ask-learned.json`: every question the AI settled, reused for the same or a
 close question ahead of the reader). Of the 7 misses, 5 were learned answers ("Which foods do GLP-1 users eat more or
 less?" took the answer learned for "Do GLP-1 users eat less?", over a reader sure at a lead of 7; the AI-shopping and Gen Z
-retailer questions kept gpt-4o-mini's picks), 2 were the reader unsure and gpt-4o-mini not fixing it (holiday inflation,
-social media); dining out is among the 5. gpt-4o-mini fixed 2 of the reader's errors (personal finances by income, retail
-subscriptions) and so adds nothing over the reader alone (155 with China). Fixed in code: a learned answer is used only
+retailer questions kept gpt-4o-mini's picks), 2 were the reader unsure with no AI to check it (holiday inflation, social
+media); dining out is among the 5. No live AI ran: staging's AI calls fail (the OpenAI account has no credit; the health
+page still says on, and a check left its paid-call count at 479), so the reader's pick stood. The 2 reader errors staging
+got right (personal finances by income, retail subscriptions) were saved answers from earlier in the month. Fixed in code: a learned answer is used only
 where the AI would be asked, so a sure reader's pick stands (`api/assistant.py answer`, test
 `test_a_learned_answer_gives_way_to_a_sure_reader_and_stands_for_an_unsure_one`). Lesson: the Mac harness turns learned
 answers off (`scripts/ask_v6.py without_api`), so a staging run is the only real test.
