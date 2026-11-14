@@ -325,9 +325,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         same_groups = set(plan["cuts"]) == set(ask_reader.read(verified["question"])["cuts"])
         if not (same_names and same_groups):
             verified = None
-    candidates = index.retrieve(subject, plan, CANDIDATES, visible, asked) if unsure and asked is not None and not verified else []
+    # a learned entry is the AI's earlier pick: the reader reads the question too, and a sure reader's pick stands (below)
+    learned = bool(verified and verified.get("learned"))
+    candidates = index.retrieve(subject, plan, CANDIDATES, visible, asked) if unsure and asked is not None and (learned or not verified) else []
     closeness = [c["near"] for c in candidates if "near" in c]   # only the ones found by meaning carry a closeness
-    if closeness and max(closeness) < NEAR_FLOOR and hits[0]["match"] < EVERY_WORD:   # nothing close in meaning or words ("walmrt" is corrected): free, no model
+    if not verified and closeness and max(closeness) < NEAR_FLOOR and hits[0]["match"] < EVERY_WORD:   # nothing close in meaning or words ("walmrt" is corrected): free, no model
         return {"answer": "None of the surveys asks this. The closest questions are below.", "chart": None, "table": None,
                 "sources": [], "plan": plan, "mode": "none", "no_source": True, "understood": "meaning",
                 "suggestions": [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]}
@@ -360,7 +362,9 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
     # reader is unsure (or absent) and a key is set; rules keep any dates the question names
     reader_pick = ask_model.read_pick(question, listed)   # (number or None, lead), None without the reader
     reader_sure = reader_pick is not None and reader_pick[1] >= READER_SURE
-    if listed and not quick and not reader_sure:
+    if learned and reader_sure:   # the AI's earlier pick only where the AI would be asked: staging reused gpt-4o-mini's pick
+        verified = None           # for "Do GLP-1 users eat less?" on "Which foods…", over a reader sure at a lead of 7 (14 Nov 2026)
+    if listed and not quick and not reader_sure and not verified:
         reading = ask_model.plan(question, listed)
     by_reader = reading is None and reader_pick is not None
     if by_reader:   # its pick only: the rules read the kind, period and group, as the reading's defaults say
@@ -386,8 +390,12 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False) 
         named = [c for c in candidates if c["waves"] >= TREND_FROM * 5 and focus(question, c.get("labels", []))]
         longest = max(named, key=lambda c: c["waves"], default=None)
         names = [longest["labels"][i] for i in focus(question, longest["labels"])] if longest else []
-        rest = {s for s in stems(question) if len(s) >= 4} - {s for n in names for s in stems(n)}   # quick: "Costco shoppers" is not "why Costco"
-        own_name = any(n.lower() in chosen["text"].lower() for n in names) and bool(reading or rest & set(stems(chosen["text"])))
+        named_stems = {s for n in names for s in stems(n)}
+        rest = {s for s in stems(question) if len(s) >= 4} - named_stems   # quick: "Costco shoppers" is not "why Costco"
+        # a reading's pick with the name in its wording stands only when the question asks more than the name and a time:
+        # "Amazon in 2025 vs 2026" is the retailer lists, though the AI picked Prime membership (14 Nov 2026)
+        asks_more = bool({s for s in stems(plan["about"]) if len(s) >= 4} - named_stems)
+        own_name = any(n.lower() in chosen["text"].lower() for n in names) and (bool(reading) and asks_more or bool(rest & set(stems(chosen["text"]))))
         # the pick shares more of the question's other words than the list: it asks what the question asks ("How do people
         # feel about Target?" is the feelings question, not the purchases list that has Target among its answers, 13 Nov)
         asks_else = longest is not None and len(rest & set(stems(chosen["text"]))) > len(rest & set(stems(longest["text"])))

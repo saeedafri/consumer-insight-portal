@@ -1078,6 +1078,18 @@ model was told this rule and broke it. Live on the Mac with the second run's rea
 (98.8%) with the AI on the unsure ones**; big exam 2,495 and 2,503, unchanged. On staging, with the China question,
 **160 of 161 (99.4%)**; the one left is dining out over tariffs (should be "none of these").
 
+**Staging, the same night (build 93d5104a: the second run's reader and the retailer rule), golden through the MCP
+connector: 154 of 161 (95.7%), not 160.** The projection assumed an AI as good as Qwen3-32B and no learned answers; staging
+has gpt-4o-mini and its learned answers (`logs/ask-learned.json`: every question the AI settled, reused for the same or a
+close question ahead of the reader). Of the 7 misses, 5 were learned answers ("Which foods do GLP-1 users eat more or
+less?" took the answer learned for "Do GLP-1 users eat less?", over a reader sure at a lead of 7; the AI-shopping and Gen Z
+retailer questions kept gpt-4o-mini's picks), 2 were the reader unsure and gpt-4o-mini not fixing it (holiday inflation,
+social media); dining out is among the 5. gpt-4o-mini fixed 2 of the reader's errors (personal finances by income, retail
+subscriptions) and so adds nothing over the reader alone (155 with China). Fixed in code: a learned answer is used only
+where the AI would be asked, so a sure reader's pick stands (`api/assistant.py answer`, test
+`test_a_learned_answer_gives_way_to_a_sure_reader_and_stands_for_an_unsure_one`). Lesson: the Mac harness turns learned
+answers off (`scripts/ask_v6.py without_api`), so a staging run is the only real test.
+
 Even then, 99% on 161 questions is ±1.5 points: these fixes were found on the final exam, so it no longer measures new
 questions fairly. A fresh set of analysts' questions, never looked at, is the honest test of 99%.
 

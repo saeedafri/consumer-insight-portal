@@ -280,6 +280,24 @@ def test_a_question_the_ai_settled_is_answered_at_once_next_time_with_no_ai(inde
     assert not any(v.get("learned") for v in index.verified)   # a learned entry without its key is never guessed from its code
 
 
+def test_a_learned_answer_gives_way_to_a_sure_reader_and_stands_for_an_unsure_one(index, monkeypatch):
+    if index.vectors is None:
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    question = "What share bought from Amazon in the latest wave?"
+    monkeypatch.setattr(assistant.ask_model, "ready", lambda: True)
+    monkeypatch.setattr(assistant.ask_model, "plan", lambda q, c: {
+        "pick": next(i for i, x in enumerate(c) if "retailers" in x["text"]), "alt": None, "focus": [], "kind": "share",
+        "grain": "auto", "cut": "none", "period": "latest"})
+    assistant.ask(question, index, EVERYONE, "all")   # the AI settles it on XQ1: learned
+    lead = {"now": assistant.READER_SURE + 1}
+    monkeypatch.setattr(assistant.ask_model, "read_pick", lambda q, c: (next(x["number"] for x in c if "save money" in x["text"]), lead["now"]))
+    sure = assistant.answer(question, index, EVERYONE, quick=True)
+    assert sure["understood"] == "reader" and sure["sources"][0]["qcode"] == "Q14"
+    lead["now"] = assistant.READER_SURE - 1
+    unsure = assistant.answer(question, index, EVERYONE, quick=True)
+    assert unsure["understood"] == "learned" and unsure["sources"][0]["qcode"] == "XQ1"
+
+
 
 def test_the_reader_picks_and_the_ai_is_asked_only_when_the_reader_is_unsure(index, monkeypatch):
     if index.vectors is None:
