@@ -1012,14 +1012,14 @@ Ask, the gate off:
 - Not used yet: the server change (the re-reader's pick replacing the rules' choice when there is no AI) waits for a yes.
 
 **v6 in Ask (14 Nov 2026, same day).** L6 became Ask's own reader (`models/ask-reader`, `api/ask_model.py read_pick`):
-it reads every candidate's line (`line`, the one the AI reads) and picks, or says "none of these", in ~70 ms. Its lead
+it reads every candidate's line (`describe_candidate`, the one the AI reads) and picks, or says "none of these", in ~70 ms. Its lead
 over the next choice (logits; "none" = 0) decides whether the AI is asked: from a lead of 2 (`calibration.json` "sure")
 its pick is final. That line was set on the notebook's 900 held-out practice questions, not on the tests: there a lead of
 2 or more is 51% of questions, 90% agreeing with the teacher (6 or more: 11%, 99%); on the final exam it was 52% at 98.5%.
 Without a key the reader's pick always stands; the quick answer shows it at once and asks for the AI check only when it
 is unsure. Fixed on the way, each a general rule: the alias "Economic outlook" was on a 2023 inflation question and a 2022
 one-off, now on the weekly economy question CS2 (84 waves) (`config/ask_semantic.json`); a misspelt retailer or brand is
-put right (`ask_index.py spelled`: only toward the answers of long-running retailer, brand or store lists; correcting
+put right (`ask_index.py correct_spelling`: only toward the answers of long-running retailer, brand or store lists; correcting
 every unknown word changed "having" to "behaving" in the bank, this changes 6 words of 38,477 questions); a trend's
 question with history counts a word no candidate uses by its synonyms ("dining out" → "Gone to a restaurant").
 
@@ -1034,15 +1034,36 @@ OpenAI was not used):
 
 Quick answer on the Mac: median 13 → 76 ms, 95th 28 → 109 ms; memory +78 MB. Today's AI reads ~80% of questions.
 
+**Second run (14 Nov 2026, afternoon; `ask-v6 (1).zip`), now in `models/ask-reader`.** `teacher-v6.json` was uploaded,
+so the teacher was not run again (its thinking check still unreadable): the same labels, the students trained again.
+The new L6, live in Ask on the Mac as above:
+
+| | Final exam (161) | Big exam (3,000) | AI asked |
+|---|---|---|---|
+| Ask's reader, no AI | 154 (95.7%) | 2,495 (83.2%) | none |
+| Ask's reader, the AI where it is unsure | 158 (98.1%) | 2,503 (83.4%) | 54 of 161 (34%) · 380 of 3,000 (13%) |
+
+- Calibration holds: a lead of 2 is 52% of the held-out practice questions at 90.1% agreement. The "sure" line, swept
+  inside Ask with the teacher as the AI: 1.0 → 157 · 2,505, AI 17% · 7%; 1.5 → 157 · 2,504; 2.0 → 158 · 2,503, AI 34% ·
+  13%; 2.5 → 157 · 2,501; 3.0 → 157 · 2,498, AI 52% · 15%. 2.0 stays; 1.0 halves the AI's calls for one final-exam answer.
+- Arm (Mac) and x86 (Colab, as staging) pick differently on 2 of 128 final-exam and 23 of 618 big-exam requests, all at
+  a lead under 0.5: never where the reader is sure.
+- L12: 153 · 2,498 alone, 156 · 2,502 with the AI, at twice the time: not used.
+- Cost, measured again back to back (old and new reader, the same): median 13 → 75 ms, 95th 26 → ~110 ms; peak memory
+  +~125 MB (the +78 MB above was one run).
+- `train_search_model_v6.ipynb` now reads the thinking check again when an uploaded `teacher-v6.json` has it unreadable,
+  keeping the plain picks (the long part).
+
 **What 99% needs** (at most 1 miss of 161). The China question is right on staging (China Consumer Survey Q9, 149 waves;
-the Mac has no China waves), so 157 of 161 there (97.5%). Left:
+the Mac has no China waves), so 159 of 161 there (98.8%) with the second run. Left:
 
 | Miss | Why | Fix |
 |---|---|---|
-| "Amazon in 2025 vs 2026" | the reader was right but unsure; the AI changed it to Prime membership | a better AI on the unsure third (gpt-4.1 scored 155 vs gpt-4o-mini's 151 on the whole set), or a better reader |
-| "What share of women started holiday shopping" | the same: the AI changed a right pick | the same |
-| "Why buy on social media instead of a store?" | the reader is sure of "why do you give up a purchase" | a retrained reader (thinking fixed: 4,096 tokens) |
-| "Are people cutting back on dining out because of tariffs?" | no survey asks it; reader and AI answer from a tariff question | a "none of these" the AI and reader both learn |
+| "Amazon in 2025 vs 2026" | the reader is right but unsure (lead 1.67); the AI changed it to Prime membership | a better AI on the unsure third (gpt-4.1 scored 155 vs gpt-4o-mini's 151 on the whole set), or a reader sure of it |
+| "Are people cutting back on dining out because of tariffs?" | no survey asks it; reader and AI answer from a tariff question | a "none of these" the AI and reader both learn (the thinking check) |
+
+Fixed by the second run: "What share of women started holiday shopping" (the reader is now sure and right) and "Why buy
+on social media instead of a store?" (now unsure, so the AI reads it, and is right).
 
 Even then, 99% on 161 questions is ±1.5 points: these fixes were found on the final exam, so it no longer measures new
 questions fairly. A fresh set of analysts' questions, never looked at, is the honest test of 99%.
