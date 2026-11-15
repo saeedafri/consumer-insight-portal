@@ -630,6 +630,36 @@ def test_a_wave_that_failed_three_times_is_tried_again_later_and_its_email_says_
     assert path in forsta_etl.run_due(FakeForsta(data={path: [record(n) for n in range(6, 9)]}))["loaded"]
 
 
+def test_a_failed_wave_is_tried_when_forsta_closes_it_not_six_hours_later(csi_db, monkeypatch):
+    """Second audit of 15 Nov 2026: the close of a wave that kept failing while live was recorded as a fresh failure,
+    so its retry waited 6 hours past the close, when its final data was already readable."""
+    from datetime import datetime, timedelta, timezone
+    path, picked = "selfserve/58f/261200", []
+    now = datetime.now(timezone.utc)
+
+    class Wave:
+        def __init__(self, state):
+            self.state = state
+
+        def surveys(self):
+            return [{"path": path, "title": "Shopping and Spending - inc Apparel", "state": self.state, "hibernated": False,
+                     "tags": ["Weekly consumer tracker"], "createdOn": f"{now - timedelta(days=7):%Y-%m-%dT%H:%M:%SZ}",
+                     "dateLaunched": f"{now - timedelta(hours=20):%Y-%m-%dT%H:%M:%SZ}", "qualified": 404, "total": 470,
+                     "closedDate": f"{now:%Y-%m-%dT%H:%M:%SZ}" if self.state == "closed" else None}]
+
+        def survey_quota(self, path):
+            return {}
+    monkeypatch.setattr(forsta_etl, "load_survey", lambda client, path, meta=None: picked.append(path) or 1)
+    assert forsta_etl.discover(Wave("live")) == {"due": 1}                  # fieldwork over: due while live
+    for _ in range(forsta_etl.MAX_ATTEMPTS + 1):                           # it keeps failing; the last failure is new
+        forsta_etl._mark(path, "failed", error="Forsta 503")
+    assert forsta_etl.run_due(Wave("live"))["loaded"] == []                 # waiting its 6 hours
+    assert forsta_etl.discover(Wave("closed")) == {"due": 1}                # Forsta closes it: tried at once
+    assert forsta_etl.run_due(Wave("closed"))["loaded"] == [path]
+    forsta_etl._mark(path, "failed", error="still broken")                 # failing after the close: back to 6 hours
+    assert forsta_etl.discover(Wave("closed")) == {"failed": 1} and forsta_etl.run_due(Wave("closed"))["loaded"] == []
+
+
 def test_the_bulk_load_file_reads_back_exactly_what_respondents_wrote():
     from shared.core.database import tsv, untsv
     for said in ["a\tb", "C:\\temp\\new", "line1\r\nline2", "back\\tslash", "nul\0x", None]:

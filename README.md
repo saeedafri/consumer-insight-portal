@@ -67,8 +67,8 @@ Browser ──▶ nginx ──▶ published files (most requests: ~1 ms, no data
 ## Run it
 
 **On a server** (Azure App Service, one container): the staging pipeline (`bitbucket-pipelines.yml` in the cip-stg repo)
-builds the image from `deploy/Dockerfile`, checks it boots with its search model, deploys it and waits until `/healthz`
-reports the new build. Settings are App Service settings (never in git); `deploy/start.sh` starts nginx, the API and the
+builds the image from `deploy/Dockerfile`, checks it boots with its search model, deploys it and waits until `/readyz`
+reports the new build with its data in place. Settings are App Service settings (never in git); `deploy/start.sh` starts nginx, the API and the
 ETL loop. Two health addresses: `/healthz` answers as soon as the process runs; `/readyz` answers 200 only once the
 published files are in place (503 before), so use it for anything that decides where people are sent:
 

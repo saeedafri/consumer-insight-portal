@@ -184,7 +184,8 @@ def watch(week: dict) -> int:
     crashes (Forsta down past its retries, the database dropping mid-run) is logged and told, and the watch goes on:
     otherwise the week's wave would wait for Friday. The run lock is taken for each check and free while the watch
     sleeps (15 Nov 2026: held for up to 54 hours, the Upload survey page answered 409 and the SharePoint watcher
-    stopped on it); a check that finds it taken waits for the next."""
+    stopped on it); a check that finds it taken still reads the week, so a wave another run loaded ends the watch and
+    the deadline message gives its real status, never "status: unknown" for a wave that is in (second audit, 15 Nov)."""
     topics = f" with {', '.join(week['topics'])}" if week["topics"] else ""
     name = " + ".join(week["names"])
     tell(notify.teams, f"🗓️ Forsta launches {name}{topics} today ~18:00 IST (cycle {week['cycle']}). CIP checks every "
@@ -194,12 +195,12 @@ def watch(week: dict) -> int:
     while True:
         beat("watching: running", RUN_HOURS)
         try:
-            with etl_lock():
-                code = run()
+            try:
+                with etl_lock():
+                    code = run()
+            except Locked:
+                log.info("Another CIP run holds the lock; the watch checks again in 30 minutes")
             now = next((w for w in launch_schedule.weeks()["weeks"] if w["date"] == str(week["date"])), {})
-        except Locked:
-            log.info("Another CIP run holds the lock; the watch checks again in 30 minutes")
-            now = {}
         except Exception:
             log.exception("This watch cycle crashed; the watch carries on")
             tell(notify.failure, "a watch cycle crashed", traceback.format_exc()[-1500:])
@@ -276,14 +277,22 @@ def watchdog() -> int:
     return 0
 
 
+def last_beat() -> dict:
+    """The heartbeat as last written; {} with none yet, or one read while being written."""
+    try:
+        return json.loads(HEARTBEAT.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
 def watch_waiting() -> bool:
     """Monday's watch is between two checks: its last beat says so, the check it promised is still ahead and its
     process is alive. main() then stops, as when the watch held the lock while it slept: Forsta read once per 30
     minutes, never a second watch."""
+    last = last_beat()
     try:
-        last = json.loads(HEARTBEAT.read_text())
         os.kill(last["pid"], 0)   # gone (killed with its container at a deploy): the next check runs, as before
-    except (OSError, ValueError):   # no heartbeat yet, a process gone, or a heartbeat read while being written
+    except (KeyError, OSError):   # no heartbeat yet, or its process is gone
         return False
     return last["state"] == "watching: waiting" and datetime.now() < datetime.fromisoformat(last["next"])
 
@@ -306,7 +315,8 @@ def main(once: bool = False) -> int:
         return 0
     if planned:
         code = watch(planned)
-    beat("finished", 0, last_exit=code)
+    if last_beat().get("pid") == os.getpid():   # not over a watch that beat while this check ran (second audit, 15 Nov):
+        beat("finished", 0, last_exit=code)      # the next check would take the lock ahead of it again
     return code
 
 

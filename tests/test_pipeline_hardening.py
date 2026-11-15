@@ -175,6 +175,44 @@ def test_the_watch_holds_the_lock_only_while_it_checks(tmp_path, monkeypatch):
     assert weekly.main() == 0 and told == []                            # a second launch run never starts a second watch
 
 
+def test_a_watch_check_that_finds_the_lock_taken_still_sees_the_wave_in(tmp_path, monkeypatch):
+    """Second audit of 15 Nov 2026: a watch cycle that found the lock taken read nothing, so it could not end, and at
+    its deadline told Teams '… not in after 54 h (status: unknown)' for a wave another run had loaded."""
+    weekly = importlib.import_module("scripts.weekly_forsta")
+    told = []
+    monkeypatch.setattr(weekly, "HEARTBEAT", tmp_path / "beat.json")
+    monkeypatch.setattr(weekly, "tell", lambda action, *args: told.append(args[0]))
+    monkeypatch.setattr(weekly.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(weekly, "WATCH_HOURS", 0)                       # this cycle is past the deadline
+    monkeypatch.setattr(weekly.launch_schedule, "weeks",                # another run loaded it, and Forsta closed it
+                        lambda today=None: {"weeks": [{"date": "2026-11-16", "status": "loaded", "closed": "2026-11-17T01:00:00Z"}]})
+    monkeypatch.setattr(weekly, "etl_lock", lambda wait=0: (_ for _ in ()).throw(weekly.Locked("an upload is loading")))
+    assert weekly.watch({"date": date(2026, 11, 16), "names": ["Apparel"], "topics": [], "cycle": 22}) == 0
+    assert not any("not in after" in m for m in told), told
+
+
+def test_a_30_minute_check_never_writes_over_a_live_watchs_heartbeat(tmp_path, monkeypatch):
+    """Second audit of 15 Nov 2026: a check that ran while the watch lost the lock beat 'finished' over the watch's
+    'watching: waiting', so the next check took the lock ahead of the watch again, and again."""
+    from contextlib import contextmanager
+    weekly = importlib.import_module("scripts.weekly_forsta")
+    monkeypatch.setattr(weekly, "HEARTBEAT", tmp_path / "beat.json")
+    monkeypatch.setattr(weekly, "tell", lambda *a: None)
+    monkeypatch.setattr(weekly, "etl_lock", contextmanager(lambda wait=0: (yield None)))
+    watch_pid = 2 ** 22 + 1                                             # the watch: another process
+
+    def check_while_the_watch_beats():                                 # the watch found the lock taken and went to sleep
+        (tmp_path / "beat.json").write_text(json.dumps({"state": "watching: waiting", "pid": watch_pid, "run": "w",
+                                                        "at": "2026-11-16T18:00:00", "next": "2999-01-01T00:00:00"}))
+        return 0
+    monkeypatch.setattr(weekly, "run", check_while_the_watch_beats)
+    assert weekly.main(once=True) == 0
+    beat = json.loads((tmp_path / "beat.json").read_text())
+    assert beat["state"] == "watching: waiting" and beat["pid"] == watch_pid   # the watch's beat stands
+    monkeypatch.setattr(weekly, "run", lambda: 0)
+    assert weekly.main(once=True) == 0 and json.loads((tmp_path / "beat.json").read_text())["state"] == "finished"
+
+
 def test_only_the_launch_run_watches_on_a_monday():
     """15 Nov 2026: every Monday is planned, so Monday's 03:30 UTC slot run started the watch at 09:00 IST and its
     54 hours ended Wednesday 15:00 IST, not 23:30. That minute is the 30-minute check's now."""

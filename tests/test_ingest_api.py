@@ -36,12 +36,17 @@ def test_preview_checks_both_files_and_writes_nothing(csi_db, as_admin):
 
 
 def test_publish_loads_the_week_and_starts_one_publish(csi_db, as_admin, monkeypatch, tmp_path):
-    started = []
+    """…and judges the team's alerts on the new week, as every other load does (second audit of 15 Nov 2026: this
+    page, the China path in use, never did)."""
+    from etl import notify
+    started, judged = [], []
     monkeypatch.setattr(ingest, "start_publish", lambda: started.append(1))
+    monkeypatch.setattr(notify, "alerts", lambda survey_ids: judged.append(survey_ids))
     monkeypatch.setattr(ingest, "UPLOAD_DIR", tmp_path / "uploads")
     answer = as_admin.post("/api/v1/admin/survey/publish", files=files())
     assert answer.status_code == 200, answer.text
     assert (answer.json()["wave"], answer.json()["respondents"], started) == ("2026-10-26", 550, [1])
+    assert judged == [[answer.json()["survey_id"]]]
     assert len(list((tmp_path / "uploads").iterdir())) == 2   # both source files kept
 
 

@@ -27,7 +27,8 @@ def test_each_deploy_pushes_what_it_built_checks_it_first_and_waits_for_it_live(
         first_push = next(i for i, line in enumerate(build) if line.startswith("docker push"))
         assert any("model_optimized.onnx" in line and "/healthz" in line for line in build[:first_push]), branch
         switch = next(i for i, line in enumerate(deploy) if "webapp config container set" in line)
-        assert any("/healthz" in line and "$BUILD" in line for line in deploy[switch:]), branch
+        waits = [line for line in deploy[switch:] if "$BUILD" in line]   # data files in, not just up: /readyz, never /healthz
+        assert waits and all("/readyz" in line and "/healthz" not in line for line in waits), branch
 
 
 def test_the_image_build_stops_when_the_search_model_does_not_download(tmp_path):

@@ -4,7 +4,8 @@
 # Next step (Parker): push the image to ACR and update the web app, as for Directus.
 # 15 Nov 2026: the image is named once, from the pipeline number and the commit (&stg_image, &pro_image), and the deploy
 # step repeats that same line: a name from the date sent a build that crossed 00:00 UTC to an image never pushed. The
-# image must boot before it is pushed (&boot_check), and the deploy waits until /healthz reports this commit (&wait_live).
+# image must boot before it is pushed (&boot_check), and the deploy waits until /readyz reports this commit (&wait_live):
+# /healthz answers while the new container still restores its data files (~75-90 s), /readyz only once they are in.
 options:
   docker: true
   max-time: 25   # minutes per step; Bitbucket's default is 120, so a hung build (#53, 12 Nov 2026) burned up to 2 hours of the
@@ -49,8 +50,8 @@ pipelines:
             # the switch only asks App Service to restart: the step passes once the new image answers, within 10 minutes
             - &wait_live >-
               tries=0; until python3 -c "import sys, urllib.request; print(urllib.request.urlopen(sys.argv[1], timeout=5).read().decode())"
-              "https://$HOST/healthz" 2>/dev/null | grep -q "\"build\":\"$BUILD\""; do
-              tries=$((tries + 1)); [ $tries -lt 40 ] || { echo "https://$HOST/healthz is not on build $BUILD after 10 minutes"; exit 1; };
+              "https://$HOST/readyz" 2>/dev/null | grep -q "\"build\":\"$BUILD\""; do
+              tries=$((tries + 1)); [ $tries -lt 40 ] || { echo "https://$HOST/readyz is not ready on build $BUILD after 10 minutes"; exit 1; };
               sleep 15; done
 
 

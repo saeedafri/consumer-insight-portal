@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 15 November 2026
 
+### A second check of every state: the Monday watch, Forsta retries, China uploads and deploys
+
+A second check of the portal's state machines on staging found four slips, now fixed, and confirmed the 15 November fixes live. When another load held the lock at the moment Monday's watch checked, the watch could not see that the wave was in, and at its deadline told Teams "not in after 54 h (status: unknown)"; it now reads the wave's status at every check. A 30-minute check no longer writes over the watch's sign of life, which let the checks keep cutting in ahead of it. A Forsta wave that kept failing while live is tried again the moment Forsta closes it, when its final data is readable, not 6 hours later. A China week loaded on the Upload survey page now judges the team's metric alerts, as every other load does. And a deploy now waits until the new container has its data in place (/readyz), not only until it answers.
+
 ### Ask Coresight puts misspelt words right and suggests questions as you type, at no cost
 
 While you type a question, Ask Coresight now puts misspelt words right and, after each pause, suggests up to six survey questions by their name; choose one and it answers from that question. Typing costs nothing: no AI is asked. Misspelt survey words are put right too (subcription is subscription, infaltion is inflation), and a short start of a two-word name before its second word (Ama Prime is Amazon Prime), while a real word (noted, having, marking) is left alone; an answer says when it put the spelling right. Holiday spending now answers from the holiday spending questions, not the holiday purchases one that carried the name by mistake. An AI reading kept from an older AI model is no longer reused: one had turned a right answer wrong. Ask builds its question index after each publish by itself, so the first question after a publish no longer waits several seconds. With no AI, 47 of the 50 questions people typed on staging are right (45 before); the golden set (154 of 161) and the big exam (2,496 of 3,000) are unchanged.

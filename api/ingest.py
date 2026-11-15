@@ -95,6 +95,8 @@ def publish_survey(raw: UploadFile = File(...), topline: UploadFile = File(...),
         raise HTTPException(422, str(exc))   # problems found by the check, or not Baidu's files
     log.info("%s loaded China wave %s (survey %s) from %s and %s", who.get("email"), result["wave"],
              result["survey_id"], raw.filename, topline.filename)
+    from etl import notify
+    notify.alerts([result["survey_id"]])   # as every other load does: this page is the China path in use (second audit, 15 Nov)
     start_publish()
     return result
 

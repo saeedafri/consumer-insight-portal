@@ -158,8 +158,8 @@ def discover(client) -> dict[str, int]:
             state = "testing"
         elif m.get("hibernated"):
             state = "hibernated"
-        else:
-            state = "failed" if previous == "failed" else "due"
+        else:   # a failed wave is due once when Forsta closes it: its final data is readable from then, not 6 h later
+            state = "failed" if previous == "failed" and stored[path]["state"] == "closed" else "due"   # (second audit, 15 Nov)
         rows.append({"path": path, "title": str(m.get("title", ""))[:500], "fstate": str(m.get("state", ""))[:30],
                      "hib": 1 if m.get("hibernated") else 0, "tags": ", ".join(m.get("tags") or [])[:500],
                      "stype": study_type(m), "created": _when(m.get("createdOn")),

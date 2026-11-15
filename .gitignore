@@ -1,5 +1,7 @@
 .env
 .env.*
+# cip-staging.env and cip_staging.env held staging's secrets and were pushed to GitHub (found 15 Nov 2026)
+*.env
 !.env.example
 __pycache__/
 *.py[cod]
