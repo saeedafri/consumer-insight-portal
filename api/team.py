@@ -19,6 +19,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import bindparam, text
+from starlette.concurrency import run_in_threadpool
 
 from api.dashboards import significant
 from shared.core import access, audit
@@ -131,6 +132,13 @@ def _rows(sql: str, **params) -> list[dict]:
         return [dict(r) for r in conn.execute(text(sql), params).mappings()]
 
 
+def _insert(sql: str, params: dict) -> int:
+    """One row added, its new id. The async save routes run it in a worker thread (run_in_threadpool): the API has one
+    worker, so a save waiting on the database on the event loop held up every other request (15 Nov 2026)."""
+    with get_engine("api_write").begin() as conn:
+        return conn.execute(text(sql), params).lastrowid
+
+
 @lru_cache(maxsize=2048)
 def wave_of(survey_id: int) -> dict | None:
     """{survey_id, survey_family, study_type} of a built wave (they never change), for the visibility rule."""
@@ -173,10 +181,9 @@ async def save_view(request: Request) -> dict:
     url, name = str(body.get("url") or ""), " ".join(str(body.get("name") or "").split())[:200]
     if not url.startswith("/w/") or len(url) > 1000 or not name:
         raise HTTPException(422, "A view needs a name and a portal screen (/w/…)")
-    with get_engine("api_write").begin() as conn:
-        view_id = conn.execute(text("INSERT INTO cip_team_view (name, url, note, saved_by, owner_email) VALUES (:n, :u, :note, :by, :o)"),
-                               {"n": name, "u": url, "note": (str(body.get("note") or "")[:1000] or None), "by": _person(body),
-                                "o": email_of(request)}).lastrowid
+    view_id = await run_in_threadpool(_insert, "INSERT INTO cip_team_view (name, url, note, saved_by, owner_email) VALUES (:n, :u, :note, :by, :o)",
+                                      {"n": name, "u": url, "note": (str(body.get("note") or "")[:1000] or None), "by": _person(body),
+                                       "o": email_of(request)})
     changed()
     audit.record(request, "view_save", target=view_id, detail={"url": url})
     return {"view_id": view_id}
@@ -206,22 +213,21 @@ async def save_alert(request: Request) -> dict:
         survey_id = int(body.get("survey_id") or 0)
     except (TypeError, ValueError):
         raise HTTPException(422, "survey_id is a wave number")
-    open_wave(who, survey_id)
-    found = _rows("SELECT w.survey_family, w.study_type, q.qtext FROM srv_wave w JOIN cip_question q ON q.survey_id = w.survey_id"
-                  " AND q.qcode = :q WHERE w.survey_id = :s", s=survey_id, q=str(body.get("qcode") or ""))
+    await run_in_threadpool(open_wave, who, survey_id)
+    found = await run_in_threadpool(_rows, "SELECT w.survey_family, w.study_type, q.qtext FROM srv_wave w JOIN cip_question q"
+                                    " ON q.survey_id = w.survey_id AND q.qcode = :q WHERE w.survey_id = :s", s=survey_id, q=str(body.get("qcode") or ""))
     if not found:
         raise HTTPException(404, "That question is not in that wave")
-    with get_engine("api_write").begin() as conn:
-        alert_id = conn.execute(text(
-            "INSERT INTO cip_metric_alert (name, survey_family, study_type, qcode, qtext, item_label, option_code, answer_label,"
-            " dim, dim_value, against, created_by, notify_email, owner_email, last_checked)"
-            " VALUES (:name, :f, :t, :q, :qt, :il, :oc, :al, :d, :v, :ag, :by, :email, :o, :s)"),
-            {"name": " ".join(str(body.get("name") or body.get("answer_label") or "")[:200].split()), "f": found[0]["survey_family"],
-             "t": found[0]["study_type"], "q": body["qcode"], "qt": found[0]["qtext"], "il": str(body.get("item_label") or "")[:255],
-             "oc": body.get("option_code"), "al": str(body.get("answer_label") or "")[:500], "d": dim,
-             "v": str(body.get("dim_value") or "Total")[:120], "ag": against, "by": _person(body),
-             "email": email_of(request) if body.get("email_me", True) else None, "o": email_of(request),
-             "s": survey_id}).lastrowid
+    alert_id = await run_in_threadpool(_insert,
+        "INSERT INTO cip_metric_alert (name, survey_family, study_type, qcode, qtext, item_label, option_code, answer_label,"
+        " dim, dim_value, against, created_by, notify_email, owner_email, last_checked)"
+        " VALUES (:name, :f, :t, :q, :qt, :il, :oc, :al, :d, :v, :ag, :by, :email, :o, :s)",
+        {"name": " ".join(str(body.get("name") or body.get("answer_label") or "")[:200].split()), "f": found[0]["survey_family"],
+         "t": found[0]["study_type"], "q": body["qcode"], "qt": found[0]["qtext"], "il": str(body.get("item_label") or "")[:255],
+         "oc": body.get("option_code"), "al": str(body.get("answer_label") or "")[:500], "d": dim,
+         "v": str(body.get("dim_value") or "Total")[:120], "ag": against, "by": _person(body),
+         "email": email_of(request) if body.get("email_me", True) else None, "o": email_of(request),
+         "s": survey_id})
     changed()
     audit.record(request, "alert_save", survey_id=survey_id, target=alert_id, detail={"qcode": body["qcode"]})
     return {"alert_id": alert_id}
@@ -306,9 +312,8 @@ async def save_audience(request: Request) -> dict:
     definition, name = _definition(body.get("definition") or {}), " ".join(str(body.get("name") or "").split())[:200]
     if not name:
         raise HTTPException(422, "Name the audience")
-    with get_engine("api_write").begin() as conn:
-        audience_id = conn.execute(text("INSERT INTO cip_audience (name, definition, created_by, owner_email) VALUES (:n, :d, :by, :o)"),
-                                   {"n": name, "d": json.dumps(definition), "by": _person(body), "o": email_of(request)}).lastrowid
+    audience_id = await run_in_threadpool(_insert, "INSERT INTO cip_audience (name, definition, created_by, owner_email) VALUES (:n, :d, :by, :o)",
+                                          {"n": name, "d": json.dumps(definition), "by": _person(body), "o": email_of(request)})
     changed()
     audit.record(request, "audience_save", target=audience_id, detail=definition)
     return {"audience_id": audience_id}
@@ -325,8 +330,8 @@ async def audience_view(survey_id: int, request: Request) -> dict:
     if not access.spend(who["email"], "audience"):
         raise HTTPException(429, "Too many audience requests: wait a minute", headers={"Retry-After": "60"})
     body = await json_body(request)
-    open_wave(who, survey_id)
-    return audience(survey_id, str(body.get("qcode") or ""), _definition(body.get("definition") or {}))
+    await run_in_threadpool(open_wave, who, survey_id)
+    return await run_in_threadpool(audience, survey_id, str(body.get("qcode") or ""), _definition(body.get("definition") or {}))
 
 
 @router.post("/waves/{survey_id}/audience/profile")
@@ -335,8 +340,8 @@ async def audience_profile_view(survey_id: int, request: Request) -> dict:
     if not access.spend(who["email"], "audience"):
         raise HTTPException(429, "Too many audience requests: wait a minute", headers={"Retry-After": "60"})
     body = await json_body(request)
-    open_wave(who, survey_id)
-    return audience_profile(survey_id, _definition(body.get("definition") or {}))
+    await run_in_threadpool(open_wave, who, survey_id)
+    return await run_in_threadpool(audience_profile, survey_id, _definition(body.get("definition") or {}))
 
 
 @lru_cache(maxsize=16)   # ~0.1–1 MB per wave; a new publish is a new version, so old waves are never asked for again
@@ -467,9 +472,7 @@ async def new_board(request: Request) -> dict:
     name = " ".join(str((await json_body(request)).get("name") or "").split())[:200]
     if not name:
         raise HTTPException(422, "A board needs a name")
-    with get_engine("api_write").begin() as conn:
-        board_id = conn.execute(text("INSERT INTO cip_board (name, created_by) VALUES (:n, :by)"),
-                                {"n": name, "by": email_of(request)}).lastrowid
+    board_id = await run_in_threadpool(_insert, "INSERT INTO cip_board (name, created_by) VALUES (:n, :by)", {"n": name, "by": email_of(request)})
     changed()
     audit.record(request, "board_new", target=board_id)
     return {"board_id": board_id}
@@ -527,14 +530,17 @@ async def pin(board_id: int, request: Request) -> dict:
         raise HTTPException(422, str(exc))
     if not url.startswith("/w/") or len(url) > 1000:
         raise HTTPException(422, "An item needs its portal screen (/w/…)")
-    with get_engine("api_write").begin() as conn:
-        owner = conn.execute(text("SELECT created_by FROM cip_board WHERE board_id = :b"), {"b": board_id}).first()
-        if owner is None or not owned_by(who, owner[0]):
-            raise HTTPException(404, "No such board")
-        item_id = conn.execute(text(
-            "INSERT INTO cip_board_item (board_id, title, url, spec, data_version, added_by) VALUES (:b, :t, :u, :s, :v, :by)"),
-            {"b": board_id, "t": " ".join(str(body.get("title") or spec["name"]).split())[:300], "u": url,
-             "s": json.dumps(spec, separators=(",", ":")), "v": data_version(), "by": email_of(request)}).lastrowid
+
+    def store() -> int:   # in a worker thread, like _insert
+        with get_engine("api_write").begin() as conn:
+            owner = conn.execute(text("SELECT created_by FROM cip_board WHERE board_id = :b"), {"b": board_id}).first()
+            if owner is None or not owned_by(who, owner[0]):
+                raise HTTPException(404, "No such board")
+            return conn.execute(text(
+                "INSERT INTO cip_board_item (board_id, title, url, spec, data_version, added_by) VALUES (:b, :t, :u, :s, :v, :by)"),
+                {"b": board_id, "t": " ".join(str(body.get("title") or spec["name"]).split())[:300], "u": url,
+                 "s": json.dumps(spec, separators=(",", ":")), "v": data_version(), "by": email_of(request)}).lastrowid
+    item_id = await run_in_threadpool(store)
     changed()
     audit.record(request, "board_pin", target=board_id, detail={"item_id": item_id, "url": url})
     return {"item_id": item_id}
@@ -551,13 +557,16 @@ async def comment(item_id: int, request: Request) -> dict:
     body = str((await json_body(request)).get("body") or "").strip()[:2000]
     if not body:
         raise HTTPException(422, "Write something")
-    with get_engine("api_write").begin() as conn:
-        owner = conn.execute(text("SELECT b.created_by FROM cip_board_item i JOIN cip_board b ON b.board_id = i.board_id"
-                                  " WHERE i.item_id = :i"), {"i": item_id}).first()
-        if owner is None or not owned_by(who, owner[0]):
-            raise HTTPException(404, "No such item")
-        comment_id = conn.execute(text("INSERT INTO cip_board_comment (item_id, author, body) VALUES (:i, :a, :b)"),
-                                  {"i": item_id, "a": email_of(request), "b": body}).lastrowid
+
+    def store() -> int:   # in a worker thread, like _insert
+        with get_engine("api_write").begin() as conn:
+            owner = conn.execute(text("SELECT b.created_by FROM cip_board_item i JOIN cip_board b ON b.board_id = i.board_id"
+                                      " WHERE i.item_id = :i"), {"i": item_id}).first()
+            if owner is None or not owned_by(who, owner[0]):
+                raise HTTPException(404, "No such item")
+            return conn.execute(text("INSERT INTO cip_board_comment (item_id, author, body) VALUES (:i, :a, :b)"),
+                                {"i": item_id, "a": email_of(request), "b": body}).lastrowid
+    comment_id = await run_in_threadpool(store)
     changed()
     audit.record(request, "board_comment", target=item_id)
     return {"comment_id": comment_id}

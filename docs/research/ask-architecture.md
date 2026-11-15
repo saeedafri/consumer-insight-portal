@@ -134,6 +134,28 @@ choose (or the AI settles them). What lifts both the share answered at once and 
 analysts' real questions saved as verified (each fixes every later question worded like it), and the AI check only for
 the unsure ones.
 
+## 6. Typing, spelling and the cost of a question (15 November 2026)
+
+What a question costs before any model runs, as built after two reviews of 15 November (one Gemini's, one Claude's),
+each claim measured on the real index before it was acted on:
+
+- **Spelling** (`api/ask_index.py correct_spelling`): a misspelt retailer or brand, as before, and now also a survey
+  word with the same first two letters and a length within one ("subcription" → "subscription"), and a short start of
+  a two-word name before its second word ("Ama Prime" → "Amazon Prime"). A survey word with an ending ("noted", "having")
+  is never touched, nor is any of the ~21,700 whole English words the search model's tokenizer knows: the second
+  reader's probe turned "marking" into "making" and "debut" into "debt" before that guard. A typo is put right only to a
+  word of the surveys' wording, never to a synonym's stem. Of 3,211 test questions six change, each a real typo. The answer
+  says when it put words right.
+- **While typing** (`assistant.suggest`, `GET /api/v1/ask/suggest`): after each pause the box shows the words put right
+  and up to six survey questions by their analyst name, from the index in memory: ~10 ms, no model, no cost. Choosing one
+  answers from that question by its key.
+- **Kept AI readings** are kept per model and prompt: an older model's reading had turned the reader's right answer wrong.
+- **Not adopted, measured:** skipping the reader when the search is confident (the nearest question was right 68% of the
+  time at that margin, not the 99.5% claimed); cutting the reader's list to six (the right pick sat 7th or later 19
+  times in 778 reads); embedding the subject alone (a learned question's repeat is found by the whole question).
+- **Fresh set** (50 questions people typed): 47 right with no AI (45 before). Two of the three left are unsure answers
+  the AI reads when it has credit; "subscription of OTT" now reaches a meal-kit question, where its typo used to hide it.
+
 ## Sources
 
 - Anthropic, Contextual Retrieval (via InfoQ and Anthropic's cookbook): https://www.infoq.com/news/2024/09/anthropic-contextual-retrieval/ , https://platform.claude.com/cookbook/capabilities-contextual-embeddings-guide

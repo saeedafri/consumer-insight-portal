@@ -32,8 +32,15 @@ Browser ──▶ nginx ──▶ published files (most requests: ~1 ms, no data
 - **One server, one container** (`deploy/Dockerfile`, target `app`): nginx serves the site and the published files, the API
   answers the rest, and the ETL runs on its schedule beside them. Caching at three levels: the browser (ETag, 304),
   nginx (published files and an answer cache) and the API (an answer cache per worker).
-- **The ETL runs by itself** (`deploy/etl-loop.sh`): every Monday 12:00 UTC it watches the new weekly wave and loads it
-  when fieldwork ends; every day at 03:30 UTC it loads any other survey that closed. Failures are emailed.
+- **The ETL runs by itself** (`deploy/etl-loop.sh`): every Monday 12:00 UTC (17:30 IST) it watches the new weekly wave,
+  taking the pipeline's lock only while it checks, and loads it when fieldwork ends; Tuesday to Sunday at 03:30 UTC it
+  loads any other survey that closed, and a check every 30 minutes catches anything missed. A wave that fails is tried
+  again (every 6 hours after three failures in a row). Failures and metric alerts are emailed and posted to Teams.
+- **Ask Coresight** (`api/assistant.py`) answers a question in plain words from the published figures: a small search
+  model and Ask's own reader on the server's CPU, an AI model (OpenAI) only when the reader is unsure and a key is set.
+  While someone types it puts misspelt words right and suggests survey questions by name, at no cost.
+- **Access** (`/app/access`, the super admin): every entry of the left menu, group by group with each menu's pages, given
+  or taken per role, client or person; the API, API keys and the MCP connector follow the same choice.
 - **Operational logs** for admins at `/app/logs`: nginx requests and errors, the API, ETL runs, container restarts,
   Azure App Service's own log and security events.
 
@@ -59,7 +66,17 @@ Browser ──▶ nginx ──▶ published files (most requests: ~1 ms, no data
 
 ## Run it
 
-**On a server:** see [docs/deployment/azure-app-service.md](docs/deployment/azure-app-service.md).
+**On a server** (Azure App Service, one container): the staging pipeline (`bitbucket-pipelines.yml` in the cip-stg repo)
+builds the image from `deploy/Dockerfile`, checks it boots with its search model, deploys it and waits until `/healthz`
+reports the new build. Settings are App Service settings (never in git); `deploy/start.sh` starts nginx, the API and the
+ETL loop. Two health addresses: `/healthz` answers as soon as the process runs; `/readyz` answers 200 only once the
+published files are in place (503 before), so use it for anything that decides where people are sent:
+
+- **Deployment slots** (IT): add a "warm" slot, deploy to it, set `WEBSITE_SWAP_WARMUP_PING_PATH=/readyz` (and
+  `WEBSITE_SWAP_WARMUP_PING_STATUSES=200`), then swap; make `CIP_ETL` a slot setting so only one slot runs the pipeline.
+  Before that, move what lives on the container's `/home` (logs, API keys, Ask's files) to storage both slots mount.
+- **Azure Front Door or a CDN** (IT): put it in front of the App Service so the connection from India ends nearby; give it
+  the health probe `/readyz`; cache `/_next/static/*` (already marked immutable) and pass everything else through.
 
 **On a laptop** (database access needed):
 
@@ -81,9 +98,7 @@ pytest -q                             # the checks
 | [Status](status/README.md) | what is done, waiting for deploy, pending and stuck: read it before starting, update it while working |
 | [What's new](docs/CHANGELOG.md) | every feature, enhancement and update, the same as the portal's What's new page |
 | [API and MCP guide](docs/API.md) | using the portal from programs and AI assistants with your own key, the same as the portal's API guide page |
-| [Business description](docs/business/Business-Description.md) | the business team: the surveys, what is collected, how the pipeline works, quality and privacy |
-| [Portal features](docs/business/portal-features.md) | what each screen does |
-| [Technical documentation](docs/technical/00-overview.md) | Forsta API, extract, transform, load, serving tables, data dictionary, survey patterns, operations runbook |
-| [Pipeline error handling](docs/technical/pipeline-resilience.yml) | every failure the scheduled run can meet and what it does about it |
-| [Diagrams](docs/diagrams/) | every flow as Mermaid source and SVG |
-| [Deployment](docs/deployment/azure-app-service.md) | Azure App Service: build, settings, sign-in, logs, schedule |
+| [The pipeline, in six parts](docs/ETL-Docs/) | Forsta → database → checks → serving tables → published files, step by step (with a video of part 1) |
+| [Ask Coresight](docs/research/ask-architecture.md) | how Ask finds and reads a question; [its models and their training](docs/research/ask-cip-model-training.md) |
+| [Methodology](config/methodology.yml) | populations, weighting, significance and small bases, as the portal's Methodology page shows them |
+| [Product](PRODUCT.md) and [design](DESIGN.md) | who the portal is for, and how its screens look |

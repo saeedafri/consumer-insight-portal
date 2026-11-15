@@ -17,6 +17,7 @@ questions, never with a guess. Answers are kept per published version, person's 
 """
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import math
@@ -31,7 +32,7 @@ from datetime import date, timedelta
 import numpy as np
 
 from api import ask_figures, ask_model, ask_reader
-from api.ask_index import LEARNED, Index, name_key, read_json, stems
+from api.ask_index import LEARNED, STOP, Index, name_key, read_json, stems
 
 log = logging.getLogger("cip.assistant")
 # the reader's lead (logits) from which its pick is final and the AI is not asked: at 2, half the golden set's questions
@@ -94,6 +95,44 @@ def index_for(root: Path, version: str, waves: list[dict]) -> Index:
             with ANSWERS_LOCK:
                 ANSWERS.clear()
         return INDEX["index"]
+
+
+SUGGEST = 6   # suggestions offered while someone types (api/main.py ask_suggest)
+
+
+@functools.lru_cache(maxsize=20_000)   # the same few thousand names on every pause in typing: 1,128 reads for "in"
+def names_a_period(text: str) -> bool:
+    """Does this text name a period the rules read as dates ("2025 vs 2024", "last week"): a follow-up or a suggestion
+    asked with it would be answered for that period only."""
+    return any(w not in ({"latest": 1}, {"all": True}) for w in ask_reader.read(text)["when"])
+
+
+def suggest(typed: str, index: Index, visible: set[int]) -> dict:
+    """What the Ask box offers while someone types: the words put right (correct_spelling: "subcription" →
+    "subscription") and up to SUGGEST survey questions whose analyst name or alias has a word starting with each word
+    typed ("ama prim" finds "Amazon Prime membership"), longest-running first. Names only, no search and no model: a few milliseconds, no cost.
+    Each carries its survey question's key, so choosing one answers from that question (15 Nov 2026)."""
+    asked = " ".join(str(typed).split())[:200]
+    fixed = index.correct_spelling(asked)
+    words = [w for w in re.findall(r"[a-z0-9]+", fixed.lower()) if w not in STOP and len(w) >= 2]
+    found: dict[str, dict] = {}
+    if words:
+        for key, doc in index.docs.items():
+            if visible.isdisjoint(doc["surveys"]):
+                continue
+            for name in [doc["name"] or doc["text"], *doc.get("aliases", [])]:   # a question not named yet: its wording
+                said = re.findall(r"[a-z0-9]+", name.lower())
+                # a name with a period ("… 2025 vs 2024") would be read as dates when asked: another name of it, or none
+                if all(any(s.startswith(w) for s in said) for w in words) and not names_a_period(name):
+                    found.setdefault(key, {"text": name, "key": key, "qcode": doc["qcode"], "family": doc["family"],
+                                           "waves": len(visible.intersection(doc["surveys"]))})   # the waves this person sees
+                    break
+    unique, names = [], set()   # one per name, the longest-running (a wording asked by several studies)
+    for s in sorted(found.values(), key=lambda s: (-s["waves"], s["text"])):
+        if s["text"].lower() not in names:
+            names.add(s["text"].lower())
+            unique.append(s)
+    return {"corrected": fixed if fixed != asked else None, "suggestions": unique[:SUGGEST]}
 
 
 def settle(index: Index) -> None:
@@ -333,15 +372,14 @@ def follow_ups(plan: dict, fig: dict, doc: dict, named: list[int]) -> list[dict]
     waves, its first and latest wave): no model and nothing stored, each answerable by construction. Each carries its
     survey question's key for api/main.py ask: by words alone, shared names sent 20 of 521 to another question (15 Nov 2026)."""
     # a period in a name or wording ("Previous year's…", "…last year") would narrow every follow-up; "current" is the latest
-    dated = lambda text: any(w not in ({"latest": 1}, {"all": True}) for w in ask_reader.read(text)["when"])   # noqa: E731
     name = (doc.get("name") or doc["text"][:80]).strip().rstrip("?.")
-    if dated(name):   # "Previous year's Prime Day purchases": the wording instead, whose own time words are checked below
+    if names_a_period(name):   # "Previous year's Prime Day purchases": the wording instead, whose own time words are checked below
         name = doc["text"][:120].strip().rstrip("?.")
     lead = [fig["answers"][a] for a in named[:1] if not GENERIC.match(fig["answers"][a])]   # "Amazon …", never "Yes …"
     subject = f"{lead[0]} {name[:1].lower()}{name[1:]}" if lead else name
     # the wording too has a period ("…the Prime Day promotion last year"): every follow-up would ask about it. And a
     # demographic question is the sample's make-up: its "Age group over time" read "age group" as a cut (15 Nov 2026)
-    if dated(subject) or doc.get("area") == "demographics":
+    if names_a_period(subject) or doc.get("area") == "demographics":
         return []
     questions = []
     if not plan["cuts"]:
@@ -467,9 +505,10 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     # whole question (a subject alone missed an exact repeat of a learned question, 13 Nov 2026)
     # a stored name's question is matched against the verified ones too: an admin's check beats the AI's name ("Categories
     # purchased online in the latest survey" is the weekly q3, verified; its words are EC4's name, 8 waves; 14 Nov 2026)
-    made = ask_model.embed([ask_model.as_query(subject), ask_model.as_query(question)]) if unsure or named else None   # local, ~3 ms each
+    # local, ~3 ms each; one when the subject is the whole question (it was embedded twice, review of 15 Nov 2026)
+    made = ask_model.embed(list(dict.fromkeys([ask_model.as_query(subject), ask_model.as_query(question)]))) if unsure or named else None
     asked = made[0] if made is not None else None
-    found = [v for v in (index.verified_for(asked), index.verified_for(made[1] if made is not None else None)) if v
+    found = [v for v in (index.verified_for(asked), index.verified_for(made[-1] if made is not None else None)) if v
              and not (named and v.get("learned"))]   # an AI's earlier pick never overrules a stored name
     verified = max(found, key=lambda v: v["near"]) if found else None   # the closer of subject and whole question
     # (a short question matches by its subject: "Top holiday retailers"; a repeat matches as a whole)
@@ -707,6 +746,9 @@ def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool 
     # keeps its answers too, or every repeat was worked out again (second review, 15 Nov 2026)
     vectors_ready = index.vectors is not None or getattr(index, "settled", True)
     found = answer(question, index, visible, quick, key)
+    asked = " ".join(str(question).split())[:500]
+    if (fixed := index.correct_spelling(asked)) != asked:   # the page says so: "answered as …, the spelling put right"
+        found = {**found, "corrected": fixed}
     if found.get("understood") == "model" and found.get("mode") == "figures":
         learn(found["verify"], index)
     if vectors_ready:

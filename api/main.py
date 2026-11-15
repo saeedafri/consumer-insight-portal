@@ -215,6 +215,9 @@ async def _refresh_forever() -> None:
         try:
             if await run_in_threadpool(published_changed):
                 await run_in_threadpool(load_published)
+            # Ask's index for a new published version, built here, not by the first question after a publish, which
+            # waited 2-5 s with every other question behind it (review of 15 Nov 2026); unchanged, it returns at once
+            await run_in_threadpool(warm_ask)
             await run_in_threadpool(_load_schedule)
             await run_in_threadpool(signin.load_revoked)
             await run_in_threadpool(metrics.read_log_lists)   # before read_traffic: the hours it saves use the machine samples
@@ -667,7 +670,8 @@ def _parsed_book(survey_id: int, version: str) -> Optional[dict]:
 
 
 def warm_ask() -> None:
-    """Build Ask CIP's question index at start, in the background (api/assistant.py index_for)."""
+    """Build Ask CIP's question index at start and after each publish (the minute loop), in the background
+    (api/assistant.py index_for: nothing to do when the published version is the same)."""
     try:
         assistant.index_for(PUBLISHED / "api" / "v1" / "questions", os.path.realpath(PUBLISHED), all_waves())
     except Exception as exc:   # noqa: BLE001 — the first question builds it instead
@@ -700,6 +704,18 @@ async def ask_answer(who: dict, question: str, quick: bool = False, check: bool 
         return await run_in_threadpool(assistant.ask, question, index, shown, access.scope(who), quick, key)
     finally:
         ASK_SLOTS.release()
+
+
+@app.get("/api/v1/ask/suggest")
+async def ask_suggest(q: str = Query(..., min_length=2, max_length=200), who: dict = Depends(user)) -> dict:
+    """While someone types into Ask (the page waits for a pause): {corrected: the words put right, or null; suggestions:
+    up to 6 survey questions whose analyst name holds the words typed, each with its key, so choosing one answers from
+    that question}. From the index in memory: milliseconds, no model, no cost (assistant.suggest, 15 Nov 2026)."""
+    require_feature(who, "ask")
+    if not access.spend(who["email"], "ask_suggest"):
+        raise HTTPException(429, "Too many suggestions: wait a minute", headers={"Retry-After": "60"})
+    index, shown = await ask_index(who)
+    return await run_in_threadpool(assistant.suggest, q, index, shown)
 
 
 @app.post("/api/v1/admin/ask/verified")
@@ -748,6 +764,17 @@ async def export(kind: str, request: Request, who: dict = Depends(user)) -> Resp
     body = await run_in_threadpool(exports.build_xlsx if kind == "xlsx" else exports.build_pptx, spec)
     audit.record(request, "export", target=spec["name"], detail={"kind": kind, "rows": len(spec["rows"])})
     return Response(body, media_type=EXPORT_TYPES[kind], headers={"Content-Disposition": f'attachment; filename="{spec["name"]}.{kind}"'})
+
+
+@app.get("/readyz")
+@app.head("/readyz", include_in_schema=False)
+async def readyz() -> JSONResponse:
+    """Public: 200 once this instance can answer people (the published wave list is in place), 503 before. /healthz says
+    200 as soon as the process runs, while a new container still restores its files (~75-90 s): a deployment slot's
+    warm-up (WEBSITE_SWAP_WARMUP_PING_PATH) and a Front Door health probe ask this instead (review of 15 Nov 2026).
+    The file itself, not all_waves(): that falls back to the database while the files are still missing."""
+    ready = PUBLISHED.joinpath("api", "v1", "waves.json.gz").is_file()
+    return JSONResponse({"ready": ready, "build": BUILD}, status_code=200 if ready else 503, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/healthz")

@@ -1,7 +1,8 @@
 """Downloads Ask Coresight's search model at image build (deploy/Dockerfile) and once on a developer's machine:
 BAAI's bge-small-en-v1.5 as Qdrant's int8 ONNX export (MIT licence, 67 MB), which api/ask_model.py embed() runs on our
 own CPU: 3 ms a question, no call to OpenAI, no cost. The revision is pinned, so every build gets the same model.
-A failed download never fails the build: Ask then searches by words alone, and the model reads every question.
+A failed download fails the build (15 Nov 2026): an image without the model would ship, and Ask would quietly
+search by words alone.
     python deploy/ask-model-download.py models/bge-small-en-v1.5"""
 import os
 import shutil
@@ -19,4 +20,4 @@ for name in ("tokenizer.json", "model_optimized.onnx"):
         os.replace(path + ".part", path)   # whole files only: a broken download leaves no half file
         print(f"ask-model-download: {name}")
     except OSError as problem:
-        print(f"ask-model-download: {name} not downloaded ({problem})")
+        sys.exit(f"ask-model-download: {name} not downloaded ({problem})")

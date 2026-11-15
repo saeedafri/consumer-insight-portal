@@ -1,7 +1,8 @@
 // Saved views: any screen's full state is its URL, so saving an analysis is keeping its link and a name. Kept in this
 // browser and shared with the team through the API (api/team.py); Copy link shares one directly.
 import { myName, queries, send } from "./api";
-export type SavedView = { url: string; name: string; saved: string };
+/** view_id: the team copy this browser posted, so un-saving removes it too. */
+export type SavedView = { url: string; name: string; saved: string; view_id?: number };
 const KEY = "cip_saved_views";
 
 export function savedViews(): SavedView[] {
@@ -13,10 +14,19 @@ function store(views: SavedView[]): void {
 }
 
 export const isSaved = (url: string) => savedViews().some(v => v.url === url);
-/** Kept in this browser and shared with the team (api/team.py): the Library lists both. */
-export function saveView(url: string, name: string): void {
+/** Kept in this browser and shared with the team (api/team.py): the Library lists both. Settles once the team copy is saved. */
+export function saveView(url: string, name: string): Promise<unknown> {
   store([{ url, name, saved: new Date().toISOString() }, ...savedViews().filter(v => v.url !== url)]);
-  void myName().then(by => send("POST", "/api/v1/team/views", { url, name, by }))
-    .then(() => queries.invalidateQueries({ queryKey: ["team-views"] }), () => { /* kept locally; the team list misses it */ });
+  return myName().then(by => send<{ view_id: number }>("POST", "/api/v1/team/views", { url, name, by }))
+    .then(({ view_id }) => {
+      store(savedViews().map(v => v.url === url ? { ...v, view_id } : v));
+      return queries.invalidateQueries({ queryKey: ["team-views"] });
+    }, () => { /* kept locally; the team list misses it */ });
 }
-export const removeView = (url: string) => store(savedViews().filter(v => v.url !== url));
+/** Un-saving removes the team copy this browser made too: save, un-save, save listed the view twice (15 Nov 2026). */
+export async function removeView(url: string): Promise<void> {
+  const posted = savedViews().find(v => v.url === url)?.view_id;
+  store(savedViews().filter(v => v.url !== url));
+  if (posted) await send("DELETE", `/api/v1/team/views/${posted}`)
+    .then(() => queries.invalidateQueries({ queryKey: ["team-views"] }), () => { /* already gone, or another person's */ });
+}

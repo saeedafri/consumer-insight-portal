@@ -402,9 +402,12 @@ function SaveButton({ wave }: { wave: Wave }) {
   useEffect(() => setSaved(isSaved(url)), [url]);
   const screen = pageName(location.pathname);
   const question = decodeURIComponent(location.pathname.split("/")[4] ?? "");
+  // off until the team copy is saved or removed: a quick second click un-saved before the view's team id came back (15 Nov 2026)
+  const [busy, setBusy] = useState(false);
   const toggle = () => {
-    if (saved) removeView(url);
-    else saveView(url, `${screen}${question ? ` · ${question}` : ""} · ${wave.title} (${fmtDate(wave.wave_date)})`);
+    setBusy(true);
+    void (saved ? removeView(url) : saveView(url, `${screen}${question ? ` · ${question}` : ""} · ${wave.title} (${fmtDate(wave.wave_date)})`))
+      .finally(() => setBusy(false));
     setSaved(!saved);
   };
   return (
@@ -414,6 +417,7 @@ function SaveButton({ wave }: { wave: Wave }) {
         <button
             className="save-btn"
             onClick={toggle}
+            disabled={busy}
             aria-pressed={saved}
             aria-label={saved ? "Remove saved view" : "Save this view"}
           >

@@ -157,6 +157,7 @@ unknown: {role: analyst, tier: enterprise}   # `refuse` before launch
 limits:
   ask: 10
   ask_check: 10        # the page's AI check of an unsure quick answer: at most one per question asked
+  ask_suggest: 240     # suggestions while someone types in Ask, after each pause
   search: 120          # a search box used as people type stays well under it
   export: 30
   audience: 60

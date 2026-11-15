@@ -262,7 +262,12 @@ export interface Answer { answer: string; no_source: boolean; mode: "figures" | 
                           sources: { id: string; key: string; survey_id: number; wave_date: string; qcode: string; question: string; family: string; waves: number; link: string }[];
                           suggestions: { qcode: string; text: string; family: string; key: string; alt?: boolean }[];
                           understood?: string; check?: boolean; changed?: string; verify?: { question: string; key: string; code: string; family: string; focus: string[]; kind: string; cut: string; period: string };
-                          tiles?: AskTile[]; takeaway?: string; next?: { question: string; key: string }[] }
+                          tiles?: AskTile[]; takeaway?: string; next?: { question: string; key: string }[];
+                          corrected?: string }   // the question as answered, its spelling put right (api/assistant.py ask)
+/** What the Ask box offers while someone types (GET /api/v1/ask/suggest): the words put right, and questions by name. */
+export interface AskOffer { corrected: string | null;
+  suggestions: { text: string; key: string; qcode: string; family: string; waves: number }[] }
+export const suggestAsk = (typed: string) => get<AskOffer>(`/api/v1/ask/suggest?q=${encodeURIComponent(typed)}`);
 export interface BoardSummary { board_id: number; name: string; created_by: string; created_at: string; items: number }
 export interface BoardComment { comment_id: number; author: string; body: string; created_at: string }
 export interface BoardItem { item_id: number; title: string; url: string; data_version: string; added_by: string; added_at: string;

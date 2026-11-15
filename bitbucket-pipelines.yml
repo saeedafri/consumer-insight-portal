@@ -1,49 +1,78 @@
-# Bitbucket Pipelines: the same checks as .github/workflows/ci.yml. Every push and pull request runs the Python tests
-# (SQLite, no secrets, no network), the web type-check, statistics check and build, then builds the API image and
-# boots it on an empty local database. Nothing here deploys or touches the live portal.
+# CIP: build the Azure App Service image on every push to stg-deploy (pro-deploy for production). No tests here: they
+# run locally before a push. Setting the web app's image restarts it, so there is no separate restart (it caused two
+# cold starts per deploy).
+# Next step (Parker): push the image to ACR and update the web app, as for Directus.
+# 15 Nov 2026: the image is named once, from the pipeline number and the commit (&stg_image, &pro_image), and the deploy
+# step repeats that same line: a name from the date sent a build that crossed 00:00 UTC to an image never pushed. The
+# image must boot before it is pushed (&boot_check), and the deploy waits until /healthz reports this commit (&wait_live).
+options:
+  docker: true
+  max-time: 25   # minutes per step; Bitbucket's default is 120, so a hung build (#53, 12 Nov 2026) burned up to 2 hours of the
+                 # 2,500-minute month. A full uncached build takes ~8-10 minutes, a cached one ~4
 definitions:
-  steps:
-    - step: &python
-        name: Python tests
-        image: python:3.13-slim
-        caches: [pip]
-        script:
-          - pip install -r requirements.txt pytest pip-audit
-          - pytest -q
-          - pip-audit -r requirements.txt
-    - step: &web
-        name: Web check and build
-        image: node:26-slim
-        caches: [node]
-        script:
-          - cd frontend
-          - npm ci
-          - npm run build
-    - step: &images
-        name: Images build and boot
-        services: [docker]
-        caches: [docker]
-        script:
-          - export BUILD=${BITBUCKET_COMMIT:0:8}
-          - docker build -f deploy/Dockerfile --target app --build-arg CIP_BUILD=$BUILD -t cip-app:ci .   # the Azure App Service image, the only one
-          - >-
-            docker run --rm -v "$BITBUCKET_CLONE_DIR/sql:/srv/cip/sql:ro" -e APP_ENV=LOCAL -e LOCAL_SQLITE_PATH=/tmp/ci.db
-            -e CIP_SESSION_SECRET=ci-only -e WANT=$BUILD cip-app:ci sh -c '
-            python -c "from shared.core import database, schema_upgrade; schema_upgrade.install(database.get_engine(\"etl\"))";
-            gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000 &
-            for i in $(seq 30); do
-            python -c "import urllib.request; print(urllib.request.urlopen(\"http://127.0.0.1:8000/healthz\").read().decode())" 2>/dev/null | grep -q "\"build\":\"$WANT\"" && exit 0;
-            sleep 1; done; exit 1'
-
+  services:
+    docker:
+      memory: 3072   # MB for the Docker build (default 1024): pip installing numpy/pandas/onnxruntime while the web stage runs
+                     # next/TypeScript ran out at 1 GB and stalled. A 1x step has 4 GB in all; this costs no extra minutes
 pipelines:
-  default:
-    - parallel:
-        - step: *python
-        - step: *web
-    - step: *images
-  pull-requests:
-    '**':
-      - parallel:
-          - step: *python
-          - step: *web
-      - step: *images
+  branches:
+    stg-deploy:
+      - step:
+          name: Create Docker image (Staging)
+          script:
+            - &build_id export BUILD=${BITBUCKET_COMMIT:0:8}   # the commit as the image reports it on /healthz (CIP_BUILD)
+            - &stg_image export IMAGE_NAME="csrdockerregistry.azurecr.io/$APP_NAME:stg-$BITBUCKET_BUILD_NUMBER-$BUILD"
+            - echo "$DOCKER_PASSWORD" | docker login csrdockerregistry.azurecr.io --username "$DOCKER_USER" --password-stdin
+            - docker build -f deploy/Dockerfile --target app --cache-from "csrdockerregistry.azurecr.io/$APP_NAME:stg-latest" --build-arg BUILDKIT_INLINE_CACHE=1 --build-arg CIP_BUILD=$BUILD -t "$IMAGE_NAME" -t "csrdockerregistry.azurecr.io/$APP_NAME:stg-latest" .
+            # nothing is pushed unless the image holds Ask's search model and its API starts on an empty SQLite database
+            # (the same boot as .github/workflows/ci.yml in cip-test)
+            - &boot_check >-
+              docker run --rm -e APP_ENV=LOCAL -e LOCAL_SQLITE_PATH=/tmp/boot.db -e CIP_SESSION_SECRET=boot-check-only
+              -e WANT=$BUILD "$IMAGE_NAME" sh -c '
+              test -s models/bge-small-en-v1.5/model_optimized.onnx || { echo "boot check: no search model in the image"; exit 1; };
+              python -c "from shared.core import database, schema_upgrade; schema_upgrade.install(database.get_engine(\"etl\"))";
+              gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000 &
+              for i in $(seq 30); do
+              python -c "import urllib.request; print(urllib.request.urlopen(\"http://127.0.0.1:8000/healthz\").read().decode())" 2>/dev/null | grep -q "\"build\":\"$WANT\"" && exit 0;
+              sleep 1; done; echo "boot check: the API did not answer /healthz with build $WANT"; exit 1'
+            - docker push "$IMAGE_NAME"
+            - docker push "csrdockerregistry.azurecr.io/$APP_NAME:stg-latest"
+      - step:
+          name: Deploy to Azure Web Apps (Staging)
+          image: mcr.microsoft.com/azure-cli
+          script:
+            - *build_id
+            - *stg_image
+            - az login --service-principal --username "$CSR_CA_SP_APP_ID_STG" --password="$CSR_CA_SP_PASSWORD_STG" --tenant "$CSR_CA_SP_TENANTID"
+            - az webapp config container set --name "${APP_NAME}-stg" --resource-group "${RESOURCE_GROUP}-stg" --container-image-name "$IMAGE_NAME" --container-registry-url "https://csrdockerregistry.azurecr.io" --container-registry-user "$DOCKER_USER" --container-registry-password "$DOCKER_PASSWORD"
+            - HOST=$(az webapp show --name "${APP_NAME}-stg" --resource-group "${RESOURCE_GROUP}-stg" --query defaultHostName -o tsv)
+            # the switch only asks App Service to restart: the step passes once the new image answers, within 10 minutes
+            - &wait_live >-
+              tries=0; until python3 -c "import sys, urllib.request; print(urllib.request.urlopen(sys.argv[1], timeout=5).read().decode())"
+              "https://$HOST/healthz" 2>/dev/null | grep -q "\"build\":\"$BUILD\""; do
+              tries=$((tries + 1)); [ $tries -lt 40 ] || { echo "https://$HOST/healthz is not on build $BUILD after 10 minutes"; exit 1; };
+              sleep 15; done
+
+
+
+    pro-deploy:
+      - step:
+          name: Create Docker image (Production)
+          script:
+            - *build_id
+            - &pro_image export IMAGE_NAME="csrdockerregistry.azurecr.io/$APP_NAME:pro-$BITBUCKET_BUILD_NUMBER-$BUILD"
+            - echo "$DOCKER_PASSWORD" | docker login csrdockerregistry.azurecr.io --username "$DOCKER_USER" --password-stdin
+            - docker build -f deploy/Dockerfile --target app --cache-from "csrdockerregistry.azurecr.io/$APP_NAME:pro-latest" --build-arg BUILDKIT_INLINE_CACHE=1 --build-arg CIP_BUILD=$BUILD -t "$IMAGE_NAME" -t "csrdockerregistry.azurecr.io/$APP_NAME:pro-latest" .
+            - *boot_check
+            - docker push "$IMAGE_NAME"
+            - docker push "csrdockerregistry.azurecr.io/$APP_NAME:pro-latest"
+      - step:
+          name: Deploy to Azure Web Apps (Production)
+          image: mcr.microsoft.com/azure-cli
+          script:
+            - *build_id
+            - *pro_image
+            - az login --service-principal --username "$CSR_CA_SP_APP_ID_PRO" --password="$CSR_CA_SP_PASSWORD_PRO" --tenant "$CSR_CA_SP_TENANTID"
+            - az webapp config container set --name "${APP_NAME}-pro" --resource-group "${RESOURCE_GROUP}-pro" --container-image-name "$IMAGE_NAME" --container-registry-url "https://csrdockerregistry.azurecr.io" --container-registry-user "$DOCKER_USER" --container-registry-password "$DOCKER_PASSWORD"
+            - HOST=$(az webapp show --name "${APP_NAME}-pro" --resource-group "${RESOURCE_GROUP}-pro" --query defaultHostName -o tsv)
+            - *wait_live

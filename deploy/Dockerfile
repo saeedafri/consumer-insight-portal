@@ -21,6 +21,11 @@ FROM nginx:1.29-trixie AS app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --create-home --uid 10001 cip
+WORKDIR /srv/cip
+# Ask Coresight's search model (67 MB, api/ask_model.py embed): run on this server's CPU, ~3 ms a question. Before
+# requirements.txt, standard library only, so a change of packages no longer downloads it again (15 Nov 2026)
+COPY deploy/ask-model-download.py /tmp/
+RUN python3 /tmp/ask-model-download.py models/bge-small-en-v1.5
 COPY requirements.txt /tmp/requirements.txt
 RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt
 # mysqlclient: the API's and publish's reads decode rows in C (4.5x less CPU than PyMySQL, shared/core/database.c_driver);
@@ -30,13 +35,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc pkg-config 
  && /opt/venv/bin/pip install --no-cache-dir mysqlclient==2.3.0 maxminddb==2.6.2 \
  && apt-get purge -y gcc pkg-config libmariadb-dev python3-dev && apt-get autoremove -y \
  && apt-get install -y --no-install-recommends libmariadb3 && rm -rf /var/lib/apt/lists/*
-WORKDIR /srv/cip
-# the visitors' city on the Logs page, looked up here (about 130 MB on disk, read on demand, not loaded into memory)
+# the visitors' city on the Logs page, looked up here (about 130 MB on disk, read on demand, not loaded into memory).
+# After the packages, not with the model: DB-IP's file changes monthly, and here it is fetched again whenever they change
 COPY deploy/geo-download.py /tmp/
 RUN mkdir -p geo && python3 /tmp/geo-download.py geo/dbip-city-lite.mmdb
-# Ask Coresight's search model (67 MB, api/ask_model.py embed): run on this server's CPU, ~3 ms a question
-COPY deploy/ask-model-download.py /tmp/
-RUN python3 /tmp/ask-model-download.py models/bge-small-en-v1.5
 # Ask's own reader (23 MB, api/ask_model.py read_pick): picks the survey question with no AI, ~70 ms
 COPY models/ask-reader/ models/ask-reader/
 COPY api/ api/

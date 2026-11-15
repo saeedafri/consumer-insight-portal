@@ -372,12 +372,10 @@ def plan(question: str, candidates: list[dict]) -> dict | None:
     checked: pick is a candidate or None, focus only that candidate's own answer labels. None when it cannot run."""
     if not candidates:
         return None
-    memo = hashlib.sha1(json.dumps([same_question(question), [c["text"] for c in candidates]]).encode()).hexdigest()[:20]
-    with LOCK:
-        try:
-            kept = json.loads(READINGS.read_text())
-        except (OSError, ValueError):
-            kept = {}
+    # kept per model and prompt: an older model's reading was reused after a change, and turned the reader's right
+    # answer wrong ("Satisfaction with shopping in AI platforms": D34 → GA2, review of 15 Nov 2026)
+    memo = hashlib.sha1(json.dumps([model(), SYSTEM, same_question(question), [c["text"] for c in candidates]]).encode()).hexdigest()[:20]
+    kept = readings()
     if memo in kept:
         return {**kept[memo], "usd": 0.0, "seconds": 0.0}
     if not ready():
@@ -407,16 +405,32 @@ def plan(question: str, candidates: list[dict]) -> dict | None:
     found["focus"] = [labels[f.lower()] for f in found["focus"] if f.lower() in labels]
     found["seconds"], found["usd"] = round(time.perf_counter() - started, 2), usd
     with LOCK:
+        kept = {**readings(), memo: {k: found[k] for k in ("pick", "alt", "focus", "kind", "grain", "cut", "period")}}
         try:
-            kept = json.loads(READINGS.read_text())
-        except (OSError, ValueError):
-            kept = {}
-        kept[memo] = {k: found[k] for k in ("pick", "alt", "focus", "kind", "grain", "cut", "period")}
-        try:
-            READINGS.write_text(json.dumps(dict(list(kept.items())[-20000:])))   # the newest 20,000 readings, ~3 MB
+            part = READINGS.with_suffix(f".{os.getpid()}.part")   # written whole: a kill mid-write left half a file
+            part.write_text(json.dumps(dict(list(kept.items())[-20000:])))   # the newest 20,000 readings, ~3 MB
+            os.replace(part, READINGS)
         except OSError:
             log.warning("Ask model: reading not saved")
     return found
+
+
+READ = {"file": None, "stamp": None, "kept": {}}   # logs/ask-readings.json as last parsed
+
+
+def readings() -> dict:
+    """The kept readings (READINGS), parsed again only when the file changed: up to ~3 MB was parsed twice on every AI
+    call (review of 15 Nov 2026). Another worker's new reading changes the file, so it is seen at its next call."""
+    try:
+        stamp = READINGS.stat().st_mtime_ns
+    except OSError:
+        return {}
+    if (READ["file"], READ["stamp"]) != (READINGS, stamp):
+        try:
+            READ.update(file=READINGS, stamp=stamp, kept=json.loads(READINGS.read_text()))
+        except (OSError, ValueError):
+            return {}
+    return READ["kept"]
 
 
 if __name__ == "__main__":   # embed_elsewhere's child: texts (JSON list) in, vectors (.npy) out

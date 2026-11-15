@@ -876,3 +876,41 @@ def test_an_admin_page_given_on_the_access_screen_opens_for_that_person_only(por
     no_glp1 = [f for f in given if f != "tracker_glp1"]
     assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": no_glp1}).encode())[0] == 200
     assert call("/api/v1/dashboards/glp1/415", signed("ana@coresight.com"))[0] == 403
+
+
+def test_suggestions_while_typing_and_readiness_answer_over_the_api(portal, monkeypatch, tmp_path):
+    """GET /api/v1/ask/suggest (Ask's box while typing; its own per-minute limit) and /readyz, which answers 503 until the
+    published wave list is in, unlike /healthz, even while the database answers (15 Nov 2026)."""
+    monkeypatch.setitem(RULES["limits"], "ask_suggest", 2)
+    ana = signed("ana@coresight.com")
+    status, _, body = call("/api/v1/ask/suggest?q=holiday", ana)
+    assert status == 200 and set(json.loads(body)) == {"corrected", "suggestions"}
+    assert [call("/api/v1/ask/suggest?q=holiday", ana)[0] for _ in range(2)] == [200, 429]
+    restoring = tmp_path / "restoring"   # a new container still restoring its files
+    monkeypatch.setattr(api, "PUBLISHED", restoring)
+    monkeypatch.setattr(api, "all_waves", lambda: [{"id": 1}])   # the database's list: not the files
+    assert call("/readyz")[0] == 503 and call("/healthz")[0] == 200
+    (restoring / "api" / "v1").mkdir(parents=True)
+    (restoring / "api" / "v1" / "waves.json.gz").write_bytes(gzip.compress(b"[]"))
+    assert call("/readyz")[0] == 200 and json.loads(call("/readyz")[2])["ready"] is True
+
+
+def test_the_minute_loop_builds_asks_index_for_a_new_published_version(monkeypatch):
+    """The first question after a publish rebuilt the index while every other question waited (review of 15 Nov 2026):
+    the minute loop builds it."""
+    built, sleeps = [], []
+
+    async def tick(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) > 1:
+            raise asyncio.CancelledError
+    monkeypatch.setattr(api.asyncio, "sleep", tick)
+    for name in ("published_changed", "_load_schedule"):
+        monkeypatch.setattr(api, name, lambda: False)
+    monkeypatch.setattr(api.signin, "load_revoked", lambda: None)
+    for name in ("read_log_lists", "read_traffic", "measure_storage"):
+        monkeypatch.setattr(api.metrics, name, lambda: None)
+    monkeypatch.setattr(api, "warm_ask", lambda: built.append(1))
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(api._refresh_forever())
+    assert built == [1]

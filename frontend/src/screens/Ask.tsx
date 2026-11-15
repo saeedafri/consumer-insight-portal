@@ -8,8 +8,8 @@
 // was understood and every figure with its base. A question it cannot place shows the closest survey questions.
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { send, useMe } from "../api";
-import type { Answer, AskChart, AskTile } from "../api";
+import { send, suggestAsk, useMe } from "../api";
+import type { Answer, AskChart, AskOffer, AskTile } from "../api";
 import EChart, { downloadPng } from "../components/EChart";
 import type { Chart } from "../components/EChart";
 import { ExportButtons } from "../components/bits";
@@ -184,7 +184,8 @@ function Reply({ question, answer, audience, weighted, checking, checked, onAsk 
   const tiles = answer.tiles ?? [];
   return <article className="card ask-reply">
     <div className="ask-head">
-      <p className="ask-q"><MessageSquare size={15} strokeWidth={1.8} aria-hidden="true" /> {question}</p>
+      <p className="ask-q"><MessageSquare size={15} strokeWidth={1.8} aria-hidden="true" /> {question}
+        {answer.corrected && <span className="small muted ask-corrected"> · answered as “{answer.corrected}”, the spelling put right</span>}</p>
       {answer.table && <ExportButtons onExport={format => downloadTable(format, file, answer.table!.head, answer.table!.rows, notes)}
         png={chart && !drawnByHand ? () => drawn.current && downloadPng(drawn.current, answer.headline || question, answer.source_line ?? "", file) : undefined} />}
     </div>
@@ -232,6 +233,8 @@ export default function Ask() {
   const [replies, setReplies] = useState<{ question: string; answer: Answer; checking?: boolean; checked?: boolean }[]>([]);   // this visit's conversation, newest first
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [offer, setOffer] = useState<AskOffer | null>(null);   // while typing: the words put right, questions by name
+  const asked = useRef(params.get("q") ?? "");   // not the address: react-router 7 updates it a render after the text
   const [audience, setAudience] = useState<Audience>(savedAudience);
   const weighted = useWeighted();
   const choose = (a: Audience) => { setAudience(a); try { localStorage.setItem(AUDIENCE, a); } catch { /* private window */ } };
@@ -239,9 +242,10 @@ export default function Ask() {
   const ask = async (question: string, key?: string) => {
     question = question.trim();
     if (question.length < 3) return;
+    asked.current = question;
     setText(question);
     setParams({ q: question }, { replace: true });
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setOffer(null);
     try {
       const answer = await send<Answer>("POST", "/api/v1/ask", { question, quick: true, ...(key ? { key } : {}) });
       setReplies(r => [{ question, answer, checking: !!answer.check }, ...r].slice(0, 20));
@@ -254,6 +258,17 @@ export default function Ask() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
+  // after a pause in typing (250 ms), what the box offers: no model and no cost, never for the question just asked
+  // (15 Nov 2026: a typo such as "subcription" found nothing, and nothing helped while typing)
+  const typed = text.trim();
+  useEffect(() => {
+    if (typed.length < 3 || typed === asked.current) { setOffer(null); return; }
+    let current = true;
+    // asked again on arrival: Enter within the pause asks this same text, and the effect does not run again to cancel
+    const wait = setTimeout(() => suggestAsk(typed).then(o => { if (current && typed !== asked.current) setOffer(o); },
+      () => { if (current) setOffer(null); }), 250);
+    return () => { current = false; clearTimeout(wait); };
+  }, [typed]);   // eslint-disable-line react-hooks/exhaustive-deps
   // a question in the address (the Home page's box, a shared link) is answered on arrival
   useEffect(() => { const q = params.get("q"); if (q) void ask(q); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   return <>
@@ -269,13 +284,19 @@ export default function Ask() {
           <input id="ask" value={text} onChange={e => {   // the box emptied: the answers go with it
             setText(e.target.value);
             if (!e.target.value.trim()) { setReplies([]); setError(""); setParams({}, { replace: true }); }
-          }} placeholder="e.g. How are higher gasoline prices affecting consumer spending?" autoFocus />
+          }} onKeyDown={e => { if (e.key === "Escape") setOffer(null); }}
+            placeholder="e.g. How are higher gasoline prices affecting consumer spending?" autoFocus />
           <button className="btn primary" disabled={busy || text.trim().length < 3}><ArrowRight size={15} aria-hidden="true" />{busy ? "Finding…" : "Ask"}</button>
         </form>
         <span className="seg ask-audience" role="group" aria-label="Answer view">
           <button type="button" aria-pressed={audience === "client"} onClick={() => choose("client")}>Client view</button>
           <button type="button" aria-pressed={audience === "analyst"} onClick={() => choose("analyst")}>Analyst view</button>
         </span>
+        {offer && (offer.corrected || offer.suggestions.length > 0) && <div className="tagrow ask-suggest" aria-label="Suggestions as you type">
+          {offer.corrected && <button type="button" className="tag sig" onClick={() => void ask(offer.corrected!)}>Did you mean “{offer.corrected}”?</button>}
+          {offer.suggestions.map(s => <button key={s.key} type="button" className="tag" title={`${s.qcode}: asked in ${s.waves} ${s.waves === 1 ? "wave" : "waves"}`}
+            onClick={() => void ask(s.text, s.key)}>{s.text} <span className="muted">· {s.waves} {s.waves === 1 ? "wave" : "waves"}</span></button>)}
+        </div>}
         {error && <p className="state error" role="alert">Could not answer: {error}</p>}
         {!replies.length && <div className="tagrow ask-examples" aria-label="Example questions">
           {EXAMPLES.map(q => <button key={q} type="button" className="tag" onClick={() => void ask(q)}>{q}</button>)}

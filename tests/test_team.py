@@ -149,6 +149,38 @@ def test_a_board_keeps_tables_as_pinned_takes_comments_and_downloads_as_one_deck
     assert team.boards() == []
 
 
+def test_team_saves_and_audiences_wait_on_the_database_off_the_event_loop(csi_db, monkeypatch):
+    """The API runs one worker (deploy/start.sh): a save waiting on the database on the event loop held up every other
+    request, so the save and audience routes reach it from a worker thread (15 Nov 2026)."""
+    import asyncio
+    import threading
+    import pytest
+    from fastapi import HTTPException
+    threads, real = [], team.get_engine
+
+    def engine(role):
+        threads.append(threading.current_thread())
+        return real(role)
+    monkeypatch.setattr(team, "get_engine", engine)
+    with csi_db.begin() as conn:
+        seed(conn, 266, date(2026, 10, 5), qualified=400, xm1_yes=120, xm1_base=400)
+    serving.build_wave(266)
+    team.wave_of.cache_clear()   # so the audience route below looks its wave up
+    spec = {"name": "XM1", "header": ["Answer", "Total %"], "rows": [["Yes", 30.0]], "notes": []}
+
+    async def save_all():
+        await team.save_view(Asked("ana@x", {"name": "Holiday", "url": "/w/266", "by": "Ana"}))
+        await team.save_alert(Asked("ana@x", {"survey_id": 266, "qcode": "XM1", "option_code": 1, "answer_label": "Yes", "by": "Ana"}))
+        await team.save_audience(Asked("ana@x", {"name": "Gen Z", "definition": {"cuts": {"generation": ["GenZ"]}}, "by": "Ana"}))
+        board_id = (await team.new_board(Asked("ana@x", {"name": "Read-out"})))["board_id"]
+        item_id = (await team.pin(board_id, Asked("ana@x", {"url": "/w/266", "spec": spec})))["item_id"]
+        await team.comment(item_id, Asked("ana@x", {"body": "Check next week"}))
+        with pytest.raises(HTTPException):
+            await team.audience_view(999_999, Asked("ana@x", {"qcode": "XM1", "definition": {"cuts": {"generation": ["GenZ"]}}}))
+    asyncio.run(save_all())   # its event loop runs on this thread
+    assert threads and threading.current_thread() not in threads
+
+
 def test_team_views_need_a_name_a_screen_and_only_their_owner_removes_them(csi_db):
     import asyncio
     import pytest

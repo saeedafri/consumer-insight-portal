@@ -137,6 +137,17 @@ def synonym_groups() -> dict[str, set[str]]:
     return out
 
 
+def english_words() -> frozenset[str]:
+    """The ~21,700 whole English words the search model's tokenizer knows (marking, debut, quota): words
+    Index.correct_spelling never changes. The image always has the model (deploy/ask-model-download.py fails the
+    build without it); without it, only survey words are protected."""
+    try:
+        vocab = json.loads((ask_model.EMBED_DIR / "tokenizer.json").read_text())["model"]["vocab"]
+    except (OSError, ValueError, KeyError):
+        return frozenset()
+    return frozenset(w for w in vocab if w.isascii() and w.isalpha())
+
+
 def in_period(spec: dict, dates: list[str]) -> bool:
     """Whether any of a question's wave dates falls in a named year, month, quarter or range."""
     if "year" in spec:
@@ -252,6 +263,10 @@ class Index:
                     for s in set(stems(words)):
                         held = self.postings.setdefault(s, {})
                         held[key] = max(held.get(key, 0.0), FIELDS[field])
+        # each wave's answers chose the waves kept above; held for good, never read again (review of 15 Nov 2026). Each
+        # question's entry copied its newest part's, so both go
+        for entry in [*parts.values(), *self.docs.values()]:
+            entry.pop("wave_answers", None)
         self.parts = parts
         self.vectors = self.verified_vectors = None   # keyword ranking until add_vectors has run (retrieve, verified_for)
         self.vector_keys, self.verified, self.unresolved = [], [], []
@@ -278,10 +293,25 @@ class Index:
         self.answer_words = {key: set(re.findall(r"[a-z0-9$%'-]+", " ".join(doc["labels"]).lower())) for key, doc in self.docs.items()}
         total = max(len(self.docs), 1)
         self.idf = {s: math.log(1 + total / len(keys)) for s, keys in self.postings.items()}
-        self.vocabulary = sorted({w for d in self.docs.values() for w in re.findall(r"[a-z]{4,}", d["text"].lower())}
-                                 | {w for g in self.synonyms.values() for w in g if len(w) >= 4})   # whole words, to correct spelling
+        survey_words = {w for d in self.docs.values() for w in re.findall(r"[a-z]{4,}", d["text"].lower())}
+        self.vocabulary = sorted(survey_words | {w for g in self.synonyms.values() for w in g if len(w) >= 4})   # known(): stems too
         self.brand_words = sorted({w for d in self.docs.values() if d["waves"] >= BRAND_WAVES and re.search(r"retailer|brand|store", d["text"].lower())
                                    for label in d["labels"] for w in re.findall(r"[a-z]{5,}", label.lower())})   # Walmart, Costco…
+        self.word_set = set(self.vocabulary)
+        self.english = english_words()
+        # survey words by their first two letters (correct_spelling): whole words only, never a synonym stem ("eatin")
+        self.by_start: dict[str, list[str]] = {}
+        for w in sorted(survey_words):
+            self.by_start.setdefault(w[:2], []).append(w)
+        # two-word names (Amazon Prime, Dollar General) by their second word: a short start of the first, typed before
+        # the second, is the name ("Ama Prime", staging 13 Nov 2026). From the lists' answers and the questions' wording
+        self.two_word_names: dict[str, set[str]] = {}
+        named = [l for d in self.docs.values() for l in d["labels"]] + [n for d in self.docs.values()
+                                                                           for n in re.findall(r"\b[A-Z][a-z]+ [A-Z][a-z]+\b", d["text"])]
+        for name in named:   # not `words`: alike() above reads that name when it is called
+            first_second = re.findall(r"[a-z]+", name.lower())
+            if len(first_second) == 2 and len(first_second[0]) >= 5:
+                self.two_word_names.setdefault(first_second[1], set()).add(first_second[0])
         self.newest = max((d["last"] for d in self.docs.values()), default="2000-01-01")
         log.info("Ask CIP index: %d questions, %d words, from %s", len(self.docs), len(self.postings), root)
 
@@ -321,19 +351,40 @@ class Index:
         return close[0][:5] if close and close[0][:5] in self.postings else None
 
     def correct_spelling(self, question: str) -> str:
-        """The question with a misspelt retailer or brand put right ("walmrt shoppers" → "walmart shoppers"): a word of
-        5+ letters no survey question uses, closest (0.85) to a word of a long-running retailer, brand or store list's
-        answers. Only those: correcting every unknown word made "having" "behaving" and "shaping" "sharing" in the 38,477
-        questions of the big exam, while this changes 6 (14 Nov 2026)."""
+        """The question with a misspelt word put right: a word of 5+ letters no survey question uses, closest to a word of
+        a long-running retailer, brand or store list's answers (0.85: "walmrt" → "walmart"), else to a survey word with
+        the same first two letters and a length within one (0.88: "subcription" → "subscription", staging 13 Nov 2026);
+        and a short start of a two-word name typed before its second word ("Ama Prime" → "Amazon Prime"). Correcting
+        every unknown word made "having" "behaving" and "shaping" "sharing" in the 38,477 questions of the big exam, so
+        a survey word with an ending (-s, -ed, -ing…) is left alone, and so is an English word the search model knows
+        whole (english_words: "marking" became "making", "debut" "debt"). Of 3,211 test questions six change, each a
+        real typo (review of 15 Nov 2026)."""
         def fix(found: re.Match) -> str:
             word = found.group(0).lower()
-            if len(word) < 5 or word[:5] in self.postings or word in self.vocabulary or word in STOP:
+            if (len(word) < 5 or word[:5] in self.postings or word in self.word_set or word in STOP or word in self.english
+                    or self.inflected(word)):
                 return found.group(0)
-            close = difflib.get_close_matches(word, self.brand_words, n=1, cutoff=0.85)
+            close = difflib.get_close_matches(word, self.brand_words, n=1, cutoff=0.85) or difflib.get_close_matches(
+                word, [w for w in self.by_start.get(word[:2], []) if abs(len(w) - len(word)) <= 1], n=1, cutoff=0.88)
             if not close:
                 return found.group(0)
             return close[0].capitalize() if found.group(0)[0].isupper() else close[0]   # "Walmrt" → "Walmart"
-        return re.sub(r"[A-Za-z]+", fix, question)
+
+        def whole_name(found: re.Match) -> str:
+            start, second = found.group(1).lower(), found.group(2).lower()
+            if start in self.word_set or start in self.postings or start in STOP:
+                return found.group(1)
+            names = [first for first in self.two_word_names.get(second, ()) if first.startswith(start)]
+            if len(names) != 1:   # none, or more than one name it could start: left as typed
+                return found.group(1)
+            return names[0].capitalize() if found.group(1)[0].isupper() else names[0]
+        fixed = re.sub(r"[A-Za-z]+", fix, question)
+        return re.sub(r"\b([A-Za-z]{3,4})(?=\s+([A-Za-z]+)\b)", whole_name, fixed)
+
+    def inflected(self, word: str) -> bool:
+        """A survey word with an ending ("noted" is "note" + d, "having" is "have" + ing): never corrected."""
+        return any(word.endswith(end) and (word[:-len(end)] in self.word_set or word[:-len(end)] + "e" in self.word_set)
+                   for end in ("s", "d", "ed", "es", "ing", "ly", "er"))
 
     def find(self, words: str, plan: dict | None = None, limit: int = 8, visible: set[int] | None = None) -> list[dict]:
         """The best-matching questions, best first, each with its score; [] when no word of the question is known."""
@@ -545,6 +596,7 @@ class Index:
         data = json.loads(gzip.decompress((self.root / f"{key}.json.gz").read_bytes()))
         found = {k: data[k] for k in ("qcode", "waves", "versions", "answers", "cuts")}
         found.update(w=np.array(data["w"], np.int32), c=np.array(data["c"], np.int32), a=np.array(data["a"], np.int32),
-                     n=np.array([-1 if x is None else x for x in data["n"]], np.int64), b=np.array(data["b"], np.int64))
+                     # 32-bit: a count or base never nears 2 billion, and the capped cache holds a third more (15 Nov 2026)
+                     n=np.array([-1 if x is None else x for x in data["n"]], np.int32), b=np.array(data["b"], np.int32))
         self.keep(key, found)
         return found

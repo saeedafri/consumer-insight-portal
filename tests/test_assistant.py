@@ -108,6 +108,8 @@ def test_a_reused_code_is_two_questions_each_with_its_own_answers(index):
     assert work["sources"][0]["key"] != save["sources"][0]["key"]
     assert [r[0] for r in work["table"]["rows"]] == ["Yes", "No"] and figure(work, "Yes") == [20.0]
     assert [r[0] for r in save["table"]["rows"]] == ["Coupons", "Store brands"]
+    # each wave's answers only chose those waves: not held afterwards, in the parts or the questions (review of 15 Nov 2026)
+    assert not any("wave_answers" in entry for entry in [*index.parts.values(), *index.docs.values()])
 
 
 def test_only_the_waves_a_person_may_see(index):
@@ -609,3 +611,44 @@ def test_an_answer_leads_with_tiles_a_takeaway_and_follow_ups_that_come_back_to_
     later = {s for s in EVERYONE if s not in index.docs[other]["surveys"]}   # waves where the other question was not asked
     ignored = assistant.answer(question, index, later, key=other)   # the key ignored: found and read as any question
     assert ignored["sources"][0]["key"] == "CSI-US/tracker/XQ1" and ignored["understood"] != "named"
+
+
+def test_spelling_is_put_right_for_survey_words_and_name_starts_and_valid_words_stay(with_prime):
+    """"subcription" and "Ama Prime" found nothing on staging (13 Nov 2026); a survey word with an ending ("noted",
+    "having") is never "corrected", as "having" became "behaving" once (15 Nov 2026)."""
+    fix = with_prime.correct_spelling
+    assert fix("How many Ama Prime members") == "How many Amazon Prime members"   # a short start before a two-word name
+    assert fix("Amazon membrship") == "Amazon membership"                          # a survey word, same start, one letter off
+    assert fix("Who noted it while having retailers") == "Who noted it while having retailers"
+    # an English word the search model knows whole is never a typo ("monkey" was "money"), and a typo is never put
+    # right to a synonym's stem ("Fridya" was "Frida", from friday): review of 15 Nov 2026
+    assert fix("A monkey bought it on Black Fridya") == "A monkey bought it on Black Fridya"
+
+
+def test_an_answer_to_a_corrected_question_says_so_and_typing_offers_questions_by_name(with_prime):
+    """The Ask box's suggestions while typing (assistant.suggest) and the corrected question on the answer (15 Nov 2026)."""
+    answered = assistant.ask("Ama Prime membership", with_prime, EVERYONE, "all")
+    assert answered["corrected"] == "Amazon Prime membership"
+    offer = assistant.suggest("ama prim", with_prime, EVERYONE)   # each word typed is the start of one of the name's
+    assert offer["corrected"] is None and [s["key"] for s in offer["suggestions"]][:1] == ["CSI-US/tracker/PM1"]
+    assert assistant.suggest("Ama Prime memb", with_prime, EVERYONE)["corrected"] == "Amazon Prime memb"
+    assert assistant.suggest("ama prim", with_prime, {999})["suggestions"] == []   # only questions this person may see
+    retailers = assistant.suggest("retailers bought", with_prime, {100, 101})["suggestions"]   # XQ1: 8 waves, 2 seen
+    assert [s["waves"] for s in retailers if s["qcode"] == "XQ1"] == [2]
+
+
+def test_a_kept_ai_reading_is_reused_only_by_the_same_model(tmp_path, monkeypatch):
+    """An older model's reading turned the reader's right answer wrong ("Satisfaction with shopping in AI platforms":
+    D34 → GA2, review of 15 Nov 2026): readings are kept per model and prompt."""
+    from api import ask_model
+    monkeypatch.setattr(ask_model, "READINGS", tmp_path / "readings.json")
+    monkeypatch.setattr(ask_model, "ready", lambda: False)   # no call: only a kept reading can answer
+    line = {"number": 1, "text": "Which retailers have you bought from?", "waves": 9, "first": "2025-01-01", "last": "2026-11-01", "answers": ["Amazon"]}
+    monkeypatch.setattr(ask_model, "model", lambda: "gpt-4o-mini")
+    memo = ask_model.hashlib.sha1(ask_model.json.dumps(["gpt-4o-mini", ask_model.SYSTEM, ask_model.same_question("Amazon shoppers"),
+                                                         [line["text"]]]).encode()).hexdigest()[:20]
+    (tmp_path / "readings.json").write_text(json.dumps({memo: {"pick": 1, "alt": None, "focus": [], "kind": "share", "grain": "auto",
+                                                               "cut": "none", "period": "all"}}))
+    assert ask_model.plan("Amazon shoppers", [line])["pick"] == 1
+    monkeypatch.setattr(ask_model, "model", lambda: "gpt-4.1-mini")   # another model: its own reading, not the kept one
+    assert ask_model.plan("Amazon shoppers", [line]) is None
