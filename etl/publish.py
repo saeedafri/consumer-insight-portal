@@ -392,7 +392,7 @@ def publish(root: Path = ROOT, jobs: int | None = None) -> Path:
             backup(out)
         except Exception as exc:                   # the portal is live from disk either way; the next publish retries
             log.warning("Backup to Azure Blob storage failed: %s", str(exc).split("?")[0])
-    try:   # Ask Coresight: name the new survey questions, then check each new survey (etl/ask_quality.py)
+    try:   # Ask CIP: name the new survey questions, then check each new survey (etl/ask_quality.py)
         from etl import ask_quality
         ask_quality.after_publish(out)
     except Exception as exc:                       # Ask keeps answering; the next publish names and checks them

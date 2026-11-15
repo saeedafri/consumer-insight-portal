@@ -240,7 +240,7 @@ def attempt_failed(request: Request, reason: str, email: str = "") -> None:
 
 def refused(request: Request, email: str) -> HTMLResponse:
     attempt_failed(request, "not entitled", email)
-    return page(403, "No access to the portal", f"{html.escape(email)} is not entitled to the Consumer Insight Portal. "
+    return page(403, "No access to the portal", f"{html.escape(email)} is not entitled to the Consumer Intelligence Portal. "
                 "Ask your Coresight contact to add your organisation.")
 
 

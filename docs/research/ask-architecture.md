@@ -1,4 +1,4 @@
-# How large AI systems answer, and the architecture Ask Coresight should keep (12 November 2026)
+# How large AI systems answer, and the architecture Ask CIP should keep (12 November 2026)
 
 The question this answers: ChatGPT, Claude, Gemini and Grok seem to answer anything at once. What do they actually
 do, what do companies that answer questions over their own data do, why does Ask struggle with wording it has never

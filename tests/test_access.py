@@ -739,7 +739,7 @@ def test_without_api_keys_and_mcp_on_the_menu_no_key_works_and_none_can_be_made(
 
 
 def test_the_mcp_connector_asks_like_the_page_and_under_the_same_menu(portal, monkeypatch, tmp_path):
-    """The connector's ask tool is the Ask Coresight page's answer (api/main.py ask_answer): listed, answered, and
+    """The connector's ask tool is the Ask CIP page's answer (api/main.py ask_answer): listed, answered, and
     refused once Ask CIP is off the person's menu."""
     from shared.core import api_keys
     monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})

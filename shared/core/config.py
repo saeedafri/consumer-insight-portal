@@ -1,4 +1,4 @@
-"""Environment-based configuration for the Consumer Insight Portal.
+"""Environment-based configuration for the Consumer Intelligence Portal.
 
 Follows the same LOCAL / STAGING / PRODUCTION pattern as market-data-stg so
 deployment and secret handling are identical across Coresight portals.

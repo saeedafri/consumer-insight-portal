@@ -1,11 +1,11 @@
 # CIP ETL Series, Part 1: The Pipeline End to End
 
-**Consumer Insight Portal (CIP), Coresight Research**
+**Consumer Intelligence Portal (CIP), Coresight Research**
 Series: How the CIP data pipeline works, explained for managers and the business team
 This part: the whole pipeline in one pass, from the moment a survey closes in Forsta to the moment a number appears on a portal screen
 Next parts: Part 2 Extraction, Part 3 Transformation (questionnaire and answers), Part 4 Transformation (business logic), Part 5 Loading and Verification, Part 6 Derived Data, Serving and Publishing
 
-Everything in this document is taken from the project's code (folder `cip-stg`), not from older design notes.
+Everything in this document is taken from the project's code (folder `cip-stg`; `cip-test` holds the same code), not from older design notes. The size and scale figures (sections 4 and 13) come from the project's README, its technical notes and a check of the staging database on 15 November 2026, as marked.
 
 ---
 
@@ -19,11 +19,11 @@ There are four business reasons, and each one shaped how the pipeline is built.
 
 **Reason 1: remove manual work and manual errors.** The data team's weekly line-by-line Excel file was rebuilt by the pipeline and compared week by week. The pipeline found errors in the manual file. Automation removes that class of error.
 
-**Reason 2: Forsta does not keep data forever.** Forsta "hibernates" a survey after 90 days with no respondents and no one opening it. A hibernated survey cannot be read through the API until someone restores it in the Forsta portal. A hibernated survey can then be archived, and an archived survey is erased 12 months later. After that, Coresight's database is the only copy. This is why the pipeline loads every wave as soon as its fieldwork ends, and why it also keeps Forsta's fieldwork records (Part 6).
+**Reason 2: Forsta does not keep data forever.** Forsta "hibernates" a survey after 90 days with no respondents and no one opening it. A hibernated survey cannot be read through the API until someone restores it in the Forsta portal. A hibernated survey can then be archived, and an archived survey is erased 12 months later. After that, Coresight's database is the only copy. This is why the pipeline loads every wave as soon as its fieldwork ends, and why it also keeps Forsta's fieldwork records (Part 2).
 
 **Reason 3: speed for the reader.** All counting and percentage work is done in advance, once per wave, by the pipeline. When an analyst or a client opens a screen, the numbers are already calculated and saved as files. Screens open in about a millisecond instead of waiting for the database.
 
-**Reason 4: trust.** A wave becomes visible only after the pipeline has proven, answer by answer, that what it stored matches what Forsta sent. If anything does not match, the wave stays hidden and the team is emailed.
+**Reason 4: trust.** A wave becomes visible only after the pipeline has proven that every respondent, every question and every answer Forsta sent is stored (the counts must match exactly). If anything does not match, the wave stays hidden and the failure list is emailed. In the same run, every stored answer value is then compared with Forsta a second time, and any difference is emailed.
 
 ## 3. Key words used in this series
 
@@ -36,7 +36,7 @@ These terms come up in every part. Each one is defined the way the code uses it.
 | **Survey** | One questionnaire in Forsta, with its own address called a **path**, for example `selfserve/58f/260907`. |
 | **Wave** | One fielding of a study. For the weekly tracker, each week is a new Forsta survey, so one Forsta survey = one wave. |
 | **Wave label / wave date** | The Monday of the week the wave was fielded, for example `2026-09-28`. |
-| **Family** | Waves of the same study that should be trended together. The weekly US tracker is family `CSI-US`. The China tracker is `CSI-CN`. An annual study's family is its title without the year, for example `HOLIDAY_SHOPPING`. |
+| **Family** | Waves of the same study that should be trended together. The weekly US tracker is family `CSI-US`. The China tracker is `CSI-CN`. An annual study's family is the one listed for it in `config/survey_map.yml` (for example `HOLIDAY_SHOPPING`), otherwise its title without the year. |
 | **Study type** | `tracker` (weekly), `annual` or `adhoc` (one-off or client study). Decided from Forsta tags and the title. |
 | **Respondent** | One person's interview. |
 | **Status** | Forsta's code for how an interview ended: 1 Terminated (screened out), 2 Overquota (their group was already full), 3 Qualified (completed and counts), 4 Partial (dropped out). |
@@ -62,11 +62,11 @@ CIP has one live source and three history sources.
 | **Qualtrics** | Aug 2022 to May 2025 | From the old warehouse tables `dwh_sm*` (and one Excel export for May 2025) | No. Loaded once, as history. |
 | **SurveyMonkey** | 2018 to July 2022 | From the same old `dwh_sm*` tables | No. Loaded once, as history. |
 
-The scheduled pipeline never reads the old warehouse again. History was loaded one time. The README states the database holds **373 verified waves, from 18 January 2018 to 2 November 2026**.
+The scheduled pipeline never reads the old warehouse again. History was loaded one time. A check of the staging database on 15 November 2026 found **523 verified waves**: 374 US and other studies from 18 January 2018 (87 Forsta, 142 Qualtrics, 145 SurveyMonkey) and 149 China weeks (history loaded on 11 November 2026). The README's older figure, 373 waves to 2 November 2026, predates the China history.
 
 ## 5. Where the data goes
 
-All data goes into one MySQL 8 database called **`cip_stg`**, hosted on Azure (server `csr-mysql8-flex-stg`). Every CIP table starts with `cip_` or `srv_`. Only the ETL writes to it. The portal and its API only read.
+All data goes into one MySQL 8 database called **`cip_stg`**, hosted on Azure (server `csr-mysql8-flex-stg`). Every CIP table starts with `cip_` or `srv_`. Survey data is written only by ETL code (the portal's Upload Survey page calls the same ETL loader). The API writes only its own working tables (sign-in, alerts, boards, saved views, access, dashboards) and otherwise reads.
 
 Think of the database in six layers. Data flows down through them.
 
@@ -98,15 +98,15 @@ The scheduler wakes every minute and checks the clock (UTC). These are its jobs,
 | When (UTC) | When (IST) | Job | Purpose |
 |---|---|---|---|
 | Monday 12:00 | Monday 17:30 | `scripts/weekly_forsta.py` (the **launch run**) | On a Monday the data team planned a launch, it "watches" the new wave for up to 54 hours, checking every 30 minutes, and loads it when fieldwork ends |
-| Tuesday to Sunday 03:30 | Tuesday to Sunday 09:00 | `scripts/weekly_forsta.py` | A short run that loads any other survey that closed, such as an annual or ad hoc study. Friday's run also runs the full integrity check. There is no Monday 03:30 run: every Monday is planned, so it started the watch 8.5 hours early and its 54 hours ended Wednesday 15:00 IST, not 23:30 (removed 15 Nov 2026); the 30-minute check covers that minute |
+| Tuesday to Sunday 03:30 | Tuesday to Sunday 09:00 | `scripts/weekly_forsta.py` | A short run that loads any other survey that closed, such as an annual or ad hoc study. (The 30-minute check below does the same, so a closed survey usually loads before this run.) Once each Friday, the first check that finds nothing new (by the container's UTC clock, normally the 00:00 UTC, 05:30 IST, check) also runs the full integrity and publication checks. There is no Monday 03:30 run: every Monday is planned, so it started the watch 8.5 hours early and its 54 hours ended Wednesday 15:00 IST, not 23:30 (removed 15 Nov 2026); the 30-minute check covers that minute |
 | Every 30 minutes (:00 and :30) | | `scripts/weekly_forsta.py --once` | One single check. Safety net: if a deployment killed Monday's watch, a closed wave still loads within 30 minutes |
 | Every hour at :05 | | `scripts/weekly_forsta.py --watchdog` | Raises an alarm if a run stopped without finishing, or if nothing was heard for over 2 hours past the time the last run promised its next sign of life |
 | 2 minutes after each container start | | `python -m etl.fieldwork` | Saves Forsta's fieldwork records for any survey still missing them |
-| Every 10 minutes (or within a minute of a SharePoint notification) | | `python -m etl.sharepoint_china` | Loads new China survey weeks from SharePoint, once IT access is set |
+| Every 10 minutes; once SharePoint notifications are set up, within a minute of each notification plus an hourly safety-net pass | | `python -m etl.sharepoint_china` | Loads new China survey weeks from SharePoint, once IT access is set |
 | Every hour at :10, only if no published files exist | | `python -m etl.publish --restore` | Makes sure the screens are never left empty |
 | Every minute | | log archiving | Any log file over 20 MB is zipped into `logs/archive/` |
 
-**The run lock.** Every job that writes to the database first takes one shared lock in MySQL, named `cip_etl` (`GET_LOCK`). If another job already holds it, the new job stops at once. So two writers never run at the same time. This matters because two writers once deadlocked each other (20 October 2026). The lock belongs to the database connection, so if a job is killed, the lock is released automatically.
+**The run lock.** Every ETL job that loads or rebuilds survey data first takes one shared lock in MySQL, named `cip_etl` (`GET_LOCK`). If another job already holds it, the new job stops at once; the publish restore at a container start waits its turn instead, and Monday's watch simply tries again 30 minutes later. So two writers never run at the same time. (The fieldwork-record job and the API's own small writes do not take it.) This matters because two writers once deadlocked each other (20 October 2026). The lock belongs to the database connection, so if a job is killed, the lock is released automatically.
 
 ## 8. One scheduled run, step by step
 
@@ -125,15 +125,15 @@ One call to Forsta lists every survey the API key can see. Each survey is writte
 
 ### Step 3: Load every due wave (Extract, Transform, Load)
 
-Every due wave, and every failed wave that has failed fewer than 3 times in a row, is loaded one at a time, oldest first. For each one, the pipeline downloads the questionnaire and all respondent records, transforms them, writes them, verifies them, and builds everything derived from them. Section 9 below walks through one wave. If a wave fails, the failure is recorded and the run moves on to the next wave.
+Every due wave, and every failed wave (on every run until it has failed 3 times in a row, then once every 6 hours), is loaded one at a time: waves still open in Forsta first, then closed ones, oldest first. For each one, the pipeline downloads the questionnaire and all respondent records, transforms them, writes them, verifies them, and builds everything derived from them. Section 9 below walks through one wave. If a wave fails, the failure is recorded and the run moves on to the next wave.
 
 ### Step 4: Keep Forsta's fieldwork records
 
-For the waves just loaded, plus surveys still in the field and a few older ones still missing it, the pipeline saves Forsta's own fieldwork record: the respondent funnel, drop-outs by page, quota, warnings, the questionnaire source file, and Forsta's archive and deletion schedule. These are read-only calls. A failure here is logged and never stops the run.
+For the waves just loaded, plus loaded surveys still in the field and up to 10 loaded ones still missing it, the pipeline saves Forsta's own fieldwork record: the respondent funnel, drop-outs by page, quota, warnings, the questionnaire source file, and (for the whole company, every run) Forsta's archive and deletion schedule. These are read-only calls. A failure here is logged and never stops the run. Right after this step, one failure email goes out for each wave that did not load.
 
 ### Step 5: If nothing was loaded, finish quickly
 
-If nothing was loaded and nothing failed, the run is "idle". On any day except Friday, and if the published files are not behind the database, it stops here with exit code 0. An idle run costs one Forsta call and two small database queries. Friday's run continues to the full checks below.
+If nothing was loaded and nothing failed, the run is "idle". Unless it is the first idle check of a Friday, or the published files are behind the database, it stops here with exit code 0. An idle run loads nothing and writes only the register's "last seen" time (and live surveys' quota); it still reads the survey list, the quotas of live surveys and Forsta's fieldwork records. Once each Friday, the first idle check continues to the full checks below.
 
 ### Step 6: Integrity check (heal what can be rebuilt, report the rest)
 
@@ -157,13 +157,13 @@ If anything was loaded or failed, or the published files are behind the database
 
 ### Step 10: Tell people
 
-- One email per loaded survey to the team list in `config/notify.yml`: who answered, the three biggest significant changes, and attached files in the team's own formats (cross-tab workbooks and the weekly line-by-line file).
-- Failure emails go only to the failure list (internal error details).
-- If the integrity check found problems, one email lists them.
+- One email per loaded survey to the team list in `config/notify.yml`, with a Teams post: who answered, the three biggest significant changes, and attached files in the team's own formats (cross-tab workbooks, Forsta's Raw Data and, for the weekly tracker, the line-by-line file).
+- Failure emails go only to the failure list (internal error details), each subject at most once every 6 hours.
+- If the integrity check or the second comparison found problems, one email to the failure list lists them.
 
 ### Step 11: Check that published numbers did not move
 
-Only when no wave failed in this run: `etl/publications.py` re-computes every number Coresight has already published (frozen "publications") and compares them with today's data. If any published number would now come out different, the team is told.
+Only when no wave failed in this run: `etl/publications.py` re-computes every number Coresight has already published (frozen "publications") and compares them with today's data. If any published number would now come out different, the failure list is emailed. (An idle run skips this step, except Friday's full check.)
 
 ### Step 12: Exit code
 
@@ -171,20 +171,20 @@ The run ends with a number that tells the scheduler what happened:
 
 | Exit code | Meaning |
 |---|---|
-| 0 | Everything due was loaded and verified, or there was nothing to do |
+| 0 | Everything due was loaded and verified, or there was nothing to do, or another run was already working |
 | 1 | A wave failed to load or verify |
 | 2 | Forsta rejected the key, Forsta is not configured, or the schema is behind the code |
 | 3 | Loaded, but a previously published number moved |
 | 4 | The database stayed unreachable (4 tries, 5 minutes apart) |
-| 5 | The integrity check found something it could not heal |
+| 5 | The integrity check found something it could not heal, or the second comparison found answers that differ from Forsta (or could compare none) |
 
 ## 9. Inside one wave: the full journey
 
-This is `load_survey()` and `_load_snapshot()` in `etl/forsta_etl.py`. It is the heart of the pipeline. The code times each stage separately and logs the seconds, so each stage below is a real, measured step.
+This is `load_survey()` and `_load_snapshot()` in `etl/forsta_etl.py`. It is the heart of the pipeline. The code times ten of these stages (fetch, definitions, write, verify, profiles, harmonise, cube, search, line-by-line, serving) and logs the seconds for each wave.
 
 | # | Stage | E, T or L | What happens | Business reason |
 |---|---|---|---|---|
-| 1 | **Fetch** | Extract | Download the datamap (the questionnaire, about 0.5 MB) and every respondent record (about 2 MB for 500 people). Records are streamed and saved to a private temporary file on disk as they arrive. Records without a `uuid` (Forsta system rows) are dropped. | All respondents are kept, not only qualified ones: the others are the record of the fieldwork, and Forsta will delete the survey one day. |
+| 1 | **Fetch** | Extract | Download the datamap (the questionnaire, about 0.5 MB) and every respondent record (about 5 MB for a weekly wave with every status; qualified only would be about 2 MB). Records are streamed and saved to a private temporary file on disk as they arrive. Records without a `uuid` (Forsta system rows) are dropped. | All respondents are kept, not only qualified ones: the others are the record of the fieldwork, and Forsta will delete the survey one day. |
 | 2 | **Wave identity** | Transform | Decide the wave label: the Monday of the earliest completion date among qualified respondents. A wave this pipeline loaded before keeps its old label and ID. Decide study type and family. | The same wave must always land in the same place, even when reloaded. |
 | 3 | **Survey row** | Load | Create or update the wave's row in `cip_survey` and set its status to `loading`. A loading wave is invisible to the portal. Start an audit row in `cip_load_log`. | Nobody sees half-written data. |
 | 4 | **Definitions** | Transform + Load | Turn the datamap into questions, grid rows and list items, answer options and fields. Assign each question a topic. Drop personal fields. Write them. | Gives every answer a meaning: which question, which row, what the code stands for. |
@@ -193,12 +193,12 @@ This is `load_survey()` and `_load_snapshot()` in `etl/forsta_etl.py`. It is the
 | 7 | **Profiles and bases** | Transform | Build one demographic profile per respondent (gender, age, age band, generation, income band, region and more). Count each question's base: qualified people who actually answered it. | Every demographic filter and every correct percentage depends on these. |
 | 8 | **Harmonise** | Transform | Link each question to a concept so it can be trended with earlier waves. Exact matches are confirmed automatically. Similar wording is proposed for an analyst to review. | Makes "this week vs last week vs last year" possible even when wording or codes change. |
 | 9 | **Cube** | Derive | Re-derive cohort membership (for example "Beauty shoppers") and pre-count every answer by every standard cut. | Fast, exact counts for every screen. |
-| 10 | **Search** | Derive | Index the wave and its questions for the portal's search box. | People find questions by typing. |
+| 10 | **Search** | Derive | Index the wave, its questions and their concepts in `cip_search` (kept whole by the integrity check; the portal's search box builds its own index in memory from the served waves). | A complete record of what each wave asked. |
 | 11 | **Line-by-line** | Derive | For weekly tracker waves only: build the data team's line-by-line rows (one per qualified respondent, their column headers and order). | Reproduces the team's own weekly Excel file. |
 | 12 | **Serving** | Derive | Build finished results: percentage, last week's and last year's figures, warning flags and significance flags. | Screens show results without doing any arithmetic. |
 | 13 | **Mark verified** | Load | Close the audit row, set the wave to `verified` (now visible) and the register entry to `loaded`. Rebuild the survey calendar. Rebuild the serving rows of later waves that compare against this one. | The wave goes live only after every step succeeded. |
 
-**If any stage fails:** the audit row records the error. If the failure happened before the answers transaction committed, and the wave was already verified from an earlier load, it stays verified (its old data was not touched). Otherwise the wave is marked `failed` and its serving rows are removed so no screen shows numbers for answers that are no longer there. The register marks the survey `failed` with the error message, and the next run retries it, up to 3 times in a row. After that, it waits for someone to run it by hand.
+**If any stage fails:** the audit row records the error. If the failure happened before the answers transaction committed, and the wave was already verified from an earlier load, it stays verified (its old data was not touched). Otherwise the wave is marked `failed` and its serving rows are removed so no screen shows numbers for answers that are no longer there. The register marks the survey `failed` with the error message, and the next run retries it. After 3 failures in a row it is retried once every 6 hours (and once as soon as Forsta closes it, if it failed while live); each failure email says when the next try is and how to load it at once by hand.
 
 ## 10. How E, T and L map to the code
 
@@ -234,44 +234,44 @@ This is how a normal week of the US weekly tracker plays out, from the code's ow
 4. **When fieldwork is effectively over** (whichever comes first): 400 qualified respondents; or every quota cell full; or 9 hours after launch, which is about 03:00 IST. The wave becomes `due`, even though Forsta still shows it as live, and is loaded. The serving tables mark it "in field" because it is not final yet. The code notes that Forsta often stops a wave at 400 with one or two cells still short (for example Midwest 80 of 85 on 19 October 2026), so the 400 rule is usually the one that fires.
 5. **When Forsta closes the wave,** its close date changes. The pipeline sees that, marks it `due` again and reloads it. That reload is the final version.
 6. **The watch ends** when this week's wave is both loaded and closed, or after 54 hours (Monday 17:30 to Wednesday 23:30 IST). If 54 hours pass first, the team gets a Teams warning and the next runs keep checking.
-7. **Annual and ad hoc studies** field for days. They are never loaded early. They load only after Forsta closes them, usually picked up by the 09:00 IST daily run.
+7. **Annual and ad hoc studies** field for days. They are never loaded early. They load only after Forsta closes them, within 30 minutes (the next 30-minute check; the 09:00 IST daily run is a second chance).
 
 ## 12. Safety mechanisms, in one place
 
 | Risk | What the pipeline does |
 |---|---|
 | Changing data in Forsta by accident | Every call is a read (GET). The only POSTs allowed are three Forsta computations that only read (running a cross-tab or a saved report, exporting a saved report). Any other POST is refused in code before it leaves the machine. |
-| Forsta slow or briefly down | Each request is tried up to 4 times in total, with waits that grow from 2 up to 60 seconds, for connection errors, timeouts, "too many requests" (429) and server errors (5xx). |
-| A bad wave keeps failing | It is retried at most 3 runs in a row, then waits for a manual run. |
+| Forsta slow or briefly down | Each request is tried up to 4 times in total, waiting 2, 4 and 8 seconds between tries, for connection errors, timeouts, "too many requests" (429) and server errors (5xx). The three read-only POSTs are tried once. |
+| A bad wave keeps failing | It is retried by every run up to 3 failures in a row, then once every 6 hours, so a broken survey is not downloaded in full every 30 minutes. |
 | Two jobs writing at once | One database lock (`cip_etl`). The second job stops. |
 | Half-written data on screen | A wave is `loading` (hidden) until fully verified. Answers are replaced in one transaction. |
 | A silently changed value | The bulk upload fails the whole wave if MySQL reports even one warning. Numbers are rounded to 4 decimals before upload so MySQL never rounds them itself. |
-| Personal data | Browser string, link, session, device fingerprint and IP address are never stored. The panel ID is stored only as a keyed hash (HMAC-SHA256 with a secret salt), so it cannot be turned back into the ID. |
+| Personal data | Browser string, link, session, device fingerprint and IP address are never stored. The panel ID is stored only as a one-way hash: a keyed hash (HMAC-SHA256) when the secret salt `CIP_RESPONDENT_SALT` is set, otherwise a plain SHA-256 fingerprint. |
 | A run killed silently | Each run writes a heartbeat file promising its next sign of life. The hourly watchdog emails if the promise is broken. |
-| Secrets in logs | Any environment value that looks like a key, password, token or webhook is masked as `***` in every log line. |
+| Secrets in logs | Any environment value whose name says key, password, secret, token, passphrase or webhook is masked as `***` in every line the scheduled run (`scripts/weekly_forsta.py`) logs. |
 | A broken publish | Quality gates check the new version; if one fails, the old version stays live. The last 3 versions are kept for rollback. |
 
 ## 13. Size and scale (from the code and its documentation)
 
 | Measure | Value |
 |---|---|
-| Verified waves | 373 (18 Jan 2018 to 2 Nov 2026) |
-| Answers stored | about 23 million rows in `cip_answer` |
+| Verified waves | 523 on 15 Nov 2026 (374 US and other studies from 18 Jan 2018, plus 149 China weeks) |
+| Answers stored | about 23 million rows in `cip_answer` (data dictionary of 21 Oct 2026, before the China history was added) |
 | Answer rows per weekly wave | about 151,000 |
 | Qualified respondents per weekly wave | about 400 (400 to 414 in all Forsta waves so far) |
 | People who start a weekly wave | about 500 to 800 |
 | Datamap size | about 0.5 MB |
-| Data export size | about 2 MB for 500 respondents |
-| Longest a run may take before the watchdog calls it stuck | 3 hours |
+| Data export size | about 5 MB for a weekly wave with every status (5.1 MB for survey 261003) |
+| Longest a run may take before the watchdog calls it stuck | 3 hours, plus 60 minutes' grace (checked hourly, so the alarm comes about 4 hours after a run's last sign of life) |
 
 ## 14. Summary
 
-The CIP pipeline runs by itself inside the portal's container. Every Monday it watches the new weekly wave and loads it as soon as fieldwork is effectively over, then reloads it when Forsta closes it. Every day it loads any other survey that closed. For each wave it extracts the questionnaire and every respondent from Forsta, transforms them into clean questions, respondents and answers with Coresight's business rules (qualified only, demographic bands, generations, regions, concepts across waves), loads them in one transaction, proves they match Forsta exactly, and only then makes them visible. It then pre-computes every result, publishes ready files for the screens, checks the database's health, and emails the team.
+The CIP pipeline runs by itself inside the portal's container. Every Monday it watches the new weekly wave and loads it as soon as fieldwork is effectively over, then reloads it when Forsta closes it. Every day it loads any other survey that closed. For each wave it extracts the questionnaire and every respondent from Forsta, transforms them into clean questions, respondents and answers with Coresight's business rules (qualified only, demographic bands, generations, regions, concepts across waves), loads them in one transaction, proves every respondent and answer arrived, and only then makes them visible. It then pre-computes every result, compares every stored value with Forsta a second time, publishes ready files for the screens, checks the database's health, and emails the team.
 
 The next five parts go deeper:
 
-- **Part 2, Extraction:** the Forsta API, discovery rules, the register's states, early loading of live waves, how data is downloaded and streamed, wave identity, and the China and history sources.
+- **Part 2, Extraction:** the Forsta API, discovery rules, the register's states, early loading of live waves, how data is downloaded and streamed, wave identity, Forsta's fieldwork records, and the China and history sources.
 - **Part 3, Transformation (questionnaire and answers):** how the datamap becomes questions, rows, options and fields; question types; grids, bipolar grids and "Other (specify)"; personal-data removal; how each record becomes respondent and answer rows.
 - **Part 4, Transformation (business logic):** demographic profiles, age bands, generations, income midpoints, census regions, question bases, topics, harmonisation into concepts, and cohorts.
 - **Part 5, Loading and Verification:** write order, transactions, bulk upload, the verification rules, failure handling, reloads, reconciliation and the integrity checks.
-- **Part 6, Derived Data, Serving and Publishing:** the cube, serving tables, prior-week and last-year comparisons, significance testing, the line-by-line file, publishing, emails and Forsta's fieldwork records.
+- **Part 6, Derived Data, Serving and Publishing:** the cube, serving tables, prior-week and last-year comparisons, significance testing, the line-by-line file, publishing, and emails.

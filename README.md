@@ -1,4 +1,4 @@
-# Coresight Consumer Insight Portal (CIP)
+# Coresight Consumer Intelligence Portal (CIP)
 
 Coresight Research's US consumer-survey portal. Every survey comes from **Forsta** (read only). A scheduled pipeline loads
 each wave when its fieldwork ends, checks it against Forsta, and publishes the portal's screens; analysts and clients read
@@ -36,7 +36,7 @@ Browser ──▶ nginx ──▶ published files (most requests: ~1 ms, no data
   taking the pipeline's lock only while it checks, and loads it when fieldwork ends; Tuesday to Sunday at 03:30 UTC it
   loads any other survey that closed, and a check every 30 minutes catches anything missed. A wave that fails is tried
   again (every 6 hours after three failures in a row). Failures and metric alerts are emailed and posted to Teams.
-- **Ask Coresight** (`api/assistant.py`) answers a question in plain words from the published figures: a small search
+- **Ask CIP** (`api/assistant.py`) answers a question in plain words from the published figures: a small search
   model and Ask's own reader on the server's CPU, an AI model (OpenAI) only when the reader is unsure and a key is set.
   While someone types it puts misspelt words right and suggests survey questions by name, at no cost.
 - **Access** (`/app/access`, the super admin): every entry of the left menu, group by group with each menu's pages, given
@@ -50,7 +50,7 @@ Browser ──▶ nginx ──▶ published files (most requests: ~1 ms, no data
 |---|---|
 | Source | **Forsta only** for every new survey (API, GET). History before July 2025 was loaded once from the old warehouse (SurveyMonkey 2018–2022, Qualtrics 2022–2025); the scheduled pipeline never reads it |
 | Database | MySQL `cip_stg` on Azure (`csr-mysql8-flex-stg`). The portal reads; only the ETL writes |
-| Waves | 373 verified waves, 18 Jan 2018 – 2 Nov 2026 |
+| Waves | 523 verified waves, 18 Jan 2018 – 9 Nov 2026 (staging, build 3be1b2c1) |
 
 ## Definitions
 
@@ -98,7 +98,7 @@ pytest -q                             # the checks
 | [Status](status/README.md) | what is done, waiting for deploy, pending and stuck: read it before starting, update it while working |
 | [What's new](docs/CHANGELOG.md) | every feature, enhancement and update, the same as the portal's What's new page |
 | [API and MCP guide](docs/API.md) | using the portal from programs and AI assistants with your own key, the same as the portal's API guide page |
-| [The pipeline, in six parts](docs/ETL-Docs/) | Forsta → database → checks → serving tables → published files, step by step (with a video of part 1) |
-| [Ask Coresight](docs/research/ask-architecture.md) | how Ask finds and reads a question; [its models and their training](docs/research/ask-cip-model-training.md) |
+| [The pipeline, in six parts](docs/ETL-Docs/) | Forsta → database → checks → serving tables → published files, step by step (with a narrated video for each part, in `videos/`) |
+| [Ask CIP](docs/research/ask-architecture.md) | how Ask finds and reads a question; [its models and their training](docs/research/ask-cip-model-training.md) |
 | [Methodology](config/methodology.yml) | populations, weighting, significance and small bases, as the portal's Methodology page shows them |
 | [Product](PRODUCT.md) and [design](DESIGN.md) | who the portal is for, and how its screens look |

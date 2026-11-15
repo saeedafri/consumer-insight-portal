@@ -1,4 +1,4 @@
-# Ask Coresight's verified questions: common analyst questions with the answer an analyst checked, read by
+# Ask CIP's verified questions: common analyst questions with the answer an analyst checked, read by
 # api/ask_index.py load_verified. A question asked with the same meaning (vectors ≥ 0.9) and the same names and groups
 # uses this plan with no model call (Snowflake's "verified queries", research 11 Nov 2026).
 # Admins add more from the Ask page ("Save as verified"); those go to logs/ask-verified.json until reviewed into here.

@@ -1,4 +1,4 @@
-# Ask Coresight: how every survey is made answerable, and how accuracy is measured (12 November 2026)
+# Ask CIP: how every survey is made answerable, and how accuracy is measured (12 November 2026)
 
 ## What 99% means here
 

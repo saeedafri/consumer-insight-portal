@@ -1,6 +1,6 @@
 # CIP ETL Series, Part 3: Transformation, Questionnaire and Answers
 
-**Consumer Insight Portal (CIP), Coresight Research**
+**Consumer Intelligence Portal (CIP), Coresight Research**
 Series: How the CIP data pipeline works, explained for managers and the business team
 This part: the first half of the "T" of ETL. How Forsta's questionnaire description (the datamap) becomes clean questions, rows, answer options and fields, and how each respondent's raw record becomes one respondent row and many answer rows
 Previous part: Part 2, Extraction. Next part: Part 4, Transformation (Business Logic)
@@ -36,7 +36,7 @@ CIP stores data **long**: one row per respondent per answer. The table `cip_answ
 | respondent_id | field_id | value_code | value_label | value_number | value_text |
 |---|---|---|---|---|---|
 
-The schema's own comment gives the reason: the questionnaire changes every wave, so a new question becomes new rows, never a change to the database's structure. A wave with 375 columns and 500 respondents becomes about 150,000 answer rows (the table's comment: about 151,000 per wave).
+The schema's own comment gives the reason: the questionnaire changes every wave, so a new question becomes new rows, never a change to the database's structure. A weekly wave with 375 columns and about 400 qualified respondents becomes about 150,000 answer rows (the table's comment: about 151,000 per wave).
 
 To make long rows meaningful, every answer row points to a **field**, every field points to its **question** (and, for a list or grid, its **item**), and every code can be looked up in the question's **options**. Step A builds exactly that dictionary.
 
@@ -127,10 +127,10 @@ Then:
 
 | Forsta type | Condition | CIP type (`qtype`) | Rows kept? | Options | Min/max code |
 |---|---|---|---|---|---|
-| `multiple` | always | `multi` | yes, one item per row | the question's values, if any | 0 and 1 |
+| `multiple` | always | `multi` | yes, one item per row | the answer list (Section 4.4), if any | 0 and 1 |
 | `single` | not named apart | `single` | no | the answer list | lowest and highest code |
 | `single` | named apart | `grid_single` | yes, one item per row | the answer list | lowest and highest code |
-| `single` | named apart, and every answer title is blank | `grid_single`, **bipolar** | yes | replaced by 1 = "Left statement", 2 = "Right statement" | 1 and 2 |
+| `single` | named apart, and every answer title is blank | `grid_single`, **bipolar** | yes | replaced by 1 = "Left statement", 2 = "Right statement" | lowest and highest code (1 and 2 in the bipolar grids Forsta sends) |
 | `number`, `float` | | `numeric` | yes if named apart | none | |
 | `text`, `textarea` | | `text` | yes if named apart | none | |
 | `date` | | `datetime` | yes if named apart | none | |
@@ -171,11 +171,11 @@ Every question gets a topic from **`config/survey_map.yml`**. Rules are tried fr
 
 | Priority | Code pattern | Topic |
 |---|---|---|
-| 10 | `q1` to `q6` | Shopping and Spending |
+| 10 | `q1` to `q6` (exact codes only, as for D12 to D15 and D1 to D8 below) | Shopping and Spending |
 | 20 | starts `DP` + digit | Department Stores |
 | 30 | starts `DJ` + digit | Diamonds and Fine Jewelry |
 | 40 | starts `BN` + digit | Buy Now, Pay Later |
-| 50 | `D28` to `D35` | AI and GenAI Shopping |
+| 50 | `D28` to `D35`, including their sub-codes (`D28r1`) | AI and GenAI Shopping |
 | 60 | starts `GP` + digit | GLP-1 Impact |
 | 70 | starts `CS` + digit | Consumer Sentiment |
 | 80 | `D12` to `D15` | Macro and Gas Prices |
@@ -188,15 +188,15 @@ Every question gets a topic from **`config/survey_map.yml`**. Rules are tried fr
 
 ### 5.2 Rules for the China tracker (family CSI-CN)
 
-`S1` to `S5` Demographics; `Q1` to `Q6` Shopping; `Q7` to `Q9` Sentiment.
+`S1` to `S5` Demographics; `Q1` to `Q6` Shopping and Spending; `Q7` to `Q9` Consumer Sentiment (the same topics as the US tracker).
 
 ### 5.3 Rules for every survey
 
 | Priority | Test | Topic |
 |---|---|---|
-| 900 | code is one of record, uuid, date, markers, status, source, session, url, list, decLang, userAgent, dcua, RID, start_date, conditions | Technical |
+| 900 | code is one of record, uuid, date, markers, status, source, session, url, list, decLang, userAgent, dcua, RID, start_date, conditions | Technical (topic code `TECHNICAL`, shown as "Paradata, Quotas and Technical") |
 | 910 | code starts with qtime, vlist, vos, vbrowser, vmobile, vdropout, vterm, vq, voq | Technical |
-| 950 | wording mentions gender, age, income, ethnicity, marital, relationship status, state, region or zip | Demographics |
+| 950 | wording mentions gender, age, income, marital, relationship status, state, region or zip as a whole word (the rule also lists "ethnicit", but as written it never matches "ethnicity") | Demographics |
 | no match | | **Unclassified** |
 
 ### 5.4 What the topic decides
@@ -230,14 +230,14 @@ One row per question, in questionnaire order:
 
 One row per answer code of each question, in the datamap's order. Label cut to 500 characters. One flag is set from the label:
 
-- **Non-response** (`is_nonresponse = 1`) when the label contains "don't know", "dont know", "not sure" or "prefer not to say". These answers can be left out of summary measures such as top-two-box.
+- **Non-response** (`is_nonresponse = 1`) when the label contains "don't know", "dont know", "not sure" or "prefer not to say". The flag is stored, and copied to the concept's answers, for summary measures such as top-two-box; no calculation in the pipeline uses it yet.
 
 ### 6.3 Items (`cip_item`)
 
 One row per row of a list or grid, in order. Label cut to 1,000 characters; a short label of up to 80 characters for chart axes. Flags:
 
-- **Exclusive** (`is_exclusive = 1`) when the label starts with "None of these". These are dropped from rankings.
-- **Other** (`is_other = 1`) when the item's code ends in `oe`.
+- **Exclusive** (`is_exclusive = 1`) when the label starts with "None of these". Rankings leave such rows out by matching their label (the screens' and dashboards' filler rule), not by reading this flag.
+- **Other** (`is_other = 1`) when the item's code ends in `oe`. (In Forsta waves the typed box is its own question, Section 4.5, so Forsta items do not get this flag.)
 - **Left and right statements** for bipolar rows (Section 4.8).
 
 ### 6.4 Fields (`cip_field`)
@@ -257,9 +257,9 @@ Each field gets a **value type** that decides how its values are stored (Section
 
 ### 6.5 Reloads update in place, nothing is duplicated
 
-Every write is an "insert, or update if it already exists", keyed on Forsta's own names: the question code within the wave, the item code within the question, the answer code within the question, the field name within the wave. Reloading the same wave updates rows in place.
+Questions, items and options are written as "insert, or update if it already exists"; fields as "insert if missing" (an existing field is kept as it is). All are keyed on Forsta's own names: the question code within the wave, the item code within the question, the answer code within the question, the field name within the wave. Reloading the same wave updates rows in place.
 
-**Removing rows that disappeared.** Updating in place never removes a row. So after a wave's answers are written and verified, a separate step (`drop_unlisted_items`) deletes any item that the questionnaire no longer lists **and that nobody chose**. An item anyone chose (any code other than 0, any number, any text) is always kept. The code records the case that caused this rule: a corrected question 7 list in survey 97 left a second, empty "YouTube" row next to the real one. Only questions in the current load are looked at.
+**Removing rows that disappeared.** Updating in place never removes a row. Only items are removed by the step below; questions, options and fields the datamap no longer lists stay. So after a wave's answers are written and verified, a separate step (`drop_unlisted_items`) deletes any item that the questionnaire no longer lists **and that nobody chose**. An item anyone chose (any code other than 0, any number, any text) is always kept. The code records the case that caused this rule: a corrected question 7 list in survey 97 left a second, empty "YouTube" row next to the real one. Only questions in the current load are looked at.
 
 ## 7. Step B: turning records into respondents and answers
 
@@ -285,7 +285,7 @@ Each record becomes one row in **`cip_respondent`**:
 | `respondent_key` | `RID` | **A one-way keyed hash, never the ID itself** |
 | `load_id` | | The audit-log row of this load |
 
-**How the respondent key is made.** The panel's ID for the person (`RID`) is first turned into a SHA-256 fingerprint, and that fingerprint is then hashed again with a secret key (HMAC-SHA256, key `CIP_RESPONDENT_SALT`). Without the secret, a list of panel IDs cannot be matched against the stored keys. The key still lets CIP spot the same panelist qualifying twice in one wave (an integrity check in Part 5). The raw ID is never stored anywhere.
+**How the respondent key is made.** The panel's ID for the person (`RID`) is first turned into a SHA-256 fingerprint, and that fingerprint is then hashed again with a secret key (HMAC-SHA256, key `CIP_RESPONDENT_SALT`) when that key is set. With the secret set, a list of panel IDs cannot be matched against the stored keys without it; if it is not set, the stored key is the plain SHA-256 fingerprint (`scripts/rekey_respondents.py` converts old keys once the secret is added). The key still lets CIP spot the same panelist qualifying twice in one wave (an integrity check in Part 5). For Forsta waves the raw ID is never stored (the `sample_rid` column is cleared on every load).
 
 **Respondents who disappeared from Forsta.** Each record is matched to an existing row by wave and record number, so a reload updates the same person. After writing, any respondent stored from an earlier load whose `uuid` is no longer in Forsta's data is deleted, together with their demographic profile and cohort memberships. The database always mirrors Forsta exactly.
 
@@ -301,7 +301,7 @@ For every record, every key in the record that matches a field becomes at most o
 | `1` on a multi-select item | `code` | `value_code` = 1 | `q1r1: 1` → chosen |
 | Something that is not a whole number | `code` | `value_label` = the raw value (up to 500 characters); no code invented | A date answer such as `09/29/2026` |
 | A number | `numeric` | `value_number`, rounded to 4 decimals | `qtime: 612.4` → 612.4 |
-| A number that is not finite, or 100 trillion or more | `numeric` | Nothing (see the safety note below) | |
+| A number that is not finite, or 100 trillion or more in size (either sign) | `numeric` | Nothing (see the safety note below) | |
 | Not a number | `numeric` | Nothing (see the safety note below) | |
 | Any text | `text` | `value_text`, exactly as typed | `q9: "More discounts please"` |
 
@@ -316,11 +316,11 @@ Together, this gives every question its correct **base**: the people who were ac
 
 ### 9.2 Labels are not repeated on every answer
 
-For single-choice and grid answers, only the code is stored. The label already lives once in `cip_option` and is joined back when read. For multi-select answers, the item label is kept on the answer only if the question also has its own 0/1 option labels; otherwise a "Yes"/"No" option label could win over the real item name when displayed. The code notes that repeating a label on every one of about 26 million answer rows would cost about 860 MB, so labels are stored once and looked up.
+For single-choice and grid answers, only the code is stored. The label already lives once in `cip_option` and is joined back when read. For multi-select answers, the item label is also stored on the answer when the question has option labels of its own (for example 0 "Unchecked", 1 "Checked"): readers show the first of answer label, option label and item label, so without it the option label would be shown instead of the item name. The code notes that repeating a label on every one of the roughly 23 to 26 million answer rows would cost about 860 MB, so labels are stored once and looked up.
 
 ### 9.3 Why numbers are rounded before upload
 
-`value_number` holds up to 4 decimals. MySQL would round a longer number itself, but it would also raise a warning, and the bulk upload treats **any** warning as a failure of the whole wave (Part 5). So the pipeline rounds to 4 decimals itself, before upload.
+`value_number` holds up to 4 decimals. MySQL would round a longer number itself, but it would also raise a note, and the bulk upload (`LOAD DATA`) treats **any** warning or note as a failure of the whole wave (Part 5; the batched-insert fallback does not check them). So the pipeline rounds to 4 decimals itself, before upload.
 
 ### 9.4 A safety effect worth knowing
 
@@ -333,25 +333,27 @@ A weekly wave is about 150,000 answer rows. The pipeline writes them without hol
 1. Respondents are written in batches of 512 rows per statement.
 2. The wave's existing answers are deleted (inside the same transaction).
 3. Answer rows are generated one record at a time from the snapshot and written to a temporary tab-separated file.
-4. That file is sent to MySQL in **one** `LOAD DATA LOCAL INFILE` command, a compact bulk upload. If the server refuses that command, the same file is sent as batched inserts of 5,000 rows instead.
+4. That file is sent to MySQL in **one** `LOAD DATA LOCAL INFILE` command, a compact bulk upload. If the server has LOCAL INFILE switched off, the same file is sent as batched inserts of 5,000 rows instead; any other error fails the load.
 
-The code records why: from India, the network round trips cost far more than the server's work (13,000 rows took 18 seconds as ordinary inserts).
+The code records why: from India, the network round trips cost far more than the server's work (13,000 serving-table rows took 18 seconds as ordinary inserts).
 
 ## 11. How the China and history sources differ at this stage
 
-The Forsta API gives **codes**. The China files and the old Excel exports give **labels**. These sources use an older, shared path (`replace_respondents` in `etl/wave_loader.py`) with a label convention:
+The Forsta API gives **codes**. The China files and the Qualtrics Excel export give **labels**. These two sources use an older, shared path (`replace_respondents` in `etl/wave_loader.py`) with a label convention:
 
 - A ticked multi-select item holds its label; an unticked one holds "NO TO: " followed by the label. The first becomes code 1, the second code 0.
 - A single-choice cell holds a label such as "Yes". The label is looked up in the question's options (case-insensitive, after cleaning) to get its code. The code's comment explains the danger this avoids: treating every answered single-choice cell as code 1 once made "BNPL users" 404 people instead of 133.
 - Respondents are matched on record number rather than `uuid`.
 
-The China questionnaire comes from `config/china_codebook.yml` rather than a datamap: every Chinese wording maps to the analysts' English, and an answer's code is its place in its list (new answers are always added at the end, so existing codes keep their meaning).
+The Qualtrics and SurveyMonkey history held in the old warehouse (`etl/legacy_dwh.py`, 142 Qualtrics waves among them) works differently: its answers are copied inside MySQL with their codes from the old answer map (no "NO TO:" labels and no label lookup), a 0 is added for every multi-select item a respondent saw but did not choose, and respondents are matched by the old response ID.
 
-From here on, every source follows the same steps: profiles, bases, concepts, cube, serving.
+The China questionnaire comes from `config/china_codebook.yml` rather than a datamap: every Chinese wording maps to the analysts' English, and an answer's code is its place in its list (the codebook's rule is that a new answer goes at the end, so existing codes keep their meaning).
+
+From here on, every source follows the same steps: profiles, bases, concepts and cube. The Forsta and China loads build the serving rows in the same run; the history loaders leave them to a separate step afterwards (`python -m etl.serving --wave <survey_id>`, or the integrity check's healing).
 
 ## 12. What this stage produces, in numbers
 
-From the data dictionary of the live database (approximate row counts):
+From the data dictionary of the `cip_stg` database (MySQL's approximate row estimates, `docs/technical/06-data-dictionary.md` in cip-stg, generated before the China history was added on 11 November 2026):
 
 | Table | Rows |
 |---|---|
@@ -362,7 +364,7 @@ From the data dictionary of the live database (approximate row counts):
 | `cip_respondent` | about 176,500 |
 | `cip_answer` | about 23.3 million |
 
-The project's documentation also records how often each datamap shape appeared across 1,416 Forsta questions: 693 single-choice with one variable, 491 multi-select, 73 single-choice grids, 53 single-choice with an "Other" text box, 43 single-choice with rows and one variable, 32 numeric and 23 text.
+The project's documentation also records how often each datamap shape appeared across 1,416 Forsta questions: 693 single-choice with one variable, 491 multi-select, 73 single-choice grids, 53 single-choice with an "Other" text box, 43 single-choice with rows and one variable, 32 numeric and 23 text (these add up to 1,408; the remaining 8 are not broken down).
 
 ## 13. Summary
 

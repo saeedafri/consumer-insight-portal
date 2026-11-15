@@ -3,7 +3,7 @@ import { Breadcrumbs, Faq } from "../seo";
 
 export const metadata = {
   title: "Methodology",
-  description: "How the Consumer Insight Portal's figures are made: panel, qualification, fielding, weighting, data quality and significance testing.",
+  description: "How the Consumer Intelligence Portal's figures are made: panel, qualification, fielding, weighting, data quality and significance testing.",
   alternates: { canonical: "/methodology/" },
 };
 

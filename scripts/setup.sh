@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════════════════
-# Consumer Insight Portal — one-shot setup against cip_stg.
+# Consumer Intelligence Portal — one-shot setup against cip_stg.
 #
 # Run this on your Mac (it needs network access to the Azure STG server,
 # which the cloud session does not have).

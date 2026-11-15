@@ -1,5 +1,5 @@
 // Home (/app/, the first page after sign-in; the Survey library moved to /app/library): "What would you like to
-// understand?" A question box that hands off to Ask Coresight (screens/Ask.tsx answers it on arrival), cards for the main
+// understand?" A question box that hands off to Ask CIP (screens/Ask.tsx answers it on arrival), cards for the main
 // research areas, this week's in-store and online buying from the newest weekly survey, and a way into the cross-tabs.
 // Everything comes from files the ETL already publishes (the waves list, the newest wave's book): nothing is computed
 // on the server when the page opens. Cards and the box show only what this person's package includes (config/access.yml).
@@ -52,7 +52,7 @@ export default function Home() {
     </div>
 
     {allowed(me, "ask") && <section className="ask-hero" aria-labelledby="ask-hero">
-      <h2 id="ask-hero">Ask Coresight</h2>
+      <h2 id="ask-hero">Ask CIP</h2>
       <p>Ask a research question in your own words; the answer cites the survey questions and figures it comes from.</p>
       <form className="ask-box" onSubmit={e => { e.preventDefault(); ask(text); }}>
         <MessageSquareText size={17} strokeWidth={1.8} aria-hidden="true" />

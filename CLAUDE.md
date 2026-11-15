@@ -1,4 +1,4 @@
-# Consumer Insight Portal: rules for every agent (Claude, Gemini, Codex, others)
+# Consumer Intelligence Portal: rules for every agent (Claude, Gemini, Codex, others)
 
 ## GIT: NEVER, EVER COMMIT OR PUSH THE CHANGES (HARD RULE)
 - Never run `git commit`, `git push`, `git merge`, `git rebase`, `git tag` or any command that writes history or a remote, in this

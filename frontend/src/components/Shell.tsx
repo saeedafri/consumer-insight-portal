@@ -72,7 +72,7 @@ function eyebrow(wave?: Wave): string {
 }
 
 // Each page's name, for the header's breadcrumb and a saved view's name
-const PAGES: Record<string, string> = { "": "Home", library: "Survey library", search: "Search questions", schedule: "Launch schedule", ask: "Ask Coresight",
+const PAGES: Record<string, string> = { "": "Home", library: "Survey library", search: "Search questions", schedule: "Launch schedule", ask: "Ask CIP",
   boards: "Boards", sectors: "Sector databank", retailers: "Retailer databank", channels: "In store vs online", trackers: "Trackers", expectations: "Expected vs actual", methodology: "Methodology", "whats-new": "What's new",
   account: "My account", "api-guide": "API guide", fieldwork: "Fieldwork", ingest: "Upload survey", logs: "Logs", access: "Access" };
 function pageName(pathname: string): string {
@@ -259,7 +259,7 @@ function SiteFooter({ theme }: { theme: Theme }) {
     <div className="site-foot-cols">
       <section>
         <img src={theme === "dark" ? "/coresight-logo-reversed.png" : "/coresight-logo.png"} alt="Coresight Research" width="120" height="60" />
-        <h2>Consumer Insight Portal</h2>
+        <h2>Consumer Intelligence Portal</h2>
         <ul>
         <li><a href={SITE + "/"}>Back to coresight.com</a></li>
         <li><Link to="/methodology">Methodology</Link></li>
@@ -316,9 +316,9 @@ function SiteHeader({ here, railHidden, onToggleRail, theme, onTheme, menuOpen, 
         {railHidden ? <PanelLeftOpen size={17} strokeWidth={1.8} aria-hidden="true" /> : <PanelLeftClose size={17} strokeWidth={1.8} aria-hidden="true" />}</button>} />
       <TooltipContent side="right">{railHidden ? "Show the menu" : "Hide the menu"} (Ctrl/⌘ B)</TooltipContent>
     </Tooltip>
-    <Link to="/" className="site-brand" aria-label="Consumer Insight Portal home">
+    <Link to="/" className="site-brand" aria-label="Consumer Intelligence Portal home">
       <img src={theme === "dark" ? "/coresight-logo-reversed.png" : "/coresight-logo.png"} alt="" width="76" height="38" />
-      <span>Consumer Insight Portal{here && <small> / {here}</small>}</span>
+      <span>Consumer Intelligence Portal{here && <small> / {here}</small>}</span>
     </Link>
     {allowed(me, "search") && <button className="icon-btn search-toggle" onClick={() => { setSearchOpen(o => !o); setTimeout(() => search.current?.focus()); }}
             aria-label="Search every question" aria-expanded={searchOpen}>

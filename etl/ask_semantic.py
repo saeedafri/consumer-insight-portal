@@ -1,4 +1,4 @@
-"""Ask Coresight's semantic layer: a business name, aliases, a topic and eight analysts' questions for every survey
+"""Ask CIP's semantic layer: a business name, aliases, a topic and eight analysts' questions for every survey
 question wording, written once by the small AI model, so Ask can answer a question that uses the name at once
 (api/ask_index.py Index.names) and match other wording by meaning.
 

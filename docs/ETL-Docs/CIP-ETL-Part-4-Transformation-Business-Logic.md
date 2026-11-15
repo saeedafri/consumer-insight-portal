@@ -1,6 +1,6 @@
 # CIP ETL Series, Part 4: Transformation, Business Logic
 
-**Consumer Insight Portal (CIP), Coresight Research**
+**Consumer Intelligence Portal (CIP), Coresight Research**
 Series: How the CIP data pipeline works, explained for managers and the business team
 This part: the second half of the "T" of ETL. The Coresight business rules applied on top of the clean questions and answers: demographic profiles, age bands, generations, income midpoints, census regions, question bases, the survey calendar, concepts that link a question across waves, cohorts, and Census weighting
 Previous part: Part 3, Transformation (Questionnaire and Answers). Next part: Part 5, Loading and Verification
@@ -53,7 +53,7 @@ Question codes differ between studies and platforms, so the pipeline decides **p
 | Outlook on own discretionary income | CS1 | Q8 |
 | Outlook on the economy | CS2 | Q9 |
 
-**Wording detection, for every other study** (case-insensitive):
+**Wording detection, for any demographic the config did not supply** (case-insensitive; this also fills the China tracker's relationship, ethnicity, political and state when a wave asks them, and Qualtrics Excel exports always use wording only):
 
 | Demographic | Wording looked for |
 |---|---|
@@ -72,7 +72,7 @@ Two of these patterns were tightened after real mistakes, as the config notes. T
 
 ### 2.3 The decision is recorded
 
-For every wave, the decision is written to **`cip_profile_map`**: one row per demographic, naming the question used and whether it came from the config (`config`) or from wording (`detected`). This makes the choice visible, auditable and correctable per wave without changing code.
+For every wave, the decision is written to **`cip_profile_map`**: one row per demographic found, naming the question used and whether it came from the config (`config`) or from wording (`detected`). This makes the choice visible and auditable. The table is a record only: the pipeline works the choice out afresh at every rebuild and never reads it back. To change a choice, edit the `profile` section of `config/survey_map.yml` (per family) and rebuild the wave's profiles.
 
 ### 2.4 What goes into a profile row
 
@@ -86,7 +86,7 @@ For each respondent, the pipeline reads the label of their answer to each mapped
 | `census_region` | From the state, Section 5 |
 | `weight` | Reserved, always 1 (waves are unweighted; Section 11 explains the optional weighted view) |
 
-Only respondents who answered at least one mapped question get a profile row. History from SurveyMonkey also takes age, gender, income and Census division from the panel provider where no question supplied them, without overwriting a respondent's own answer (Part 2).
+Respondents who answered at least one mapped question get a profile row. History from SurveyMonkey also takes age, gender, income and Census division from the panel provider where no question supplied them, filling or creating the row, without overwriting a respondent's own answer (Part 2).
 
 ## 3. Age: years, bands, generations and midpoints
 
@@ -119,7 +119,7 @@ The US tracker asks age in single years and exports the label ("34"). Other stud
 3. **A named band** the analysts use that is not a plain range (China's "26-41 years old") gets its own band.
 4. **A single number** gives the age, its band, its generation and its midpoint (the age itself).
 
-**Midpoints** are used to compute average age. For the standard bands they are the analysts' own: 18-29 = 23.5, 30-44 = 37, 45-60 = 52.5, Over 60 = 67. For China's bands: 18-25 = 21.5, 26-41 = 33.5, 42-57 = 49.5, 57-76 = 66.5, 77+ = 80. A plain "a - b" range gets (a + b) / 2. An open range ("70 or more", "under 50") gets no midpoint.
+**Midpoints** are used to compute average age. For the standard bands they are the analysts' own: 18-29 = 23.5, 30-44 = 37, 45-60 = 52.5, Over 60 = 67. For China's bands: 18-25 = 21.5, 26-41 = 33.5, 42-57 = 49.5, 57-76 = 66.5, 77+ = 80. A plain "a - b" range gets (a + b) / 2. An open range ("70 or more", "under 50") gets no midpoint, unless the config's band labels name it ("Over 60", "> 60" and "60+" take 67); "Under 18" takes 17.
 
 ### 3.3 Results from the project's own functions
 
@@ -150,7 +150,7 @@ Income is asked in bands. To compute an average income for a group (for example 
 | $150,000 - $199,999 | 174.9995 |
 | $200,000 or greater (also "$200,000+") | 225 |
 
-Any other closed range written as "$low - $high" gets (low + high) / 2 / 1,000, the same convention (for example "$30,000 - $39,999" gives 34.9995). This also covers SurveyMonkey's spellings without spaces. The open top band takes 225, the same $25,000 step above $200,000 that the band below uses from its bottom.
+Any other closed range written as "$low - $high" gets (low + high) / 2 / 1,000, the same convention (for example "$30,000 - $39,999" gives 34.9995). This also covers SurveyMonkey's spellings without spaces. The open top band ("$200,000 or greater", "$200,000+") takes the analysts' 225.
 
 ## 5. Census region
 
@@ -181,7 +181,7 @@ The cube (Part 6) applies the same idea per answer: a single-choice question or 
 
 ## 7. The survey calendar: what each survey was about
 
-The register knows every Forsta survey, but not what each one covered. The calendar (`cip_wave_module`) gives every survey one row per **module**, rebuilt after every discovery and every load. It drives sector tables, seasonal comparisons and the launch schedule.
+The register knows every Forsta survey, but not what each one covered. The calendar (`cip_wave_module`) gives every survey one row per **module**, rebuilt after every load and after every discovery that changed the register. It drives sector tables, seasonal comparisons and the launch schedule.
 
 ### 7.1 Reading the weekly tracker's title
 
@@ -189,7 +189,7 @@ Tracker titles follow one grammar: `Shopping and Spending - inc <part> + <part> 
 
 | Kind | How it is found | Codes |
 |---|---|---|
-| **Sector** | A part matches a sector's pattern. The **first** part is the **lead sector** | Drugstore, eCommerce, Luxury, Department stores, Beauty, Home furnishings, Home improvement, Social commerce, Off-price/dollar, Apparel, Mass/warehouse, Footwear |
+| **Sector** | A part matches a sector's pattern. If the **first** part is a sector, it is the **lead sector**; otherwise the wave has none | Drugstore, eCommerce, Luxury, Department stores, Beauty, Home furnishings, Home improvement, Social commerce, Off-price/dollar, Apparel, Mass/warehouse, Footwear |
 | **Topic** | A part matches a recurring add-on | Tariffs + inflation, GLP-1, GenAI, Financial health, MidEast gas price shock |
 | **Seasonal** | A part matches "holiday track…", **or** the loaded wave asks "current status of your holiday shopping" | Holiday tracker |
 | **Event** | Any other part | Its own code, for example Prime Day, Labor Day |
@@ -263,7 +263,7 @@ Each unit is compared only with concepts of the **same question type**, and not 
 
 **Tie-breaks.** If several concepts share the exact wording, the one that already has every answer wins; otherwise the one this wave adds the fewest answers to; on a further tie, the newest concept, because it is the latest decision (for example an analyst's "keep separate").
 
-**Two passes.** Every unit is decided first against the concepts that existed before this wave; then the new concepts, options and links are written in batches. Otherwise a concept created for one question in the wave could wrongly capture its sibling.
+**Two passes.** Every unit is decided first against the concepts that existed before this wave; then the new concepts, options and links are written in batches, which keeps the number of database round trips small. Nothing is lost by deciding first: a concept created in this wave is already used by it, so under the one-question-per-concept rule it could never match a sibling question anyway.
 
 ### 8.5 What is written
 
@@ -279,13 +279,13 @@ A proposal writes only its unit-level link. Its answers are linked only when som
 
 ### 8.6 Reviewing proposals
 
-- **Confirm** (`harmonise.confirm`, which the code's comments call the Mappings page): accept the proposed concept, or choose another. It refuses if that concept is already used by another question in the same wave. A conditional update guarantees that two people deciding at the same moment cannot both settle the same unit.
+- **Confirm** (`harmonise.confirm`; the code's comments mention a Mappings page, but no portal screen or API route calls it yet): accept the proposed concept, or choose another. It refuses if that concept is already used by another question in the same wave. A conditional update guarantees that two people deciding at the same moment cannot both settle the same unit.
 - **Automatic confirmation of the safe part** (`python -m etl.harmonise --confirm-same-wording --apply`): proposals with exactly the concept's wording that only add answers are confirmed without a person, unless the wave already uses that concept. Proposals made on similar wording always stay for a person.
-- **After any decision,** cohort memberships for that wave are re-derived, the cube cells of any cohort that changed are rebuilt, and the wave's serving rows, plus those of waves that compare with it, are rebuilt. Most decisions touch no cohort, and then nothing else is rebuilt.
+- **After a decision,** `cube.refresh_cohorts` must be run for that wave: it re-derives the wave's cohort memberships, rebuilds the cube cells of any cohort whose members changed (none, for most decisions), and always rebuilds the wave's serving rows and those of waves that compare with it. Nothing calls it automatically today; after `--confirm-same-wording --apply` the command itself reminds you to rebuild the serving rows (`python -m etl.serving --all --jobs 4`).
 
 ### 8.7 Scale
 
-From the live database's data dictionary: about 1,769 concepts, 11,670 concept options and 66,766 links.
+From the data dictionary generated from the staging database on 21 October 2026 (MySQL's approximate row estimates, `docs/technical/06-data-dictionary.md` in cip-stg): about 1,769 concepts, 11,670 concept options and 66,766 links.
 
 ### 8.8 How concepts are used
 
@@ -319,11 +319,11 @@ The config notes that this is the analysts' rule, proven against their "Beauty S
 
 ### 9.4 Versions
 
-Editing a rule creates a new version. The old version stops being read, and its members and cube cells are deleted so nothing can read it by mistake. Cohorts are applied to every wave with `python -m etl.cohorts --sync`, and re-derived for each new wave during its load (inside the cube step). Each cohort then gets its own pre-counted cells in the cube (Part 6).
+Editing a rule creates a new version. The old version stops being read, and its members and cube cells are deleted so nothing can read it by mistake. Cohorts are applied to every wave with `python -m etl.cohorts --sync`, and re-derived for each new wave during its load (inside the cube step). (On 15 November 2026 `--sync` fails: `etl/cohorts.py` looks for `config/cohorts.yml` one folder above the project. Loads are not affected, because they read the cohorts already saved in the database.) Each cohort then gets its own pre-counted cells in the cube (Part 6).
 
 ## 10. Topics, recap
 
-Every question is placed in an editorial topic from its code and wording (Part 3, Section 5). The topic is a business grouping for browsing (Shopping and Spending, Department Stores, BNPL, GLP-1 Impact, Consumer Sentiment, Demographics, Holiday Shopping Tracker and so on). An unknown module gets its own topic automatically, and an unmatched question goes to "Unclassified" without blocking the load.
+Every question is placed in an editorial topic from its code and wording (Part 3, Section 5). The topic is a business grouping for browsing (Shopping and Spending, Department Stores, BNPL, GLP-1 Impact, Consumer Sentiment, Demographics, Holiday Shopping Tracker and so on). A topic named in `config/survey_map.yml` that the database has not seen is created on first use; a question no rule matches is stored as "Unclassified" without blocking the load, and the published wave book files it under its wave module's name.
 
 ## 11. Census weighting, an optional view
 
@@ -361,7 +361,7 @@ Source in the config: US Census Bureau, American Community Survey 2023 1-year es
 | Demographic source per wave | Config for the family, else wording, else none; recorded in `cip_profile_map` | `survey_map.resolve_profile_map` |
 | Same question across waves | Concept: exact wording confirmed; added answers or 85 % similar proposed | `etl/harmonise.py` |
 | Season | July to June | `config/survey_calendar.yml` |
-| Lead sector | First part after "inc" in the tracker title; 12-week rotation | `config/survey_calendar.yml` |
+| Lead sector | First part after "inc" in the tracker title, when it is a sector; 12-week rotation | `config/survey_calendar.yml` |
 | Beauty shoppers | Asked BT1 and did not answer "No" | `config/cohorts.yml` |
 | Weighting | Off by default; raked to ACS 2023 on gender, age band, region; trimmed 0.2 to 5 | `config/weighting.yml` |
 

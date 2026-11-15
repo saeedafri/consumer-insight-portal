@@ -64,7 +64,7 @@ PAGE_NAMES = {
     "/api/v1/me": "Who is signed in",
     "/api/v1/methodology": "Methodology page",
     "/api/v1/schedule": "Launch schedule",
-    "/api/v1/ask": "Ask Coresight",
+    "/api/v1/ask": "Ask CIP",
     "/": "Public home page",
     "/features/": "Public site: features",
     "/this-week/": "Public site: this week",

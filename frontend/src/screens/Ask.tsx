@@ -1,4 +1,4 @@
-// Ask Coresight (/app/ask): a question in plain words, answered from the portal's own published survey figures with
+// Ask CIP (/app/ask): a question in plain words, answered from the portal's own published survey figures with
 // the chart that fits (api/assistant.py, no database). Each question is asked twice: quick (the nearest survey question
 // by meaning, ~100 ms) is shown at once; when it says check, the AI model's reading follows and replaces it only if it
 // found a differently worded question (the same wording asked by another study is the same answer). A conversation:
@@ -16,7 +16,20 @@ import { ExportButtons } from "../components/bits";
 import { downloadTable } from "../csv";
 import { blues, C, heatStep, labelOn, scaleColours, useTheme } from "../theme";
 import { useWeighted } from "../weight";
-import { ArrowRight, ArrowUpRight, MessageSquare } from "lucide-react";
+import { ArrowRight, ArrowUpRight, MessageSquare, Mic } from "lucide-react";
+
+// Voice dictation for the Ask box: the browser's own speech-to-text (Web Speech API). Nothing is sent to our server and
+// no AI is used; the words appear in the box and the person still presses Ask. It is visible and user-started only — the
+// mic button turns it on, and the browser asks permission and shows while it is recording. Chrome, Edge and Safari have
+// it; where it is missing (Firefox) the button is not shown (speechRecognition returns null). (15 Nov 2026)
+type HeardEvent = { results: ArrayLike<ArrayLike<{ transcript: string }>> };
+type Dictation = { lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void; abort(): void;
+  onresult: ((e: HeardEvent) => void) | null; onend: (() => void) | null; onerror: (() => void) | null };
+const speechRecognition = (): (new () => Dictation) | null => {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { SpeechRecognition?: new () => Dictation; webkitSpeechRecognition?: new () => Dictation };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+};
 
 const EXAMPLES = ["How are higher gasoline prices affecting consumer spending?", "What share bought from Amazon in all waves?",
                   "Holiday shopping progress by generation", "Economy better or worse, every 4 weeks",
@@ -180,7 +193,7 @@ function Reply({ question, answer, audience, weighted, checking, checked, onAsk 
                 rules: "Best match by words: check the question below" }[answer.understood ?? ""];
   const drawn = useRef<Chart | null>(null);
   const file = `ask-${(source?.qcode ?? "answer").toLowerCase()}`;
-  const notes = [question, answer.source_line ?? "", "Unweighted figures, from Coresight's surveys (Ask Coresight)."];
+  const notes = [question, answer.source_line ?? "", "Unweighted figures, from Coresight's surveys (Ask CIP)."];
   const tiles = answer.tiles ?? [];
   return <article className="card ask-reply">
     <div className="ask-head">
@@ -204,7 +217,7 @@ function Reply({ question, answer, audience, weighted, checking, checked, onAsk 
         {answer.takeaway && <div className="ask-takeaway"><b>What this tells us</b><p><Bold text={answer.takeaway} /></p></div>}
         {(!!answer.notes?.length || weighted) && <ul className="ask-notes small muted">
           {answer.notes?.map((n, i) => <li key={i}>{n}</li>)}
-          {weighted && <li>Your Weighted switch is on, but Ask Coresight answers with unweighted figures (as Forsta shows them).</li>}
+          {weighted && <li>Your Weighted switch is on, but Ask CIP answers with unweighted figures (as Forsta shows them).</li>}
         </ul>}
         {source && <p className="small muted ask-source">{answer.source_line}{" "}
           <Link to={source.link}>Open {source.link.includes("/trends/") ? "in Trends" : "in Question explorer"} →</Link></p>}
@@ -235,6 +248,7 @@ export default function Ask() {
   const [error, setError] = useState("");
   const [offer, setOffer] = useState<AskOffer | null>(null);   // while typing: the words put right, questions by name
   const asked = useRef(params.get("q") ?? "");   // not the address: react-router 7 updates it a render after the text
+  const panel = useRef<HTMLElement>(null);   // the box: a new answer is prepended above the replies, so scroll back up to it
   const [audience, setAudience] = useState<Audience>(savedAudience);
   const weighted = useWeighted();
   const choose = (a: Audience) => { setAudience(a); try { localStorage.setItem(AUDIENCE, a); } catch { /* private window */ } };
@@ -249,6 +263,9 @@ export default function Ask() {
     try {
       const answer = await send<Answer>("POST", "/api/v1/ask", { question, quick: true, ...(key ? { key } : {}) });
       setReplies(r => [{ question, answer, checking: !!answer.check }, ...r].slice(0, 20));
+      // the answer appears at the top: bring the box and the new answer back into view, so a click near the bottom
+      // ("Continue the analysis") does not leave the reader looking at the old answer (15 Nov 2026)
+      requestAnimationFrame(() => panel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
       if (answer.check) {   // the model's reading, after the quick answer is on screen: replaces it only for another question
         const settle = (better: Answer | null) => setReplies(r => r.map(x => x.answer !== answer ? x : !better
           || (better.mode === answer.mode && better.sources[0]?.question === answer.sources[0]?.question) ? { ...x, checking: false, checked: !!better }
@@ -271,13 +288,27 @@ export default function Ask() {
   }, [typed]);   // eslint-disable-line react-hooks/exhaustive-deps
   // a question in the address (the Home page's box, a shared link) is answered on arrival
   useEffect(() => { const q = params.get("q"); if (q) void ask(q); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const [Recogniser] = useState(speechRecognition);   // the browser's speech-to-text, or null where it is missing
+  const [listening, setListening] = useState(false);
+  const hearing = useRef<Dictation | null>(null);
+  const dictate = () => {
+    if (!Recogniser) return;
+    if (hearing.current) { hearing.current.stop(); return; }   // the button toggles: press again to stop
+    const r = new Recogniser();
+    r.lang = "en-US"; r.interimResults = true; r.continuous = false;
+    const before = text.trim() ? text.trim() + " " : "";   // dictation adds to what is already typed
+    r.onresult = e => setText(before + Array.from(e.results, said => said[0].transcript).join(""));
+    r.onend = r.onerror = () => { hearing.current = null; setListening(false); };
+    hearing.current = r; setListening(true); r.start();
+  };
+  useEffect(() => () => hearing.current?.abort(), []);   // leaving the screen stops the mic
   return <>
     <div className="page-head"><div>
-      <h1>Ask Coresight</h1>
+      <h1>Ask CIP</h1>
       <p className="lede">Ask anything about the surveys in plain words: a share, how many people, the top answers, a trend by week, two weeks, four weeks, month, quarter or year, a comparison, or a cut such as generation. Every figure is exact, from the surveys only.</p>
     </div></div>
     <div className="stack">
-      <section className="card ask-panel">
+      <section className="card ask-panel" ref={panel}>
         <form className="ask-box" onSubmit={e => { e.preventDefault(); void ask(text); }}>
           <MessageSquare size={17} strokeWidth={1.8} aria-hidden="true" />
           <label className="sr-only" htmlFor="ask">Your question</label>
@@ -286,6 +317,9 @@ export default function Ask() {
             if (!e.target.value.trim()) { setReplies([]); setError(""); setParams({}, { replace: true }); }
           }} onKeyDown={e => { if (e.key === "Escape") setOffer(null); }}
             placeholder="e.g. How are higher gasoline prices affecting consumer spending?" autoFocus />
+          {Recogniser && <button type="button" className={`btn ask-mic${listening ? " on" : ""}`} aria-pressed={listening}
+            aria-label={listening ? "Stop dictation" : "Speak your question"} title={listening ? "Listening — press to stop" : "Speak your question"}
+            onClick={dictate}><Mic size={16} aria-hidden="true" />{listening ? "Listening…" : ""}</button>}
           <button className="btn primary" disabled={busy || text.trim().length < 3}><ArrowRight size={15} aria-hidden="true" />{busy ? "Finding…" : "Ask"}</button>
         </form>
         <span className="seg ask-audience" role="group" aria-label="Answer view">

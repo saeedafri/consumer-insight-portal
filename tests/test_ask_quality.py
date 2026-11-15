@@ -1,4 +1,4 @@
-"""Ask Coresight's check of each survey after a publish (etl/ask_quality.py): every question the bank writes about the
+"""Ask CIP's check of each survey after a publish (etl/ask_quality.py): every question the bank writes about the
 survey's questions is asked and scored, and the report says how many were right. Uses tests/test_assistant.py's survey."""
 import gzip
 import json

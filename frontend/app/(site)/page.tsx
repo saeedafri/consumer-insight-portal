@@ -8,7 +8,7 @@ import { Counts, Ledger } from "./LiveFacts";
 import { siteFacts } from "./pipeline";
 
 export const metadata = {
-  title: { absolute: "Weekly US Consumer Survey Data & Retail Trends | Coresight Consumer Insight Portal" },
+  title: { absolute: "Weekly US Consumer Survey Data & Retail Trends | Coresight Consumer Intelligence Portal" },
   alternates: { canonical: "/" },
 };
 

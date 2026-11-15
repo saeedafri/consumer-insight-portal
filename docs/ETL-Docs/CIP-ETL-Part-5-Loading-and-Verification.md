@@ -1,6 +1,6 @@
 # CIP ETL Series, Part 5: Loading and Verification
 
-**Consumer Insight Portal (CIP), Coresight Research**
+**Consumer Intelligence Portal (CIP), Coresight Research**
 Series: How the CIP data pipeline works, explained for managers and the business team
 This part: the "L" of ETL, and the proof that comes with it. How data is written into the database, in what order and inside which transactions; how every wave is proven equal to its source before anyone can see it; what happens when something fails; and the checks that keep the whole database healthy over time
 Previous part: Part 4, Transformation (Business Logic). Next part: Part 6, Derived Data, Serving and Publishing
@@ -18,9 +18,9 @@ Loading is writing the transformed data into the MySQL database `cip_stg` so tha
 | **Invisible until proven** | A wave is hidden (`loading`) while it is written, and becomes visible (`verified`) only after every check passes | Nobody ever sees half-written or wrong data |
 | **All or nothing for the facts** | A wave's respondents and answers are replaced in **one** database transaction | A failure never leaves a wave half old and half new |
 | **Safe to repeat** | Every write is keyed on Forsta's own identifiers and updates in place | Re-running a load never creates duplicates |
-| **One writer at a time** | Every job that writes takes one shared lock first | Two jobs never overwrite or deadlock each other |
-| **Every load is recorded** | Each attempt gets a row in the audit table `cip_load_log` | Who loaded what, when, how many rows, and why it failed is always on record |
-| **Fail loudly** | Any doubt (a count that differs, a database warning) fails the wave and emails the team | No number is ever changed or dropped silently |
+| **One writer at a time** | Every ETL job that loads or rebuilds survey data takes one shared lock first | Two jobs never overwrite or deadlock each other |
+| **Every load is recorded** | Each attempt that reaches the database gets a row in the audit table `cip_load_log`; one that fails during the download is recorded in the register (`cip_forsta_survey`, `cip_forsta_event`) | Who loaded what, when, how many rows, and why it failed is always on record |
+| **Fail loudly** | Any doubt (a count that differs, a database warning) fails the wave and emails the private failure list | No number is ever changed or dropped silently |
 
 ## 2. The order of writes for one wave
 
@@ -47,9 +47,9 @@ This is the exact sequence in `_load_snapshot()`. "Own" means the step commits i
 | 17 | Rebuild the survey calendar | `cip_wave_module` | own |
 | 18 | Rebuild the serving rows of waves that compare against this one | `srv_*` of other waves | own per wave |
 
-The code times stages 3 to 13 and logs the seconds for each (`fetch`, `definitions`, `write`, `verify`, `profiles`, `harmonise`, `cube`, `search`, `tracker_line`, `serving`), together with respondents loaded, harmonisation counts and cube cells. So the cost of each stage is visible in the logs for every wave.
+The code times the download (`fetch`, before step 1) and steps 3 to 13, and logs the seconds for each (`fetch`, `definitions`, `write`, `verify` (with step 6), `profiles` (steps 7 and 8), `harmonise`, `cube`, `search`, `tracker_line`, `serving`), together with respondents loaded, harmonisation counts and cube cells. So the cost of each stage is visible in the logs for every wave.
 
-**Why step 4 alone is one big transaction, and the rest are separate.** The facts (respondents and answers) are the irreplaceable part: they must change together or not at all. Everything after step 5 is **derived** from the facts and can always be rebuilt from them. If a derived step fails, the facts are still correct, and the integrity check (Section 11) or the next run rebuilds what is missing.
+**Why step 4 alone is one big transaction, and the rest are separate.** The facts (respondents and answers) are the irreplaceable part: they must change together or not at all. Everything after step 5 is **derived** from the facts and can always be rebuilt from them. If a derived step fails during the load, the facts stay stored, but the wave is marked `failed` and hidden, and the next run reloads it. The integrity check (Section 11) rebuilds derived rows that are missing from waves already `verified`.
 
 ## 3. Writing the survey row and the questionnaire
 
@@ -57,11 +57,11 @@ The code times stages 3 to 13 and logs the seconds for each (`fetch`, `definitio
 
 The wave's row in `cip_survey` is written with "insert, or update if it exists", keyed on (platform, source reference, wave label). For a Forsta wave that is (`forsta`, the Forsta path, the Monday label). The same Forsta wave therefore always lands on the same row and keeps its `survey_id`. On update, the family, wave label, wave date and datamap fingerprint keep their stored values if the new ones are empty.
 
-Immediately after, the wave is set to **`loading`**. Every portal screen and every derived step reads only `verified` waves, so from this moment the wave disappears from view until it is proven.
+Immediately after, the wave is set to **`loading`**. The database views behind the screens show only `verified` waves, so a new wave stays invisible until it is proven. (The load's own derived steps build this wave while it is `loading`. On a reload, the published files keep showing the previous version until the run publishes again.)
 
 ### 3.2 The questionnaire
 
-The questions, options, items and fields (Part 3) are written in one transaction with a fixed, small number of statements: one batched statement per table, whatever the size of the questionnaire. Every row is "insert, or update if it exists", keyed on Forsta's own names. Fields use "insert if missing". Reloading an unchanged questionnaire therefore changes nothing; a changed questionnaire updates wordings, labels and flags in place.
+The questions, options, items and fields (Part 3) are written in one transaction with a small, fixed number of statements, whatever the size of the questionnaire: one each for questions, options and items, two for fields, plus one per new topic. Questions, options and items are "insert, or update if it exists", keyed on Forsta's own names. Fields use "insert if missing". Reloading an unchanged questionnaire therefore changes nothing; a changed questionnaire updates wordings, labels and flags in place.
 
 ## 4. Transaction A: replacing the facts
 
@@ -81,7 +81,7 @@ This is the core of loading (`_write()`). Everything below happens inside one da
 3. The file is uploaded to MySQL in **one command**, `LOAD DATA LOCAL INFILE`, in UTF-8 (utf8mb4). Empty values are written as MySQL's NULL marker, and tabs, line breaks and backslashes inside values are escaped so they cannot break a row.
 4. The temporary file is deleted.
 
-**Why one bulk command.** The database is in Azure and the team is in India. The code measured that the network round trips, not the database, were the cost: 13,000 rows took 18 seconds as ordinary inserts. One bulk upload sends the whole wave as one compact stream.
+**Why one bulk command.** The database is in Azure, and the pipeline was first run from India. The code measured that the network round trips, not the database, were the cost: 13,000 serving-table rows took 18 seconds as ordinary inserts. One bulk upload sends the whole wave as one compact stream.
 
 **The fallback.** If the server refuses bulk upload from a client (MySQL errors 1148, 2068 or 3948, meaning "LOCAL INFILE is switched off"), the same file is read back and sent as batched inserts of 5,000 rows each. Any other error is raised.
 
@@ -130,15 +130,15 @@ Once verification passes:
 4. The wave is set to **`verified`**. From this moment it is visible on the portal.
 5. The register marks the survey `loaded`, records its `survey_id` and load time, resets its failure counter, and writes an event row.
 6. The survey calendar is rebuilt, because the wave's questions may now reveal a seasonal tracker.
-7. Waves that compare against this one (the next week, and the same week next year) get their serving rows rebuilt, so their "vs last week" and "vs last year" figures now include it. A failure there is logged and never fails this wave.
+7. Waves that compare against this one (the next week, and the same week next year) get their serving rows rebuilt, so their "vs last week" and "vs last year" figures now include it. A failure rebuilding one of those waves is logged and never fails this wave.
 
 ## 7. Failure handling
 
 ### 7.1 What happens when a load step fails
 
-Any error from step 3 onward is caught, handled, and then raised again so the run records it:
+Any error in steps 3 to 13 (a stop signal too) is caught, handled, and then raised again so the run records it:
 
-1. The audit row is closed with status `failed`, the rows read and written so far, and the error text (up to 2,000 characters).
+1. The audit row is closed with status `failed`, the rows read, the rows loaded (0 if transaction A had not committed, otherwise the number of respondent records) and the error text (up to 2,000 characters).
 2. **The "intact" rule decides the wave's status:**
    - If transaction A never committed (`written` is still empty) **and** the wave was already `verified` from an earlier load, its old facts were never touched. It goes back to **`verified`**, and people keep seeing last load's data.
    - Otherwise the wave becomes **`failed`**, and its serving rows are deleted, so no screen or published file keeps numbers for answers that are no longer there.
@@ -149,9 +149,10 @@ Any error from step 3 onward is caught, handled, and then raised again so the ru
 
 | Rule | Value |
 |---|---|
-| Retry a failed wave automatically | Yes, in each following run |
-| Maximum consecutive failures before automatic retries stop | 3 |
-| After that | It waits for a person to run `python -m etl.forsta_etl --survey <path>` |
+| Retry a failed wave automatically | Yes, in every run, up to 3 failures in a row |
+| After 3 failures in a row | Retried once every 6 hours (when its last failure is 6 hours old), not on every run (before 15 November 2026 it stopped for good) |
+| A wave that failed while still live in Forsta | Retried once as soon as Forsta closes it, whatever its count |
+| At once, by hand | `python -m etl.forsta_etl --survey <path>`; each failure email gives this command and the time of the next automatic try |
 | Counter reset | On the next successful load |
 
 ### 7.3 Who is told
@@ -166,11 +167,11 @@ Any error from step 3 onward is caught, handled, and then raised again so the ru
 |---|---|---|
 | Download from Forsta fails (before the wave row is touched), wave verified before | `verified` | Last load's data, unchanged |
 | Download from Forsta fails on a first load | No wave row yet; the register shows `failed` | None |
-| Questionnaire step fails, wave verified before | `verified` | Last load's data, unchanged |
+| Questionnaire step fails, wave verified before | `verified` | Last load's answers, unchanged |
 | Questionnaire step fails on a first load | `failed` | None |
-| Transaction A rolls back (for example a MySQL warning) on a wave verified before | `verified` | Last load's data, unchanged |
+| Transaction A rolls back (for example a MySQL warning) on a wave verified before | `verified` | Last load's answers, unchanged (questionnaire wording updates from step 3 stay) |
 | Verification finds a difference | `failed`, serving rows removed | None until the next successful load |
-| A derived step fails after verification | `failed`, serving rows removed | None until the next successful load or heal |
+| A derived step fails after verification | `failed`, serving rows removed | None until the next successful load |
 
 ## 8. Reloads and idempotency
 
@@ -196,30 +197,30 @@ The code's own description of the loaders: everything is idempotent; re-running 
 Every job that writes (the scheduled run, a hand-run load, a rebuild, a publish, the China loader, the respondent rekey) first asks MySQL for a named lock, **`cip_etl`** (`GET_LOCK`).
 
 - If the lock is free, the job holds it for its whole run. Monday's watch is the exception: it takes the lock for each 30-minute check and frees it while it sleeps, so uploads and the China loader work during launch week (before 15 November 2026 it held it for up to 54 hours). A scheduled check finds the watch's heartbeat "waiting" and leaves the next check to the watch.
-- If another job holds it, the new job stops at once ("Another CIP run holds the lock"). A scheduled check every 30 minutes simply finds the lock taken while Monday's watch runs, and stops.
+- If another job holds it, the new job stops at once ("Another CIP run holds the lock"). Monday's watch is the exception: a check that finds the lock taken simply tries again 30 minutes later, and still reads the week's status, so its deadline message is never "status: unknown".
 - A container restart's publish restore may queue for the lock (up to 6 hours) instead of stopping.
 - The lock belongs to the database connection. If a job is killed, its connection closes and the lock is released automatically. No stuck lock needs clearing by hand.
-- The lock's connection is told not to time out for 8 hours, longer than the longest run (3 hours).
+- The lock's connection is told not to time out for 7 days, longer than any run (a full history rebuild can pass 8 hours, MySQL's default).
 - While a job holds the lock, a stop signal (SIGTERM, a stopped container) unwinds the job instead of ending it on the spot, so every loader closes its run as failed and hides its half-loaded wave.
 
 The code records why the lock exists: two writers at once deadlocked on 20 October 2026.
 
 ### 9.2 Other protections
 
-- **Serving builds** run at the "read committed" isolation level, so building one wave does not block building another, and are retried up to 3 times with a short growing wait on MySQL's lock-timeout and deadlock errors (1205, 1213).
+- **Serving builds** run at the "read committed" isolation level, so building one wave does not block building another, and are tried up to 3 times in all (2 retries, waiting about 1 then 2 seconds) on MySQL's lock-timeout and deadlock errors (1205, 1213).
 - **Mapping decisions** use a conditional update ("only if still proposed"), so two analysts deciding the same proposal at once cannot both win.
 
 ### 9.3 Database roles
 
-The code connects with two roles: `etl`, which writes, and `app`, which the portal and API use to read. Only the ETL role uses bulk upload. The README states the rule: the portal reads; only the ETL writes.
+The code connects with three roles: `etl` (the data loads, the only role that writes survey data, and the only one allowed bulk upload), `api_write` (the API's few writes of its own: boards, saved views, alerts, the access log) and `app` (the portal's reads and the publish step). The API's own writes do not take the run lock.
 
 ## 10. Reconciliation: comparing every value with Forsta
 
 ### 10.1 When it runs
 
-- **After every run that loaded something:** for each wave loaded in that run.
+- **After every scheduled run (`scripts/weekly_forsta.py`) that loaded something:** for each wave loaded in that run. A hand-run load does not reconcile.
 - **On demand, for every Forsta wave:** `python -m etl.forsta_etl --reconcile`.
-- **On demand, for every wave of every platform:** `python scripts/reconcile.py` (or `--wave <label>` for one). Qualtrics and SurveyMonkey waves are compared with the old warehouse tables they came from. A wave loaded from a one-off export has no source left to compare against.
+- **On demand, for every wave of every platform:** `python scripts/reconcile.py` (or `--wave <label>` for one). Qualtrics and SurveyMonkey waves are checked by counts (completes, and completes per answer) against the old warehouse tables they came from, not value by value. A wave loaded from a one-off export, or a China (Baidu) wave, has no source left to compare against.
 
 ### 10.2 How it works
 
@@ -244,14 +245,14 @@ The project's documentation records a full reconciliation on 8 October 2026: 31 
 
 ## 11. The integrity check: is the whole database healthy?
 
-`etl/integrity.py` runs after every scheduled run that loaded or failed something, and in Friday's run even when nothing changed. Each check is cheap (the code notes 4 seconds or less on a database of 23 million answers). Checks come in four kinds:
+`etl/integrity.py` runs after every scheduled run that loaded or failed something, or found the published files behind the database, and once each Friday (the first check of the day that finds nothing new) even when nothing changed. Each check is cheap (the code notes 4 seconds or less on a database of 23 million answers). Checks come in four kinds, plus the plan check (22), which is reported like a base check:
 
 | Kind | Meaning | What happens |
 |---|---|---|
 | **derived** | A verified wave is missing rows the ETL derives | **Healed automatically** by rebuilding them |
 | **orphan** | A derived or index row points at something deleted | **Healed automatically** by deleting it |
 | **base** | Something in the loaded data itself is wrong | **Never touched automatically.** Reported, so a person decides |
-| **watch** | A survey the database does not hold and the pipeline cannot fetch by itself | Logged as a warning every run; never fails the run |
+| **watch** | A survey the database does not hold (or holds only in its early version) and the pipeline cannot fetch by itself | Logged as a warning each time the check runs; never fails the run |
 
 ### 11.1 Every check
 
@@ -260,7 +261,7 @@ The project's documentation records a full reconciliation on 8 October 2026: 31 
 | 1 | derived | A verified wave with reportable questions but no cube cells | Rebuild the cube |
 | 2 | derived | A verified wave missing from search | Rebuild its search rows |
 | 3 | derived | A verified Forsta tracker wave without line-by-line rows | Rebuild its lines |
-| 4 | derived | A recently served wave whose serving row count differs from its reportable cube cells (newest 20 checked) | Rebuild its serving rows |
+| 4 | derived | A wave served in the last 7 days whose serving row count differs from its reportable cube cells (newest 20 checked) | Rebuild its serving rows |
 | 5 | orphan | Line-by-line row whose respondent is gone | Delete |
 | 6 | orphan | Search row of a deleted wave | Delete |
 | 7 | orphan | Search row of a deleted question | Delete |
@@ -277,7 +278,7 @@ The project's documentation records a full reconciliation on 8 October 2026: 31 
 | 18 | base | A demographic profile filed under a different wave than its respondent | Report |
 | 19 | watch | A closed survey hibernated before it was loaded: reactivate it in Forsta, the next run loads it | Warn |
 | 20 | watch | A wave loaded while still in the field and hibernated before its final reload: the portal keeps its earlier data; reactivate it in Forsta, the next run reloads it (added 15 Nov 2026) | Warn |
-| 21 | watch | A survey no longer listed by Forsta, never loaded, and not only ever in testing: ask Forsta to restore it | Warn |
+| 21 | watch | A survey not listed by Forsta for 7 days, never loaded, and not only ever in testing: ask Forsta to restore it | Warn |
 | 22 | plan | A tracker week the data team planned (`config/launch_schedule.yml`) still not in the portal 4 days after its Monday (looking back 8 weeks) | Report |
 
 Check 22 compares against the team's plan, not every Monday, because the tracker ran fortnightly in parts of 2024 and 2025.
@@ -290,7 +291,7 @@ Check 22 compares against the team's plan, not every Monday, because the tracker
 
 ### 11.3 Result
 
-Whatever is still wrong is listed in one integrity email, with the number of problems in the subject, so a new kind of problem is not hidden by the 6-hour repeat window. If nothing failed to load but integrity problems remain, the run exits with code **5**.
+Whatever is still wrong, together with any value differences the reconciliation found (Section 10), is listed in one integrity email to the failure list, with the number of problems in the subject, so a new kind of problem is not hidden by the 6-hour repeat window. If nothing failed to load and no published number moved, but integrity or reconciliation problems remain, the run exits with code **5**.
 
 The check can also be run by hand: `python -m etl.integrity` (check and heal) or `python -m etl.integrity --check` (report only, change nothing).
 
@@ -298,7 +299,7 @@ The check can also be run by hand: `python -m etl.integrity` (check and heal) or
 
 Coresight's reports quote numbers. A **publication** in CIP is a frozen record of such numbers: its definition (which concept, which waves, which cohort, which cut, pooled or wave by wave, minimum base) and the cells it gave on the day it was published (`cip_publication`, `cip_publication_cell`).
 
-At the end of every run in which no wave failed, the pipeline recomputes every publication from today's data using the same single function that produced it, and compares cell by cell:
+At the end of every scheduled run that loaded a wave (and of Friday's full check, or a run that found the published files behind), if no wave failed, the pipeline recomputes every publication with status `published` from today's data using the same single function that produced it, and compares cell by cell:
 
 | Status | Meaning |
 |---|---|
@@ -308,22 +309,22 @@ At the end of every run in which no wave failed, the pipeline recomputes every p
 | new | A cell exists today that was not published |
 | error | The definition no longer resolves |
 
-If any publication has a moved, missing, new or error cell, the team is emailed the summary and the run exits with code **3**. This replaces the analysts' manual "Cross-Check" tab. `python -m etl.publications --drift` runs it by hand.
+If any publication has a moved, missing, new or error cell, the private failure list is emailed the summary and the run exits with code **3**. This replaces the analysts' manual "Cross-Check" tab. `python -m etl.publications --drift` runs it by hand.
 
 ## 13. Where to look: the load's records
 
 | Record | Contents |
 |---|---|
-| `cip_survey.load_status` | `loading`, `verified` or `failed` for each wave. Only `verified` is shown |
+| `cip_survey.load_status` | `loading`, `verified` or `failed` for each wave (the column also allows `superseded`, which no code sets). Only `verified` is shown |
 | `cip_forsta_survey` | Each Forsta survey's load state, `survey_id`, load time, last error and consecutive failures |
 | `cip_forsta_event` | Every observed change of state over time |
-| `cip_load_log` | One row per load attempt: source, reference, rows read, rows loaded, rows rejected, status (`success`, `partial`, `failed`), error text, start and finish time |
-| `logs/forsta-etl-errors.jsonl` | Every warning and error, one JSON line each: run, step, error type, traceback; secrets masked |
+| `cip_load_log` | One row per load attempt that reached the database: source, reference, rows read, rows loaded, rows rejected, status (`running` while it works, then `success`, `partial` or `failed`), error text, start and finish time |
+| `logs/forsta-etl-errors.jsonl` | Every warning and error of the scheduled run, one JSON line each: run, step, error type, traceback; secrets masked (a hand-run load logs to the screen only) |
 | `logs/etl-heartbeat.json` | The last sign of life and the promised next one, read by the hourly watchdog |
 | Exit code of each run | 0 fine, 1 a wave failed, 2 key or schema problem, 3 a published number moved, 4 database unreachable, 5 integrity problem not healed |
 
 ## 14. Summary
 
-Loading in CIP writes a wave in a strict order. The wave is first hidden. Its questionnaire is written in place. Then its respondents and answers are replaced together in one transaction, using a bulk upload that fails on any database warning so no value can be changed silently. Before anyone can see the wave, verification proves that every respondent, every question variable and every value Forsta sent is stored. Only then are the derived tables built and the wave made visible. If anything fails, a wave that was fine before keeps its old data, a new or broken wave stays hidden, the error is recorded and emailed, and the next runs retry it up to three times. Reloads are always safe because every write is keyed on Forsta's own identifiers. One lock ensures a single writer. After each run, every loaded value is compared with Forsta a second time, an integrity check heals what can be rebuilt and reports the rest, and every number Coresight has already published is recomputed to confirm it has not moved.
+Loading in CIP writes a wave in a strict order. The wave is first hidden. Its questionnaire is written in place. Then its respondents and answers are replaced together in one transaction, using a bulk upload that fails on any database warning so no value can be changed silently. Before anyone can see the wave, verification proves that every respondent, every question variable and every value Forsta sent is stored. Only then are the derived tables built and the wave made visible. If anything fails before the answers are replaced, a wave that was fine before keeps its old data; a failure after that, or on a new wave, hides the wave until a good load. The error is recorded and emailed, and the next runs retry it: every run up to three times, then every 6 hours. Reloads are always safe because every write is keyed on Forsta's own identifiers. One lock ensures a single writer. After each run, every loaded value is compared with Forsta a second time, an integrity check heals what can be rebuilt and reports the rest, and every number Coresight has already published is recomputed to confirm it has not moved.
 
 **Part 6** explains what is built on top of verified data: the cube, the serving tables with their week-on-week and year-on-year comparisons and significance flags, the line-by-line file, the search index, the published files, the reports, and the emails.

@@ -1,4 +1,4 @@
-"""Ask Coresight's quality check: every question an analyst, a portal user or a client might ask about a survey question
+"""Ask CIP's quality check: every question an analyst, a portal user or a client might ask about a survey question
 (its latest figure, trend, each cut its data holds, periods compared, top answers, one answer, its season), written from
 the survey question itself so the right answer is known before Ask is asked, then scored.
 

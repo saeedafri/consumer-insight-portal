@@ -6,7 +6,7 @@
 US:
   name: United States
   family: CSI-US
-  ask_words: [usa, u.s., america, american, americans, united states]   # Ask Coresight: a question naming none is about the first country here
+  ask_words: [usa, u.s., america, american, americans, united states]   # Ask CIP: a question naming none is about the first country here
   language: en
   currency: USD
   active: true

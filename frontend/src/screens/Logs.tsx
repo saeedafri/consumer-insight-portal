@@ -526,7 +526,7 @@ function RawLogs({ headers, token }: { headers: Record<string, string>; token: s
   </Card>;
 }
 
-// ---- Ask Coresight, survey by survey: checked after each publish (etl/ask_quality.py) ----------------------------------
+// ---- Ask CIP, survey by survey: checked after each publish (etl/ask_quality.py) ----------------------------------
 interface AskCheck { survey_id: number; wave_date: string; title: string; checked: string; questions: number; named: number; asked: number;
                      right: number; verified: number; verified_right: number; misses: { question: string; problem: string; verified: boolean }[] }
 const share = (n: number, of: number) => (of ? `${(100 * n / of).toFixed(1)}%` : "–");
@@ -537,7 +537,7 @@ function AskQuality({ headers, token }: { headers: Record<string, string>; token
     fetch("/api/v1/admin/ask/quality", { credentials: "same-origin", headers }).then(r => r.ok ? r.json() : []).then(setList).catch(() => setList([]));
   }, [token]);
   const shown = list?.find(c => c.survey_id === open);
-  return <Card title="Ask Coresight, survey by survey" sub="After each publish, every question people may ask about a new survey's questions (latest figure, trend, each cut its data holds, periods compared, top answers, one answer) is asked and scored. Verified answers come from a question's stored name and must be right 99% of the time; the rest are labelled best match.">
+  return <Card title="Ask CIP, survey by survey" sub="After each publish, every question people may ask about a new survey's questions (latest figure, trend, each cut its data holds, periods compared, top answers, one answer) is asked and scored. Verified answers come from a question's stored name and must be right 99% of the time; the rest are labelled best match.">
     {list?.length ? <div className="table-wrap"><table className="data">
       <thead><tr><th>Survey</th><th>Week</th><th className="num">Questions</th><th className="num">Named</th><th className="num">Asked</th>
         <th className="num">Right</th><th className="num">Verified answers right</th><th>Checked (IST)</th><th /></tr></thead>

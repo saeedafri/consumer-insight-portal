@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 python3
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --create-home --uid 10001 cip
 WORKDIR /srv/cip
-# Ask Coresight's search model (67 MB, api/ask_model.py embed): run on this server's CPU, ~3 ms a question. Before
+# Ask CIP's search model (67 MB, api/ask_model.py embed): run on this server's CPU, ~3 ms a question. Before
 # requirements.txt, standard library only, so a change of packages no longer downloads it again (15 Nov 2026)
 COPY deploy/ask-model-download.py /tmp/
 RUN python3 /tmp/ask-model-download.py models/bge-small-en-v1.5

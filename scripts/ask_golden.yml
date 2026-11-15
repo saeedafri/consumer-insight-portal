@@ -1,4 +1,4 @@
-# Ask Coresight's golden set: 150 questions worded the way analysts ask them, each with what a right answer must be.
+# Ask CIP's golden set: 150 questions worded the way analysts ask them, each with what a right answer must be.
 # Read by scripts/ask_golden.py. Run it locally and on staging before every push (research 11 Nov 2026: Uber, LinkedIn
 # and Snowflake each keep 130-150 such questions and score every step).
 #

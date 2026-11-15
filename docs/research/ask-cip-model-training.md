@@ -1,6 +1,6 @@
 # Ask CIP: the whole story, explained simply
 
-**What this is:** the full record of how we made Ask CIP (the "Ask Coresight" box in the portal) accurate, fast and
+**What this is:** the full record of how we made Ask CIP (the "Ask CIP" box in the portal) accurate, fast and
 cheap, including how we trained our own small AI model. It is written for someone who has never worked with AI or code.
 Every technical word is explained with an everyday comparison the first time it appears. The technical details are kept
 for the very end (Appendix), for engineers.

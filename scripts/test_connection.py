@@ -54,7 +54,7 @@ def check_forsta() -> bool:
 
 
 def main() -> int:
-    print("Consumer Insight Portal — connection check")
+    print("Consumer Intelligence Portal — connection check")
     db_ok = check_database()
     forsta_ok = check_forsta()
     print("\n────────────────────────────────────────────────────────────")

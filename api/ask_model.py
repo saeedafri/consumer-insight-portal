@@ -1,4 +1,4 @@
-"""Ask Coresight's model steps: find survey questions by meaning (a small model on our own CPU), and read what a
+"""Ask CIP's model steps: find survey questions by meaning (a small model on our own CPU), and read what a
 question asks for (OpenAI).
 
 Who calls it: api/ask_index.py (vectors of every survey question and its analysts' asks, once per publish) and

@@ -1,4 +1,4 @@
-"""Downloads Ask Coresight's search model at image build (deploy/Dockerfile) and once on a developer's machine:
+"""Downloads Ask CIP's search model at image build (deploy/Dockerfile) and once on a developer's machine:
 BAAI's bge-small-en-v1.5 as Qdrant's int8 ONNX export (MIT licence, 67 MB), which api/ask_model.py embed() runs on our
 own CPU: 3 ms a question, no call to OpenAI, no cost. The revision is pinned, so every build gets the same model.
 A failed download fails the build (15 Nov 2026): an image without the model would ship, and Ask would quietly

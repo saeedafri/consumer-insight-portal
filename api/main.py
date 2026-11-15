@@ -283,7 +283,7 @@ async def lifespan(app: FastAPI):
 
 
 # OpenAPI: the typed contract a future chatbot's tools are generated from (api/mcp.py); signed-in only
-app = FastAPI(title="Coresight Consumer Insight Portal API", version="1", docs_url=None, redoc_url=None,
+app = FastAPI(title="Coresight Consumer Intelligence Portal API", version="1", docs_url=None, redoc_url=None,
               openapi_url=None, lifespan=lifespan)
 
 
@@ -698,7 +698,7 @@ async def ask_answer(who: dict, question: str, quick: bool = False, check: bool 
     try:
         await asyncio.wait_for(ASK_SLOTS.acquire(), ASK_WAIT)
     except asyncio.TimeoutError:
-        raise HTTPException(503, "Ask Coresight is busy: try again in a few seconds", headers={"Retry-After": "5"})
+        raise HTTPException(503, "Ask CIP is busy: try again in a few seconds", headers={"Retry-After": "5"})
     try:
         index, shown = await ask_index(who)
         return await run_in_threadpool(assistant.ask, question, index, shown, access.scope(who), quick, key)
@@ -720,7 +720,7 @@ async def ask_suggest(q: str = Query(..., min_length=2, max_length=200), who: di
 
 @app.post("/api/v1/admin/ask/verified")
 async def ask_verified(request: Request, who: dict = Depends(admin)) -> dict:
-    """An admin marks an Ask Coresight answer as verified (the answer's "verify" block): later questions like it, with
+    """An admin marks an Ask CIP answer as verified (the answer's "verify" block): later questions like it, with
     the same names and groups, use this plan with no model (api/assistant.py save_verified)."""
     index, _ = await ask_index(who)
     try:
@@ -974,7 +974,7 @@ async def forget_role(role: str, request: Request, who: dict = Depends(super_adm
 
 @app.get("/api/v1/admin/ask/quality")
 async def ask_quality(who: dict = Depends(LOGS_PAGE)) -> list:
-    """Ask Coresight's check of each survey, newest first (etl/ask_quality.py after_publish, after every publish): how
+    """Ask CIP's check of each survey, newest first (etl/ask_quality.py after_publish, after every publish): how
     many of the questions people may ask about it Ask got right, and how its verified answers did."""
     return read_json(ask_model.LOGS / "ask-quality.json") or []
 

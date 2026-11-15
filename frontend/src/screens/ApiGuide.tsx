@@ -67,7 +67,7 @@ const TEAM: [string, string, string][] = [
 ];
 // [tool, what it does, needs on your menu]: the tools of docs/API.md section 4 (api/mcp.py TOOLS)
 const TOOLS: [string, string, string][] = [
-  ["ask", "Any question in plain words, answered as on the Ask Coresight page: the answer, every figure and its base, the chart that fits, the source, the closest questions when none matches, or which survey question was meant when two are too close to call", "Ask CIP"],
+  ["ask", "Any question in plain words, answered as on the Ask CIP page: the answer, every figure and its base, the chart that fits, the source, the closest questions when none matches, or which survey question was meant when two are too close to call", "Ask CIP"],
   ["search_questions", "Find questions by topic, words, brand or code; plain English works; one entry per question over every code it was asked under", "Search questions"],
   ["list_waves", "Survey waves, newest first, optionally of one family (e.g. CSI-US)", "—"],
   ["question_results", "One question in one wave: each answer's % for Total, gender and generation, the prior week and last year with their bases, and significance (none for weighted figures: the tests are on the unweighted ones)", "Question explorer"],

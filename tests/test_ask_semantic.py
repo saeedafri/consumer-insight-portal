@@ -1,4 +1,4 @@
-"""Ask Coresight's naming after a publish (etl/ask_semantic.py): questions that share a name but ask different things are
+"""Ask CIP's naming after a publish (etl/ask_semantic.py): questions that share a name but ask different things are
 renamed apart, questions alike keep sharing it, and nothing is sent twice. The model is faked: no network."""
 import json
 from types import SimpleNamespace

@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- Consumer Insight Portal — CSI schema
+-- Consumer Intelligence Portal — CSI schema
 -- Target:   MySQL 8.0+  ·  database `dwh_stg` on the Coresight STG server
 -- Prefix:   csi_   (views v_csi_)
 -- Charset:  utf8mb4 — retailer names contain curly apostrophes (Smith's)

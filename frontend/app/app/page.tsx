@@ -5,6 +5,6 @@ import dynamic from "next/dynamic";
 
 export default dynamic(() => import("../../src/main"), {
   ssr: false,
-  loading: () => <div className="boot" aria-busy="true"><div className="boot-head">Coresight Research · Consumer Insight Portal</div>
+  loading: () => <div className="boot" aria-busy="true"><div className="boot-head">Coresight Research · Consumer Intelligence Portal</div>
     <div className="boot-rail" /><div><div className="boot-main"><b /><s /><s /></div></div></div>,
 });

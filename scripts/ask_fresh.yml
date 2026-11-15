@@ -1,4 +1,4 @@
-# Ask Coresight's fresh test: questions people typed on staging (23 Oct - 14 Nov 2026) that are not in the golden set,
+# Ask CIP's fresh test: questions people typed on staging (23 Oct - 14 Nov 2026) that are not in the golden set,
 # with the answer written by reading each question's candidates (14 Nov 2026). Never tune Ask on these: they measure
 # questions nobody has fitted Ask to. Same format and scoring as scripts/ask_golden.yml:
 #   python scripts/ask_golden.py --questions scripts/ask_fresh.yml

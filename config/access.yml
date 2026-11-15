@@ -103,7 +103,7 @@ feature_labels:   # the names the Access screen shows
   survey: Survey preview
   search: Search questions
   schedule: Launch schedule
-  ask: Ask Coresight
+  ask: Ask CIP
   boards: Boards
   sectors: Sector databank
   retailers: Retailer databank

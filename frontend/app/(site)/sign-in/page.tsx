@@ -3,7 +3,7 @@ import { Breadcrumbs } from "../seo";
 
 export const metadata = {
   title: "Sign in",
-  description: "Sign in to the Coresight Consumer Insight Portal with your work account.",
+  description: "Sign in to the Coresight Consumer Intelligence Portal with your work account.",
   alternates: { canonical: "/sign-in/" },
 };
 

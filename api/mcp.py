@@ -22,13 +22,13 @@ from etl.serving import CUTS
 
 router = APIRouter()
 VERSION = "2025-06-18"
-INSTRUCTIONS = ("Coresight Research's Consumer Insight Portal: weekly US consumer surveys since 2020 and annual and ad hoc "
+INSTRUCTIONS = ("Coresight Research's Consumer Intelligence Portal: weekly US consumer surveys since 2020 and annual and ad hoc "
                 "studies since 2018 (about 400 adults a week). Ask anything with ask; or find questions with search_questions, then read one wave "
                 "with question_results, its history with question_trend, or two demographic cuts with crosstab. "
                 "Figures are unweighted percentages unless weighted=true; cite the survey, wave date and base (n).")
 
 TOOLS = [
-    {"name": "ask", "description": "Ask Coresight: any question about the surveys in plain words (a share, how many people, "
+    {"name": "ask", "description": "Ask CIP: any question about the surveys in plain words (a share, how many people, "
      "top answers, a trend by wave, 2 weeks, 4 weeks, month, quarter or year, a comparison, a cut such as generation). Returns "
      "the answer, every figure with its base, the chart that fits and the source question, from the surveys only; "
      "\"mode\": \"none\" with the closest questions when no survey question matches.",
@@ -104,14 +104,14 @@ def error(ask, code: int, text: str) -> dict:
 
 
 async def ask(who: dict, question: str) -> dict:
-    """The Ask Coresight page's answer (api/main.py ask_answer): the same engine, limits and access."""
+    """The Ask CIP page's answer (api/main.py ask_answer): the same engine, limits and access."""
     from api import main
     found = await main.ask_answer(who, str(question)[:500])
     return {k: found[k] for k in ("answer", "mode", "table", "chart", "sources", "suggestions")}
 
 
 async def search_questions(who: dict, query: str, limit: int = 10) -> dict:
-    """Ask Coresight's ranking (api/ask_index.py): one entry per question over every code it was asked under."""
+    """Ask CIP's ranking (api/ask_index.py): one entry per question over every code it was asked under."""
     from api import main
     main.require_feature(who, "search")
     index, shown = await main.ask_index(who)

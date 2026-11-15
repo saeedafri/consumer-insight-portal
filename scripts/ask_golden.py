@@ -1,4 +1,4 @@
-"""Ask Coresight's golden test: the questions in scripts/ask_golden.yml, run through the whole pipeline
+"""Ask CIP's golden test: the questions in scripts/ask_golden.yml, run through the whole pipeline
 (api/assistant.py: retrieval, the model when OPENAPI_KEY is set, the figures), each scored step by step.
 
     python scripts/ask_golden.py              # every question, a line each, then the score per step and the model spend

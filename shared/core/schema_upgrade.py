@@ -165,7 +165,7 @@ def tighten_statements(nullable: dict[str, dict[str, bool]], is_sqlite: bool) ->
 
 def rename_statements(engine: Engine) -> list[str]:
     """The tables were csi_ (Consumer Survey Index) until Oct 2026; they are
-    the Consumer Insight Portal's, cip_. Old views go first (they name the old
+    the Consumer Intelligence Portal's, cip_. Old views go first (they name the old
     tables and are recreated from 002_views.sql); MySQL renames every table in
     one atomic, metadata-only statement — no data is copied."""
     insp = inspect(engine)
