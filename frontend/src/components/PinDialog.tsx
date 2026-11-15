@@ -12,6 +12,7 @@ export default function PinDialog() {
   const [newName, setNewName] = useState("");
   const [title, setTitle] = useState("");
   const [note, setNote] = useState<{ text: string; board?: number } | null>(null);
+  const [busy, setBusy] = useState(false);   // the API does not dedupe: a double-click pinned twice, or made two boards (15 Nov 2026)
   const boards = useBoards(spec != null);   // read only while the dialog is open, not on every screen
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export default function PinDialog() {
 
   const pin = async () => {
     if (!spec) return;
+    setBusy(true);
     try {
       let id = Number(board);
       if (board === "new" || !boards.data?.length) {
@@ -40,6 +42,7 @@ export default function PinDialog() {
       await queries.invalidateQueries({ queryKey: ["board", id] });
       setNote({ text: "Pinned with today's numbers.", board: id });
     } catch (e) { setNote({ text: e instanceof Error ? e.message : String(e) }); }
+    finally { setBusy(false); }
   };
   const creating = board === "new" || !boards.data?.length;
   return <dialog ref={dialog} className="pin-dialog" aria-labelledby="pin-title" onClose={() => setSpec(null)}>
@@ -57,7 +60,7 @@ export default function PinDialog() {
       {note && <p className="muted" role="status">{note.text} {note.board != null && <Link to={`/boards/${note.board}`} onClick={() => dialog.current?.close()}>Open the board</Link>}</p>}
       <div className="pin-actions">
         <button type="button" className="btn" onClick={() => dialog.current?.close()}>Close</button>
-        <button type="submit" className="btn primary">Pin</button>
+        <button type="submit" className="btn primary" disabled={busy}>{busy ? "Pinning…" : "Pin"}</button>
       </div>
     </form>
   </dialog>;

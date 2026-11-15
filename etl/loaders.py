@@ -8,6 +8,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import signal
+import sys
+import threading
 from contextlib import contextmanager, suppress
 from typing import Any, Optional
 
@@ -19,7 +22,9 @@ from etl import survey_map
 logger = logging.getLogger(__name__)
 
 LOCK = "cip_etl"
-LOCK_IDLE_SECONDS = 7 * 24 * 3600   # the lock's session outlives a 54-hour watch (the server drops idle ones after 8 h)
+LOCK_IDLE_SECONDS = 7 * 24 * 3600   # the lock's session idles while its run works on other connections: it must outlive
+                                   # any run (a full rebuild, legacy_dwh --all, can pass 8 h, the server's default); a run
+                                   # that dies frees it with its connection, so a long timeout keeps nothing stuck
 
 
 class Locked(RuntimeError):
@@ -29,22 +34,33 @@ class Locked(RuntimeError):
 @contextmanager
 def etl_lock(wait: int = 0):
     """The one run lock every writer takes (scheduled run, loads, rebuilds, publish, rekey): two writers at once
-    deadlock (20 Oct 2026). Yields the lock's connection, which a long watch pings (SELECT 1) to keep. The lock
+    deadlock (20 Oct 2026). Yields the lock's connection. The lock
     goes with the connection, so a killed run frees it. SQLite (tests, local) is one process: no lock.
-    wait: seconds to queue for it (the restore at a container's start), else Locked at once."""
-    engine = get_engine("etl")
-    if engine.dialect.name != "mysql":
-        yield None
-        return
-    with engine.connect() as conn:
-        conn.execute(text(f"SET SESSION wait_timeout = {LOCK_IDLE_SECONDS}"))
-        if not conn.execute(text("SELECT GET_LOCK(:n, :w)"), {"n": LOCK, "w": wait}).scalar():
-            raise Locked("Another CIP run holds the lock (scripts/weekly_forsta.py?); try again when it finishes")
-        try:
-            yield conn
-        finally:
-            with suppress(Exception):   # a dropped connection has released it already; never hide the run's own error
-                conn.execute(text("DO RELEASE_LOCK(:n)"), {"n": LOCK})
+    wait: seconds to queue for it (the restore at a container's start), else Locked at once.
+    While it is held, SIGTERM (a kill, a stopped service) raises SystemExit instead of ending the process on the spot, so
+    each loader's cleanup still closes its run and hides its half-loaded wave (15 Nov 2026 audit: a killed load left its
+    run 'running' and its wave 'loading'). Only in the main thread, where nothing else handles SIGTERM: the weekly run
+    (scripts/weekly_forsta.py) and the API's server have their own."""
+    unwind = threading.current_thread() is threading.main_thread() and signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
+    if unwind:
+        signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
+    try:
+        engine = get_engine("etl")
+        if engine.dialect.name != "mysql":
+            yield None
+            return
+        with engine.connect() as conn:
+            conn.execute(text(f"SET SESSION wait_timeout = {LOCK_IDLE_SECONDS}"))
+            if not conn.execute(text("SELECT GET_LOCK(:n, :w)"), {"n": LOCK, "w": wait}).scalar():
+                raise Locked("Another CIP run holds the lock (scripts/weekly_forsta.py?); try again when it finishes")
+            try:
+                yield conn
+            finally:
+                with suppress(Exception):   # a dropped connection has released it already; never hide the run's own error
+                    conn.execute(text("DO RELEASE_LOCK(:n)"), {"n": LOCK})
+    finally:
+        if unwind:
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
 
 def classify_group(qcode: str, qtext: str = "", family: Optional[str] = None) -> str:
@@ -329,7 +345,9 @@ def set_load_status(survey_id: int, status: str) -> None:
 
 
 def finish_run(run_id: int, read: int, loaded: int, rejected: int = 0, error: Optional[str] = None) -> None:
-    status = "failed" if error else ("partial" if rejected else "success")
+    # any error closes the run failed, an empty one too: a KeyboardInterrupt or MemoryError has no message, and such a
+    # failed load was recorded as a success (15 Nov 2026)
+    status = "failed" if error is not None else ("partial" if rejected else "success")
     with get_engine("etl").begin() as conn:
         conn.execute(
             text(

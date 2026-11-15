@@ -715,7 +715,7 @@ CREATE TABLE IF NOT EXISTS cip_forsta_survey (
   survey_id    INT UNSIGNED NULL                  COMMENT 'cip_survey row once loaded',
   loaded_at    DATETIME     NULL,
   last_error   VARCHAR(1000) NULL,
-  attempts     SMALLINT     NOT NULL DEFAULT 0    COMMENT 'failed loads in a row; retried automatically up to MAX_ATTEMPTS',
+  attempts     SMALLINT     NOT NULL DEFAULT 0    COMMENT 'failed loads in a row; retried every run up to MAX_ATTEMPTS, then every RETRY_HOURS',
   quota_json   TEXT         NULL                  COMMENT 'last quota read while live: [{sheet, cell, limit, complete, conditional}]',
   quota_at     DATETIME     NULL,
   PRIMARY KEY (forsta_path),

@@ -98,7 +98,9 @@ export default function Logs() {
   const [saving, setSaving] = useState(false);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
-  const [denied, setDenied] = useState("");
+  const [denied, setDenied] = useState("");     // a 401 or 403 answer only: "notAdmin", or why the admin token is needed
+  // anything else that failed (an error answer, no network, a download): kept apart so it never asks for the token (15 Nov 2026)
+  const [problem, setProblem] = useState("");
   const [updated, setUpdated] = useState<Date | null>(null);
   const [beat, setBeat] = useState(0);
   const headers: Record<string, string> = token ? { "X-CIP-Admin-Token": token } : {};
@@ -109,14 +111,15 @@ export default function Logs() {
     const get = { credentials: "same-origin" as const, signal: ask.signal, headers };
     fetch(`/api/v1/admin/metrics?${query(range)}`, get)
       .then(async r => {
-        if (r.ok) { setMetrics(await r.json()); setDenied(""); setUpdated(new Date()); return; }
+        if (r.ok) { setMetrics(await r.json()); setDenied(""); setProblem(""); setUpdated(new Date()); return; }
         const detail = (await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`;
         // two different refusals: the account is not an admin (no token helps), or the token is missing or wrong
-        setDenied(detail === "Only an admin can do that"
-          ? "notAdmin"
-          : r.status === 401 || r.status === 403 ? `${detail}. Enter the admin token above (from staging.env, CIP_ADMIN_TOKEN).` : detail);
+        if (r.status === 401 || r.status === 403) {
+          setProblem("");
+          setDenied(detail === "Only an admin can do that" ? "notAdmin" : `${detail}. Enter the admin token above (from staging.env, CIP_ADMIN_TOKEN).`);
+        } else setProblem(detail);
       })
-      .catch(e => { if (e.name !== "AbortError") setDenied(String(e)); });
+      .catch(e => { if (e.name !== "AbortError") setProblem(String(e)); });
     fetch("/api/v1/admin/health", get).then(r => r.ok ? r.json() : null).then(h => h && setHealth(h)).catch(() => { /* the build id is a nicety */ });
     return () => ask.abort();
   }, [range, token, beat]);
@@ -128,7 +131,7 @@ export default function Logs() {
     fetch(`/api/v1/admin/metrics/download?${query(range)}`, { credentials: "same-origin", headers })
       .then(r => r.ok ? r.blob() : Promise.reject(new Error(`${r.status}`)))
       .then(blob => save(blob, `cip-logs-${new Date().toISOString().slice(0, 10)}.xlsx`))
-      .catch(e => setDenied(`The download failed (${e.message}); try a shorter range.`))
+      .catch(e => setProblem(`The download failed (${e.message}); try a shorter range.`))
       .finally(() => setSaving(false));
   };
 
@@ -172,6 +175,7 @@ export default function Logs() {
         {denied === "notAdmin"
           ? <>You are signed in as <b>{me?.email ?? "an account"}</b>, which is not an admin, so this page stays closed whatever the token. Only the super admin opens it (config/access.yml people: super_admin).</>
           : denied}</p></Card>}
+      {problem && <Card><p role="alert" style={{ color: "var(--red-text)", margin: 0 }}>{problem}</p></Card>}
       {metrics && <AskQuality headers={headers} token={token} />}
       {metrics && <Dashboard m={metrics} headers={headers} />}
       <RawLogs headers={headers} token={token} />
@@ -491,7 +495,8 @@ function RawLogs({ headers, token }: { headers: Record<string, string>; token: s
     void fetch(`/api/v1/admin/logs/download?source=${source}`, { credentials: "same-origin", headers })
       .then(r => r.ok ? r.blob() : Promise.reject(new Error(`${r.status}`)))
       .then(blob => save(blob, `cip-${source}.log`))
-      .catch(() => setProblem("This log has no file to download yet"));
+      // only a 404 means no file yet (api/logs.py download); a refusal or no network is a failed download (15 Nov 2026)
+      .catch(e => setProblem(e.message === "404" ? "This log has no file to download yet" : `The download failed (${e.message})`));
   };
   const from = (page - 1) * PER_PAGE + 1;
   const pager = answer && <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>

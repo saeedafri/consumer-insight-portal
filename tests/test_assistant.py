@@ -99,6 +99,7 @@ def test_survey_wording_and_named_days_are_not_periods():
     assert ask_reader.read("Amazon last 8 weeks")["when"] == [{"last": 8, "unit": "week"}]
     plan = ask_reader.read("GenAI use quarterly by gender")
     assert plan["grain"] == "quarter" and plan["cuts"] == {"gender": "all"} and plan["kind"] == "trend"
+    assert ask_reader.read("How many people bought Amazon prime in all Waves")["kind"] == "trend"   # not one pooled count
 
 
 def test_a_reused_code_is_two_questions_each_with_its_own_answers(index):
@@ -181,6 +182,29 @@ def test_the_openai_key_is_found_whatever_case_its_setting_is_typed_in(monkeypat
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("open_api_key", "sk-test")
     assert ask_model.key_name() == "open_api_key" and ask_model.key() == "sk-test"
+
+
+def test_a_refused_key_sends_no_call_for_a_while_and_health_says_why(tmp_path, monkeypatch):
+    """OpenAI's 429 (no credit, staging 15 Nov 2026) turns the AI off for PAUSE_SECONDS: no unsure question waits on it."""
+    import urllib.error
+    from api import ask_model
+    monkeypatch.setenv("OPENAPI_KEY", "sk-test")
+    monkeypatch.setattr(ask_model, "SPEND", tmp_path / "spend.json")
+    monkeypatch.setattr(ask_model, "READINGS", tmp_path / "readings.json")
+    monkeypatch.setattr(ask_model, "REFUSED", {"until": 0.0, "code": None})
+    calls = []
+
+    def refuse(request, timeout):   # OpenAI's answer to a key with no credit left
+        calls.append(1)
+        raise urllib.error.HTTPError(request.full_url, 429, "Too Many Requests", {}, None)
+
+    monkeypatch.setattr(ask_model.urllib.request, "urlopen", refuse)
+    line = {"number": 1, "text": "Which retailers have you bought from?", "waves": 9, "first": "2025-01-01", "last": "2026-11-01", "answers": ["Amazon"]}
+    assert ask_model.ready() and ask_model.plan("Amazon shoppers", [line]) is None
+    assert not ask_model.ready() and "HTTP 429: no credit" in ask_model.status()["why_off"]
+    assert ask_model.plan("Walmart shoppers", [line]) is None and len(calls) == 1   # none sent while paused
+    ask_model.REFUSED["until"] = 0.0   # the pause is over: tried again
+    assert ask_model.ready() and ask_model.status()["why_off"] is None
 
 
 def test_an_analysts_ask_brings_its_question_nearer(index):
@@ -287,6 +311,51 @@ def test_a_question_the_ai_settled_is_answered_at_once_next_time_with_no_ai(inde
     assert not any(v.get("learned") for v in index.verified)   # a learned entry without its key is never guessed from its code
 
 
+def test_the_same_person_asking_again_gets_the_learned_answer_not_the_kept_quick_one(index, monkeypatch):
+    """The quick answer kept from before the AI check settled the question is not shown again: the same wording showed it,
+    then the check replaced it, every time (15 Nov 2026)."""
+    if index.vectors is None:
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    monkeypatch.setattr(assistant.ask_model, "ready", lambda: True)
+    monkeypatch.setattr(assistant.ask_model, "plan", lambda q, c: {
+        "pick": next(i for i, x in enumerate(c) if "retailers" in x["text"]), "alt": None, "focus": [], "kind": "share",
+        "grain": "auto", "cut": "none", "period": "latest"})
+    question = "What share bought from Amazon in the latest wave?"
+    assert assistant.ask(question, index, EVERYONE, "all", quick=True)["check"]   # the quick answer, kept; the page checks it
+    assert assistant.ask(question, index, EVERYONE, "all", quick=False)["understood"] == "model"   # the AI settles it: learned
+    again = assistant.ask(question, index, EVERYONE, "all", quick=True)
+    assert again["understood"] == "learned" and not again["check"]
+
+
+def test_saving_a_verified_answer_keeps_the_others_and_never_writes_over_a_file_it_cannot_read(index, tmp_path, monkeypatch):
+    """A file it could not read was saved over with the one new answer: every admin's verified answer lost (15 Nov 2026)."""
+    monkeypatch.setattr(assistant.ask_model, "LOGS", tmp_path)
+    saved = tmp_path / "ask-verified.json"
+    assistant.save_verified({"question": "Amazon shoppers", "code": "XQ1", "key": "CSI-US/tracker/XQ1"}, index)
+    assistant.save_verified({"question": "Walmart shoppers", "code": "XQ1", "key": "CSI-US/tracker/XQ1"}, index)
+    assert [v["question"] for v in json.loads(saved.read_text())] == ["Amazon shoppers", "Walmart shoppers"]
+    saved.write_text('[{"question": "Amazon shoppers", "code": "XQ1"')   # half a file: a kill mid-write
+    with pytest.raises(ValueError, match="cannot be read"):
+        assistant.save_verified({"question": "Target shoppers", "code": "XQ1", "key": "CSI-US/tracker/XQ1"}, index)
+    assert saved.read_text() == '[{"question": "Amazon shoppers", "code": "XQ1"'   # left for an admin to repair
+
+
+def test_an_answer_from_before_the_search_vectors_is_not_kept(index):
+    """In the minutes after a deploy, before add_vectors has run, keywords alone answer: such an answer was kept until the
+    next publish (15 Nov 2026)."""
+    if index.vectors is None:
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    vectors, index.vectors, index.settled = index.vectors, None, False   # index_for's background build still running
+    assistant.ask("Amazon shoppers over time", index, EVERYONE, "all")
+    assert not assistant.ANSWERS
+    index.vectors = vectors
+    assistant.ask("Amazon shoppers over time", index, EVERYONE, "all")
+    assert len(assistant.ANSWERS) == 1
+    index.vectors, index.settled = None, True   # a build that ended with none (no search model): answers are kept
+    assistant.ask("Walmart shoppers over time", index, EVERYONE, "all")
+    assert len(assistant.ANSWERS) == 2
+
+
 def test_a_verified_answer_beats_a_stored_name_and_an_ai_saved_one_does_not(index, tmp_path, monkeypatch):
     from api import ask_index
     if index.vectors is None:
@@ -367,7 +436,10 @@ def test_a_misspelt_retailer_is_put_right_and_other_words_are_left_alone(tmp_pat
     assert again.correct_spelling("What share bought from Amazon in the latest wave?") == "What share bought from Amazon in the latest wave?"
 
 
-def test_a_retailer_and_a_time_alone_is_the_retailer_list_even_when_the_ai_picks_a_question_naming_it(tmp_path, index, monkeypatch):
+@pytest.fixture()
+def with_prime(tmp_path, index, monkeypatch):
+    """The test index with a Prime membership question (PM1) beside the retailer list (XQ1), whose 8 waves count as
+    long-running here (the real lists: 195)."""
     if index.vectors is None:
         pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
     (tmp_path / "questions" / "CSI-US" / "tracker" / "PM1.json.gz").write_bytes(gzip.compress(json.dumps(question_file(
@@ -376,13 +448,28 @@ def test_a_retailer_and_a_time_alone_is_the_retailer_list_even_when_the_ai_picks
     waves = [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping and Spending", "modules": []} for i, d in enumerate(DATES)]
     again = Index(tmp_path / "questions", waves)
     again.add_vectors()
-    monkeypatch.setattr(assistant, "TREND_FROM", 1)   # XQ1's 8 waves count as long-running (the real lists: 195)
+    monkeypatch.setattr(assistant, "TREND_FROM", 1)
+    return again
+
+
+def test_a_retailer_and_a_time_alone_is_the_retailer_list_even_when_the_ai_picks_a_question_naming_it(with_prime, monkeypatch):
     monkeypatch.setattr(assistant.ask_model, "ready", lambda: True)
     monkeypatch.setattr(assistant.ask_model, "plan", lambda q, c: {   # the AI picks the question with Amazon in its wording
         "pick": next(x["number"] for x in c if "Prime" in x["text"]), "alt": None, "focus": [], "kind": "share",
         "grain": "auto", "cut": "none", "period": "all"})
-    assert assistant.answer("Amazon in October 2026", again, EVERYONE)["sources"][0]["qcode"] == "XQ1"
-    assert assistant.answer("How many have Amazon Prime?", again, EVERYONE)["sources"][0]["qcode"] == "PM1"
+    assert assistant.answer("Amazon in October 2026", with_prime, EVERYONE)["sources"][0]["qcode"] == "XQ1"
+    assert assistant.answer("How many have Amazon Prime?", with_prime, EVERYONE)["sources"][0]["qcode"] == "PM1"
+
+
+def test_a_name_the_question_says_in_full_is_not_a_shorter_answer_in_the_lists(with_prime, monkeypatch):
+    """"bought Amazon prime" is the Prime membership question, whose wording says "Amazon Prime", not "Amazon" among the
+    retailer list's answers: the list went first and the reader, sure, took it (fresh set, 15 Nov 2026)."""
+    monkeypatch.setattr(assistant.ask_model, "read_pick", lambda q, c: (c[0]["number"], 9.0))   # a sure reader taking the first line
+    assert assistant.answer("How many people bought Amazon prime?", with_prime, EVERYONE)["sources"][0]["qcode"] == "PM1"
+    assert assistant.answer("How many people bought from Amazon?", with_prime, EVERYONE)["sources"][0]["qcode"] == "XQ1"
+    full = frozenset({"amazon prime", "dollar general"})
+    assert assistant.focus("Do Amazon Prime members also buy from Amazon?", ["Walmart", "Amazon"], full) == [1]   # said alone too
+    assert assistant.focus("Dollar General shoppers", ["Target", "Dollar General"], full) == [1]   # the whole name is the answer
 
 
 def test_the_reader_scores_none_of_these_as_zero_and_gives_its_lead(monkeypatch):

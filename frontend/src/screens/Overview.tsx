@@ -37,6 +37,7 @@ export default function Overview() {
   return <>
     <div className="page-head"><div>
       <h1>{lead ? `${lead.label} ${lead.d! > 0 ? "rose" : "fell"} ${Math.abs(lead.d!).toFixed(1)} points to ${lead.now.toFixed(1)}%`
+                : all[0]?.weighted ? "Weighted figures: significance is tested on the unweighted ones"   // moves.ts marks none (15 Nov 2026)
                 : w.prior_survey_id ? `No significant change against ${vs.prior}` : w.title}</h1>
       <p className="lede">{w.in_field && <><span className="badge-partial">In field — partial</span>{" "}</>}Wave of {fmtDate(w.wave_date)} · {w.qualified_n.toLocaleString("en-US")} qualified respondents · {book.questions.length} {book.questions.length === 1 ? "question" : "questions"}. {lead ? <>{lead.q.text} {up.length > 1 && <>· {up.length} answers moved significantly against {prior ? fmtDate(prior.wave_date) : vs.prior}.</>}</> : w.title}</p>
     </div>

@@ -498,7 +498,9 @@ def warm_after_restore(out: Path) -> None:
 
 def rollback(root: Path = ROOT) -> Path:
     live = (root / "current").resolve().name
-    versions = sorted(p.name for p in root.glob(".build-*") if p.is_dir())
+    # whole versions only: the manifest is written last, and a publish killed outright (its cleanup in build() skipped)
+    # leaves a folder without one, which rollback took as the version before (15 Nov 2026)
+    versions = sorted(p.parent.name for p in root.glob(".build-*/manifest.json"))
     older = [v for v in versions if v < live]
     if not older:
         raise RuntimeError("no earlier version to roll back to")

@@ -208,6 +208,18 @@ def test_reloading_a_legacy_wave_replaces_not_duplicates(legacy):
     assert count(legacy, f"SELECT COUNT(*) FROM cip_concept_map WHERE survey_id = {sid}") == maps_before
 
 
+def test_a_legacy_load_that_is_killed_closes_its_run_and_hides_its_wave(legacy, monkeypatch):
+    """15 Nov 2026 audit #4: legacy_dwh closed its run only on success, and a kill (SIGTERM, raised as SystemExit) skipped
+    its cleanup: the run stayed 'running', which blocks scripts/init_db.py, and the wave 'loading'."""
+    monkeypatch.setattr("etl.wave_loader.rebuild_question_bases", lambda sid: (_ for _ in ()).throw(SystemExit(143)))
+    with pytest.raises(SystemExit):
+        legacy_dwh.load_legacy("SV_T")
+    with legacy.connect() as conn:
+        assert tuple(conn.execute(sa.text(
+            "SELECT s.load_status, l.status, l.error_text FROM cip_survey s JOIN cip_load_log l ON l.survey_id = s.survey_id"
+            " WHERE s.source_ref = 'SV_T'")).one()) == ("failed", "failed", "SystemExit: 143")
+
+
 def test_a_loaded_legacy_wave_reconciles_and_a_tampered_one_does_not(legacy):
     sid = legacy_dwh.load_legacy("SV_T")
     checked, problems = legacy_dwh.reconcile_legacy(sid)
@@ -334,6 +346,32 @@ def test_qualtrics_snapshot_rolls_back_on_answer_failure(csi_db, tmp_path, monke
         }
         assert after == before
         assert conn.execute(sa.text("PRAGMA foreign_key_check")).all() == []
+        # the answers never changed, so the wave stays shown
+        assert conn.execute(sa.text("SELECT load_status FROM cip_survey WHERE survey_id = :s"), {"s": sid}).scalar() == "verified"
+
+
+def test_a_qualtrics_reload_is_hidden_while_it_loads_and_closed_when_killed(csi_db, tmp_path, monkeypatch):
+    """15 Nov 2026 audit #4: the Qualtrics loader never marked its wave loading or failed and never closed its run on an
+    error, so a reload stopped after its answers were written stayed 'verified' (integrity then healed it as whole)."""
+    path = qualtrics_file(tmp_path)
+    sid = qualtrics_export.ingest_export(path, "2025-05-12")
+
+    def status():
+        with csi_db.connect() as conn:
+            return conn.execute(sa.text("SELECT load_status FROM cip_survey WHERE survey_id = :s"), {"s": sid}).scalar()
+    during = []
+
+    def killed(survey_id):   # a SIGTERM after the answers are written (etl/loaders.py etl_lock makes it SystemExit)
+        during.append(status())
+        raise SystemExit(143)
+    monkeypatch.setattr(qualtrics_export.harmonise, "harmonise_survey", killed)
+    with pytest.raises(SystemExit):
+        qualtrics_export.ingest_export(path, "2025-05-12")
+    with csi_db.connect() as conn:
+        runs = [tuple(r) for r in conn.execute(sa.text(
+            "SELECT status, error_text FROM cip_load_log WHERE survey_id = :s ORDER BY load_id"), {"s": sid})]
+    assert during == ["loading"] and status() == "failed"
+    assert runs == [("success", None), ("failed", "SystemExit: 143")]
 
 
 def test_qualtrics_empty_reload_removes_the_prior_snapshot(csi_db, tmp_path):

@@ -61,6 +61,7 @@ export function Change({ now, before, label, routing, move }:
       <TooltipTrigger render={chip} />
       <TooltipContent side="top">
         {sig ? SIG_RULE : move?.testable ? "Not significant once corrected for testing every answer of this wave (Benjamini–Hochberg)"
+          : move?.weighted ? "Not tested: significance is tested on the unweighted figures; switch weighting off to see it"
           : "Not tested: fewer than 30 people on one side, or the question changed"}
       </TooltipContent>
     </Tooltip>

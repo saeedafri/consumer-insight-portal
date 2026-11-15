@@ -44,7 +44,7 @@ from shared.core.config import config
 from shared.core.database import bulk_insert, get_engine
 from etl import cube, harmonise
 from etl.records import respondent_key
-from etl import forsta_api, launch_schedule, serving, survey_calendar, survey_map, tracker_line
+from etl import forsta_api, launch_schedule, notify, serving, survey_calendar, survey_map, tracker_line
 from etl.forsta_client import ForstaError
 from etl.record_stream import source_records, survey_snapshot
 from etl.loaders import (Locked, drop_unlisted_items, etl_lock, finish_run, index_survey, load_definitions, set_load_status,
@@ -369,8 +369,9 @@ def _load_snapshot(client, path, meta, datamap, questions, records, lap, seconds
         lap("serving")
         log.info("%s → survey_id %s (%s): %d respondents; harmonised %s; cube %d cells; seconds %s", path, survey_id,
                  wave, len(records), mapped, cells, seconds)
-    except Exception as exc:
-        finish_run(run, len(records), written or 0, error=str(exc)[:2000])
+    except BaseException as exc:   # a kill too (SIGTERM is SystemExit in scripts/weekly_forsta.py): it left the run
+        # 'running' and the wave 'loading'; and an error with no message (KeyboardInterrupt) is named (15 Nov 2026)
+        finish_run(run, len(records), written or 0, error=f"{type(exc).__name__}: {exc}"[:2000])
         # the answers write is one transaction: if it never committed, a verified wave is still intact
         intact = written is None and previous == "verified"
         set_load_status(survey_id, "verified" if intact else "failed")
@@ -523,16 +524,20 @@ def _reconcile(survey_id, client, index):
 
 
 # ── the run ────────────────────────────────────────────────────────────────
-MAX_ATTEMPTS = 3   # a wave failing this many runs in a row waits for a hand run (--survey) instead of a full fetch every run
+MAX_ATTEMPTS = 3   # a wave failing this many runs in a row is then fetched in full once every RETRY_HOURS, not every run
+RETRY_HOURS = 6    # 15 Nov 2026 audit: before, 3 failures (90 minutes of Forsta trouble in fieldwork) stopped a wave for good
 
 
 def run_due(client) -> dict[str, list[str]]:
-    """Load every due (and previously failed, up to MAX_ATTEMPTS) wave, oldest first; a failure is
-    recorded and the run carries on."""
+    """Load every due wave and every failed one (up to MAX_ATTEMPTS in a row, then once its last failure is RETRY_HOURS
+    old: _mark records each in cip_forsta_event), oldest first; a failure is recorded and the run carries on."""
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=RETRY_HOURS)
     with get_engine("etl").connect() as conn:
         due = [p for (p,) in conn.execute(text(
-            "SELECT forsta_path FROM cip_forsta_survey WHERE load_state = 'due' OR (load_state = 'failed' AND attempts < :n)"
-            " ORDER BY closed_at, forsta_path"), {"n": MAX_ATTEMPTS})]
+            "SELECT forsta_path FROM cip_forsta_survey f WHERE load_state = 'due' OR (load_state = 'failed' AND (attempts < :n"
+            " OR NOT EXISTS (SELECT 1 FROM cip_forsta_event e WHERE e.forsta_path = f.forsta_path"
+            " AND e.load_state = 'failed' AND e.seen_at > :since))) ORDER BY closed_at, forsta_path"),
+            {"n": MAX_ATTEMPTS, "since": since})]
     result: dict[str, list[str]] = {"loaded": [], "failed": []}
     listed = {str(m["path"]).strip("/"): m for m in client.surveys()} if due else {}   # one list call per run
     for path in due:
@@ -554,6 +559,16 @@ def survey_id_of(path: str) -> Optional[int]:
 def last_error_of(path: str) -> str:
     with get_engine("etl").connect() as conn:
         return conn.execute(text("SELECT last_error FROM cip_forsta_survey WHERE forsta_path = :p"), {"p": path}).scalar() or "no error recorded"
+
+
+def next_try(path: str) -> str:
+    """What a failed wave's email says happens next (scripts/weekly_forsta.py run): run_due's rule for it, and the
+    command that loads it at once."""
+    with get_engine("etl").connect() as conn:
+        failures = conn.execute(text("SELECT attempts FROM cip_forsta_survey WHERE forsta_path = :p"), {"p": path}).scalar() or 0
+    when = (f"by the next check, within 30 minutes; after {MAX_ATTEMPTS} failures in a row, every {RETRY_HOURS} hours"
+            if failures < MAX_ATTEMPTS else f"in {RETRY_HOURS} hours ({failures} failures in a row)")
+    return f"Tried again {when}. To load it at once: python -m etl.forsta_etl --survey {path}"
 
 
 def open_forsta():
@@ -599,6 +614,7 @@ def _run(args) -> int:
         except Exception as exc:
             _mark(args.survey.strip("/"), "failed", error=str(exc))
             raise
+        notify.alerts([survey_id_of(args.survey.strip("/"))])   # a hand-run load alerts as the weekly run does
     elif args.due:
         log.info("Register: %s", discover(client))
         result = run_due(client)

@@ -20,13 +20,16 @@ function AllBoards() {
   const { data, error, isLoading, refetch } = useBoards();
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);   // the API does not dedupe: a double-click made two boards (15 Nov 2026)
   const navigate = useNavigate();
   const create = async () => {
+    setBusy(true);
     try {
       const id = (await send<{ board_id: number }>("POST", "/api/v1/boards", { name })).board_id;
       void queries.invalidateQueries({ queryKey: ["boards"] }); navigate(`/boards/${id}`);
     }
     catch (e) { setNote(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
   };
   if (isLoading) return <Loading what="boards" />;
   if (error) return <Failure error={error} />;
@@ -42,7 +45,7 @@ function AllBoards() {
         </div>}
         <form className="row-form" onSubmit={e => { e.preventDefault(); void create(); }}>
           <input aria-label="Board name" placeholder="New board, e.g. Holiday read-out" value={name} maxLength={200} onChange={e => setName(e.target.value)} />
-          <button className="btn primary" type="submit" disabled={!name.trim()}>Create board</button>
+          <button className="btn primary" type="submit" disabled={!name.trim() || busy}>{busy ? "Creating…" : "Create board"}</button>
           {note && <span className="muted" role="status">{note}</span>}
         </form>
       </section>
@@ -111,6 +114,7 @@ function Pinned({ item, current, act, removeLater }: { item: BoardItem; current:
   act: (method: "POST" | "DELETE", url: string, body?: unknown) => Promise<boolean>;
   removeLater: (what: string, url: string, hide: (b: Board) => Board) => void }) {
   const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);   // the API does not dedupe: a double-click posted the comment twice (15 Nov 2026)
   const { header, rows, notes } = item.spec;
   const shown = header.map((_, j) => j).filter(j => j === 0 || rows.some(r => r[j] != null && r[j] !== ""));   // drop an empty column (a one-group crosstab's "Group")
   const cell = (row: (string | number | null)[], c: string | number | null) => c == null || c === "" ? "–" : typeof c !== "number" ? c
@@ -131,9 +135,10 @@ function Pinned({ item, current, act, removeLater }: { item: BoardItem; current:
       {item.comments.map(c => <p key={c.comment_id} className="comment"><b>{c.author}</b> <span className="muted">{day(c.created_at)}</span><br />{c.body}
         <button className="btn comment-delete" aria-label={`Delete ${c.author}'s comment`} onClick={() => removeLater(`${c.author}'s comment`, `/api/v1/boards/comments/${c.comment_id}`,
           b => ({ ...b, items: b.items.map(x => x.item_id === item.item_id ? { ...x, comments: x.comments.filter(y => y.comment_id !== c.comment_id) } : x) }))}>Delete</button></p>)}
-      <form className="row-form" onSubmit={e => { e.preventDefault(); void act("POST", `/api/v1/boards/items/${item.item_id}/comments`, { body: text }).then(ok => ok && setText("")); }}>
+      <form className="row-form" onSubmit={e => { e.preventDefault(); setBusy(true);
+        void act("POST", `/api/v1/boards/items/${item.item_id}/comments`, { body: text }).then(ok => ok && setText("")).finally(() => setBusy(false)); }}>
         <input aria-label="Add a comment" placeholder="Add a comment for the team" value={text} maxLength={2000} onChange={e => setText(e.target.value)} />
-        <button className="btn" type="submit" disabled={!text.trim()}>Comment</button>
+        <button className="btn" type="submit" disabled={!text.trim() || busy}>{busy ? "Sending…" : "Comment"}</button>
       </form>
     </section>
   </Card>;

@@ -95,8 +95,11 @@ def portal(tmp_path, monkeypatch, csi_db):
     return tmp_path
 
 
-def signed(email, scope=None):
-    return session.issue(email, scope=scope or access.scope(access.profile(email)))
+def signed(email, scope=None, hours=session.SESSION_HOURS):
+    """A signed-in cookie whose session is recorded as the demo sign-in records it (signin.remember)."""
+    cookie = session.issue(email, hours=hours, scope=scope or access.scope(access.profile(email)))
+    signin.remember(session.read(cookie)["sid"], access.profile(email), "demo")
+    return cookie
 
 
 def test_no_session_is_401_in_the_one_error_shape(portal):
@@ -262,7 +265,7 @@ def test_sign_in_through_coresights_own_identity_provider(portal, monkeypatch):
     sent = parse_qs(urlsplit(head["location"][0]).query)
     assert status == 303 and head["location"][0].startswith("https://coresight.com/csr-idp/authorize?")
     assert sent["code_challenge_method"] == ["plain"] and sent["client_id"] == ["sip-app"]
-    login = head["set-cookie"][0].split(";")[0]                                  # cip_login=<signed state>
+    login = head["set-cookie"][0].split(";")[0]                                  # cip_login_<state>=<signed handshake>
     token = {"iss": "https://coresight.com", "aud": "sip-app", "exp": time.time() + 60,
              "data": {"wp_user": {"user_email": "Ana@Coresight.com"}}}
     body = "x." + base64.urlsafe_b64encode(json.dumps(token).encode()).decode().rstrip("=") + ".x"
@@ -370,6 +373,62 @@ def test_a_token_from_another_issuer_is_refused_unless_named(portal, monkeypatch
     assert sign_in() in (302, 303)
 
 
+def coresight_idp(monkeypatch, **claims):
+    """Sign-in through csr-idp (no discovery document, PKCE "plain"), its token endpoint answering an ID token with
+    these claims; no network."""
+    import base64
+    import requests
+    for key, value in {"CIP_OIDC_ISSUER": "https://coresight.com", "CIP_OIDC_CLIENT_ID": "sip-app",
+                       "CIP_OIDC_AUTHORIZE_URL": "https://coresight.com/csr-idp/authorize",
+                       "CIP_OIDC_TOKEN_URL": "https://coresight.com/csr-idp/token", "CIP_OIDC_PKCE": "plain"}.items():
+        monkeypatch.setenv(key, value)
+    token = {"iss": "https://coresight.com", "aud": "sip-app", "exp": time.time() + 60, **claims}
+    body = "x." + base64.urlsafe_b64encode(json.dumps(token).encode()).decode().rstrip("=") + ".x"
+
+    class Answer:
+        def raise_for_status(self): pass
+        def json(self): return {"id_token": body}
+    monkeypatch.setattr(requests, "post", lambda url, **kw: Answer())
+
+
+@pytest.mark.parametrize("verified, status", [(False, 403), ("false", 403), (True, 303), (None, 303)])
+def test_an_email_the_provider_has_not_verified_never_signs_in(portal, monkeypatch, verified, status):
+    """email_verified false: the provider has not proven the address is the person's, so it must not say who signs in.
+    A provider that sends no such claim (csr-idp; None here) is trusted as before (15 Nov 2026)."""
+    from urllib.parse import parse_qs
+    coresight_idp(monkeypatch, email="ana@coresight.com", **({} if verified is None else {"email_verified": verified}))
+    _, head, _ = call("/auth/login")
+    state = parse_qs(urlsplit(head["location"][0]).query)["state"][0]
+    assert call(f"/auth/callback?code=c&state={state}", headers={"cookie": head["set-cookie"][0].split(";")[0]})[0] == status
+
+
+def test_two_tabs_signing_in_at_once_both_get_in(portal, monkeypatch):
+    """Each sign-in attempt keeps its own handshake cookie, named by its state: a second tab's no longer replaces the
+    first's (15 Nov 2026). The state is checked as strictly, each handshake works once, and at most four are kept."""
+    from urllib.parse import parse_qs
+    coresight_idp(monkeypatch, email="ana@coresight.com")
+    jar: dict = {}   # the browser's cookies, oldest first, as it sends them
+
+    def visit(path):
+        status, head, _ = call(path, headers={"cookie": "; ".join(f"{k}={v}" for k, v in jar.items())})
+        for line in head.get("set-cookie", []):
+            name, value = line.split(";")[0].split("=", 1)
+            if "Max-Age=0" in line:
+                jar.pop(name, None)
+            else:
+                jar[name] = value
+        return status, head
+    states = [parse_qs(urlsplit(visit(f"/auth/login?next=/app/{tab}")[1]["location"][0]).query)["state"][0] for tab in "ab"]
+    for tab, state in zip("ab", states):
+        status, head = visit(f"/auth/callback?code=c&state={state}")
+        assert status == 303 and head["location"] == [f"/app/{tab}"]
+    assert visit(f"/auth/callback?code=c&state={states[0]}")[0] == 400   # a handshake works once
+    assert visit("/auth/callback?code=c&state=forged")[0] == 400
+    for _ in range(6):
+        visit("/auth/login")
+    assert sum(name.startswith(signin.LOGIN) for name in jar) == 4       # abandoned attempts never pile up
+
+
 def test_the_fieldwork_record_is_for_admins_only(portal):
     assert call("/api/v1/admin/fieldwork", signed("boss@coresight.com"))[0] == 404     # not collected yet: says so
     put(portal, "admin/fieldwork", {"surveys": [], "archive": []})
@@ -466,7 +525,7 @@ def test_a_trial_that_ends_closes_at_once_without_a_page_refresh(portal, monkeyp
     everything", and tells nginx that older such cookies are stale, so nginx stops serving files to it directly."""
     monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
     monkeypatch.setenv("CIP_REVOKED_FILE", str(tmp_path / "revoked"))
-    boss, ana = signed("boss@coresight.com"), session.issue("ana@coresight.com", hours=11, scope="*")
+    boss, ana = signed("boss@coresight.com"), signed("ana@coresight.com", scope="*", hours=11)
     put(portal, "sectors", {"sectors": []})
     assert call("/api/v1/sectors", ana)[0] == 200
     roles = {r["role"]: r for r in json.loads(call("/api/v1/admin/roles", boss)[2])["roles"]}
@@ -477,6 +536,34 @@ def test_a_trial_that_ends_closes_at_once_without_a_page_refresh(portal, monkeyp
     assert status == 403 and session.read(fresh)["scope"] != "*" and session.read(fresh)["sid"] == session.read(ana)["sid"]
     cutoff = int((tmp_path / "revoked").read_text().splitlines()[0].split()[1])
     assert session.read(ana)["expires"] < cutoff <= session.read(fresh)["expires"]   # nginx: the old cookie goes to the API
+
+
+def test_a_revoked_session_stays_out_after_a_restart(portal, monkeypatch):
+    """Re-issuing a cookie after a restart moves its recorded expiry with it, so the minute poll (load_revoked) keeps a
+    revocation for as long as the cookie lives; a revoked session a restart forgot is refused, not re-issued. A
+    database out of reach re-issues as before (15 Nov 2026)."""
+    def restart():   # a deploy: the API forgets its revoked sessions, then its minute poll reloads the live ones
+        monkeypatch.setattr(signin, "STARTED", time.time())
+        session.REVOKED.clear()
+        signin.load_revoked()
+
+    kept, gone = signed("ana@coresight.com", hours=1), signed("ben@coresight.com", hours=1)   # signed in 11 h ago
+    with api.get_engine("api_write").begin() as conn:   # re-issued before 15 Nov: the cookies outlived their recorded expiry
+        conn.execute(sa.text("UPDATE cip_access_session SET expires_at = '2000-01-01 00:00:00'"))
+    signin.revoke([session.digest(session.read(gone)["sid"])])   # Ben signed out
+    restart()
+    assert call("/api/v1/me", gone)[0] == 401                     # forgotten by the restart, refused all the same
+    status, head, _ = call("/api/v1/me", kept)
+    fresh = next(c for c in head["set-cookie"] if c.startswith(signin.COOKIE)).split("=", 1)[1].split(";")[0]
+    assert status == 200 and session.read(fresh)["sid"] == session.read(kept)["sid"]
+    signin.revoke([session.digest(session.read(fresh)["sid"])], "ana@coresight.com")        # Ana is offboarded
+    restart()
+    assert call("/api/v1/me", fresh)[0] == 401                    # still loaded: the recorded expiry moved with the cookie
+
+    def unreachable(role):
+        raise OSError("the database is out of reach")
+    monkeypatch.setattr(signin, "get_engine", unreachable)
+    assert call("/api/v1/me", signed("cat@coresight.com", hours=1))[0] == 200
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node is not installed")
@@ -555,6 +642,37 @@ def test_each_person_makes_their_own_keys_and_a_key_has_exactly_their_access_now
     assert call(f"/api/v1/keys/{listed[0]['shown']}", signed("bob@coresight.com"), "DELETE")[0] == 404   # not Bob's key
     assert call(f"/api/v1/keys/{listed[0]['shown']}", ana, "DELETE")[0] == 200
     assert call("/api/v1/waves", headers=bearer)[0] == 401                                # revoked: stops at once
+
+
+def test_an_api_key_never_opens_admin_pages(portal, monkeypatch, tmp_path):
+    """A key acts as its owner on the data routes, but an admin page needs the admin signed in: a leaked admin's key
+    must not reach the logs, the Access screen or offboarding (15 Nov 2026)."""
+    from shared.core import api_keys
+    monkeypatch.setattr(api_keys, "FILE", tmp_path / "keys.yml")
+    monkeypatch.setitem(api_keys._cache, "checked", -1e9)
+    boss = signed("boss@coresight.com")
+    bearer = {"authorization": "Bearer " + json.loads(call("/api/v1/keys", boss, "POST", b'{"name": "Boss"}')[2])["key"]}
+    put(portal, "admin/fieldwork", {"surveys": [], "archive": []})
+    assert call("/api/v1/waves", headers=bearer)[0] == 200 and call("/api/v1/admin/fieldwork", boss)[0] == 200
+    status, _, body = call("/api/v1/admin/fieldwork", headers=bearer)
+    assert status == 403 and "signed-in admin" in json.loads(body)["detail"]
+    assert call("/api/v1/admin/sessions/revoke", method="POST", body=b'{"email": "ana@coresight.com"}', headers=bearer)[0] == 403
+
+
+def test_offboarding_also_revokes_the_persons_api_keys(portal, monkeypatch, tmp_path, capsys):
+    """Signing a person out everywhere also revokes their API keys: a key never passes the identity provider, so it
+    outlived their sessions. The command line's revoke says what it revoked: it always said "No such key" (15 Nov 2026)."""
+    from shared.core import api_keys
+    monkeypatch.setattr(api_keys, "FILE", tmp_path / "keys.yml")
+    monkeypatch.setitem(api_keys._cache, "checked", -1e9)
+    boss, ana = signed("boss@coresight.com"), signed("ana@coresight.com")
+    bearer = {"authorization": "Bearer " + json.loads(call("/api/v1/keys", ana, "POST", b'{"name": "Ana"}')[2])["key"]}
+    status, _, body = call("/api/v1/admin/sessions/revoke", boss, "POST", b'{"email": "ana@coresight.com"}')
+    assert status == 200 and call("/api/v1/waves", headers=bearer)[0] == 401 and json.loads(body)["keys"] == 1
+    shown = api_keys.new("ben@coresight.com", "Ben's script")[:8]
+    monkeypatch.setattr("sys.argv", ["api_keys", "revoke", shown])
+    api_keys.main()
+    assert capsys.readouterr().out.strip() == "Revoked 1" and api_keys.mine("ben@coresight.com") == []
 
 
 def test_the_api_refuses_exactly_what_the_menus_hide(portal, monkeypatch):
@@ -637,3 +755,44 @@ def test_the_mcp_connector_asks_like_the_page_and_under_the_same_menu(portal, mo
     assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": without}).encode())[0] == 200
     answer = json.loads(call("/mcp", method="POST", body=asked.encode(), headers=bearer)[2])["result"]
     assert answer["isError"] and "subscription" in answer["content"][0]["text"]
+
+
+def test_the_ai_check_and_search_have_their_own_limits(portal, monkeypatch):
+    """A check skipped the per-minute limit, so a loop of checks could spend the month's AI cap for everyone, and Search
+    had none, ~40 ms of the one CPU a misspelt query (security review, 15 Nov 2026)."""
+    monkeypatch.setitem(RULES["limits"], "ask_check", 2)
+    monkeypatch.setitem(RULES["limits"], "search", 2)
+    cookie = signed("ana@coresight.com")
+    checks = [call("/api/v1/ask", cookie, "POST", b'{"question": "holiday", "check": true}')[0] for _ in range(3)]
+    searches = [call("/api/v1/search?q=holiday", cookie)[0] for _ in range(3)]
+    assert checks == [200, 200, 429] and searches == [200, 200, 429]
+
+
+def test_weighted_figures_reach_only_who_has_them_and_never_carry_the_unweighted_verdict(portal):
+    """The book carried weighted figures to accounts without them, and the MCP connector gave weighted figures the
+    pipeline's significance verdict, which tests the unweighted ones (security review, 15 Nov 2026)."""
+    from api import mcp
+    wave = {"survey_id": 415, "survey_family": "CSI-US", "study_type": "tracker", "prior_survey_id": None,
+            "wave_date": "2026-10-19", "title": "Weekly", "weighting_available": "Census"}
+    row = {"label": "Yes", "code": 1, "Total": 47.0, "prior": 55.0, "prior_base": 400, "ly": None, "ly_base": None,
+           "flags": "sig_prior", "w": {"Total": 50.0, "prior": 52.0, "ly": None}}
+    put(portal, "waves/415/book", {"wave": wave, "columns": ["Total"], "questions": [{"id": "Q1", "text": "Bought?", "type": "single",
+        "groups": [{"label": "", "base": 400, "bases": {"Total": 400}, "rows": [row]}]}]})
+    api._parsed_book.cache_clear()
+    shown = lambda cookie: json.loads(call("/api/v1/waves/415/book", cookie)[2])["questions"][0]["groups"][0]["rows"][0]   # noqa: E731
+    assert "w" in shown(signed("ana@coresight.com")) and "w" not in shown(signed("pat@acme.com"))   # Acme has no weighted figures
+    ana = access.profile("ana@coresight.com")
+    weighted = asyncio.run(mcp.question_results(ana, 415, "Q1", weighted=True))["groups"][0]["rows"][0]
+    assert (weighted["Total"], weighted["prior_week"], weighted["prior_base"], weighted["significant_vs_prior"]) == (50.0, 52.0, 400, None)
+    plain = asyncio.run(mcp.question_results(ana, 415, "Q1"))["groups"][0]["rows"][0]
+    assert (plain["Total"], plain["significant_vs_prior"]) == (47.0, True)
+
+
+def test_a_key_carries_none_of_its_owners_admin_powers_and_is_always_rate_limited(portal, monkeypatch):
+    """admin() refused keys, but a super admin's key still managed every team's items, unthrottled (second review,
+    15 Nov 2026)."""
+    boss = access.profile("boss@coresight.com")
+    assert access.can(boss, "manage_team_items") and not access.can({**boss, "sid": "api-key"}, "manage_team_items")
+    monkeypatch.setitem(RULES["limits"], "api", 2)
+    assert [access.spend("boss@coresight.com", "api") for _ in range(3)] == [True, True, False]
+    assert all(access.spend("boss@coresight.com", "ask") for _ in range(5))   # signed in, still never throttled

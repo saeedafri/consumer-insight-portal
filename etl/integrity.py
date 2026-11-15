@@ -8,8 +8,9 @@ Three kinds of check (all read-only until a fix runs):
   base      something in the loaded data itself is wrong (duplicate respondents,
             a register row without its wave, a wave stuck loading, a closed survey
             not loaded for 3 days) — never touched automatically: reported, so a person decides
-  watch     a survey the warehouse does not hold and the pipeline cannot fetch by itself
-            (hibernated before it was loaded; no longer listed by Forsta) — logged every
+  watch     a survey the warehouse does not hold, or holds only from before Forsta closed it, and the pipeline
+            cannot fetch by itself (hibernated before it was loaded, or before its final reload; no longer
+            listed by Forsta) — logged every
             run as a warning, never fails the run: recovering it needs a person in Forsta
 
     python -m etl.integrity            # check and heal; exit 1 if anything is still wrong
@@ -132,6 +133,11 @@ CHECKS = [
           "SELECT COUNT(*) FROM cip_forsta_survey WHERE load_state IN ('due', 'failed') AND closed_at < :three_days_ago"),
     Check("closed Forsta survey hibernated before it was loaded — reactivate it in Forsta, the next run loads it",
           "watch", "SELECT COUNT(*) FROM cip_forsta_survey WHERE load_state = 'hibernated' AND survey_id IS NULL"),
+    # loaded while live (forsta_etl.fielded), hibernated before the reload at close: discover keeps its survey_id, so
+    # the check above missed it and the portal kept its early data with no warning (15 Nov 2026 audit)
+    Check("Forsta wave hibernated before its final reload — the portal keeps its earlier data; reactivate it in Forsta,"
+          " the next run reloads it",
+          "watch", "SELECT COUNT(*) FROM cip_forsta_survey WHERE load_state = 'hibernated' AND survey_id IS NOT NULL"),
     # a survey that was only ever in testing (never launched) and then deleted in Forsta is not missing data: left out
     Check("Forsta survey no longer listed by Forsta and never loaded — ask Forsta to restore it", "watch",
           "SELECT COUNT(*) FROM cip_forsta_survey WHERE last_seen < :week_ago AND survey_id IS NULL"

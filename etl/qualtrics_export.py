@@ -27,9 +27,9 @@ import openpyxl
 from sqlalchemy import text
 
 from shared.core.database import get_engine
-from etl import cube, harmonise
+from etl import cube, harmonise, serving
 from etl.records import NO_TO, ParsedQuestion, clean_text
-from etl.loaders import finish_run, index_survey, load_definitions, start_run, upsert_survey
+from etl.loaders import finish_run, index_survey, load_definitions, set_load_status, start_run, upsert_survey
 
 log = logging.getLogger("cip.qualtrics")
 
@@ -137,27 +137,45 @@ def order_like_concepts(questions: list) -> None:
 
 
 def ingest_export(path, wave: str, family: str = "CSI-US") -> int:
+    """Load (or reload) the export as one wave, hidden while it loads, with the failure rule of the Forsta and China
+    loads (etl/forsta_etl.py _load_snapshot): it never marked its wave loading or failed, nor closed its run on an
+    error, so a load stopped half-way stayed 'verified' and the integrity check rebuilt it as whole (15 Nov 2026)."""
     from etl.wave_loader import code_lookup, rebuild_profiles, rebuild_question_bases, replace_respondents
 
     questions, records = parse_export(path)
     order_like_concepts(questions)
     title = re.sub(r"_[A-Z][a-z]+ \d+, \d{4}.*$", "", Path(path).stem)
     ref = f"xlsx:{title}"[:255]
+    with get_engine("etl").connect() as conn:   # read before the upsert: a new row starts as 'verified'
+        previous = conn.execute(text("SELECT load_status FROM cip_survey WHERE platform = 'qualtrics' AND source_ref = :ref"
+                                     " AND wave_label = :w"), {"ref": ref, "w": wave}).scalar()
     survey_id = upsert_survey(host="qualtrics", path=ref, title=title[:500], survey_family=family,
                               wave_label=wave, wave_date=wave, platform="qualtrics", source_ref=ref)
+    set_load_status(survey_id, "loading")
     run = start_run(survey_id, "excel", "data", str(path))
-    fields = load_definitions(survey_id, questions, family)
-    code_map = code_lookup(survey_id)
-    loaded = replace_respondents(survey_id, records, fields, run, code_map)
+    loaded = None
+    try:
+        fields = load_definitions(survey_id, questions, family)
+        code_map = code_lookup(survey_id)
+        loaded = replace_respondents(survey_id, records, fields, run, code_map)
+        # Demographics by wording, never the Forsta D-code map: Qualtrics numbers
+        # them differently (its D7 is state, Forsta's D7 is political view).
+        rebuild_profiles(survey_id, None, None)
+        rebuild_question_bases(survey_id)
+        log.info("%s -> survey_id=%s: %d respondents; harmonised %s", Path(path).name, survey_id, loaded,
+                 harmonise.harmonise_survey(survey_id))
+        log.info("Cube: %d cells", cube.refresh_wave(survey_id))
+        index_survey(survey_id)
+    except BaseException as exc:   # a kill too (SIGTERM is SystemExit under etl/loaders.py etl_lock)
+        finish_run(run, len(records), loaded or 0, error=f"{type(exc).__name__}: {exc}"[:2000])
+        intact = loaded is None and previous == "verified"   # the answers write is one transaction: it never committed
+        set_load_status(survey_id, "verified" if intact else "failed")
+        if not intact:   # serving rows for answers that are gone must not stay on screen
+            with get_engine("etl").begin() as conn:
+                serving.drop_wave(conn, survey_id)
+        raise
     finish_run(run, len(records), loaded)
-    # Demographics by wording, never the Forsta D-code map: Qualtrics numbers
-    # them differently (its D7 is state, Forsta's D7 is political view).
-    rebuild_profiles(survey_id, None, None)
-    rebuild_question_bases(survey_id)
-    log.info("%s -> survey_id=%s: %d respondents; harmonised %s", Path(path).name, survey_id, loaded,
-             harmonise.harmonise_survey(survey_id))
-    log.info("Cube: %d cells", cube.refresh_wave(survey_id))
-    index_survey(survey_id)
+    set_load_status(survey_id, "verified")
     return survey_id
 
 

@@ -280,8 +280,25 @@ def mark_told(subject: str) -> None:
         pass
 
 
-def failure(what: str, detail: str) -> bool:
-    """Email only the private failure list; never copy a team channel or the global CC list."""
+def alerts(survey_ids: list) -> None:
+    """The team's metric alerts judged on newly loaded waves (api/team.py due_alerts): each one that fires goes to Teams
+    and to the person who set it. Every load calls it: the weekly run, a hand-run Forsta load and a China week (only the
+    weekly run did, so China weeks and hand-run loads never alerted, 15 Nov 2026). An alert never fails a load."""
+    try:
+        from api import team   # the alerts live with the team's other lists
+        for message, email in team.due_alerts([s for s in survey_ids if s]):
+            teams(message)
+            if email:   # and the person who set it, by email
+                send(f"CIP alert: {message[2:80]}", message, [email])
+    except Exception as exc:   # noqa: BLE001 — the database out of reach, say: told, the load stands
+        log.exception("Metric alerts not checked")
+        failure("checking the metric alerts", str(exc))
+
+
+def failure(what: str, detail: str, next_step: str = "The next scheduled run tries again.") -> bool:
+    """Email only the private failure list; never copy a team channel or the global CC list. next_step: what really
+    happens now, when the caller knows (a failed wave: etl/forsta_etl.py next_try; 15 Nov 2026 audit: a wave past
+    its retries was still told 'the next scheduled run tries again')."""
     subject = f"CIP pipeline FAILED: {what}"
     if already_told(subject):
         log.info("Already told about %r in the last %d h", subject, REPEAT_HOURS)
@@ -289,8 +306,8 @@ def failure(what: str, detail: str) -> bool:
     page = (f'<div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px"><div style="background:#b3261e;color:#fff;padding:12px 16px;'
             f'font-size:16px;font-weight:600">Pipeline failure</div><p style="font-size:14px"><b>{html.escape(what)}</b></p>'
             f'<pre style="background:#f6f6f6;padding:10px;font-size:12px;white-space:pre-wrap">{html.escape(detail)}</pre>'
-            f'<p style="font-size:12px;color:#6b6a68">The next scheduled run tries again. Log: logs/forsta-etl.log</p></div>')
-    sent = send(subject, f"{what}\n\n{detail}\n\nThe next scheduled run tries again. Logs: logs/forsta-etl.log\n",
+            f'<p style="font-size:12px;color:#6b6a68">{html.escape(next_step)} Log: logs/forsta-etl.log</p></div>')
+    sent = send(subject, f"{what}\n\n{detail}\n\n{next_step} Logs: logs/forsta-etl.log\n",
                 recipients("failure"), page=page, copy=False)
     if sent:
         mark_told(subject)

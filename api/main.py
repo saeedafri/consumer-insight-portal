@@ -450,11 +450,17 @@ async def waves(request: Request, who: dict = Depends(user)) -> Response:
 async def book(survey_id: int, request: Request, who: dict = Depends(user)) -> Response:
     """The whole wave for the four dashboard screens in one cached response (≈ 30 KB gzipped)."""
     await visible(who, survey_id)
+    # weighted figures ("w") are a feature of their own: without it the book carried them anyway (security review, 15 Nov
+    # 2026). Only "*" sessions, which have every feature, get the file from nginx (deploy/cip_auth.js); the rest come here
+    weighted = access.allows(who, "weighted")
     def build() -> Payload:   # a book published before the provenance fields existed gets them here
         found = published_file("waves", str(survey_id), "book")
         data = json.loads(found.body) if found else payloads.book(survey_id)
+        if not weighted:
+            for row in (r for q in data["questions"] for g in q["groups"] for r in g["rows"]):
+                row.pop("w", None)
         return to_payload({**data, "wave": payloads.describe(data["wave"])})
-    return send_payload(request, await cached_payload((SERVING, "book", survey_id), build))
+    return send_payload(request, await cached_payload((SERVING, "book", survey_id, weighted), build))
 
 
 @app.get("/api/v1/waves/{survey_id}/report")
@@ -538,6 +544,8 @@ async def search(request: Request, q: str = Query(..., min_length=2, max_length=
     """Questions by words, code, answer label or survey title, typo- and synonym-tolerant (api/search.py).
     The response says what it understood: {"results": [...], "understood": {corrected, expanded, matched_by}}."""
     require_feature(who, "search")
+    if not access.spend(who["email"], "search"):   # a misspelt query costs ~40 ms of the one CPU (security review, 15 Nov 2026)
+        raise HTTPException(429, "Too many searches: wait a minute", headers={"Retry-After": "60"})
     def run() -> Payload:
         index = catalogue(who)
         found = index.search(q, limit, offset) if index else {"results": [], "total": 0, "understood": {}}
@@ -675,8 +683,9 @@ async def ask_answer(who: dict, question: str, quick: bool = False, check: bool 
     burst queues briefly, then "busy", never slows the site. check: the page's second pass at a question it asked
     quick (api/assistant.py answer), not counted again."""
     require_feature(who, "ask")
-    # ponytail: a check is trusted to follow its quick ask; the monthly model cap bounds what a misuse could cost
-    if not check and not access.spend(who["email"], "ask"):
+    # a check spends from its own bucket (limits.ask_check): uncounted, a loop of checks could spend the month's AI cap,
+    # shared by everyone, in a few hours (security review, 15 Nov 2026)
+    if not access.spend(who["email"], "ask_check" if check else "ask"):
         raise HTTPException(429, "Too many questions: wait a minute", headers={"Retry-After": "60"})
     try:
         await asyncio.wait_for(ASK_SLOTS.acquire(), ASK_WAIT)

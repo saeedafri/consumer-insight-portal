@@ -188,6 +188,13 @@ def install(engine: Engine, dry_run: bool = False, force: bool = False) -> list[
     if log and not force:
         with engine.connect() as conn:
             running = conn.execute(text(f"SELECT COUNT(*) FROM {log} WHERE status = 'running'")).scalar()
+            # a run killed outright (SIGKILL, a stopped container) leaves its row 'running' for good: every upgrade
+            # refused until --force (15 Nov 2026). Every load writes under the ETL lock, which its connection took with
+            # it, so on MySQL a free lock means no load is writing. SQLite (tests, local) has no lock: the rows decide.
+            if running and engine.dialect.name == "mysql":
+                from etl.loaders import LOCK
+                if conn.execute(text("SELECT IS_FREE_LOCK(:n)"), {"n": LOCK}).scalar():
+                    running = 0
         if running:
             raise RuntimeError(
                 f"{running} load is running ({log}.status = 'running'). "

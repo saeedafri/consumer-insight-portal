@@ -387,3 +387,27 @@ def test_a_restore_queues_for_the_etl_lock_instead_of_giving_up(monkeypatch):
     assert waits == [21600, 0]
     start = open("deploy/start.sh").read()
     assert "etl.publish --restore --wait 21600" in start
+
+
+def test_a_run_closed_with_a_wordless_error_is_failed(csi_db):
+    """A KeyboardInterrupt or MemoryError has no message, so str(exc) is "": finish_run recorded such a failed load as a
+    success (15 Nov 2026), which etl/sharepoint_china.py then never tried again."""
+    from etl import loaders
+    run = loaders.start_run(None, "api", "data", "test")
+    loaders.finish_run(run, 0, 0, error="")
+    with csi_db.connect() as conn:
+        assert conn.execute(sa.text("SELECT status FROM cip_load_log WHERE load_id = :r"), {"r": run}).scalar() == "failed"
+
+
+def test_a_sigterm_while_the_etl_lock_is_held_unwinds_the_run(csi_db):
+    """15 Nov 2026 audit #4: a SIGTERM ended a load on the spot, so no cleanup ran (its run stayed 'running', its wave
+    'loading'). While the lock is held it raises SystemExit; the default comes back after."""
+    import signal
+    from etl import loaders
+    with loaders.etl_lock():
+        handler = signal.getsignal(signal.SIGTERM)
+        assert callable(handler)
+        with pytest.raises(SystemExit) as stopped:
+            handler(signal.SIGTERM, None)
+    assert stopped.value.code == 128 + signal.SIGTERM
+    assert signal.getsignal(signal.SIGTERM) == signal.SIG_DFL

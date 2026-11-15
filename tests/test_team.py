@@ -5,6 +5,7 @@ import sqlalchemy as sa
 
 from api import team
 from etl import forsta_etl, serving
+from shared.core import access
 from tests.test_serving import seed
 
 
@@ -18,11 +19,80 @@ def test_an_alert_fires_once_when_its_answer_moves_significantly_and_never_on_a_
         serving.build_wave(sid)
     with csi_db.begin() as conn:
         conn.execute(sa.text("INSERT INTO cip_metric_alert (name, survey_family, study_type, qcode, qtext, item_label, option_code,"
-                             " answer_label, created_by, last_checked) SELECT 'Holiday buyers', 'CSI-US', 'tracker', 'XM1', qtext, '', 1,"
-                             " 'Yes', 'Analyst', 266 FROM cip_question WHERE survey_id = 266"))
+                             " answer_label, created_by, owner_email, last_checked) SELECT 'Holiday buyers', 'CSI-US', 'tracker', 'XM1',"
+                             " qtext, '', 1, 'Yes', 'Analyst', 'ana@coresight.com', 266 FROM cip_question WHERE survey_id = 266"))
     first = team.due_alerts([412, 500])
     assert len(first) == 1 and "50.0%" in first[0][0] and "up 20.0 pts from 30.0%" in first[0][0]
-    assert team.due_alerts([412, 500]) == []                    # each wave is judged once
+    assert team.due_alerts([412, 500]) == []                    # an alert fires once per wave
+
+
+def test_an_alert_carries_no_typed_link_into_teams_and_names_its_signed_in_owner(csi_db):
+    """The Teams card renders Markdown: a typed name could post a link to anywhere in Coresight's channel, "set by"
+    anyone (security review, 15 Nov 2026)."""
+    with csi_db.begin() as conn:
+        seed(conn, 266, date(2026, 10, 5), qualified=400, xm1_yes=120, xm1_base=400)
+        seed(conn, 412, date(2026, 10, 12), qualified=400, xm1_yes=200, xm1_base=400)
+    for sid in (266, 412):
+        serving.build_wave(sid)
+    with csi_db.begin() as conn:
+        conn.execute(sa.text("INSERT INTO cip_metric_alert (name, survey_family, study_type, qcode, qtext, item_label, option_code,"
+                             " answer_label, created_by, owner_email, last_checked) SELECT '[Reset your password](https://evil.example)',"
+                             " 'CSI-US', 'tracker', 'XM1', qtext, '', 1, 'Yes', 'The CEO', 'ana@coresight.com', 266 FROM cip_question"
+                             " WHERE survey_id = 266"))
+    message = team.due_alerts([412])[0][0]
+    assert "[" not in message and "](" not in message and message.endswith("set by ana@coresight.com")
+
+
+def test_a_wave_loaded_early_is_judged_again_on_its_final_reload_and_fires_once(csi_db, tmp_path, monkeypatch):
+    """A tracker wave loads at 400 qualified while Forsta still has it open (srv_wave.in_field), then again once Forsta
+    closes it: each alert is judged on the final data too and fires at most once per wave, and the Library's "last
+    fired" shows it at once, though the API keeps the alerts list until the team stamp moves (15 Nov 2026)."""
+    monkeypatch.setattr(team, "STAMP", tmp_path / "team.stamp")
+    monkeypatch.setattr(team, "CACHE", {})
+    with csi_db.begin() as conn:
+        seed(conn, 266, date(2026, 10, 5), qualified=400, xm1_yes=120, xm1_base=400)
+        seed(conn, 412, date(2026, 10, 12), qualified=400, xm1_yes=200, xm1_base=400)   # no field_end: still in field
+        conn.execute(sa.text("INSERT INTO cip_metric_alert (name, survey_family, study_type, qcode, qtext, item_label, option_code,"
+                             " answer_label, dim, dim_value, created_by, owner_email, last_checked) SELECT :name, 'CSI-US', 'tracker',"
+                             " 'XM1', qtext, '', 1, 'Yes', :dim, :value, 'Analyst', 'ana@coresight.com', 266 FROM cip_question"
+                             " WHERE survey_id = 266"),
+                     [{"name": "All buyers", "dim": "total", "value": "Total"}, {"name": "Gen Z buyers", "dim": "generation", "value": "GenZ"}])
+    for sid in (266, 412):
+        serving.build_wave(sid)
+    assert [a["last_fired"] for a in team.alerts()] == [None, None]   # the Library's list, now kept by the API
+    early = team.due_alerts([412])   # Total 30 % → 50 % moves; Gen Z 12 → 20 of 40 not yet (p = 0.07)
+    assert len(early) == 1 and "All buyers" in early[0][0]
+    assert {a["name"]: a["last_fired"] for a in team.alerts()} == {"All buyers": 412, "Gen Z buyers": None}
+    with csi_db.begin() as conn:     # Forsta closes it; the reload adds two Gen Z yeses: 22 of 42 (p = 0.04)
+        conn.execute(sa.text("UPDATE cip_survey SET field_end = '2026-10-13 01:00:00' WHERE survey_id = 412"))
+        conn.execute(sa.text("UPDATE cip_agg_cell SET base_n = 42 WHERE survey_id = 412 AND dim = 'generation'"))
+        conn.execute(sa.text("UPDATE cip_agg_cell SET n = 22 WHERE survey_id = 412 AND dim = 'generation'"
+                             " AND option_id IN (SELECT option_id FROM cip_option WHERE value_code = 1)"))
+    serving.build_wave(412)
+    final = team.due_alerts([412])   # All buyers fired on the early load: not again
+    assert len(final) == 1 and "Gen Z buyers" in final[0][0] and "Yes among GenZ is 52.4%" in final[0][0]
+    assert team.due_alerts([412]) == []
+
+
+def test_an_alert_stays_quiet_once_whoever_set_it_lost_access(csi_db, monkeypatch):
+    """The pipeline judges alerts with nobody signed in, so it checks each owner as the API would (access.profile, allows,
+    sees): someone refused, without Alerts, or no longer seeing the study is never sent its figures (15 Nov 2026)."""
+    monkeypatch.setattr(access, "rules", lambda: {
+        "features": ["explorer", "alerts"], "unknown": "refuse", "staff": {"domains": ["coresight.com"], "tier": "full"},
+        "tiers": {"full": {"features": "*", "study_types": "*"}, "basic": {"features": ["explorer"], "study_types": "*"}},
+        "clients": {"acme": {"domains": ["acme.com"], "tier": "full"}, "zeta": {"domains": ["zeta.com"], "tier": "full"},
+                    "lite": {"domains": ["lite.com"], "tier": "basic"}},
+        "surveys": {"ids": {412: {"client": "acme", "visibility": "client"}}}})   # wave 412 is Acme's own study
+    with csi_db.begin() as conn:
+        seed(conn, 266, date(2026, 10, 5), qualified=400, xm1_yes=120, xm1_base=400)
+        seed(conn, 412, date(2026, 10, 12), qualified=400, xm1_yes=200, xm1_base=400)   # 30 % → 50 %: every alert moves
+        conn.execute(sa.text("INSERT INTO cip_metric_alert (name, survey_family, study_type, qcode, qtext, item_label, option_code,"
+                             " answer_label, created_by, owner_email, notify_email, last_checked) SELECT :o, 'CSI-US', 'tracker', 'XM1',"
+                             " qtext, '', 1, 'Yes', 'x', :o, :o, 266 FROM cip_question WHERE survey_id = 266"),
+                     [{"o": owner} for owner in ("pat@acme.com", "gone@nowhere.org", "max@lite.com", "zed@zeta.com")])
+    for sid in (266, 412):
+        serving.build_wave(sid)
+    assert [email for _, email in team.due_alerts([412])] == ["pat@acme.com"]
 
 
 def test_an_audience_is_counted_from_the_cube_rows_and_shown_however_small(csi_db):

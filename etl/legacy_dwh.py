@@ -29,8 +29,8 @@ from sqlalchemy import bindparam, text
 from shared.core.database import get_engine
 from etl import cube, harmonise
 from etl import records, serving, survey_map
-from etl.loaders import (Locked, drop_unlisted_items, etl_lock, finish_run, index_survey, load_definitions, start_run,
-                         upsert_survey)
+from etl.loaders import (Locked, drop_unlisted_items, etl_lock, finish_run, index_survey, load_definitions, set_load_status,
+                         start_run, upsert_survey)
 
 log = logging.getLogger("cip.legacy")
 
@@ -329,29 +329,28 @@ def load_legacy(legacy_id: str) -> int:
     survey_id = upsert_survey(host=platform, path=legacy_id, title=records.clean_text(title)[:500],
                               survey_family=family, wave_label=wave, wave_date=wave,
                               platform=platform, source_ref=legacy_id, study_type=study_type)
-    _status(survey_id, "loading")   # invisible while it loads, as a Forsta wave is
+    set_load_status(survey_id, "loading")   # invisible while it loads, as a Forsta wave is
+    # started here so every exit closes it: it was closed only on success, and a failed or killed load left it
+    # 'running' for good, which blocks scripts/init_db.py (15 Nov 2026)
+    run = start_run(survey_id, "manual", "data", f"dwh_stg.dwh_sm*:{legacy_id}")
     try:
-        _load(survey_id, legacy_id, platform, family, questions, amap, skipped, responses, completes, wave)
-    except Exception:
+        _load(survey_id, run, legacy_id, platform, family, questions, amap, skipped, responses, completes, wave)
+    except BaseException as exc:   # a kill too (SIGTERM is SystemExit under etl/loaders.py etl_lock)
+        finish_run(run, len(responses), 0, error=f"{type(exc).__name__}: {exc}"[:2000])
         with eng.begin() as conn:   # a half-moved wave is never served
             serving.drop_wave(conn, survey_id)
-        _status(survey_id, "failed")
+        set_load_status(survey_id, "failed")
         raise
-    _status(survey_id, "verified")
+    finish_run(run, len(responses), len(responses))
+    set_load_status(survey_id, "verified")
     return survey_id
 
 
-def _status(survey_id: int, status: str) -> None:
-    with get_engine("etl").begin() as conn:
-        conn.execute(text("UPDATE cip_survey SET load_status = :st WHERE survey_id = :s"), {"st": status, "s": survey_id})
-
-
-def _load(survey_id: int, legacy_id: str, platform: str, family: str, questions: list, amap: list, skipped: int,
-          responses: list, completes: int, wave: str) -> None:
+def _load(survey_id: int, run: int, legacy_id: str, platform: str, family: str, questions: list, amap: list,
+          skipped: int, responses: list, completes: int, wave: str) -> None:
     from etl.wave_loader import rebuild_profiles, rebuild_question_bases
 
     eng = get_engine("etl")
-    run = start_run(survey_id, "manual", "data", f"dwh_stg.dwh_sm*:{legacy_id}")
     fields = load_definitions(survey_id, questions, family)
 
     respondents = []
@@ -384,7 +383,6 @@ def _load(survey_id: int, legacy_id: str, platform: str, family: str, questions:
     if platform == "surveymonkey":
         _panel_profiles(survey_id, legacy_id)
     rebuild_question_bases(survey_id)
-    finish_run(run, len(responses), len(responses))
     log.info("%s -> survey_id=%s wave=%s: %d completes, %d answers, %d questions without answer "
              "rows skipped; harmonised %s", legacy_id, survey_id, wave, completes, loaded, skipped,
              harmonise.harmonise_survey(survey_id))

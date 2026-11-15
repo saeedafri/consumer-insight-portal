@@ -233,38 +233,53 @@ def drop_alert(alert_id: int, request: Request) -> None:
 
 
 def due_alerts(survey_ids: list[int]) -> list[tuple[str, str | None]]:
-    """Judge every alert once against each new wave of its family: a message when the answer moved significantly vs
+    """Judge every alert against each new wave of its family: a message when the answer moved significantly vs
     its baseline (previous wave or last year), on the same question version, with 30+ people on both sides (TEST_BASE). Returns
-    (message, email of who set it); the pipeline posts each to Teams and emails that person (scripts/weekly_forsta.py)."""
+    (message, email of who set it); the pipeline posts each to Teams and emails that person (scripts/weekly_forsta.py).
+    A wave loaded while Forsta still had it open (srv_wave.in_field) is judged again when it is reloaded on closing;
+    an alert fires at most once per wave (15 Nov 2026)."""
     if not survey_ids:
         return []
     messages = []
     with get_engine("etl").begin() as conn:
-        waves = {r["survey_id"]: r for r in conn.execute(text(
-            "SELECT survey_id, survey_family, study_type, wave_date FROM srv_wave WHERE survey_id IN :ids")
+        waves = {r["survey_id"]: r for r in conn.execute(text(   # *: in_field once the schema has it (shared/core/schema_upgrade.py)
+            "SELECT * FROM srv_wave WHERE survey_id IN :ids")
             .bindparams(bindparam("ids", expanding=True)), {"ids": survey_ids}).mappings()}
         for a in [dict(r) for r in conn.execute(text("SELECT * FROM cip_metric_alert")).mappings()]:
+            # nobody is signed in here: whoever set it is checked as the API checks them (profile, the Alerts feature, the
+            # study), so someone who has lost access is never sent its figures (15 Nov 2026)
+            # an alert set before owners were recorded has none to check: it fires as before (second review, 15 Nov 2026)
+            who = a["owner_email"] and access.profile(a["owner_email"])
+            if a["owner_email"] and (not who or not access.allows(who, "alerts")):
+                continue
             for sid in sorted(s for s, w in waves.items() if (w["survey_family"], w["study_type"]) == (a["survey_family"], a["study_type"])
-                              and s > (a["last_checked"] or 0)):
+                              and s > (a["last_checked"] or 0) and (not who or access.sees(who, w))):
                 row = conn.execute(text(
                     "SELECT r.pct, r.base_n, r.prior_pct, r.prior_base_n, r.ly_pct, r.ly_base_n, r.flags, q.qtext FROM srv_result r"
                     " JOIN cip_question q ON q.question_id = r.question_id WHERE r.survey_id = :s AND r.qcode = :q AND r.dim = :d"
                     " AND r.dim_value = :v AND r.item_label = :il AND (r.option_code = :oc OR (r.option_code IS NULL AND :oc IS NULL))"),
                     {"s": sid, "q": a["qcode"], "d": a["dim"], "v": a["dim_value"], "il": a["item_label"], "oc": a["option_code"]}).mappings().first()
-                conn.execute(text("UPDATE cip_metric_alert SET last_checked = :s WHERE alert_id = :a"), {"s": sid, "a": a["alert_id"]})
+                if not waves[sid].get("in_field"):   # an early load stays due: its reload once Forsta closes it is judged too
+                    conn.execute(text("UPDATE cip_metric_alert SET last_checked = :s WHERE alert_id = :a"), {"s": sid, "a": a["alert_id"]})
                 key = a["against"]
                 if not row or normalise_text(row["qtext"]) != normalise_text(a["qtext"]) or row[f"{key}_pct"] is None \
                         or f"base_changed_{key}" in (row["flags"] or "") or min(row["base_n"], row[f"{key}_base_n"] or 0) < TEST_BASE:
                     continue
                 now, then = float(row["pct"]), float(row[f"{key}_pct"])
-                if significant(now, row["base_n"], then, row[f"{key}_base_n"]):
+                # once per wave: not again on the reload of a wave that fired early, nor on an older wave reloaded late
+                if significant(now, row["base_n"], then, row[f"{key}_base_n"]) and sid > (a["last_fired"] or 0):
                     conn.execute(text("UPDATE cip_metric_alert SET last_fired = :s WHERE alert_id = :a"), {"s": sid, "a": a["alert_id"]})
-                    group = "" if a["dim"] == "total" else f" among {a['dim_value']}"
+                    # what a person typed goes into the Teams card, which renders Markdown: no link of theirs ("[…](https://…)"),
+                    # and "set by" is the signed-in owner, not the typed name (security review, 15 Nov 2026)
+                    said = {k: str(a[k] or "").replace("[", "").replace("]", "") for k in ("name", "answer_label", "dim_value", "created_by")}
+                    group = "" if a["dim"] == "total" else f" among {said['dim_value']}"
                     messages.append((
-                        f"📈 CIP alert “{a['name']}”: {a['answer_label']}{group} is {now:.1f}% in the wave of {waves[sid]['wave_date']}, "
+                        f"📈 CIP alert “{said['name']}”: {said['answer_label']}{group} is {now:.1f}% in the wave of {waves[sid]['wave_date']}, "
                         f"{'up' if now > then else 'down'} {abs(now - then):.1f} pts from {then:.1f}% "
                         f"{'the previous wave' if key == 'prior' else 'a year earlier'} (n={row['base_n']} vs {row[f'{key}_base_n']}), "
-                        f"significant at 95 %. Open /w/{sid}/questions/{a['qcode']} · set by {a['created_by']}", a.get("notify_email")))
+                        f"significant at 95 %. Open /w/{sid}/questions/{a['qcode']} · set by {a['owner_email'] or said['created_by']}", a.get("notify_email")))
+    if messages:
+        changed()   # the API, another process on the host, sees the stamp move: the Library's "last fired" at once
     return messages
 
 

@@ -46,6 +46,20 @@ def test_the_wrong_weeks_topline_or_an_unknown_wording_stops_the_load(tmp_path, 
         assert conn.execute(text("SELECT COUNT(*) FROM cip_survey")).scalar() == 0   # nothing written
 
 
+def test_a_china_load_stopped_half_way_closes_its_run_and_hides_its_week(csi_db, monkeypatch):
+    """A kill (SIGTERM is SystemExit under etl/loaders.py etl_lock) left the run 'running' and the week 'loading'
+    (15 Nov 2026)."""
+    def stopped(survey_id):
+        raise SystemExit(143)
+
+    monkeypatch.setattr(baidu_qss_export.cube, "refresh_wave", stopped)   # after the answers are written
+    with pytest.raises(SystemExit):
+        baidu_qss_export.load(RAW, TOPLINE)
+    with csi_db.connect() as conn:
+        assert conn.execute(text("SELECT load_status FROM cip_survey")).scalar() == "failed"
+        assert conn.execute(text("SELECT status, error_text FROM cip_load_log")).one() == ("failed", "SystemExit: 143")
+
+
 def test_seconds_taken_reads_both_of_baidus_spellings():
     assert [baidu_qss_export.seconds_taken(v) for v in ("159秒", "1分12秒", "", None)] == [159, 72, None, None]
 

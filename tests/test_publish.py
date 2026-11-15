@@ -275,3 +275,16 @@ def test_after_a_deploy_the_most_asked_cached_answers_are_put_back(tmp_path, mon
     monkeypatch.setenv("CIP_LOG_DIR", str(tmp_path))
     assert publish.popular_urls() == ["/api/v1/waves/2/crosstab?q=a&by=gender,age_band", "/api/v1/search?q=gift"]
     assert publish.popular_urls(limit=1) == ["/api/v1/waves/2/crosstab?q=a&by=gender,age_band"]
+
+
+def test_a_rollback_never_lands_on_a_version_a_killed_publish_left_half_written(csi_db, tmp_path):
+    """A publish killed outright (SIGKILL, a stopped server) skips build()'s cleanup and leaves its folder without the
+    manifest, which is written last; rollback took it as the version before and pointed the live portal at it."""
+    with csi_db.begin() as conn:
+        seed(conn, 266, date(2026, 10, 5), qualified=401, xm1_yes=92, xm1_base=149)
+    serving.build_wave(266)
+    first = publish.publish(tmp_path, jobs=1)
+    (tmp_path / f"{first.name}-killed/api/v1").mkdir(parents=True)   # newer than first, older than the next
+    time.sleep(0.01)
+    publish.publish(tmp_path, jobs=1)
+    assert publish.rollback(tmp_path).name == first.name

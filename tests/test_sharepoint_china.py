@@ -90,8 +90,7 @@ def test_a_load_that_fails_on_the_way_is_tried_again_next_pass(graph, csi_db, mo
     from etl import baidu_qss_export
     real = baidu_qss_export.serving.build_wave
     monkeypatch.setattr(baidu_qss_export.serving, "build_wave", lambda sid: (_ for _ in ()).throw(RuntimeError("database gone")))
-    with pytest.raises(RuntimeError):
-        sharepoint_china.run()
+    assert sharepoint_china.run()[0] == "2026/October/Survey of Oct 19: failed: RuntimeError: database gone"
     monkeypatch.setattr(baidu_qss_export.serving, "build_wave", real)
     again = sharepoint_china.run()
     assert again[0].startswith("2026/October/Survey of Oct 19: loaded week of 2026-10-19")
@@ -116,3 +115,77 @@ def test_the_webhook_is_created_once_then_renewed(graph, monkeypatch):
     assert sent[0][1]["resource"] == "/drives/d/root" and sent[0][1]["clientState"] == "s" * 40
     assert sharepoint_china.subscribe().startswith("webhook renewed")
     assert sent[1] == ("PATCH", "https://graph.microsoft.com/v1.0/subscriptions/sub1")
+
+
+def test_the_pass_publishes_under_the_etl_lock_and_waits_its_turn(graph, csi_db, monkeypatch):
+    """15 Nov 2026 audit #5: the pass published without the ETL lock, so the 30-minute check, seeing the database ahead,
+    could build at the same moment: two builds on the one CPU, both writing .current-next in publish.swap."""
+    from contextlib import contextmanager
+    from etl.loaders import Locked
+    held = []
+
+    @contextmanager
+    def lock(wait=0):
+        held.append(True)
+        yield
+        held.append(False)
+    monkeypatch.setattr(sharepoint_china, "etl_lock", lock, raising=False)
+    monkeypatch.setattr("etl.publish.publish", lambda: graph.published.append(held[-1:] == [True]))
+    sharepoint_china.run()
+    assert graph.published == [True]                                  # built while the pass held the lock
+
+    def taken(wait=0):
+        raise Locked("another CIP run holds the lock")
+    monkeypatch.setattr(sharepoint_china, "etl_lock", taken)
+    graph.items["w1"][0]["eTag"] = "v2"
+    assert sharepoint_china.run()[-1].startswith("publish: another CIP run holds the lock")
+    assert graph.published == [True]
+
+
+def test_a_crashing_load_is_told_once_spares_the_other_weeks_and_is_not_loaded_every_pass(graph, csi_db, monkeypatch):
+    """15 Nov 2026 audit #6: only HTTPError was caught, so a pair that crashed the loader ended the pass with no email,
+    left the weeks after it unloaded, and was downloaded and loaded again every 10 minutes."""
+    from etl import baidu_qss_export, notify
+    read_raw = baidu_qss_export.read_raw
+    monkeypatch.setattr(baidu_qss_export, "read_raw",   # Oct 19's raw file crashes the reader (a ragged row, say)
+                        lambda path, codebook: [][0] if "w0-0" in path.name else read_raw(path, codebook))
+    first = sharepoint_china.run()
+    assert first[0] == "2026/October/Survey of Oct 19: failed: IndexError: list index out of range"
+    assert first[1].startswith("2026/October/Survey of Oct 26: loaded week") and graph.published == [1]
+    retries = [sharepoint_china.run() for _ in range(sharepoint_china.ATTEMPTS)]   # 3 tries in all: a database blip
+    assert [len(lines) for lines in retries] == [1] * (sharepoint_china.ATTEMPTS - 1) + [0]   # before its run looks the same
+
+    monkeypatch.setattr(baidu_qss_export.serving, "build_wave", lambda sid: (_ for _ in ()).throw(RuntimeError("bug")))
+    graph.items["w1"][0]["eTag"] = "v2"                                # replaced by a pair that fails after its write
+    passes = [sharepoint_china.run() for _ in range(sharepoint_china.ATTEMPTS + 1)]
+    assert [len(lines) for lines in passes] == [1] * sharepoint_china.ATTEMPTS + [0]   # tried again, not every pass
+    assert sum(subject.startswith("CIP pipeline FAILED: China survey") for _, subject in notify.sent) == 2   # once each
+
+
+def test_a_folder_graph_cannot_reach_is_told_too(graph, monkeypatch):
+    """Only HTTPError was told: Graph out of reach (a connection error, a timeout) ended every pass with a log line and
+    no email, so no China week loaded and nobody heard (15 Nov 2026)."""
+    import requests
+    from etl import notify
+    monkeypatch.setattr(sharepoint_china, "sign_in", lambda found: (_ for _ in ()).throw(requests.ConnectionError("no route")))
+    monkeypatch.setattr("sys.argv", ["sharepoint_china"])
+    assert sharepoint_china.main() == 1
+    assert ("email", "CIP pipeline FAILED: China survey SharePoint watcher cannot read the folder") in notify.sent
+
+
+def test_a_loaded_week_is_judged_for_alerts_and_a_pass_that_meets_the_lock_keeps_no_copies(graph, csi_db, monkeypatch):
+    """China weeks never reached the team's alerts, and a pass that met the lock kept both downloaded files: two more
+    every 10 minutes (15 Nov 2026)."""
+    from etl import baidu_qss_export, notify
+    judged = []
+    monkeypatch.setattr(notify, "alerts", judged.append)
+    real = baidu_qss_export.load
+
+    def busy(*args, **kwargs):
+        raise sharepoint_china.Locked("another CIP run holds the lock")
+
+    monkeypatch.setattr(baidu_qss_export, "load", busy)
+    assert sharepoint_china.run()[-1].endswith("another CIP run holds the lock; next pass")
+    assert list(sharepoint_china.UPLOAD_DIR.iterdir()) == []
+    monkeypatch.setattr(baidu_qss_export, "load", real)
+    assert len(sharepoint_china.run()) == 2 and [len(ids) for ids in judged] == [1, 1]

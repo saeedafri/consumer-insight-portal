@@ -86,6 +86,8 @@ unknown: {role: analyst, tier: enterprise}   # `refuse` before launch
 # Per signed-in person, per worker: requests allowed per minute (a token bucket that refills evenly)
 limits:
   ask: 10
+  ask_check: 10        # the page's AI check of an unsure quick answer: at most one per question asked
+  search: 120          # a search box used as people type stays well under it
   export: 30
   audience: 60
   api: 120             # API key and MCP connector requests a minute, per person

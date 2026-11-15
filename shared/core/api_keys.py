@@ -3,7 +3,8 @@
 A key acts as the person it was issued to, with their access as it is at each request (shared/core/access.py
 profile: the same surveys, features, menus chosen on the Access page and rate limits as their sign-in): taking a
 feature away from someone takes it from their keys at once. Each person makes and revokes their own keys on the
-Account page (api/main.py /api/v1/keys); a key cannot make keys. Only a SHA-256 of each key is kept, in a file:
+Account page (api/main.py /api/v1/keys); a key cannot make keys or open admin pages, and offboarding someone
+(api/signin.revoke_person) revokes all of theirs. Only a SHA-256 of each key is kept, in a file:
 CIP_API_KEYS, else /home/cip/api_keys.yml on Azure (permanent storage: survives deploys), else
 ~/.config/cip/api_keys.yml. No database read per request: the file is re-read only when it changes.
 
@@ -70,14 +71,15 @@ def mine(email: str) -> list[dict]:
                   key=lambda k: k["created"], reverse=True)
 
 
-def revoke(email: str, shown: str) -> bool:
-    """Revoke one of this person's own keys, by the first characters the list shows. False: no such key of theirs."""
+def revoke(email: str, shown: str | None = None) -> int:
+    """Revoke one of this person's own keys, by the first characters the list shows, or with no `shown` every key of
+    theirs (offboarding, api/signin.revoke_person). How many went: 0 is no such key of theirs."""
     email = email.strip().lower()
-    found = {h: k for h, k in keys().items() if not (k["email"] == email and k["shown"] == shown)}
-    if len(found) == len(keys()):
-        return False
-    save(found)
-    return True
+    found = {h: k for h, k in keys().items() if not (k["email"] == email and (shown is None or k["shown"] == shown))}
+    gone = len(keys()) - len(found)
+    if gone:
+        save(found)
+    return gone
 
 
 def new(email: str, name: str) -> str:
@@ -107,8 +109,10 @@ def main() -> int:
             print(f"{k['shown']}…  {k['email']:<35} {k['name']}  ({k['created']})")
     else:
         found = {h: k for h, k in keys().items() if not k["shown"].startswith(args.shown[:8])}
-        save(found)
-        print("Revoked" if len(found) < len(keys()) else "No such key")
+        gone = len(keys()) - len(found)   # counted before saving: save() makes `found` the keys, so after it this was always 0
+        if gone:
+            save(found)
+        print(f"Revoked {gone}" if gone else "No such key")
     return 0
 
 

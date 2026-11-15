@@ -22,8 +22,9 @@ Cost guard: the search and the reader cost nothing (local). api/assistant.py ask
 logs/ask-readings.json, so a question is never paid for twice; every call's price is added to logs/ask-spend.json for
 the month, and past CIP_ASK_BUDGET_USD (default $0.50) the
 model is not called until the next month and the rules answer alone. Key: OPENAPI_KEY (or OPENAI_API_KEY); without it,
-or on any error or a reply over CALL_SECONDS, the caller falls back to the rules. Repeated questions never reach here
-(api/assistant.py ANSWERS).
+or on any error or a reply over CALL_SECONDS, the caller falls back to the rules; when OpenAI refuses the key (no credit,
+too many calls, a wrong key) none is sent for PAUSE_SECONDS and the admin health report says why. Repeated questions
+never reach here (api/assistant.py ANSWERS).
 """
 from __future__ import annotations
 
@@ -35,6 +36,7 @@ import os
 import re
 import threading
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -56,6 +58,11 @@ BULK = 200   # more new texts than this are encoded in a child process (embed_el
 PRICES = {"gpt-4o-mini": (0.15, 0.60), "gpt-5-nano": (0.05, 0.40),
           "gpt-4.1-mini": (0.40, 1.60), "gpt-5-mini": (0.25, 2.00)}   # $ per million tokens in, out (OpenAI, 11 Nov 2026)
 CALL_SECONDS = 6
+# after OpenAI refuses the key (401 a wrong key, 429 no credit or too many calls) no call goes for 15 minutes: staging's
+# account ran out of credit and every unsure question still waited on a call bound to fail (15 Nov 2026)
+PAUSE_SECONDS = 900   # ponytail: a short rate limit (429) waits as long; read Retry-After if bursts ever matter
+REFUSALS = {401: "a wrong or revoked key", 429: "no credit, or too many calls"}   # as the admin health report says them
+REFUSED = {"until": 0.0, "code": None}   # ponytail: this process's own; each worker tries once a pause, a shared file if that matters
 LOCK = threading.Lock()
 CUTS = ["none", "gender", "generation", "age_band", "income_band", "census_region", "urbanicity"]
 # the reply in short names (output tokens cost 4x input): q candidate number or null, a answer labels named, k kind,
@@ -109,8 +116,17 @@ def key() -> str:
 def status() -> dict:
     """For /api/v1/admin/health and the start-up log: is the model on, and why not."""
     now = spent()
-    return {"on": ready(), "key_from": key_name(), "model": model(), "budget_usd": budget(), "spent_usd": round(now["usd"], 5),
-            "calls": now["calls"], "why_off": None if ready() else ("no key: set OPENAPI_KEY" if not key_name() else "monthly cap reached")}
+    if ready():
+        why = None
+    elif not key_name():
+        why = "no key: set OPENAPI_KEY"
+    elif time.time() < REFUSED["until"]:
+        why = (f"OpenAI refused the key (HTTP {REFUSED['code']}: {REFUSALS[REFUSED['code']]}); next try at "
+               f"{time.strftime('%H:%M %Z', time.localtime(REFUSED['until']))}")
+    else:
+        why = "monthly cap reached"
+    return {"on": why is None, "key_from": key_name(), "model": model(), "budget_usd": budget(), "spent_usd": round(now["usd"], 5),
+            "calls": now["calls"], "why_off": why}
 
 
 def model() -> str:
@@ -147,15 +163,21 @@ def charge(name: str, tokens_in: int, tokens_out: int) -> float:
 
 
 def ready() -> bool:
-    """A key, and this month's spend under the cap."""
-    return bool(key()) and spent()["usd"] < budget()
+    """A key, this month's spend under the cap, and no refusal from OpenAI in the last PAUSE_SECONDS."""
+    return bool(key()) and spent()["usd"] < budget() and time.time() >= REFUSED["until"]
 
 
 def call(path: str, body: dict, seconds: float = CALL_SECONDS) -> dict:
+    """One OpenAI request (plan here, etl/ask_semantic.py send); a refusal of the key pauses every caller (ready)."""
     request = urllib.request.Request(f"https://api.openai.com/v1/{path}", data=json.dumps(body).encode(),
                                      headers={"Authorization": f"Bearer {key()}", "Content-Type": "application/json"})
-    with urllib.request.urlopen(request, timeout=seconds) as reply:
-        return json.load(reply)
+    try:
+        with urllib.request.urlopen(request, timeout=seconds) as reply:
+            return json.load(reply)
+    except urllib.error.HTTPError as exc:
+        if exc.code in REFUSALS:
+            REFUSED.update(until=time.time() + PAUSE_SECONDS, code=exc.code)
+        raise
 
 
 def read_calibration(folder: Path) -> dict:
@@ -373,7 +395,7 @@ def plan(question: str, candidates: list[dict]) -> dict | None:
         log.info("Ask model: %d tokens in, %d out, $%.6f", reply["usage"]["prompt_tokens"], reply["usage"]["completion_tokens"], usd)
         found = json.loads(reply["choices"][0]["message"]["content"])
     except Exception as exc:   # noqa: BLE001 — network, timeout, refusal, bad JSON: the rules answer
-        log.warning("Ask model: plan failed: %s", type(exc).__name__)
+        log.warning("Ask model: plan failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
         return None
     found = {"pick": found.get("q"), "alt": found.get("r"), "focus": found.get("a", []), "kind": found.get("k", "share"), "grain": found.get("g", "auto"),
              "cut": found.get("c", "none"), "period": found.get("p", "all")}

@@ -145,10 +145,13 @@ async def question_results(who: dict, survey_id: int, qcode: str, weighted: bool
         rows = []
         for r in g["rows"]:
             figures = {**r, **(r.get("w") or {})} if weighted else r
+            # the pipeline tests the unweighted figures: weighted ones are not tested (None), never given its verdict;
+            # and each comparison carries its base (security review, 15 Nov 2026)
             rows.append({"answer": r["label"], **{c: figures.get(c) for c in book["columns"] if c in figures},
-                         "prior_week": figures.get("prior"), "last_year": figures.get("ly"),
-                         "significant_vs_prior": "sig_prior" in r.get("flags", ""),
-                         "significant_vs_last_year": "sig_ly" in r.get("flags", "")})
+                         "prior_week": figures.get("prior"), "prior_base": r.get("prior_base"),
+                         "last_year": figures.get("ly"), "last_year_base": r.get("ly_base"),
+                         "significant_vs_prior": None if weighted else "sig_prior" in r.get("flags", ""),
+                         "significant_vs_last_year": None if weighted else "sig_ly" in r.get("flags", "")})
         groups.append({"group": g["label"], "base_n": g["base"], "bases": g["bases"], "rows": rows})
     return {"survey_id": wave["survey_id"], "title": wave["title"], "wave_date": wave["wave_date"], "qcode": question["id"],
             "question": question["text"], "weighting": book["wave"].get("weighting_available") if weighted else "unweighted",

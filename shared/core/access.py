@@ -127,8 +127,10 @@ def menus_changed() -> None:
 
 
 def can(person: dict, permission: str) -> bool:
-    """The one role check: may this person do `permission` (one of PERMISSIONS)."""
-    return permission in permissions_of(person["role"])
+    """The one role check: may this person do `permission` (one of PERMISSIONS). Never through an API key: a key reads
+    the data as its owner, with none of their admin powers (a leaked super admin's key managed every team's items;
+    second review, 15 Nov 2026)."""
+    return person.get("sid") != "api-key" and permission in permissions_of(person["role"])
 
 
 def internal(person: dict) -> bool:
@@ -172,7 +174,7 @@ def spend(email: str, kind: str) -> bool:
     """One request from a per-person token bucket of `limits[kind]` a minute; False when it is empty.
     ponytail: per worker (2 workers allow twice the rate); a shared store if the limit must be exact."""
     person = profile(email) if "@" in email else None
-    if person and can(person, "unlimited"):           # the super admin is never throttled
+    if person and can(person, "unlimited") and kind != "api":   # the super admin is never throttled; their API keys are
         return True
     rate = float((rules().get("limits") or {}).get(kind, 60))
     now = time.monotonic()

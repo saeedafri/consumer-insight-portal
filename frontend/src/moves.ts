@@ -7,7 +7,7 @@ import { fdr, pValue, TEST_BASE } from "./stats";
 
 export interface Move { q: Question; g: Group; r: Row; label: string; now: number; prior: number | null; d: number | null;
                         p: number | null; sig: boolean; ly: number | null; dLy: number | null; pLy: number | null; sigLy: boolean;
-                        routing: boolean; testable: boolean; testableLy: boolean }
+                        routing: boolean; testable: boolean; testableLy: boolean; weighted: boolean }
 
 const has = (flags: string, token: string) => new RegExp(`\\b${token}\\b`).test(flags);
 const byBook = new WeakMap<Book, Move[]>();
@@ -17,6 +17,9 @@ export function moves(book: Book): Move[] {
   const known = byBook.get(book);
   if (known) return known;
   const out: Move[] = [];
+  // the pipeline tests the unweighted figures: with the weighted ones shown its verdict is not theirs, so none is marked
+  // significant (a weighted 50 → 52 was, as the unweighted moved 47 → 55; security review, 15 Nov 2026)
+  const weighted = !!book.wave.weighting && book.wave.weighting !== "unweighted";
   let piped = false;
   for (const q of book.questions) for (const g of q.groups) for (const r of g.rows) {
     piped ||= has(r.flags, "sig_prior") || has(r.flags, "sig_ly");
@@ -26,15 +29,15 @@ export function moves(book: Book): Move[] {
     const dLy = r.ly == null ? null : r.Total - r.ly;
     // testable, as the pipeline decides it (etl/serving.py): a prior with the same wording and the same group asked,
     // 30+ people each side. Respondent profiles are tested too; they are only kept out of the headlines (isProfile)
-    const testable = d != null && !routing && !r.flags.includes("wording_changed_prior")
+    const testable = !weighted && d != null && !routing && !r.flags.includes("wording_changed_prior")
       && g.base >= TEST_BASE && (r.prior_base ?? 0) >= TEST_BASE;
-    const testableLy = dLy != null && !r.flags.includes("base_changed_ly") && !r.flags.includes("wording_changed_ly")
+    const testableLy = !weighted && dLy != null && !r.flags.includes("base_changed_ly") && !r.flags.includes("wording_changed_ly")
       && g.base >= TEST_BASE && (r.ly_base ?? 0) >= TEST_BASE;
     out.push({ q, g, r, label: g.label ? `${g.label}: ${r.label}` : r.label, now: r.Total, prior: r.prior, d, routing,
                p: testable ? pValue(r.Total, g.base, r.prior!, r.prior_base!) : null, sig: false, ly: r.ly, dLy,
-               pLy: testableLy ? pValue(r.Total, g.base, r.ly!, r.ly_base!) : null, sigLy: false, testable, testableLy });
+               pLy: testableLy ? pValue(r.Total, g.base, r.ly!, r.ly_base!) : null, sigLy: false, testable, testableLy, weighted });
   }
-  if (piped) out.forEach(m => { m.sig = has(m.r.flags, "sig_prior"); m.sigLy = has(m.r.flags, "sig_ly"); });
+  if (piped && !weighted) out.forEach(m => { m.sig = has(m.r.flags, "sig_prior"); m.sigLy = has(m.r.flags, "sig_ly"); });
   else {
     fdr(out.map(m => m.p)).forEach((keep, i) => { out[i].sig = keep; });
     fdr(out.map(m => m.pLy)).forEach((keep, i) => { out[i].sigLy = keep; });

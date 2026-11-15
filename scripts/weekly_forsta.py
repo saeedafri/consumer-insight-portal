@@ -33,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import inspect, text  # noqa: E402
+from sqlalchemy import inspect  # noqa: E402
 
 from shared.core.config import config  # noqa: E402
 from shared.core.database import get_engine, healthcheck  # noqa: E402
@@ -44,13 +44,17 @@ from etl.loaders import Locked, etl_lock  # noqa: E402
 log = logging.getLogger("cip.weekly")
 ERRORS = Path(__file__).resolve().parents[1] / "logs" / "forsta-etl-errors.jsonl"
 HEARTBEAT = ERRORS.with_name("etl-heartbeat.json")   # read by --watchdog, which runs hourly on its own
+FULL_CHECKED = ERRORS.with_name("etl-full-check.txt")   # the Friday whose full check ran: once a Friday, by the first idle
+                                                         # check that gets the lock (every idle check of a Friday ran it,
+                                                         # ~48 on the one CPU; 15 Nov 2026 audit)
 RUN = datetime.now().strftime("%Y%m%d-%H%M%S")
 DB_ATTEMPTS, DB_PAUSE_SECONDS = 4, 300     # a VPN or network blip gets 15 minutes before the run gives up
 WATCH_EVERY_SECONDS, WATCH_HOURS = 30 * 60, 54   # Mon 17:30 → Wed 23:30 IST; 64 of 68 waves closed within 54 h
 FULL_CHECK_DAY = 4                          # Friday: the one idle run a week that still runs integrity and drift
 RUN_HOURS = 3                               # longest a run may take before the watchdog calls it stuck
 LATE_MINUTES = 60                           # slack past the promised next beat
-QUIET_HOURS = 2                             # the scheduler checks every 30 minutes: 2 hours of silence means it stopped
+QUIET_HOURS = 2                             # the scheduler checks every 30 minutes: 2 hours of silence past the last
+                                            # run's promised beat means it stopped
 
 
 def beat(state: str, next_in_hours: float, **extra) -> None:
@@ -108,15 +112,23 @@ def run(client=None) -> int:
     kept = fieldwork.collect(client, result["loaded"])   # read-only GETs; a failure is logged, never stops the run
     log.info("Fieldwork records kept: %d", len(kept))
     for path in result["failed"]:
-        tell(notify.failure, f"survey {path} did not load", forsta_etl.last_error_of(path))
+        tell(notify.failure, f"survey {path} did not load", forsta_etl.last_error_of(path), forsta_etl.next_try(path))
     # waves loaded into the database from elsewhere (the China history, 11 Nov 2026): published within 30 minutes
     ahead = (publish.ROOT / "current").exists() and publish.behind(publish.ROOT / "current")
     if not result["loaded"] and not result["failed"]:
         tell(notify.idle_run)
-        if datetime.now().weekday() != FULL_CHECK_DAY and not ahead:   # nothing changed: the derived rows and published
+        today = datetime.now().date().isoformat()
+        try:
+            checked = FULL_CHECKED.read_text().strip()
+        except OSError:
+            checked = ""
+        full = datetime.now().weekday() == FULL_CHECK_DAY and checked != today
+        if not full and not ahead:   # nothing changed: the derived rows and published
             if kept and (publish.ROOT / "current").exists():   # numbers are as the last full check left them;
                 fieldwork.publish(publish.ROOT / "current", publish.write)   # only the Fieldwork file is new
             return 0
+        if full:
+            FULL_CHECKED.write_text(today)
     broken = integrity.run()                        # heals derived rows; reports the rest
     for path in result["loaded"]:                   # verify counted the answers; this compares their values (one GET)
         try:
@@ -133,15 +145,7 @@ def run(client=None) -> int:
             dashboards.build_for([forsta_etl.survey_id_of(path) for path in result["loaded"]])
         except Exception as exc:                    # last week's dashboards stay live; say so
             tell(notify.failure, "building the topic dashboards", str(exc))
-        try:                                        # the team's metric alerts (api/team.py), judged once per new wave
-            from api import team
-
-            for message, email in team.due_alerts([forsta_etl.survey_id_of(path) for path in result["loaded"]]):
-                tell(notify.teams, message)
-                if email:                           # and the person who set it, by email
-                    tell(notify.send, f"CIP alert: {message[2:80]}", message, [email])
-        except Exception as exc:
-            tell(notify.failure, "checking the metric alerts", str(exc))
+        notify.alerts([forsta_etl.survey_id_of(path) for path in result["loaded"]])   # the team's metric alerts (api/team.py)
         for path in result["loaded"]:               # open-ended answers coded into themes, charted with the rest
             try:
                 open_ends.code_wave(forsta_etl.survey_id_of(path))
@@ -175,10 +179,12 @@ def run(client=None) -> int:
     return 3 if len(moved) else 5 if broken else 0
 
 
-def watch(week: dict, lock=None) -> int:
+def watch(week: dict) -> int:
     """A planned Monday: say what launches, then run every WATCH_EVERY_SECONDS until the wave is in. A cycle that
     crashes (Forsta down past its retries, the database dropping mid-run) is logged and told, and the watch goes on:
-    otherwise the week's wave would wait for Friday. Each cycle pings the run lock's connection to keep it."""
+    otherwise the week's wave would wait for Friday. The run lock is taken for each check and free while the watch
+    sleeps (15 Nov 2026: held for up to 54 hours, the Upload survey page answered 409 and the SharePoint watcher
+    stopped on it); a check that finds it taken waits for the next."""
     topics = f" with {', '.join(week['topics'])}" if week["topics"] else ""
     name = " + ".join(week["names"])
     tell(notify.teams, f"🗓️ Forsta launches {name}{topics} today ~18:00 IST (cycle {week['cycle']}). CIP checks every "
@@ -188,10 +194,12 @@ def watch(week: dict, lock=None) -> int:
     while True:
         beat("watching: running", RUN_HOURS)
         try:
-            if lock is not None:
-                lock.execute(text("SELECT 1"))
-            code = run()
+            with etl_lock():
+                code = run()
             now = next((w for w in launch_schedule.weeks()["weeks"] if w["date"] == str(week["date"])), {})
+        except Locked:
+            log.info("Another CIP run holds the lock; the watch checks again in 30 minutes")
+            now = {}
         except Exception:
             log.exception("This watch cycle crashed; the watch carries on")
             tell(notify.failure, "a watch cycle crashed", traceback.format_exc()[-1500:])
@@ -259,7 +267,8 @@ def watchdog() -> int:
         tell(notify.failure, "this Monday's ETL run never started",
              "It was due at 17:30 IST. Check that the Mac is awake and the launchd job is loaded; run scripts/weekly_forsta.py.")
         return 1
-    if last is None or now - datetime.fromisoformat(last["at"]) > timedelta(hours=QUIET_HOURS):
+    # counted from the promise: a run 2.5 hours into a load promised its next beat within RUN_HOURS (15 Nov 2026 audit)
+    if last is None or now - datetime.fromisoformat(last["next"]) > timedelta(hours=QUIET_HOURS):
         tell(notify.failure, f"no ETL check for over {QUIET_HOURS} hours",
              f"Last run: {last['at'] if last else 'never recorded'}. The scheduler (deploy/etl-loop.sh) starts one every "
              "30 minutes: it is not running.")
@@ -267,17 +276,36 @@ def watchdog() -> int:
     return 0
 
 
+def watch_waiting() -> bool:
+    """Monday's watch is between two checks: its last beat says so, the check it promised is still ahead and its
+    process is alive. main() then stops, as when the watch held the lock while it slept: Forsta read once per 30
+    minutes, never a second watch."""
+    try:
+        last = json.loads(HEARTBEAT.read_text())
+        os.kill(last["pid"], 0)   # gone (killed with its container at a deploy): the next check runs, as before
+    except (OSError, ValueError):   # no heartbeat yet, a process gone, or a heartbeat read while being written
+        return False
+    return last["state"] == "watching: waiting" and datetime.now() < datetime.fromisoformat(last["next"])
+
+
 def main(once: bool = False) -> int:
     """The launch run (a planned Monday: the watch), or with once=True a single check (deploy/etl-loop.sh, every 30
     minutes): the check is what loads a closed wave even when a deploy killed the watch with its container."""
     planned = None if once else launch_schedule.planned_today()
+    if watch_waiting():
+        log.info("Monday's watch checks again within 30 minutes; this run leaves it to the watch")
+        return 0
     try:
-        with etl_lock() as lock:   # one writer at a time: a hand-run --due and launchd would load a wave twice
+        # one writer at a time: a hand-run --due and launchd would load a wave twice. A launch run takes it only to
+        # prove no other watch is in the middle of a check; the watch then takes it for each check of its own
+        with etl_lock():
             beat("running", RUN_HOURS)
-            code = watch(planned, lock) if planned else run()
+            code = None if planned else run()
     except Locked:
         log.info("Another CIP run holds the lock; this one stops")
         return 0
+    if planned:
+        code = watch(planned)
     beat("finished", 0, last_exit=code)
     return code
 

@@ -45,7 +45,7 @@ from shared.core.session import REVOKED, SESSION_HOURS, digest, issue, read, sam
 log = logging.getLogger("cip.signin")
 router = APIRouter()
 COOKIE = "cip_session"
-LOGIN = "cip_login"          # the OIDC round trip's state, nonce, PKCE verifier and next page, signed, for 10 minutes
+LOGIN = "cip_login"          # + "_<state>": one per sign-in attempt, its state, nonce, PKCE verifier and next page, signed, 10 minutes
 ID_TOKEN = "cip_id_token"    # the provider's ID token, kept for /auth/logout: csr-idp ends its own session only with id_token_hint
 SIGNED_OUT = "cip_signed_out"   # when this browser last signed out (a time, nothing secret): the sign-in trace compares it
 
@@ -55,7 +55,8 @@ def trace(step: str, request: Request, **facts) -> None:
     browser sent (names and sizes, never values), the page it came from, and the step's facts. Stage3's own cookies
     belong to coresight.com and never reach CIP: whether stage3 still remembered the person shows in the callback step,
     as how long the browser spent at stage3 and the ID token's auth_time against the last sign-out."""
-    sent = {name: len(value) for name, value in request.cookies.items() if name.startswith("cip")}
+    # a sign-in attempt's cookie is named by its state (LOGIN): 16 characters name every cookie without logging a state
+    sent = {name[:16]: len(value) for name, value in request.cookies.items() if name.startswith("cip")}
     log.info("[SIGN-TRACE] %s | cookies sent: %s | from: %s | %s", step, sent or "none",
              request.headers.get("referer", "-"), " | ".join(f"{k}: {v}" for k, v in facts.items()))
 
@@ -134,6 +135,10 @@ def user(request: Request) -> dict:
     if not who:
         raise HTTPException(401, "Sign in required")
     if session["scope"] != access.scope(who) or session["expires"] < stale_before():   # access changed since sign-in
+        # the recorded expiry moves with the cookie, so load_revoked keeps a revocation as long as the cookie lives, and a
+        # revoked session that a restart forgot is refused here, not re-issued (15 Nov 2026)
+        if not renew(session["sid"]):
+            raise HTTPException(401, "Sign in required")
         request.state.cookie = issue(who["email"], ",".join(session["products"]), sid=session["sid"], scope=access.scope(who))
     person = {**who, "products": session["products"], "sid": session["sid"]}
     request.state.email, request.state.person = who["email"], person   # the team routes record who did what
@@ -141,6 +146,8 @@ def user(request: Request) -> dict:
 
 
 def admin(request: Request, who: dict = Depends(user)) -> dict:
+    if who.get("sid") == "api-key":   # a key acts for its owner on the data, never on admin pages: one leaked is not an admin (15 Nov 2026)
+        raise HTTPException(403, "Admin pages need a signed-in admin, not an API key")
     if not access.can(who, "admin_pages"):
         raise HTTPException(403, "Only an admin can do that")
     # the demo sign-in takes any email at its word, so anyone could type an admin's: a session that came through it
@@ -184,6 +191,19 @@ def remember(sid: str, who: dict, how: str) -> None:
         log.warning("Session not recorded: %s", type(exc).__name__)
 
 
+def renew(sid: str) -> bool:
+    """Move a session's recorded expiry with its re-issued cookie (user()): False when it was revoked or never recorded."""
+    until = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() + SESSION_HOURS * 3600))
+    try:
+        with get_engine("api_write").begin() as conn:
+            moved = conn.execute(text("UPDATE cip_access_session SET expires_at = :x WHERE session_hash = :h AND revoked_at IS NULL"),
+                                 {"h": digest(sid), "x": until}).rowcount
+    except Exception as exc:   # noqa: BLE001 — the database out of reach: re-issued as before, like remember()
+        log.warning("Session expiry not moved: %s", type(exc).__name__)
+        return True
+    return moved > 0   # rows matched, even if unchanged: SQLAlchemy's MySQL drivers set FOUND_ROWS
+
+
 async def signed_in(request: Request, who: dict, how: str, target: str, id_token: str = "") -> Response:
     sid = secrets.token_urlsafe(18)
     await run_in_threadpool(remember, sid, who, how)
@@ -195,7 +215,6 @@ async def signed_in(request: Request, who: dict, how: str, target: str, id_token
     response = RedirectResponse(same_site(target), status_code=303)
     response.set_cookie(COOKIE, issue(who["email"], sid=sid, scope=access.scope(who)), httponly=True, samesite="lax",
                         secure=https(request), max_age=SESSION_HOURS * 3600)
-    response.delete_cookie(LOGIN, path="/auth")
     trace("6. signed in", request, **{"as": who["email"], "role": who["role"], "how": how, "next page": same_site(target),
           "ID token cookie": f"kept ({len(id_token)} bytes; browsers drop cookies over ~4,096)" if id_token else "none"})
     if id_token:
@@ -240,7 +259,11 @@ async def login(request: Request, next: str = "/") -> Response:
         "response_type": "code", "client_id": found["client_id"], "redirect_uri": callback_url(request),
         "scope": "openid email profile", "state": state, "nonce": nonce,
         "code_challenge": challenge, "code_challenge_method": "plain" if plain else "S256"}), status_code=303)
-    response.set_cookie(LOGIN, f"{base64.urlsafe_b64encode(value.encode()).decode()}.{sign(value)}", path="/auth",
+    # one cookie per attempt, so two tabs signing in at once each keep their own (one shared cookie failed the first
+    # tab, 15 Nov 2026). Browsers send cookies oldest first (RFC 6265 5.4): all but the three newest earlier ones go
+    for attempt in [name for name in request.cookies if name.startswith(LOGIN + "_")][:-3]:
+        response.delete_cookie(attempt, path="/auth")
+    response.set_cookie(f"{LOGIN}_{state}", f"{base64.urlsafe_b64encode(value.encode()).decode()}.{sign(value)}", path="/auth",
                         httponly=True, samesite="lax", secure=https(request), max_age=600)
     trace("3. sent to the provider", request, **{"to": meta["authorization_endpoint"], "client": found["client_id"],
           "back to": callback_url(request), "asks for a password": "only if the provider has no session of its own (no prompt=login sent)"})
@@ -275,7 +298,8 @@ def log_claims(meta: dict, answer: dict, said: dict) -> None:
 @router.get("/auth/callback")
 async def callback(request: Request, code: str = "", state: str = "", error: str = "") -> Response:
     found = provider()
-    raw = request.cookies.get(LOGIN, "")
+    handshake = f"{LOGIN}_{state}"   # this attempt's own cookie (/auth/login); its signed state is still compared below
+    raw = request.cookies.get(handshake, "")
     try:
         encoded, signature = raw.rsplit(".", 1)
         value = base64.urlsafe_b64decode(encoded.encode()).decode()
@@ -337,11 +361,19 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
     wordpress = wordpress if isinstance(wordpress, dict) else {}
     email = str(said.get("email") or said.get("user_email") or wordpress.get("user_email") or wordpress.get("email")
                 or said.get("preferred_username") or said.get("upn") or "").lower()
+    # the provider says it has not proven the address is theirs: it must not say who signs in. No claim: trusted (csr-idp
+    # sends none), 15 Nov 2026
+    if str(said.get("email_verified", "")).lower() == "false":
+        attempt_failed(request, "email not verified", email)
+        return page(403, "Email not verified", "Your identity provider has not verified this email address. Verify it "
+                    "there, then <a href='/auth/login'>sign in again</a>.")
     who = access.profile(email) if "@" in email else None
     if not who:
         return refused(request, email or "This account")
-    return await signed_in(request, {**who, "name": said.get("name") or wordpress.get("name") or ""}, "oidc", target,
-                           answer["id_token"])
+    response = await signed_in(request, {**who, "name": said.get("name") or wordpress.get("name") or ""}, "oidc", target,
+                               answer["id_token"])
+    response.delete_cookie(handshake, path="/auth")   # each handshake works once; other tabs' attempts keep theirs
+    return response
 
 
 @router.get("/auth/dev-login")
@@ -452,7 +484,7 @@ async def auth_check(who: dict = Depends(user)) -> Response:
 
 @router.post("/api/v1/admin/sessions/revoke")
 async def revoke_person(request: Request, who: dict = Depends(admin)) -> dict:
-    """{email}: sign that person out everywhere (offboarding). Admins only."""
+    """{email}: sign that person out everywhere and revoke their API keys (offboarding). Admins only."""
     email = str((await json_body(request)).get("email") or "").strip().lower()
     if "@" not in email:
         raise HTTPException(422, "Name the email to sign out")
@@ -461,5 +493,6 @@ async def revoke_person(request: Request, who: dict = Depends(admin)) -> dict:
             return [r[0] for r in conn.execute(text("SELECT session_hash FROM cip_access_session WHERE email = :e"), {"e": email})]
     found = await run_in_threadpool(hashes)
     await run_in_threadpool(revoke, found, email)
-    audit.record(request, "revoke_sessions", target=email, detail={"sessions": len(found)})
-    return {"email": email, "revoked": len(found)}
+    keys = await run_in_threadpool(api_keys.revoke, email)   # a key never passes the identity provider: it outlived the sessions (15 Nov 2026)
+    audit.record(request, "revoke_sessions", target=email, detail={"sessions": len(found), "keys": keys})
+    return {"email": email, "revoked": len(found), "keys": keys}

@@ -608,7 +608,42 @@ def test_a_wave_that_keeps_failing_stops_being_fetched_every_run(csi_db):
     assert "selfserve/58f/260905" not in loaded_paths and "selfserve/58f/260907" in loaded_paths
 
 
+def test_a_wave_that_failed_three_times_is_tried_again_later_and_its_email_says_when(csi_db, monkeypatch):
+    """15 Nov 2026 audit: three failed checks in a row (90 minutes of Forsta trouble) stopped a wave for good, while
+    every failure email said the next run tries again. It is tried again once its last failure is hours old, and the
+    email says when, with the command that loads it at once."""
+    import importlib
+    from datetime import datetime, timedelta, timezone
+    from etl import notify
+    weekly = importlib.import_module("scripts.weekly_forsta")
+    path, bodies = "selfserve/58f/260905", []
+    monkeypatch.setattr(notify, "send", lambda subject, body, *a, **k: bodies.append(body) or True)
+    assert weekly.run(FakeForsta(broken={path})) == 1                  # failure 1
+    told = next(body for body in bodies if path in body)
+    assert "next check" in told and f"python -m etl.forsta_etl --survey {path}" in told
+    for _ in range(forsta_etl.MAX_ATTEMPTS - 1):                       # failures 2 and 3, 30 minutes apart
+        forsta_etl._mark(path, "failed", error="Forsta 503")
+    assert f"in {forsta_etl.RETRY_HOURS} hours" in forsta_etl.next_try(path)
+    with csi_db.begin() as conn:                                        # its last failure, a day ago
+        conn.execute(sa.text("UPDATE cip_forsta_event SET seen_at = :t WHERE forsta_path = :p"),
+                     {"t": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1), "p": path})
+    assert path in forsta_etl.run_due(FakeForsta(data={path: [record(n) for n in range(6, 9)]}))["loaded"]
+
+
 def test_the_bulk_load_file_reads_back_exactly_what_respondents_wrote():
     from shared.core.database import tsv, untsv
     for said in ["a\tb", "C:\\temp\\new", "line1\r\nline2", "back\\tslash", "nul\0x", None]:
         assert untsv(tsv(said)) == said      # the fallback path re-reads the file: verbatims must not change
+
+
+def test_alerts_go_to_teams_and_their_owner_and_never_fail_a_load(monkeypatch):
+    """etl/notify.py alerts: what every load calls (the weekly run, a hand-run load, a China week; only the weekly run
+    did, 15 Nov 2026). A broken alert check is told, never raised."""
+    from api import team
+    from etl import notify
+    monkeypatch.setattr(team, "due_alerts", lambda ids: [("📈 Q1 up", "ana@coresight.com"), ("📉 Q2 down", None)] if ids == [412] else [])
+    notify.alerts([412, None])
+    assert notify.sent == [("teams", "📈 Q1 up"), ("email", "CIP alert: Q1 up"), ("teams", "📉 Q2 down")]
+    monkeypatch.setattr(team, "due_alerts", lambda ids: 1 / 0)
+    notify.alerts([412])
+    assert notify.sent[-1] == ("email", "CIP pipeline FAILED: checking the metric alerts")

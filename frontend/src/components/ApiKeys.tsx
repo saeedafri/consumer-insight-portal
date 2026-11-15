@@ -12,11 +12,14 @@ export default function ApiKeys() {
   const [name, setName] = useState("");
   const [made, setMade] = useState<{ key: string; name: string } | null>(null);
   const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);   // a double-click made two keys and showed only the second: the first one's key was lost (15 Nov 2026)
   const portal = location.origin;
   const refresh = () => queries.invalidateQueries({ queryKey: ["keys"] });
   const make = async () => {
+    setBusy(true);
     try { setMade(await send<{ key: string; name: string }>("POST", "/api/v1/keys", { name })); setName(""); setNote(""); }
     catch (e) { setNote((e as Error).message); }
+    finally { setBusy(false); }
     void refresh();
   };
   const revoke = async (shown: string) => {
@@ -39,7 +42,7 @@ export default function ApiKeys() {
     </table></div>}
     <form className="access-add" onSubmit={e => { e.preventDefault(); void make(); }} style={{ marginTop: 12 }}>
       <input aria-label="Name for the new key" placeholder="Name it after its tool, e.g. My Claude" value={name} onChange={e => setName(e.target.value)} maxLength={60} />
-      <button className="btn primary" type="submit" disabled={!name.trim()}>Make a key</button>
+      <button className="btn primary" type="submit" disabled={!name.trim() || busy}>{busy ? "Making…" : "Make a key"}</button>
     </form>
     {note && <p className="muted small" role="status">{note}</p>}
     <p className="small" style={{ marginTop: 10 }}><Link to="/api-guide">Read the API guide</Link>: every address, the MCP tools, and the rules a key follows.</p>

@@ -11,7 +11,7 @@ const RULES: [string, string][] = [
   ["Changes apply within a minute", "When a menu is taken away (a trial ends), your screens, your keys and the MCP connector lose it within a minute (most answers at once); no sign-out or refresh needed."],
   ["Surveys", "Only the surveys your organisation may see."],
   ["Rate limit", "The same per-minute limit as your sign-in; over it, the answer is 429 with Retry-After: 60."],
-  ["Admin pages", "Never through a key while sign-in is the demo; otherwise only for admins, as in the portal."],
+  ["Admin pages", "Never through a key: they need an admin signed in to the portal. Offboarding someone revokes their keys too."],
 ];
 // [method and address, what it returns, needs on your menu]: the routes of docs/API.md section 3
 const ROUTES: [string, string, string][] = [
@@ -69,7 +69,7 @@ const TOOLS: [string, string, string][] = [
   ["ask", "Any question in plain words, answered as on the Ask Coresight page: the answer, every figure and its base, the chart that fits, the source, the closest questions when none matches, or which survey question was meant when two are too close to call", "Ask CIP"],
   ["search_questions", "Find questions by topic, words, brand or code; plain English works; one entry per question over every code it was asked under", "Search questions"],
   ["list_waves", "Survey waves, newest first, optionally of one family (e.g. CSI-US)", "—"],
-  ["question_results", "One question in one wave: each answer's % for Total, gender and generation, the prior week and last year, and significance", "Question explorer"],
+  ["question_results", "One question in one wave: each answer's % for Total, gender and generation, the prior week and last year with their bases, and significance (none for weighted figures: the tests are on the unweighted ones)", "Question explorer"],
   ["question_trend", "One question over the last waves of its family", "Trends"],
   ["crosstab", "One question by two demographic cuts", "Cross-tab matrix"],
 ];

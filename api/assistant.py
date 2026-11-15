@@ -89,19 +89,34 @@ def index_for(root: Path, version: str, waves: list[dict]) -> Index:
     with INDEX_LOCK:
         if INDEX["version"] != version or not INDEX["index"].docs:   # empty: built before a deploy restored the files
             INDEX.update(version=version, index=Index(root, waves))
-            threading.Thread(target=INDEX["index"].add_vectors, daemon=True, name="ask-vectors").start()
+            INDEX["index"].settled = False   # until add_vectors ends, with or without vectors: ask() keeps no answer before
+            threading.Thread(target=settle, args=(INDEX["index"],), daemon=True, name="ask-vectors").start()
             with ANSWERS_LOCK:
                 ANSWERS.clear()
         return INDEX["index"]
 
 
-def focus(question: str, labels: list[str]) -> list[int]:
-    """The answers the question names ("Amazon", "Walmart"), longest names first so "Amazon Fresh" beats "Amazon"."""
+def settle(index: Index) -> None:
+    """The index's vectors, in the background (index_for); settled once done, even with none (no search model)."""
+    try:
+        index.add_vectors()
+    finally:
+        index.settled = True
+
+
+def focus(question: str, labels: list[str], full_names: frozenset[str] = frozenset()) -> list[int]:
+    """The answers the question names ("Amazon", "Walmart"), longest names first so "Amazon Fresh" beats "Amazon"; one
+    said only inside a longer name the question says (full_names, lower case) is not named: "Amazon" in "Amazon Prime"."""
     text = " " + " ".join(re.findall(r"[a-z0-9$&']+", question.lower())) + " "
+    longer = [f" {n} " for n in full_names if f" {n} " in text]
     found = []
     for i, label in sorted(enumerate(labels), key=lambda x: -len(x[1])):
         words = " ".join(re.findall(r"[a-z0-9$&']+", label.lower()))
-        if len(words) >= 3 and f" {words} " in text and not any(words in " ".join(re.findall(r"[a-z0-9$&']+", labels[j].lower())) for j in found):
+        alone = text   # the question without the longer names holding this one: "…members also buy from Amazon" names it
+        for n in longer:
+            if f" {words} " in n and n != f" {words} ":
+                alone = alone.replace(n, " ")
+        if len(words) >= 3 and f" {words} " in alone and not any(words in " ".join(re.findall(r"[a-z0-9$&']+", labels[j].lower())) for j in found):
             found.append(i)
     return found
 
@@ -361,11 +376,15 @@ def save_verified(entry: dict, index: Index) -> dict:
     with ANSWERS_LOCK:
         try:
             saved = json.loads(path.read_text())
-        except (OSError, ValueError):
+        except FileNotFoundError:
             saved = []
+        except ValueError as exc:   # saving over it kept only the new answer: every admin's verified answer lost (15 Nov 2026)
+            raise ValueError(f"{path.name} cannot be read ({exc}): repair or move it, then save again") from exc
         saved = [v for v in saved if v["question"].lower() != keep["question"].lower()] + [keep]
         path.parent.mkdir(exist_ok=True)
-        path.write_text(json.dumps(saved, indent=1))
+        part = path.with_suffix(f".{os.getpid()}.part")   # written whole, then put in place: a kill mid-write left half a file
+        part.write_text(json.dumps(saved, indent=1))
+        os.replace(part, path)
         ANSWERS.clear()
     index.load_verified()
     return {"saved": keep, "verified": len(index.verified)}
@@ -387,6 +406,8 @@ def learn(reading: dict, index: Index) -> None:
         part.write_text(json.dumps((learned + [keep])[-LEARNED_KEPT:], indent=0))
         os.replace(part, LEARNED)
     index.load_verified()
+    with ANSWERS_LOCK:   # a kept quick answer to it, or to a close question, is out of date: the same wording showed it
+        ANSWERS.clear()  # again, then the check replaced it, every time (15 Nov 2026)
 
 
 def read_with_model(plan: dict, reading: dict) -> dict:
@@ -468,6 +489,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         return {"answer": "None of the surveys asks this. The closest questions are below.", "chart": None, "table": None,
                 "sources": [], "plan": plan, "mode": "none", "no_source": True, "understood": "meaning",
                 "suggestions": [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]}
+    # "How many people bought Amazon prime?" is the Prime membership question, not "Amazon" in the retailer lists: the
+    # lists went first and the reader took them, sure (fresh set, 15 Nov 2026). A name the questions found by meaning
+    # write in full ("Amazon Prime") is read whole, before "latest" drops the older ones.
+    # ponytail: any Title Case run counts ("Grocery Shopping" too); 3,211 test questions unchanged; brand names only if one misfires
+    full_names = frozenset(n.lower() for c in candidates for n in re.findall(r"\b[A-Z][a-z]+(?: [A-Z][a-z]+)+", c["text"]))
     if any("latest" in w or "last" in w for w in plan["when"]):   # "latest", "last 8 weeks": questions still being asked
         recent = [c for c in candidates if c["last"] >= str(date.fromisoformat(index.newest) - timedelta(days=CURRENT_DAYS))]
         candidates = recent or candidates
@@ -475,7 +501,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     # meaning: "Amazon in 2025 vs 2026" is the weekly retailer lists, not one of the Amazon studies (golden set, 11 Nov 2026)
     seen = {c["key"] for c in candidates}
     candidates += [d for k, d in index.docs.items() if candidates and k not in seen and d["waves"] >= TREND_FROM * 5
-                   and not visible.isdisjoint(d["surveys"]) and focus(question, d.get("labels", []))][:3]
+                   and not visible.isdisjoint(d["surveys"]) and focus(question, d.get("labels", []), full_names)][:3]
     if not EVENT.search(question.lower()):   # "Walmart shoppers" is not the holiday retailers question
         candidates = [c for c in candidates if not EVENT.search(c["text"].lower())] or candidates
     # the same wording asked by several studies is one choice, the longest-running standing for it: four of fourteen
@@ -488,7 +514,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     by_meaning = list(candidates)   # the order with no reader and no AI: nearest first
     # a retailer or brand the question names among a question's answers ("Amazon" in the retailer lists) goes first, the
     # longest-running first: the model otherwise favours a question with the name in its wording (Amazon's Big Deal Days)
-    candidates.sort(key=lambda c: (not focus(question, c.get("labels", [])), -c["waves"] if focus(question, c.get("labels", [])) else 0))
+    candidates.sort(key=lambda c: (0, -c["waves"]) if focus(question, c.get("labels", []), full_names) else (1, 0))
     listed = [{"number": i, "text": c["text"], "name": c.get("name", ""), "family": FAMILY.get(c["family"], c["family"]),
                "waves": c["waves"], "first": c["first"], "last": c["last"],
                "answers": sorted(c.get("labels", []), key=lambda l: -len(topic & set(stems(l))))}   # the answers the question
@@ -522,9 +548,9 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         alternative = candidates[reading["alt"]] if reading and reading.get("alt") is not None and reading["alt"] != reading["pick"] else None
         # rules the model was told but breaks, enforced here for free: a retailer or brand named among a long-running
         # question's answers is that question unless an event is named; a trend needs a question with history
-        named = [c for c in candidates if c["waves"] >= TREND_FROM * 5 and focus(question, c.get("labels", []))]
+        named = [c for c in candidates if c["waves"] >= TREND_FROM * 5 and focus(question, c.get("labels", []), full_names)]
         longest = max(named, key=lambda c: c["waves"], default=None)
-        names = [longest["labels"][i] for i in focus(question, longest["labels"])] if longest else []
+        names = [longest["labels"][i] for i in focus(question, longest["labels"], full_names)] if longest else []
         named_stems = {s for n in names for s in stems(n)}
         rest = {s for s in stems(question) if len(s) >= 4} - named_stems   # quick: "Costco shoppers" is not "why Costco"
         # a reading's pick with the name in its wording stands only when the question asks more than the name and a time:
@@ -535,7 +561,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         # feel about Target?" is the feelings question, not the purchases list that has Target among its answers, 13 Nov)
         asks_else = longest is not None and len(rest & set(stems(chosen["text"]))) > len(rest & set(stems(longest["text"])))
         if longest and not own_name and not asks_else and not EVENT.search(question.lower()) and (   # "Amazon Prime" questions keep their own
-                not focus(question, chosen.get("labels", [])) or chosen["waves"] * 3 < longest["waves"]):   # q5 (195 waves) over EC2 (22)
+                not focus(question, chosen.get("labels", []), full_names) or chosen["waves"] * 3 < longest["waves"]):   # q5 (195 waves) over EC2 (22)
             chosen = longest
         if chosen["waves"] <= 2:   # the same question asked over more waves is the better source: most of its own,
             own = {a.lower() for a in chosen.get("labels", []) if not GENERIC.match(a)}   # specific answers alike
@@ -599,7 +625,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     # the pick, or when it was not asked in the period named the same question asked by another study, or the next match
     # naming the same retailer or brand that was ("Temu over the last year": the retailer lists; "online last month": the
     # weekly online categories, as the quarterly one stopped in September, 13 Nov 2026)
-    fallbacks = [h for h in hits[1:] if focus(question, h.get("labels", [])) or index.alike(hits[0]["key"], h["key"])]
+    fallbacks = [h for h in hits[1:] if focus(question, h.get("labels", []), full_names) or index.alike(hits[0]["key"], h["key"])]
     for hit in hits[:1] + fallbacks[:3]:
         doc = index.docs[hit["key"]]
         plan = asked_plan
@@ -624,7 +650,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         words = set(re.findall(r"[a-z0-9]{3,}", question.lower()))   # → "Abercrombie & Fitch", staging 12 Nov): ranked instead
         said = [a for a in said if words & set(re.findall(r"[a-z0-9]{3,}", a.lower()))]
     named = [fig["answers"].index(a) for a in said if a in fig["answers"] and (not SKIP.match(a) or a.lower() in question.lower())] \
-        or focus(question, fig["answers"])
+        or focus(question, fig["answers"], full_names)
     named = [a for a in named if not np.all(np.isnan(fig["pct"][:, :, a]))]   # an answer these waves never offered: not shown
     rest = question   # words the survey itself uses ("compare to last year", an answer "Spent more than last year") are
     for a in named:   # the question's wording, not a period: without them, the plan is read again
@@ -669,17 +695,23 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
 
 def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool = False, key: str | None = None) -> dict:
     """answer(), kept per published version (the index), access scope, quick or not, follow-up key and question wording; a question
-    the AI check settled is learned, so the same or a close question is answered at once next time, with no AI."""
+    the AI check settled is learned, so the same or a close question is answered at once next time, with no AI. An answer from
+    keywords alone, before the search vectors are ready (the minutes after a deploy), is not kept: it stayed until the next
+    publish (15 Nov 2026)."""
     kept = (id(index), scope, quick, key, " ".join(question.lower().split()))
     with ANSWERS_LOCK:
         if kept in ANSWERS:
             ANSWERS.move_to_end(kept)
             return ANSWERS[kept]
+    # read before answering, as they can arrive while it runs; an index whose build ended with no vectors (no search model)
+    # keeps its answers too, or every repeat was worked out again (second review, 15 Nov 2026)
+    vectors_ready = index.vectors is not None or getattr(index, "settled", True)
     found = answer(question, index, visible, quick, key)
     if found.get("understood") == "model" and found.get("mode") == "figures":
         learn(found["verify"], index)
-    with ANSWERS_LOCK:
-        ANSWERS[kept] = found
-        while len(ANSWERS) > KEEP_ANSWERS:
-            ANSWERS.popitem(last=False)
+    if vectors_ready:
+        with ANSWERS_LOCK:
+            ANSWERS[kept] = found
+            while len(ANSWERS) > KEEP_ANSWERS:
+                ANSWERS.popitem(last=False)
     return found

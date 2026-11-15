@@ -132,8 +132,10 @@ def read(question: str) -> dict:
     when, rest = periods(text)
     grain = next((g for pattern, g in GRAINS if re.search(pattern, text)), None)
     kind = next((k for pattern, k in KINDS if re.search(pattern, text)), "share")
-    if kind == "share" and (grain or any("all" in w or "from" in w for w in when)):
-        kind = "trend"   # "last 4 weeks" alone is one pooled figure; with a grain ("monthly") it is a series
+    if (kind == "share" and (grain or any("all" in w or "from" in w for w in when))) or (kind == "count" and {"all": True} in when):
+        kind = "trend"   # "last 4 weeks" alone is one pooled figure; with a grain ("monthly") it is a series, and so is "how
+                         # many" in all waves (one count over every wave before: "How many people bought Amazon prime in all
+                         # Waves", fresh set, 15 Nov 2026)
     cuts: dict = {}
     for pattern, dim in CUT_DIMS:
         if re.search(pattern, text):

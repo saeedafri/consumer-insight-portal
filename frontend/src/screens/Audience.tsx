@@ -48,6 +48,7 @@ export default function Audience() {
   const [result, setResult] = useState<AudienceResult | null>(null);
   const [profile, setProfile] = useState<AudienceProfile | null>(null);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);   // the API does not dedupe: a double-click saved the audience twice (15 Nov 2026)
   const [note, setNote] = useState("");
   // a changed audience (an answer added or removed, a saved one opened) makes the last figures someone else's
   const audience = params.get("aud");
@@ -79,11 +80,13 @@ export default function Audience() {
   };
   const save = async () => {
     if (!name.trim()) return setNote("Name the audience first.");
+    setSaving(true);
     try {
       await send("POST", "/api/v1/audiences", { name, definition: def, by: await myName() });
       setNote(`Saved “${name}” for the team.`); void queries.invalidateQueries({ queryKey: ["audiences"] });
     }
     catch (e) { setNote(e instanceof Error ? e.message : String(e)); }
+    finally { setSaving(false); }
   };
   return <div className="split">
     <QuestionNav questions={book.questions} current={question.id} onPick={q => { setResult(null); navigate(`/w/${id}/audience/${encodeURIComponent(q.id)}?${params}`); }} />
@@ -121,7 +124,7 @@ export default function Audience() {
           <button className="btn primary" disabled={empty || busy} onClick={() => void run()}>{busy ? "Counting…" : `Show ${question.number} for this audience`}</button>
           <label className="sr-only" htmlFor="aud-name">Audience name</label>
           <input id="aud-name" className="field" placeholder="Name it to save, e.g. Gen Z GenAI shoppers" value={name} onChange={e => setName(e.target.value)} style={{ minWidth: 220 }} />
-          <button className="btn" disabled={empty} onClick={() => void save()}>Save for the team</button>
+          <button className="btn" disabled={empty || saving} onClick={() => void save()}>{saving ? "Saving…" : "Save for the team"}</button>
           {!empty && <button className="btn-chip" onClick={() => { setDef(EMPTY); setResult(null); setProfile(null); setName(""); }}>Clear</button>}
         </div>
         {note && <p className="muted" style={{ margin: "8px 0 0" }}>{note}</p>}

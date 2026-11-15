@@ -2,8 +2,10 @@
 # The ETL scheduler inside the portal's container (started by deploy/start.sh): the jobs that used to run on a Mac on a timer.
 #  - scripts/weekly_forsta.py at each CIP_ETL_RUNS slot, "Day@HH:MM" in UTC. Default: Mon 12:00 (17:30 IST), the launch
 #    run, which on a Monday of config/launch_schedule.yml watches the new wave for up to 54 h and loads it when its
-#    fieldwork ends; and 03:30 (09:00 IST) every day, a short run that loads any other survey that closed (annual, ad hoc)
-#    within a day; Friday's also runs the integrity check. Each run takes the ETL lock, so runs never overlap.
+#    fieldwork ends; and 03:30 (09:00 IST) Tuesday to Sunday, a short run that loads any other survey that closed
+#    (annual, ad hoc) within a day; Friday's also runs the integrity check. Each run takes the ETL lock, so runs never overlap.
+#    No Mon@03:30: every Monday is planned, so that run started the watch 8.5 h early and its 54 h ended Wednesday
+#    15:00 IST, not 23:30 (15 Nov 2026); the 30-minute check takes that minute.
 #  - scripts/weekly_forsta.py --once every 30 minutes: one check, so a closed survey loads within 30 minutes whatever
 #    stopped the watch (a deploy restarts the container and every process in it).
 #  - python -m etl.sharepoint_china once IT's access is set: new China survey weeks from SharePoint. Within a minute of
@@ -13,7 +15,7 @@
 #  - python -m etl.fieldwork once, two minutes after each start: Forsta's records of every survey still missing one.
 #  - logs/*.log and *.jsonl past 20 MB are packed into logs/archive/ as .zip and kept for good (deploy/archive-log.py).
 set -u
-RUNS=${CIP_ETL_RUNS:-"Mon@12:00 Mon@03:30 Tue@03:30 Wed@03:30 Thu@03:30 Fri@03:30 Sat@03:30 Sun@03:30"}
+RUNS=${CIP_ETL_RUNS:-"Mon@12:00 Tue@03:30 Wed@03:30 Thu@03:30 Fri@03:30 Sat@03:30 Sun@03:30"}
 cd /srv/cip
 # Forsta's records of every survey (etl/fieldwork.py) caught up once per start, after the published files are restored:
 # a deploy never leaves the Fieldwork screen empty until the next scheduled run. Read-only GETs, lowest priority.

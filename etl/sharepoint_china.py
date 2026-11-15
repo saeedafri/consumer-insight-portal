@@ -4,7 +4,8 @@ The analysts keep one folder per survey week, inside year and month folders ("20
 holding Baidu's raw export (.csv) and its crosstab (.xls). Every 10 minutes (deploy/etl-loop.sh) this walks the folder
 through Microsoft Graph, finds each week folder with both files, and loads any pair it has not loaded in that exact
 version (a replaced file has a new eTag) through etl/baidu_qss_export.py load: the same checks as the Upload survey
-page, so a pair whose counts differ from the crosstab is refused, written nowhere, and reported once (etl/notify.py).
+page, so a pair whose counts differ from the crosstab is refused, written nowhere, and reported once (etl/notify.py); a
+load that fails on the way is reported too and tried again on the next passes, ATTEMPTS times in all.
 After a load the published files are rebuilt (etl/publish.py). The folder name sets the wave ("Survey of Oct 26" is
 2026-10-26); without one, the analysts' rule in baidu_qss_export.survey_week does.
 
@@ -37,11 +38,12 @@ import requests
 from sqlalchemy import text
 
 from etl import baidu_qss_export, notify
-from etl.loaders import Locked, finish_run, start_run
+from etl.loaders import Locked, etl_lock, finish_run, start_run
 from shared.core.database import get_engine
 
 log = logging.getLogger("cip.sharepoint")
 GRAPH = "https://graph.microsoft.com/v1.0"
+ATTEMPTS = 3   # failed loads of one version of a pair before it waits for new files (forsta_etl.MAX_ATTEMPTS, same rule)
 UPLOAD_DIR = Path(os.environ.get("CIP_UPLOAD_DIR") or Path(__file__).resolve().parents[1] / "data/uploads")
 WEEK = re.compile(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})", re.I)   # "Survey of Oct 26"
 
@@ -112,12 +114,16 @@ def folder_week(path: tuple) -> Optional[str]:
     return datetime.strptime(f"{found[1][:3].title()} {found[2]} {year}", "%b %d %Y").date().isoformat()
 
 
-def seen(key: str) -> bool:
-    """Has this exact pair (file ids and versions) been loaded, or refused by the check (a run with no survey)? A load
-    that failed on the way (the database, say) is tried again next pass."""
+def failed_loads(key: str) -> Optional[int]:
+    """How many loads of this exact pair (file ids and versions) failed on the way (the database, say; a run a kill left
+    'running' counts), or None once it is done with: loaded, or refused by the check (a run with no survey). A failed load is tried again on the next passes, ATTEMPTS times in all: a pair that crashed the loader
+    was downloaded and loaded again every 10 minutes, for good (15 Nov 2026)."""
     with get_engine("etl").connect() as conn:
-        return conn.execute(text("SELECT 1 FROM cip_load_log WHERE source_ref = :k AND (status = 'success' OR survey_id IS NULL)"
-                                 " LIMIT 1"), {"k": key[:500]}).first() is not None
+        # a refusal is recorded as "api" with no survey: done. A crash before the load recorded its run is recorded as
+        # "excel" with no survey, one failed try: a database blip or MemoryError gave up at once (second review, 15 Nov 2026)
+        done, failed = conn.execute(text("SELECT SUM(status = 'success' OR (survey_id IS NULL AND source_type = 'api')), COUNT(*)"
+                                         " FROM cip_load_log WHERE source_ref = :k"), {"k": key[:500]}).one()
+    return None if done else failed
 
 
 def download(session, drive: str, item: dict, folder: Path) -> Path:
@@ -173,7 +179,8 @@ def run(listing_only: bool = False) -> list[str]:
                 done.append(f"{where}: skipped, {why}")
             continue
         key = f"sharepoint:{raw['id']}@{raw['eTag']}|{crosstab['id']}@{crosstab['eTag']}"
-        if seen(key):
+        failed = failed_loads(key)
+        if failed is None or failed >= ATTEMPTS:
             continue
         wave = folder_week(path)
         if listing_only:
@@ -183,22 +190,40 @@ def run(listing_only: bool = False) -> list[str]:
         raw_path, crosstab_path = download(session, drive, raw, UPLOAD_DIR), download(session, drive, crosstab, UPLOAD_DIR)
         try:
             result = baidu_qss_export.load(raw_path, crosstab_path, wave, source=key)
-        except Locked:
+        except Locked:   # nothing loaded: its copies go, or every pass left two more in data/uploads (15 Nov 2026)
+            raw_path.unlink(missing_ok=True)
+            crosstab_path.unlink(missing_ok=True)
             done.append(f"{where}: another CIP run holds the lock; next pass")
             break
         except ValueError as exc:   # the check refused it: nothing was loaded. Recorded, so it is reported once
             finish_run(start_run(None, "api", "data", key), 0, 0, error=str(exc)[:2000])
-            notify.failure(f"China survey {where} not loaded", str(exc))
+            notify.failure(f"China survey {where} not loaded", str(exc),
+                           "Not tried again: saving either file again in SharePoint loads the new version on the next pass.")
             done.append(f"{where}: refused: {str(exc)[:300]}")
+            continue
+        except Exception as exc:   # crashed on the way: told once (notify's throttle), the other weeks still load
+            log.exception("%s: the load failed", where)   # the traceback stays in logs/sharepoint.log
+            error = f"{type(exc).__name__}: {exc}"
+            if failed_loads(key) == failed:   # before the load recorded a run (a file it cannot read): recorded here
+                finish_run(start_run(None, "excel", "data", key), 0, 0, error=error[:2000])
+            tries = failed_loads(key)   # what the email says happens next is what the next pass does
+            notify.failure(f"China survey {where} not loaded", error[:2000],
+                           f"Tried again on the next pass ({tries} of {ATTEMPTS} tries used)." if tries is not None and tries < ATTEMPTS
+                           else "Not tried again: saving either file again in SharePoint loads the new version on the next pass.")
+            done.append(f"{where}: failed: {error[:300]}")
             continue
         done.append(f"{where}: loaded week of {result['wave']}, {result['respondents']} respondents, "
                     f"{result['matched']} figures equal to the crosstab")
         notify.teams(f"China Consumer Survey, week of {date.fromisoformat(result['wave']):%d %b %Y}: "
                      f"{result['respondents']} respondents loaded from SharePoint")
+        notify.alerts([result["survey_id"]])   # the team's metric alerts on China waves too
     if any(": loaded week" in line for line in done):
         from etl import publish   # here: only a pass that loaded something rebuilds the published files
         try:
-            publish.publish()
+            # under the ETL lock, as python -m etl.publish: without it the 30-minute check, seeing the database ahead,
+            # could build at the same moment, two builds on the one CPU writing the same .current-next (15 Nov 2026)
+            with etl_lock():
+                publish.publish()
         except Locked:   # a scheduled run is publishing or loading; it, or the next load, publishes this week too
             done.append("publish: another CIP run holds the lock; the week opens now and is listed after its publish")
     return done
@@ -213,7 +238,9 @@ def main() -> int:
     try:
         for line in [subscribe()] if args.subscribe else run(listing_only=args.list):
             log.info(line)
-    except requests.HTTPError as exc:   # a revoked secret or a moved folder: say so once, try again next pass
+    # a revoked secret, a moved folder, or Graph out of reach (a connection error or timeout, never told before 15 Nov
+    # 2026): say so once, try again next pass
+    except requests.RequestException as exc:
         notify.failure("China survey SharePoint watcher cannot read the folder", str(exc)[:1000])
         log.error("SharePoint: %s", exc)
         return 1

@@ -129,6 +129,22 @@ def test_install_refuses_while_a_load_is_running(tmp_path):
     assert "platform" in columns(engine)["cip_survey"]
 
 
+def test_a_run_killed_outright_does_not_block_the_upgrade_for_good(tmp_path, monkeypatch):
+    """15 Nov 2026 audit #4: a load killed outright (SIGKILL, a stopped container) leaves its row 'running' for good,
+    and every upgrade refused until --force. Its connection took the ETL lock with it: on MySQL a free lock means stale."""
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'killed.db'}", future=True)
+    lock = {"free": 1}
+    sa.event.listen(engine, "connect", lambda dbapi, _: dbapi.create_function("IS_FREE_LOCK", 1, lambda name: lock["free"]))
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE cip_load_log (load_id INTEGER PRIMARY KEY, status VARCHAR(10))"))
+        conn.execute(sa.text("INSERT INTO cip_load_log (status) VALUES ('running')"))
+    monkeypatch.setattr(engine.dialect, "name", "mysql")   # the lock is MySQL's (etl/loaders.py etl_lock)
+    assert schema_upgrade.install(engine, dry_run=True)    # no writer holds the lock: the row is a killed run's
+    lock["free"] = 0
+    with pytest.raises(RuntimeError, match="load is running"):
+        schema_upgrade.install(engine, dry_run=True)       # a writer holds it: wait for it
+
+
 def test_dry_run_writes_nothing(tmp_path):
     engine = v1_database(tmp_path)
     planned = schema_upgrade.install(engine, dry_run=True)

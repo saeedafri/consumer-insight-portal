@@ -385,8 +385,9 @@ def load(raw: Path, topline: Path, wave_date: Optional[str] = None, source: Opti
             serving.build_wave(survey_id)
             with engine.begin() as conn:
                 store_topline(conn, survey_id, wave["topline"], topline.name)
-        except Exception as exc:
-            finish_run(run, len(records), written or 0, error=str(exc)[:2000])
+        except BaseException as exc:   # a kill too (SIGTERM is SystemExit under etl/loaders.py etl_lock): it left the run
+            # 'running' and the week 'loading'; and an error with no message (KeyboardInterrupt) is named (15 Nov 2026)
+            finish_run(run, len(records), written or 0, error=f"{type(exc).__name__}: {exc}"[:2000])
             intact = written is None and previous == "verified"   # the answers never changed: the old week stands
             set_load_status(survey_id, "verified" if intact else "failed")
             if not intact:   # serving rows for answers that are gone must not stay on screen
