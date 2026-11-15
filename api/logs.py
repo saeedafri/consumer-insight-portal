@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy import text
 
-from api.signin import admin
+from api.signin import admin_page
 from shared.core.database import get_engine
 
 LOGS = Path(os.environ.get("CIP_LOG_DIR") or Path(__file__).resolve().parents[1] / "logs")
@@ -41,6 +41,7 @@ LABELS = {"nginx-access": "nginx: every request", "nginx-error": "nginx: warning
 TAIL_BYTES = 4 * 2**20   # the newest 4 MB of a file: thousands of lines, never the whole file in memory
 
 router = APIRouter(prefix="/api/v1/admin")
+LOGS_PAGE = admin_page("logs")   # an admin, or whoever the super admin gave the Logs page (the Access page)
 
 
 def path_of(source: str) -> Path | None:
@@ -81,7 +82,7 @@ def security(lines: int, needle: str) -> list[str]:
 
 @router.get("/logs")
 def logs(source: str = "api", q: str = Query("", max_length=200), lines: int = Query(200, ge=1, le=5000),
-         page: int = Query(1, ge=1, le=200), who: dict = Depends(admin)) -> dict:
+         page: int = Query(1, ge=1, le=200), who: dict = Depends(LOGS_PAGE)) -> dict:
     """One page of a log, newest first: page 1 is the newest `lines` lines (containing `q`), page 2 the ones before."""
     sources = []
     for name, label in LABELS.items():
@@ -101,7 +102,7 @@ def logs(source: str = "api", q: str = Query("", max_length=200), lines: int = Q
 
 
 @router.get("/logs/archives")
-def archives(who: dict = Depends(admin)) -> list[dict]:
+def archives(who: dict = Depends(LOGS_PAGE)) -> list[dict]:
     """Every packed log (deploy/archive-log.py writes one .zip each time a log passes 20 MB; none is ever deleted),
     newest first: [{name, bytes, time}]."""
     folder = LOGS / "archive"
@@ -111,7 +112,7 @@ def archives(who: dict = Depends(admin)) -> list[dict]:
 
 
 @router.get("/logs/archive")
-def archive(name: str = Query(..., max_length=120), who: dict = Depends(admin)) -> FileResponse:
+def archive(name: str = Query(..., max_length=120), who: dict = Depends(LOGS_PAGE)) -> FileResponse:
     """One packed log, by its exact name from archives(): never a path from the request."""
     path = LOGS / "archive" / name
     if not re.fullmatch(r"[\w.-]+\.zip", name) or not path.is_file():
@@ -120,7 +121,7 @@ def archive(name: str = Query(..., max_length=120), who: dict = Depends(admin)) 
 
 
 @router.get("/logs/download")
-def download(source: str, who: dict = Depends(admin)) -> FileResponse:
+def download(source: str, who: dict = Depends(LOGS_PAGE)) -> FileResponse:
     path = None if source == "security" else path_of(source)
     if not path or not path.exists():
         raise HTTPException(404, "No such log file")
@@ -128,7 +129,7 @@ def download(source: str, who: dict = Depends(admin)) -> FileResponse:
 
 
 @router.get("/logs/context")
-def context(source: str, line: str = Query(..., max_length=2000), who: dict = Depends(admin)) -> dict:
+def context(source: str, line: str = Query(..., max_length=2000), who: dict = Depends(LOGS_PAGE)) -> dict:
     """A logged line with the 10 before and 40 after it (an error's traceback, the request before it), from the newest
     4 MB of its log: what the Logs page's "Show" opens, so a problem is read where it happened."""
     path = path_of(source)

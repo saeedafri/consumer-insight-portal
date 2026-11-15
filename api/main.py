@@ -364,7 +364,10 @@ async def latest(code: str, request: Request, who: dict = Depends(user)) -> Resp
 
 @app.get("/api/v1/dashboards/{code}/{survey_id}")
 async def wave(code: str, survey_id: int, request: Request, who: dict = Depends(user)) -> Response:
-    require_feature(who, "dashboards")
+    # a tracker's dashboard (the Trackers menu, and its panel on a wave's Overview) has a menu of its own; the others
+    # are the Overview's topic dashboards (15 Nov 2026)
+    tracker = f"tracker_{code}"
+    require_feature(who, tracker if tracker in access.rules()["features"] else "dashboards")
     if "*" not in who["products"] and code not in who["products"]:
         raise HTTPException(403, "Not included in your subscription")
     item = STORE.get((code, survey_id))
@@ -493,7 +496,8 @@ async def tracker_view(request: Request, who: dict, name: str) -> Response:
     itself to most people (deploy/cip_locations.conf); this serves a filtered session and a laptop without nginx.
     Someone who may not open every tracker wave gets 403: the file mixes all of them. Nothing is computed here."""
     tracker = [w for w in await run_in_threadpool(all_waves) if w["study_type"] == "tracker"]
-    if not all(access.sees(who, w) for w in tracker):
+    # the databank's own menu decides, not the weekly trackers' (tracker_menus=False): its file mixes their waves (15 Nov 2026)
+    if not all(access.sees(who, w, tracker_menus=False) for w in tracker):
         raise HTTPException(403, "Not included in your subscription: this view covers every weekly tracker survey")
     found = published_file(name)
     if found is None:   # a new container restores the published files in the background (~75 s, deploy/start.sh, 12 Nov
@@ -763,8 +767,13 @@ async def fieldwork_record(request: Request, who: dict = Depends(admin)) -> Resp
     return send_payload(request, found)
 
 
+# the Forsta pages read one record: anyone given one of them on the Access page reads it (15 Nov 2026)
+FORSTA_PAGES = signin.admin_page(*(f for f in access.rules()["features"] if f.startswith("forsta_")))
+LOGS_PAGE = signin.admin_page("logs")   # the Logs page also reads the health and the Ask checks
+
+
 @app.get("/api/v1/admin/forsta")
-async def forsta_overview(request: Request, who: dict = Depends(admin)) -> Response:
+async def forsta_overview(request: Request, who: dict = Depends(FORSTA_PAGES)) -> Response:
     """The Forsta admin screens' company records and one line per survey (etl/fieldwork.py publish_forsta)."""
     found = published_file("admin", "forsta")
     if found is None:
@@ -773,7 +782,7 @@ async def forsta_overview(request: Request, who: dict = Depends(admin)) -> Respo
 
 
 @app.get("/api/v1/admin/forsta/{key}")
-async def forsta_survey(key: str, request: Request, who: dict = Depends(admin)) -> Response:
+async def forsta_survey(key: str, request: Request, who: dict = Depends(FORSTA_PAGES)) -> Response:
     """One survey on the Forsta admin screens: banners, saved reports' tables, funnel by split, warnings, files."""
     found = published_file("admin", "forsta", key)
     if found is None:
@@ -787,7 +796,7 @@ FORSTA_FILES = {"excel": ("saved_export", "xlsx", "application/vnd.openxmlformat
 
 
 @app.get("/api/v1/admin/forsta/{key}/export/{report}")
-async def forsta_export(key: str, report: str, format: str = "excel", who: dict = Depends(admin)) -> Response:
+async def forsta_export(key: str, report: str, format: str = "excel", who: dict = Depends(FORSTA_PAGES)) -> Response:
     """A saved report as the file Forsta exported (Excel, PDF or PowerPoint: read-only POSTs, kept by the ETL in
     cip_forsta_record). Read from the database: an admin's rare download, not worth a file in every published version."""
     if not report.isalnum() or format not in FORSTA_FILES:
@@ -863,10 +872,11 @@ def super_admin(who: dict = Depends(admin)) -> dict:
 
 @app.get("/api/v1/admin/roles")
 async def roles(person: str = "", who: dict = Depends(super_admin)) -> dict:
-    """The Access screen: every switchable feature (its name), and the menus of each role, each client in
-    config/access.yml, and each person given menus of their own (the super admin's choice in cip_role_access, else
-    what they inherit: shared/core/access.py inherited), plus `person` (an email typed on the screen) with what they
-    inherit now. The super admin is not listed: they always have everything."""
+    """The Access screen: every switchable feature (its name), the left menu they make (`menu`: groups, menus and their
+    own pages, config/access.yml), and the menus of each role, each client in config/access.yml, and each person given
+    menus of their own (the super admin's choice in cip_role_access, else what they inherit: shared/core/access.py
+    inherited), plus `person` (an email typed on the screen) with what they inherit now. The super admin is not
+    listed: they always have everything."""
     rules = access.rules()
     labels = rules.get("feature_labels") or {}
     chosen = await run_in_threadpool(access.managed_features)
@@ -874,9 +884,9 @@ async def roles(person: str = "", who: dict = Depends(super_admin)) -> dict:
     targets += [(f"client:{cid}", "client", c.get("name") or cid) for cid, c in (rules.get("clients") or {}).items()]
     people = {key for key in chosen if key.startswith("person:")} | ({f"person:{person.strip().lower()}"} if person else set())
     targets += [(key, "person", key.removeprefix("person:")) for key in sorted(people)]
-    return {"features": [{"key": f, "label": labels.get(f, f)} for f in rules["features"]],
+    return {"features": [{"key": f, "label": labels.get(f, f)} for f in rules["features"]], "menu": access.tree(),
             "roles": [{"role": key, "kind": kind, "label": label, "features": got, "chosen": key in chosen} for key, kind, label in targets
-                      if (got := chosen[key] if key in chosen else access.inherited(key)) is not None]}
+                      if (got := access.choice(chosen[key]) if key in chosen else access.inherited(key)) is not None]}
 
 
 @app.put("/api/v1/admin/roles/{role}")
@@ -896,9 +906,11 @@ async def save_role(role: str, request: Request, who: dict = Depends(super_admin
         engine = get_engine("api_write")
         if "cip_role_access" not in inspect(engine).get_table_names():
             apply_sql(Path(__file__).resolve().parents[1] / "sql" / "010_role_access.sql", engine)
+        # with the menus offered now: one added later gives what the menu it grows from gives (access.grown)
         with engine.begin() as conn:
             conn.execute(text("REPLACE INTO cip_role_access (role, features, updated_by, updated_at) VALUES (:r, :f, :b, :t)"),
-                         {"r": role, "f": json.dumps(features), "b": who["email"], "t": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())})
+                         {"r": role, "f": json.dumps({"on": features, "offered": known}), "b": who["email"],
+                          "t": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())})
     try:
         await run_in_threadpool(store)
     except Exception as exc:   # noqa: BLE001
@@ -934,14 +946,14 @@ async def forget_role(role: str, request: Request, who: dict = Depends(super_adm
 
 
 @app.get("/api/v1/admin/ask/quality")
-async def ask_quality(who: dict = Depends(admin)) -> list:
+async def ask_quality(who: dict = Depends(LOGS_PAGE)) -> list:
     """Ask Coresight's check of each survey, newest first (etl/ask_quality.py after_publish, after every publish): how
     many of the questions people may ask about it Ask got right, and how its verified answers did."""
     return read_json(ask_model.LOGS / "ask-quality.json") or []
 
 
 @app.get("/api/v1/admin/health")
-async def health(who: dict = Depends(admin)) -> dict:
+async def health(who: dict = Depends(LOGS_PAGE)) -> dict:
     pool_info = {}
     try:
         p = get_engine("app").pool

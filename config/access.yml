@@ -15,13 +15,83 @@
 # With this file as it is, everyone sees everything (the demo): every study is "all" and unknown emails get `enterprise`.
 # Before external clients: set unknown to refuse, list each client's domains, and give client studies visibility "client".
 
-# Every switchable feature: most are a menu (the super admin turns them on and off per role on the Access screen,
-# stored in cip_role_access); export, alerts and saved_views are actions inside screens. Survey library, a wave's
-# Overview, Methodology, What's new and My account are always there; Logs, Fieldwork and Access are the super admin's.
-features: [dashboards, explorer, crosstab, trends, compare, audiences, changes, report, survey, search, schedule, ask, boards,
-           sectors, retailers, expectations, export, alerts, saved_views, weighted, api, fieldwork]
-chosen_only: [fieldwork]   # features no package includes: a role gets one only once the super admin turns it on
+# Every switchable feature: each is one entry of the left menu, a screen of a survey wave, or an action inside screens
+# (export, alerts, saved_views, weighted, api). The super admin turns them on and off per role, client or person on the
+# Access screen (stored in cip_role_access); `menu` below arranges them as the left menu does. Home and a wave's
+# Overview are always there, and Access is the super admin's alone: whoever had it could give themselves everything.
+features: [library, search, schedule, boards,
+           us_tracker, china_tracker, channels, retailers, sectors, expectations,
+           dashboards, explorer, crosstab, trends, compare, audiences, changes, report, survey,
+           tracker_tariffs_inflation, tracker_financial_health, tracker_genai, tracker_glp1, tracker_mideast_gas,
+           tracker_holiday_tracker, tracker_holiday_outlook, tracker_social_commerce,
+           methodology, whats_new,
+           fieldwork, forsta_reports, forsta_check, forsta_crosstab, forsta_samples, forsta_warnings, forsta_files,
+           forsta_deletion, forsta_account,
+           ingest, logs,
+           ask, export, alerts, saved_views, weighted, api]
+# features no package includes: a role gets one only once the super admin turns it on (the admin pages, which only
+# the super admin had before 15 Nov 2026)
+chosen_only: [fieldwork, forsta_reports, forsta_check, forsta_crosstab, forsta_samples, forsta_warnings, forsta_files,
+              forsta_deletion, forsta_account, ingest, logs]
+# menus split off an older one on 15 Nov 2026 (shared/core/access.py grown): a package, or an Access choice saved before
+# then, gives each what the menu it grew from gave ("*": always on then), so nobody lost a menu when the list grew
+grown_from:
+  library: "*"
+  us_tracker: "*"
+  china_tracker: "*"
+  methodology: "*"
+  whats_new: "*"
+  channels: explorer
+  tracker_tariffs_inflation: dashboards
+  tracker_financial_health: dashboards
+  tracker_genai: dashboards
+  tracker_glp1: dashboards
+  tracker_mideast_gas: dashboards
+  tracker_holiday_tracker: dashboards
+  tracker_holiday_outlook: dashboards
+  tracker_social_commerce: dashboards
+# a weekly tracker's waves open only with its menu: Library, Search, Ask, Trends and every wave screen (access.sees)
+family_menus: {CSI-US: us_tracker, CSI-CN: china_tracker}
+# the left menu as the Access screen offers it, group by group (frontend/src/components/Shell.tsx draws the same, and
+# tests/test_access.py checks every feature is here once): a key, or {label, always} (on for everyone), {label, admin}
+# (the super admin's alone), {label, children} (a menu with pages of its own)
+menu:
+  - {group: Explore, items: [{label: Home, always: true}, library, search, schedule, boards]}
+  - {group: Core research, items: [us_tracker, china_tracker, channels, retailers, sectors, expectations,
+      {label: "A survey wave's screens (its tabs)", children: [{label: Overview, always: true}, dashboards, explorer, crosstab,
+                                                            trends, compare, audiences, changes, report, survey]}]}
+  - {group: Trackers, items: [tracker_tariffs_inflation, tracker_financial_health, tracker_genai, tracker_glp1,
+      tracker_mideast_gas, tracker_holiday_tracker, tracker_holiday_outlook, tracker_social_commerce]}
+  - {group: Reference, items: [methodology, whats_new]}
+  - {group: Research operations, items: [fieldwork, forsta_reports, forsta_check, forsta_crosstab, forsta_samples,
+      forsta_warnings, forsta_files, forsta_deletion, forsta_account]}
+  - {group: Administration, items: [ingest, logs, {label: Access, admin: true}]}
+  - {group: On every screen, items: [ask, export, alerts, saved_views, weighted, api]}
 feature_labels:   # the names the Access screen shows
+  library: Survey library
+  us_tracker: Shopping & Spending (the weekly US tracker's waves)
+  china_tracker: China weekly tracker (its waves)
+  channels: In store vs online
+  tracker_tariffs_inflation: Tariffs & inflation
+  tracker_financial_health: Financial health
+  tracker_genai: GenAI & AI shopping
+  tracker_glp1: GLP-1 impact
+  tracker_mideast_gas: Gas prices & geopolitics
+  tracker_holiday_tracker: Holiday shopping
+  tracker_holiday_outlook: Holiday outlook
+  tracker_social_commerce: Social commerce
+  methodology: Methodology
+  whats_new: What's new
+  forsta_reports: Team reports (Forsta)
+  forsta_check: Forsta vs CIP
+  forsta_crosstab: Cross-tab setup (Forsta)
+  forsta_samples: Sample & devices (Forsta)
+  forsta_warnings: Warnings & checks (Forsta)
+  forsta_files: Survey files (Forsta)
+  forsta_deletion: Archive & deletion (Forsta)
+  forsta_account: Forsta account (its users, endpoints and unloaded surveys)
+  ingest: Upload survey
+  logs: Logs (requests, health, Ask checks and the raw logs)
   dashboards: Topic dashboards (on a wave's Overview)
   explorer: Question explorer
   crosstab: Cross-tab matrix

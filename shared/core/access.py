@@ -2,7 +2,8 @@
 
   role         who they are: super_admin (the portal's owner), analyst (Coresight staff), client (an external
                organisation). Each role has a list of permissions (`roles:` in the file); can() is the one check
-  permissions  admin_pages (Logs, Fieldwork, the audit log, revoking sessions), manage_team_items (remove anyone's
+  permissions  admin_pages (every admin page; the Access screen can also give Logs, Upload survey and each Forsta page
+               one by one, api/signin.py admin_page), manage_team_items (remove anyone's
                boards and views), all_features (every feature and survey whatever the tier), unlimited (no rate limit)
   tier         the package of features and study types the role's people get (staff: `staff.tier`, clients: their own)
 
@@ -67,9 +68,42 @@ def menus(choosers: list[str], tier: str) -> list[str]:
     r, managed = rules(), managed_features()
     chosen = next((managed[c] for c in choosers if c in managed), None)
     if chosen is not None:
-        return [f for f in r["features"] if f in chosen]
+        return choice(chosen)
     package = r["tiers"][tier]["features"]
-    return [f for f in (r["features"] if package == EVERYTHING else package) if f not in r.get("chosen_only", [])]
+    every = package == EVERYTHING
+    return [f for f in grown(r["features"] if every else package, r["features"] if every else None)
+            if f not in r.get("chosen_only", [])]
+
+
+def choice(saved) -> list[str]:
+    """The features an Access screen choice gives (cip_role_access): {"on", "offered"} as saved since 15 Nov 2026, or
+    a plain list saved before, when the screen offered fewer menus (grown)."""
+    if isinstance(saved, dict):
+        return grown(saved.get("on") or [], saved.get("offered") or [])
+    return grown(saved, None)
+
+
+def grown(on, offered) -> list[str]:
+    """`on` among every feature, in the catalogue's order. A feature not `offered` when `on` was chosen (None: chosen
+    before the menus were split, 15 Nov 2026) is on as the menu it grew from was (config grown_from; "*": always on
+    then), so a package or a saved choice lost nothing when the list grew; a later one stays off until chosen."""
+    r = rules()
+    sources = r.get("grown_from") or {}
+    offered = set(offered) if offered is not None else set(r["features"]) - set(sources)
+    return [f for f in r["features"]
+            if ((f in on) if f in offered else (sources.get(f) == EVERYTHING or sources.get(f) in on))]
+
+
+def tree() -> list[dict]:
+    """config/access.yml `menu`, as the Access screen draws it: [{group, items: [{key?, label, always?, admin?,
+    children?}]}], each feature with its label (feature_labels)."""
+    labels = rules().get("feature_labels") or {}
+
+    def node(item) -> dict:
+        if isinstance(item, str):
+            return {"key": item, "label": labels.get(item, item)}
+        return {**item, "children": [node(c) for c in item.get("children", [])]} if "children" in item else dict(item)
+    return [{"group": g["group"], "items": [node(i) for i in g["items"]]} for g in rules().get("menu") or []]
 
 
 def inherited(target: str) -> list[str] | None:
@@ -143,7 +177,10 @@ def scope(person: dict) -> str:
     every = set(rules()["features"]) - set(rules().get("chosen_only", []))   # opt-in features are not nginx files: they never split the cache
     if internal(person) and person["study_types"] == EVERYTHING and set(person["features"]) >= every:
         return EVERYTHING
-    return f"{person['client'] or ''}:{person['tier']}"
+    # a weekly tracker closed with its menu takes its waves away (sees): two people of one client and tier who differ
+    # in it must not share cached answers (15 Nov 2026)
+    hidden = sorted(m for m in (rules().get("family_menus") or {}).values() if m not in person["features"])
+    return f"{person['client'] or ''}:{person['tier']}" + (f":without:{'+'.join(hidden)}" if hidden else "")
 
 
 def owner(wave: dict) -> dict:
@@ -153,8 +190,12 @@ def owner(wave: dict) -> dict:
     return {"client": found.get("client"), "visibility": found.get("visibility", surveys.get("default_visibility", "all"))}
 
 
-def sees(person: dict, wave: dict) -> bool:
-    """May this person open this wave: their tier opens its study type, and its visibility admits them."""
+def sees(person: dict, wave: dict, tracker_menus: bool = True) -> bool:
+    """May this person open this wave: its weekly tracker's menu is theirs (family_menus; tracker_menus=False for a databank,
+    whose own menu decides), their tier opens its study type, and its visibility admits them."""
+    menu = (rules().get("family_menus") or {}).get(wave.get("survey_family")) if tracker_menus else None
+    if menu and menu not in person["features"]:   # Shopping & Spending, or the China weekly tracker, off on the Access screen
+        return False
     if person["study_types"] != EVERYTHING and wave.get("study_type") not in person["study_types"]:
         return False
     rule = owner(wave)

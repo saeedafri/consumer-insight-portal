@@ -22,10 +22,11 @@ from sqlalchemy import text
 from api import logs
 from api.exports import literal
 from api.logs import FILES, path_of, tail
-from api.signin import admin
+from api.signin import admin_page
 from shared.core.database import get_engine
 
 router = APIRouter(prefix="/api/v1/admin")
+LOGS_PAGE = admin_page("logs")   # an admin, or whoever the super admin gave the Logs page (the Access page)
 
 
 # ======================================================================================================================
@@ -496,7 +497,7 @@ def in_range(when: str, since: str, until: str) -> bool:
 
 
 @router.get("/metrics")
-def metrics(minutes: int = Query(60, ge=5, le=400 * 24 * 60), who: dict = Depends(admin), start: str = "", end: str = "",
+def metrics(minutes: int = Query(60, ge=5, le=400 * 24 * 60), who: dict = Depends(LOGS_PAGE), start: str = "", end: str = "",
             top: int = 25) -> dict:
     """Everything the dashboard draws for a time range (see the block comment above for where each number comes from):
     per minute while the range is inside the day kept in memory, else per hour from HOURS_FILE."""
@@ -576,7 +577,7 @@ def visitor_kind(address: str, users: set, agents: set) -> str:
 
 
 @router.get("/visitor")
-def visitor(address: str = Query(..., max_length=45), who: dict = Depends(admin)) -> dict:
+def visitor(address: str = Query(..., max_length=45), who: dict = Depends(LOGS_PAGE)) -> dict:
     """The newest 300 requests from one address (the current request log), with its place, browser and where it came from."""
     try:
         address = str(ipaddress.ip_address(address))
@@ -622,7 +623,7 @@ def ist(when: str) -> str:
 
 
 @router.get("/metrics/download")
-def download(minutes: int = Query(60, ge=5, le=400 * 24 * 60), who: dict = Depends(admin), start: str = "", end: str = "") -> Response:
+def download(minutes: int = Query(60, ge=5, le=400 * 24 * 60), who: dict = Depends(LOGS_PAGE), start: str = "", end: str = "") -> Response:
     """The Logs page for a time range as one workbook: a sheet per table, the per-minute (or per-hour) figures with their
     charts, every visitor, and the requests of the current request log in the range. Built on demand, never stored."""
     from openpyxl import Workbook   # imported on use, as in api/exports.py: it costs the API ~25 MB

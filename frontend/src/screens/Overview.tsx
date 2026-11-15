@@ -10,6 +10,7 @@ import { BaseNote, Card, Change, compared, Failure, SkeletonScreen, SourceLine, 
 import Glance from "../components/Glance";
 import QuestionChart from "../components/QuestionChart";
 import { biggest, isProfile, moves } from "../moves";
+import { dashboardFeature } from "../trackers";
 import { direction, fmtDate, pct, pts } from "../stats";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Printer as PrinterIcon } from "lucide-react";
@@ -21,7 +22,8 @@ export default function Overview() {
   const navigate = useNavigate();
   const me = useMe().data;
   const can = (feature: string) => allowed(me, feature);   // links only to screens on this person's menu
-  const dashboards = waves.find(x => x.survey_id === id)?.dashboards ?? [];
+  // the topic dashboards on this person's menu, a tracker's only with its own (config/access.yml, 15 Nov 2026)
+  const dashboards = (waves.find(x => x.survey_id === id)?.dashboards ?? []).filter(code => allowed(me, "dashboards") && allowed(me, dashboardFeature(code)));
   useQueries({ queries: dashboards.map(code => dashboardQuery(code, id)) });   // in parallel with the book, not after it
   const all = useMemo(() => (book ? moves(book) : []), [book]);
   if (isLoading) return <SkeletonScreen kind="overview" />;

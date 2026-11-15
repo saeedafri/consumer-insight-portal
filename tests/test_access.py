@@ -4,6 +4,7 @@ import asyncio
 import gzip
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -796,3 +797,82 @@ def test_a_key_carries_none_of_its_owners_admin_powers_and_is_always_rate_limite
     monkeypatch.setitem(RULES["limits"], "api", 2)
     assert [access.spend("boss@coresight.com", "api") for _ in range(3)] == [True, True, False]
     assert all(access.spend("boss@coresight.com", "ask") for _ in range(5))   # signed in, still never throttled
+
+
+def menu_keys(items):
+    """Every feature key in a branch of config/access.yml `menu`, in order."""
+    for item in items:
+        if isinstance(item, str):
+            yield item
+        else:
+            yield from menu_keys(item.get("children", []))
+
+
+def test_the_access_menu_tree_holds_every_feature_once_as_the_left_menu_does():
+    """The Access screen offers the left menu's every group, menu and page (config/access.yml menu): each feature once,
+    labelled, and the trackers and Forsta pages the same as the screens list (15 Nov 2026)."""
+    access.rules.cache_clear()
+    rules = access.rules()
+    keys = [k for group in rules["menu"] for k in menu_keys(group["items"])]
+    assert sorted(keys) == sorted(rules["features"]) and len(keys) == len(set(keys))
+    assert all(f in rules["feature_labels"] for f in rules["features"])
+    web = Path(__file__).resolve().parents[1] / "frontend" / "src"
+    trackers = re.findall(r'\["(\w+)", "[^"]+"\]', web.joinpath("trackers.ts").read_text().split("SECTOR_DASHBOARDS")[0])
+    sections = re.findall(r'^\s*\["(\w+)", "[^"]+", "', web.joinpath("forstaSections.ts").read_text(), re.M)
+    assert [f"tracker_{c}" for c in trackers] == [k for k in rules["features"] if k.startswith("tracker_")]
+    assert [f"forsta_{s}" for s in sections] == [k for k in rules["features"] if k.startswith("forsta_")]
+    shell = web.joinpath("components", "Shell.tsx").read_text()
+    named = set(re.findall(r'(?:allowed\(me, |features\?\.includes\()"(\w+)"', shell))
+    assert named and named <= set(rules["features"])   # every menu the left menu checks is one the Access screen offers
+    assert {g["group"] for g in access.tree()} >= {"Explore", "Core research", "Trackers", "Reference", "Research operations", "Administration"}
+
+
+def test_a_choice_saved_before_the_menus_grew_loses_nothing_and_a_new_one_is_kept_as_saved():
+    """Menus split off an older one (grown_from) follow it in a package or in a choice saved before the split; a choice
+    saved since keeps exactly what was ticked (15 Nov 2026)."""
+    access.rules.cache_clear()
+    old = access.choice(["dashboards", "explorer", "search"])   # a list as the Access screen saved it before
+    assert {"library", "methodology", "whats_new", "us_tracker", "china_tracker", "channels", "tracker_glp1"} <= set(old)
+    assert not {"logs", "ingest", "forsta_reports", "crosstab"} & set(old)   # the admin pages stay the super admin's
+    offered = access.rules()["features"]
+    new = access.choice({"on": ["dashboards", "tracker_genai"], "offered": offered})
+    assert set(new) == {"dashboards", "tracker_genai"}   # GLP-1 and the rest off, as ticked
+    core = access.menus([], "core")   # a package lists the old menus: it gets the new ones grown from them
+    assert {"library", "tracker_glp1", "channels"} <= set(core) and "logs" not in core
+
+
+def test_a_weekly_tracker_hidden_on_the_access_screen_closes_its_waves(portal, monkeypatch):
+    """Shopping & Spending off for one person: its waves leave the list and do not open, and that person's cached
+    answers are kept apart from their client's (access.scope, 15 Nov 2026)."""
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
+    monkeypatch.setitem(RULES, "features", RULES["features"] + ["us_tracker"])
+    monkeypatch.setitem(RULES, "family_menus", {"CSI-US": "us_tracker"})
+    boss, ana = signed("boss@coresight.com"), signed("ana@coresight.com")
+    assert 415 in [w["survey_id"] for w in json.loads(call("/api/v1/waves", ana)[2])]
+    without = [f for f in access.profile("ana@coresight.com")["features"] if f != "us_tracker"]
+    assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": without}).encode())[0] == 200
+    ana = signed("ana@coresight.com")
+    assert 415 not in [w["survey_id"] for w in json.loads(call("/api/v1/waves", ana)[2])]
+    assert call("/api/v1/waves/415/book", ana)[0] in (403, 404)
+    assert access.scope(access.profile("ana@coresight.com")).endswith(":without:us_tracker")
+
+
+def test_an_admin_page_given_on_the_access_screen_opens_for_that_person_only(portal, monkeypatch):
+    """The Logs page and a Forsta page given to one analyst: their routes answer them, still never an API key, and
+    nobody else (15 Nov 2026). Each tracker's dashboard needs its own menu."""
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
+    monkeypatch.setitem(RULES, "features", RULES["features"] + ["logs", "forsta_reports", "tracker_glp1"])
+    monkeypatch.setitem(RULES, "chosen_only", ["fieldwork", "logs", "forsta_reports"])
+    boss, ana, bob = signed("boss@coresight.com"), signed("ana@coresight.com"), signed("bob@coresight.com")
+    assert call("/api/v1/admin/health", ana)[0] == 403 and call("/api/v1/admin/forsta", ana)[0] == 403
+    given = access.profile("ana@coresight.com")["features"] + ["logs", "forsta_reports"]
+    assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": given}).encode())[0] == 200
+    ana = signed("ana@coresight.com")
+    assert call("/api/v1/admin/health", ana)[0] == 200
+    assert call("/api/v1/admin/forsta", ana)[0] == 404            # allowed in: there is just no Forsta record in a test
+    assert call("/api/v1/admin/audit", ana)[0] == 403             # an admin page nobody is given
+    assert call("/api/v1/admin/health", bob)[0] == 403            # only the person it was given to
+    assert call("/api/v1/dashboards/glp1/415", ana)[0] == 404     # GLP-1 is on Ana's menu (no such dashboard here)
+    no_glp1 = [f for f in given if f != "tracker_glp1"]
+    assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": no_glp1}).encode())[0] == 200
+    assert call("/api/v1/dashboards/glp1/415", signed("ana@coresight.com"))[0] == 403

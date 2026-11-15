@@ -30,10 +30,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, Response
 
-from api.signin import admin
+from api.signin import admin_page
 
 log = logging.getLogger("cip.api.ingest")
 router = APIRouter(prefix="/api/v1/admin/survey", tags=["admin"])
+INGEST_PAGE = admin_page("ingest")   # an admin, or whoever the super admin gave Upload survey (the Access page)
 ROOT = Path(__file__).resolve().parents[1]
 UPLOAD_DIR = Path(os.environ.get("CIP_UPLOAD_DIR") or ROOT / "data/uploads")   # every loaded week's two files, kept
 MAX_BYTES = 10 * 1024 * 1024   # per file; api/main.py allows two in one request, nginx 20m (deploy/cip_locations.conf). A week is ~0.4 MB
@@ -58,7 +59,7 @@ def save_upload(file: UploadFile, kinds: set[str], folder: Path, what: str) -> P
 
 
 @router.post("/preview")
-def preview_survey(raw: UploadFile = File(...), topline: UploadFile = File(...), _: dict = Depends(admin)) -> dict:
+def preview_survey(raw: UploadFile = File(...), topline: UploadFile = File(...), _: dict = Depends(INGEST_PAGE)) -> dict:
     """What the files would load and whether every count equals the topline. The copies are deleted afterwards."""
     from etl import baidu_qss_export
     with tempfile.TemporaryDirectory(prefix="cip-upload-") as folder:
@@ -73,7 +74,7 @@ def preview_survey(raw: UploadFile = File(...), topline: UploadFile = File(...),
 
 @router.post("/publish")
 def publish_survey(raw: UploadFile = File(...), topline: UploadFile = File(...), wave: Optional[str] = Form(None),
-                   who: dict = Depends(admin)) -> dict:
+                   who: dict = Depends(INGEST_PAGE)) -> dict:
     """Load the week (the same week again replaces it), then rebuild the published files in the background."""
     from etl import baidu_qss_export
     from etl.loaders import Locked

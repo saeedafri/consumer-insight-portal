@@ -7,6 +7,8 @@ export const TRACKERS: [string, string][] = [
   ["glp1", "GLP-1 impact"], ["mideast_gas", "Gas prices & geopolitics"], ["holiday_tracker", "Holiday shopping"],
   ["holiday_outlook", "Holiday outlook"], ["social_commerce", "Social commerce"],
 ];
+/** The menu a dashboard needs (config/access.yml): a tracker its own (15 Nov 2026), any other the topic dashboards. */
+export const dashboardFeature = (code: string) => TRACKERS.some(([c]) => c === code) ? `tracker_${code}` : "dashboards";
 export const SECTOR_DASHBOARDS: [string, string][] = [
   ["apparel", "Apparel"], ["beauty", "Beauty"], ["dept_stores", "Department stores"], ["drugstore", "Drugstore / pharmacy"],
   ["ecommerce", "eCommerce"], ["footwear", "Footwear"], ["home_furnishings", "Home furnishings"], ["home_improvement", "Home improvement / DIY"],

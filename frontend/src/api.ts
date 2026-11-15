@@ -386,7 +386,9 @@ export async function downloadForstaReport(key: string, report: string, name: st
 
 /** The Access screen (super admin): every switchable menu, and each role's current choice (api/main.py roles). */
 /** A role ("analyst"), a client ("client:acme") or one person ("person:ana@acme.com"), with their menus. */
-export interface RoleMenus { features: { key: string; label: string }[];
+/** One entry of the left menu as the Access screen offers it (config/access.yml menu): a feature, or a group of pages. */
+export interface MenuNode { key?: string; label: string; always?: boolean; admin?: boolean; children?: MenuNode[] }
+export interface RoleMenus { features: { key: string; label: string }[]; menu: { group: string; items: MenuNode[] }[];
   roles: { role: string; kind: "role" | "client" | "person"; label: string; features: string[]; chosen: boolean }[] }
 export const useRoles = (person = "") => useQuery({ queryKey: ["roles", person], retry: false, placeholderData: keepPreviousData,
   queryFn: () => admin<RoleMenus>(`/api/v1/admin/roles${person ? `?person=${encodeURIComponent(person)}` : ""}`) });

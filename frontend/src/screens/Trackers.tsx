@@ -6,19 +6,21 @@
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { dashboardQuery, useDashboard, useWaves } from "../api";
+import { allowed, dashboardQuery, useDashboard, useMe, useWaves } from "../api";
 import type { Dashboard } from "../api";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import Glance from "../components/Glance";
 import { Card, Empty, Failure, SkeletonScreen } from "../components/bits";
 import { blues, C, useTheme } from "../theme";
 import { fmtDate } from "../stats";
-import { SECTOR_DASHBOARDS, TRACKERS } from "../trackers";
+import { dashboardFeature, SECTOR_DASHBOARDS, TRACKERS } from "../trackers";
 
 const time = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
 
 export default function Trackers() {
-  const { code = TRACKERS[0][0] } = useParams();
+  const me = useMe().data;
+  const mine = TRACKERS.filter(([c]) => allowed(me, dashboardFeature(c)));   // each tracker is a menu of its own (15 Nov 2026)
+  const { code = (mine[0] ?? TRACKERS[0])[0] } = useParams();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const { data: waves, isLoading, error } = useWaves();
@@ -43,8 +45,8 @@ export default function Trackers() {
 
     <section className="card compare-bar" aria-label="Choose the tracker and week">
       <label><span>Tracker</span><select value={code} onChange={e => navigate(`/trackers/${e.target.value}`)}>
-        <optgroup label="Trackers">{TRACKERS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}</optgroup>
-        <optgroup label="Sector dashboards">{SECTOR_DASHBOARDS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}</optgroup>
+        <optgroup label="Trackers">{mine.map(([c, n]) => <option key={c} value={c}>{n}</option>)}</optgroup>
+        {allowed(me, "dashboards") && <optgroup label="Sector dashboards">{SECTOR_DASHBOARDS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}</optgroup>}
       </select></label>
       <label><span>Week</span><select value={week.survey_id} onChange={e => setParams(p => { p.set("w", e.target.value); return p; }, { replace: true })}>
         {weeks.map(w => <option key={w.survey_id} value={w.survey_id}>{fmtDate(w.wave_date)} · n={w.qualified_n}</option>)}</select></label>

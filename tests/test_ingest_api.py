@@ -10,7 +10,6 @@ from sqlalchemy import text
 
 from api import ingest
 from api.main import app
-from api.signin import admin
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 RAW, TOPLINE = FIXTURES / "baidu_raw_2026-11-03.csv", FIXTURES / "baidu_topline_2026-11-05.xls"
@@ -23,9 +22,9 @@ def files(raw: Path = RAW, topline: Path = TOPLINE) -> dict:
 
 @pytest.fixture()
 def as_admin():
-    app.dependency_overrides[admin] = lambda: {"email": "boss@coresight.com", "role": "super_admin"}
+    app.dependency_overrides[ingest.INGEST_PAGE] = lambda: {"email": "boss@coresight.com", "role": "super_admin"}
     yield TestClient(app)
-    app.dependency_overrides.pop(admin, None)
+    app.dependency_overrides.pop(ingest.INGEST_PAGE, None)
 
 
 def test_preview_checks_both_files_and_writes_nothing(csi_db, as_admin):

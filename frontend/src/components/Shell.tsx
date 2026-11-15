@@ -8,7 +8,7 @@ import type { Theme } from "../theme";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from "react-router";
 import { allowed, useMe, useReportWaves, useWaves } from "../api";
 import { SECTIONS } from "../forstaSections";
-import { TRACKERS } from "../trackers";
+import { dashboardFeature, TRACKERS } from "../trackers";
 import PinDialog from "./PinDialog";
 import { Menu, UndoBar } from "./bits";
 import type { Me, Wave } from "../api";
@@ -21,14 +21,21 @@ import type { LucideIcon } from "lucide-react";
 // [path, label, icon]; FEATURE names the /me feature a screen needs (config/access.yml): unlisted screens always show
 const FEATURE: Record<string, string> = { questions: "explorer", crosstab: "crosstab", trends: "trends", compare: "compare", audience: "audiences",
                                           changes: "changes", report: "report", survey: "survey" };
-const TOP_FEATURE: Record<string, string> = { search: "search", schedule: "schedule", ask: "ask", boards: "boards", sectors: "sectors",
-                                              expectations: "expectations", "api-guide": "api" };
+const TOP_FEATURE: Record<string, string> = { library: "library", search: "search", schedule: "schedule", ask: "ask", boards: "boards",
+                                              channels: "channels", retailers: "retailers", sectors: "sectors", expectations: "expectations",
+                                              methodology: "methodology", "whats-new": "whats_new", "api-guide": "api", fieldwork: "fieldwork",
+                                              ingest: "ingest", logs: "logs" };
 /** The feature the screen at this address needs, or undefined when it always shows: a hidden menu also closes its
- *  address, so a link, a bookmark or a typed URL never opens a screen the menus take away (10 Nov 2026). */
+ *  address, so a link, a bookmark or a typed URL never opens a screen the menus take away (10 Nov 2026). Every left-menu
+ *  entry has one since 15 Nov 2026 (config/access.yml menu): a tracker's page its own, a Forsta page its own. */
 export function featureOf(pathname: string): string | undefined {
-  const [, first, , screen] = pathname.split("/");
+  const [, first, page, screen] = pathname.split("/");
+  if (first === "trackers") return dashboardFeature(page ?? "");
+  if (first === "forsta") return `forsta_${page}`;
   return first === "w" ? FEATURE[screen ?? ""] : TOP_FEATURE[first];
 }
+/** A menu only the super admin had before 15 Nov 2026 (the admin pages): on when given, never while /me loads. */
+const given = (me: Me | null | undefined, feature: string) => !!me?.features?.includes(feature);
 const FORSTA_ICONS: Record<string, LucideIcon> = {   // the Forsta group's icons (forstaSections.ts names the pages)
   reports: FileText,
   crosstab: Table2,
@@ -185,35 +192,38 @@ export default function Shell() {
            {...(mobileMenuOpen ? { role: "dialog", "aria-modal": true } : {})}>
       <RailGroup label="Explore">
         <NavLink to="/" end><Icon of={House} />Home</NavLink>
-        <NavLink to="/library"><Icon of={LibraryBig} />Survey library</NavLink>
+        {allowed(me, "library") && <NavLink to="/library"><Icon of={LibraryBig} />Survey library</NavLink>}
         {allowed(me, "search") && <NavLink to="/search"><Icon of={Search} />Search questions</NavLink>}
         {allowed(me, "schedule") && <NavLink to="/schedule"><Icon of={CalendarDays} />Launch schedule</NavLink>}
         {allowed(me, "boards") && <NavLink to="/boards"><Icon of={Pin} />Boards</NavLink>}
       </RailGroup>
       <RailGroup label="Core research">
-        {latest && <NavLink to={`/w/${latest.survey_id}`} className={() => wave?.survey_id === latest.survey_id ? "active" : ""}>
+        {latest && allowed(me, "us_tracker") && <NavLink to={`/w/${latest.survey_id}`} className={() => wave?.survey_id === latest.survey_id ? "active" : ""}>
           <Icon of={LayoutDashboard} />Shopping & Spending</NavLink>}
-        {china && <NavLink to={`/w/${china.survey_id}`} className={() => wave?.survey_family === "CSI-CN" ? "active" : ""}>
+        {china && allowed(me, "china_tracker") && <NavLink to={`/w/${china.survey_id}`} className={() => wave?.survey_family === "CSI-CN" ? "active" : ""}>
           <Icon of={Globe} />China weekly tracker</NavLink>}
-        {allowed(me, "explorer") && <NavLink to="/channels"><Icon of={Layers} />In store vs online</NavLink>}
+        {allowed(me, "channels") && <NavLink to="/channels"><Icon of={Layers} />In store vs online</NavLink>}
         {allowed(me, "retailers") && <NavLink to="/retailers"><Icon of={Store} />Retailer databank</NavLink>}
         {allowed(me, "sectors") && <NavLink to="/sectors"><Icon of={Database} />Sector databank</NavLink>}
         {allowed(me, "expectations") && <NavLink to="/expectations"><Icon of={ChartColumn} />Expected vs actual</NavLink>}
       </RailGroup>
-      {allowed(me, "dashboards") && <RailGroup label="Trackers" closed={!location.pathname.startsWith("/trackers")}>
-        {TRACKERS.map(([code, label]) => <NavLink key={code} to={`/trackers/${code}`}><Icon of={Activity} />{label}</NavLink>)}
+      {TRACKERS.some(([code]) => allowed(me, `tracker_${code}`)) && <RailGroup label="Trackers" closed={!location.pathname.startsWith("/trackers")}>
+        {TRACKERS.filter(([code]) => allowed(me, `tracker_${code}`)).map(([code, label]) =>
+          <NavLink key={code} to={`/trackers/${code}`}><Icon of={Activity} />{label}</NavLink>)}
       </RailGroup>}
       <RailGroup label="Reference">
-        <NavLink to="/methodology"><Icon of={Info} />Methodology</NavLink>
-        <NavLink to="/whats-new"><Icon of={Star} />What's new</NavLink>
+        {allowed(me, "methodology") && <NavLink to="/methodology"><Icon of={Info} />Methodology</NavLink>}
+        {allowed(me, "whats_new") && <NavLink to="/whats-new"><Icon of={Star} />What's new</NavLink>}
       </RailGroup>
-      {(isAdmin || me?.features?.includes("fieldwork")) && <RailGroup label="Research operations" closed={!/^\/(fieldwork|forsta)/.test(location.pathname)}>
-        <NavLink to="/fieldwork"><Icon of={Filter} />Fieldwork</NavLink>
-        {isAdmin && SECTIONS.map(([path, label]) => <NavLink key={path} to={`/forsta/${path}`}><Icon of={FORSTA_ICONS[path]} />{label}</NavLink>)}
+      {(isAdmin || given(me, "fieldwork") || SECTIONS.some(([path]) => given(me, `forsta_${path}`))) &&
+        <RailGroup label="Research operations" closed={!/^\/(fieldwork|forsta)/.test(location.pathname)}>
+        {(isAdmin || given(me, "fieldwork")) && <NavLink to="/fieldwork"><Icon of={Filter} />Fieldwork</NavLink>}
+        {SECTIONS.filter(([path]) => isAdmin || given(me, `forsta_${path}`)).map(([path, label]) =>
+          <NavLink key={path} to={`/forsta/${path}`}><Icon of={FORSTA_ICONS[path]} />{label}</NavLink>)}
       </RailGroup>}
-      {isAdmin && <RailGroup label="Administration" closed={!/^\/(ingest|logs|access)/.test(location.pathname)}>
-        <NavLink to="/ingest"><Icon of={Upload} />Upload survey</NavLink>
-        <NavLink to="/logs"><Icon of={ScrollText} />Logs</NavLink>
+      {(isAdmin || given(me, "ingest") || given(me, "logs")) && <RailGroup label="Administration" closed={!/^\/(ingest|logs|access)/.test(location.pathname)}>
+        {(isAdmin || given(me, "ingest")) && <NavLink to="/ingest"><Icon of={Upload} />Upload survey</NavLink>}
+        {(isAdmin || given(me, "logs")) && <NavLink to="/logs"><Icon of={ScrollText} />Logs</NavLink>}
         {me?.permissions?.includes("manage_roles") && <NavLink to="/access"><Icon of={ShieldCheck} />Access</NavLink>}
       </RailGroup>}
       {wave && <div className="rail-foot">

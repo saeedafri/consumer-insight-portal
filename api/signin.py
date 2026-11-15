@@ -145,19 +145,26 @@ def user(request: Request) -> dict:
     return person
 
 
-def admin(request: Request, who: dict = Depends(user)) -> dict:
-    if who.get("sid") == "api-key":   # a key acts for its owner on the data, never on admin pages: one leaked is not an admin (15 Nov 2026)
-        raise HTTPException(403, "Admin pages need a signed-in admin, not an API key")
-    if not access.can(who, "admin_pages"):
-        raise HTTPException(403, "Only an admin can do that")
-    # the demo sign-in takes any email at its word, so anyone could type an admin's: a session that came through it
-    # also needs CIP_ADMIN_TOKEN (32+ characters) in the X-CIP-Admin-Token header. A sign-in the identity provider
-    # proved (csr-idp, Entra) needs nothing more: the email is the person's own
-    token = os.environ.get("CIP_ADMIN_TOKEN", "")
-    if demo() and not proven(who.get("sid", "")) \
-            and not (len(token) >= 32 and same(token, request.headers.get("x-cip-admin-token", ""))):
-        raise HTTPException(403, "While sign-in is the demo, admin pages also need the admin token")
-    return who
+def admin_page(*features: str):
+    """The check of an admin page's routes: an admin, or someone the super admin gave one of `features` on the Access
+    page (the Logs page to an analyst, say; 15 Nov 2026). Never an API key; under the demo sign-in, also the token."""
+    def check(request: Request, who: dict = Depends(user)) -> dict:
+        if who.get("sid") == "api-key":   # a key acts for its owner on the data, never on admin pages: one leaked is not an admin (15 Nov 2026)
+            raise HTTPException(403, "Admin pages need a signed-in admin, not an API key")
+        if not (access.can(who, "admin_pages") or any(access.allows(who, f) for f in features)):
+            raise HTTPException(403, "Only an admin can do that")
+        # the demo sign-in takes any email at its word, so anyone could type an admin's: a session that came through it
+        # also needs CIP_ADMIN_TOKEN (32+ characters) in the X-CIP-Admin-Token header. A sign-in the identity provider
+        # proved (csr-idp, Entra) needs nothing more: the email is the person's own
+        token = os.environ.get("CIP_ADMIN_TOKEN", "")
+        if demo() and not proven(who.get("sid", "")) \
+                and not (len(token) >= 32 and same(token, request.headers.get("x-cip-admin-token", ""))):
+            raise HTTPException(403, "While sign-in is the demo, admin pages also need the admin token")
+        return who
+    return check
+
+
+admin = admin_page()   # the admin pages nobody else is given: the audit log, revoking sessions, the full Fieldwork record
 
 
 PROVEN: set[str] = set()   # sessions known to have signed in through the identity provider (never changes for a session)
