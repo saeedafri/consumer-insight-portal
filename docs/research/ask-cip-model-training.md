@@ -1222,6 +1222,61 @@ Sources: [Qwen3/EmbeddingGemma on MTEB](https://www.cognee.ai/best-embedding-mod
 [Genie best practices](https://learn.microsoft.com/azure/databricks/genie/best-practices),
 [hard negatives for domain fine-tuning](https://tianpan.co/blog/2026-05-05-embedding-fine-tuning-gap-domain-specific-relevance).
 
+**v8's run (15 Nov 2026, night; `ask-v8.zip`, then `ask-v8-search.zip`): no model is better inside Ask, none is used.**
+On Colab, as Ask ranks (the right survey question first / in the first 14; golden · fresh · big exam):
+
+| Search model | Size | Golden | Fresh | Big exam | One question, 1 CPU |
+|---|---|---|---|---|---|
+| bge-small (today's) | 33M | 79.5% / 98.0% | 59.6% / 91.5% | 64.9% / 96.4% | 28 ms |
+| Granite small R2 | 48M | 79.5% / 96.7% | 74.5% / 89.4% | 65.7% / 96.6% | 37 ms |
+| Granite R2 | 149M | 78.1% / 94.7% | 76.6% / 87.2% | 67.2% / 97.1% | 98 ms |
+| GTE ModernBERT | 149M | 78.1% / 96.7% | 63.8% / 89.4% | 67.7% / 97.2% | 140 ms |
+| bge-large | 335M | 74.2% / 96.7% | 61.7% / 89.4% | 63.6% / 95.8% | 232 ms |
+| Qwen3-Embedding-0.6B | 596M | 74.8% / 94.0% | 68.1% / 85.1% | 63.9% / 96.6% | 1,140 ms |
+| bge-small fine-tuned | 33M | 86.1% / 100% | 74.5% / 97.9% | 66.3% / 96.8% | 25 ms |
+| bge-small + instruction, fine-tuned | 33M | 90.7% / 100% | 78.7% / 97.9% | 66.0% / 97.0% | 33 ms |
+
+(bge-base, Arctic M, mixedbread large and e5-base land between; Nomic did not load.) The bigger readers, trained on v7's
+labels, pick right on 120-122 of the 128 golden, 32-35 of 39 fresh and 268-271 of 617 big-exam requests against L6's
+121 · 33 · 260, at ~1.2 s a question on one CPU (L6 ~0.07 s); GTE's 8-bit copy agrees with the labels on 68.9% against
+its own 79.8%. Inside Ask on the Mac, Granite R2 as the reader gives golden 154 (as today) and fresh 41 (today 43) at a
+1.1 s median: the reader's misses are not its size, and v7's "ceiling" is not capacity.
+
+The fine-tuned bge-small (one epoch: 11,730 practice questions and one analyst's ask per survey question, each with a
+near miss as its hard negative; none of the tests in the training) came back unexported: step 6 read the pooling from
+the model, which Colab's newer sentence-transformers no longer gives, and refused it. A cell added to the same runtime
+exported both with the model card's pooling (the first token): 8-bit, 34 MB (today's file is 16-bit, 66 MB), vectors
+0.966-0.969 of PyTorch's, 6 ms a question on the Mac (today's 14 ms). Inside Ask on the Mac, today's reader, no AI:
+
+| Search model inside Ask | Golden | Fresh | Big exam |
+|---|---|---|---|
+| bge-small (today's) | 154 | 43 | 2,496 |
+| fine-tuned | 152 | 41 | 2,497 |
+| + instruction, fine-tuned | 152 | 42 | 2,495 |
+
+Golden, fine-tuned against today: 1 fixed (satisfaction with shopping in AI platforms), 3 broken: "Did people make
+holiday purchases this week?" (the status question), "Retail subscription programs people belong to" (loyalty
+programs), and "Best pizza recipe", answered from S2 instead of "not in the surveys": fine-tuning pulls unrelated
+questions closer to the survey questions, so they pass the "nothing close" floor (as v3's did to the gate). The better
+ranking does not turn into answers because Ask's hybrid search already puts the right question in the reader's list for
+97-98% of golden and big-exam questions, and the reader decides. The misses left are names, spellings and rules (fresh:
+"Ama Prime", "Amazon prime" read as the retailer's share, "subcription", the stored name "holiday spending") and partial
+topics (a turkey's price, dining out with tariffs): the verified library, names and rules, or the AI on the unsure
+ones, not bigger models. `scripts/colab/train_search_model_v8b.ipynb` is v8's fine-tune and export with the pooling set
+from the model card, exported 32-bit (below), if a search model is tried again.
+
+**Checked again after Gemini's review (15 Nov 2026).** Two of its points hold. The test was not like for like: the
+fine-tuned copies were 8-bit (0.966-0.969 of PyTorch's vectors) and today's file is 16-bit, so some of the Colab gain may
+have been lost to the copy. v8b now exports 32-bit (PyTorch's own vectors; a winner gets a 16-bit copy before it ships),
+and its check is 0.999: it refused anything under 0.97, which v8's own 8-bit copies would have failed. And fine-tuning
+widens the model's scale 2.7 times (gate 0.04 → 0.11, verified match 0.88-0.89), so more questions reach the reader. Not
+likely to change the verdict: the reader picks right 84-85% of the time when the right question is in its list (fresh,
+big exam), and a better list cannot lift that. Its account of the fresh misses did not hold: "How many people bought
+Amazon prime?" was not the retailer-list rule (it never fired) but the list's order: the retailer lists, with "Amazon"
+among their answers, went first and Ask's own reader took them, sure (lead 2.1, the bar 2.0), so the AI would never have
+been asked. A name the question says in full, as a question found by meaning words it ("Amazon Prime"), now beats the
+shorter answer, and "how many … in all waves" is a trend: fresh 43 → 45 of 50 with no AI, golden and the big exam unchanged.
+
 **A better teacher than Qwen3-32B? (searched 15 Nov 2026).** The open-weight leaders (Kimi K3 first on BenchLM's November
 ranking of 94 models, DeepSeek V4) need several 80 GB GPUs, so not Colab. Two that fit one Colab A100 (4-bit: about 15-18
 GB; 8-bit about 28-33 GB) and are newer and stronger on reasoning than Qwen3-32B (Apr 2025): **Qwen3.8-27B** (Alibaba,

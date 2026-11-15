@@ -195,11 +195,12 @@ The code's own description of the loaders: everything is idempotent; re-running 
 
 Every job that writes (the scheduled run, a hand-run load, a rebuild, a publish, the China loader, the respondent rekey) first asks MySQL for a named lock, **`cip_etl`** (`GET_LOCK`).
 
-- If the lock is free, the job holds it for its whole run.
+- If the lock is free, the job holds it for its whole run. Monday's watch is the exception: it takes the lock for each 30-minute check and frees it while it sleeps, so uploads and the China loader work during launch week (before 15 November 2026 it held it for up to 54 hours). A scheduled check finds the watch's heartbeat "waiting" and leaves the next check to the watch.
 - If another job holds it, the new job stops at once ("Another CIP run holds the lock"). A scheduled check every 30 minutes simply finds the lock taken while Monday's watch runs, and stops.
 - A container restart's publish restore may queue for the lock (up to 6 hours) instead of stopping.
 - The lock belongs to the database connection. If a job is killed, its connection closes and the lock is released automatically. No stuck lock needs clearing by hand.
-- The lock's connection is told not to time out for 7 days (the server normally drops idle connections after 8 hours), and Monday's 54-hour watch pings it every cycle.
+- The lock's connection is told not to time out for 8 hours, longer than the longest run (3 hours).
+- While a job holds the lock, a stop signal (SIGTERM, a stopped container) unwinds the job instead of ending it on the spot, so every loader closes its run as failed and hides its half-loaded wave.
 
 The code records why the lock exists: two writers at once deadlocked on 20 October 2026.
 
@@ -275,10 +276,11 @@ The project's documentation records a full reconciliation on 8 October 2026: 31 
 | 17 | base | A closed Forsta survey still not loaded after 3 days | Report |
 | 18 | base | A demographic profile filed under a different wave than its respondent | Report |
 | 19 | watch | A closed survey hibernated before it was loaded: reactivate it in Forsta, the next run loads it | Warn |
-| 20 | watch | A survey no longer listed by Forsta, never loaded, and not only ever in testing: ask Forsta to restore it | Warn |
-| 21 | plan | A tracker week the data team planned (`config/launch_schedule.yml`) still not in the portal 4 days after its Monday (looking back 8 weeks) | Report |
+| 20 | watch | A wave loaded while still in the field and hibernated before its final reload: the portal keeps its earlier data; reactivate it in Forsta, the next run reloads it (added 15 Nov 2026) | Warn |
+| 21 | watch | A survey no longer listed by Forsta, never loaded, and not only ever in testing: ask Forsta to restore it | Warn |
+| 22 | plan | A tracker week the data team planned (`config/launch_schedule.yml`) still not in the portal 4 days after its Monday (looking back 8 weeks) | Report |
 
-Check 21 compares against the team's plan, not every Monday, because the tracker ran fortnightly in parts of 2024 and 2025.
+Check 22 compares against the team's plan, not every Monday, because the tracker ran fortnightly in parts of 2024 and 2025.
 
 ### 11.2 How healing is limited and confirmed
 

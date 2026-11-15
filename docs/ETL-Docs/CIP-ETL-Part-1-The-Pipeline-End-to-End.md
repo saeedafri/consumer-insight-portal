@@ -98,9 +98,9 @@ The scheduler wakes every minute and checks the clock (UTC). These are its jobs,
 | When (UTC) | When (IST) | Job | Purpose |
 |---|---|---|---|
 | Monday 12:00 | Monday 17:30 | `scripts/weekly_forsta.py` (the **launch run**) | On a Monday the data team planned a launch, it "watches" the new wave for up to 54 hours, checking every 30 minutes, and loads it when fieldwork ends |
-| Every day 03:30 | Every day 09:00 | `scripts/weekly_forsta.py` | A short run that loads any other survey that closed, such as an annual or ad hoc study. Friday's run also runs the full integrity check |
+| Tuesday to Sunday 03:30 | Tuesday to Sunday 09:00 | `scripts/weekly_forsta.py` | A short run that loads any other survey that closed, such as an annual or ad hoc study. Friday's run also runs the full integrity check. There is no Monday 03:30 run: every Monday is planned, so it started the watch 8.5 hours early and its 54 hours ended Wednesday 15:00 IST, not 23:30 (removed 15 Nov 2026); the 30-minute check covers that minute |
 | Every 30 minutes (:00 and :30) | | `scripts/weekly_forsta.py --once` | One single check. Safety net: if a deployment killed Monday's watch, a closed wave still loads within 30 minutes |
-| Every hour at :05 | | `scripts/weekly_forsta.py --watchdog` | Raises an alarm if a run stopped without finishing, or if no run happened for over 2 hours |
+| Every hour at :05 | | `scripts/weekly_forsta.py --watchdog` | Raises an alarm if a run stopped without finishing, or if nothing was heard for over 2 hours past the time the last run promised its next sign of life |
 | 2 minutes after each container start | | `python -m etl.fieldwork` | Saves Forsta's fieldwork records for any survey still missing them |
 | Every 10 minutes (or within a minute of a SharePoint notification) | | `python -m etl.sharepoint_china` | Loads new China survey weeks from SharePoint, once IT access is set |
 | Every hour at :10, only if no published files exist | | `python -m etl.publish --restore` | Makes sure the screens are never left empty |

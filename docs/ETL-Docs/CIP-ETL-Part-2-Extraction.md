@@ -191,12 +191,12 @@ The code notes a real case: on 19 October 2026 Forsta stopped a wave at 400 with
 The function `run_due()` selects the surveys to load:
 
 - every survey whose load state is `due`, plus
-- every survey whose load state is `failed` and that has failed **fewer than 3 times in a row**,
+- every survey whose load state is `failed` and that has failed **fewer than 3 times in a row**, or whose last failure is **6 hours** old,
 - ordered by close date, then path, so the **oldest is loaded first**.
 
 The survey list from Forsta is fetched only once and reused for every wave in the run, so loading five waves still costs one list call.
 
-Each wave is loaded on its own. If one fails, its error is written to the register (`load_state = failed`, `last_error`, `attempts` plus one) and to the audit log, and the run moves on to the next wave. A survey that has failed 3 runs in a row is no longer retried automatically. It waits for someone to run it by hand (`python -m etl.forsta_etl --survey <path>`), because fetching a broken survey in full on every run would only waste time.
+Each wave is loaded on its own. If one fails, its error is written to the register (`load_state = failed`, `last_error`, `attempts` plus one) and to the audit log, and the run moves on to the next wave. A survey that has failed 3 runs in a row is then tried once every 6 hours (`RETRY_HOURS`), not on every run, because fetching a broken survey in full every 30 minutes would only waste time. Before 15 November 2026 it was never tried again, so 90 minutes of Forsta trouble during fieldwork stopped a wave for good. Each failure email says when the next try is and gives the command to load it at once (`python -m etl.forsta_etl --survey <path>`).
 
 ## 8. Fetching one wave
 
