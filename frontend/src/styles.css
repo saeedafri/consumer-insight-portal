@@ -1024,8 +1024,10 @@ code.key { display: block; padding: 8px 10px; margin-bottom: 8px; background: va
 .picker-quick + .picker-list { top: calc(100% + 46px); border-radius: 0 0 8px 8px; }
 .picker-list label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px; color: var(--ink); cursor: pointer; }
 .picker-list label:hover { background: var(--fill); }
-.kpis { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 12px; }
-.kpis .kpi { padding: 0; min-height: 0; display: flex; flex-direction: column; gap: 2px; }
+/* each figure its own small card inside its chart's card (16 Nov 2026): the kpi's top line needs a card's edge to sit on */
+.kpis { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.kpis .kpi { padding: 14px 16px; min-height: 0; min-width: 150px; display: flex; flex-direction: column; gap: 2px;
+             border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 .kpis .kpi span { font-size: 12px; color: var(--ink-2); font-weight: 650; }
 .kpis .kpi b { font: 800 24px/1 var(--font-head); letter-spacing: -.03em; color: var(--ink); }
 .kpis .kpi small { font-size: 11px; color: var(--ink-3); }

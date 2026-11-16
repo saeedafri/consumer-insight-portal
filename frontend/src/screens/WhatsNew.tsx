@@ -12,6 +12,9 @@ const RELEASES: { date: string; entries: Entry[] }[] = [{
     { title: "In store vs online now goes back to August 2022",
       body: "In store vs online drew each category's trend only from January 2024, with an empty stretch before it, because the in-store and online questions were asked as Q4 and Q5 until December 2023 and the page read only q2 and q3 (which held other questions in those weeks). It now reads both, so every week from August 2022 is there: 196 weeks instead of 125, and each one can be picked in the Week list. Weeks in which q2 and q3 asked something else no longer appear in the list. The trend chart is now as tall as the category chart beside it, so its card no longer has an empty space underneath. Books, movies, music or video games now appears too: it was missing every week because the online question adds “(incl. digital purchases)” to its name.",
       link: ["/channels", "Open In store vs online"] },
+    { title: "Retailer databank: each retailer's figure in its own small card",
+      body: "In the Retailer databank, “Bought in the past two weeks” (or “Bought from” in a sector) shows each chosen retailer's share in its own small card, one per retailer, like the figures on In store vs online: the short coloured line on top (red for the first retailer, light blue for the others) now sits on a card's edge instead of floating above the name.",
+      link: ["/retailers?view=retailers", "Open the Retailer databank"] },
   ],
 }, {
   date: "15 November 2026",

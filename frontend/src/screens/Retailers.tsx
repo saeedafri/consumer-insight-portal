@@ -194,7 +194,7 @@ function Reach({ data, sides, series }: { data: Data; sides: Side[]; series: Ser
     <div className="grid g2">
       <Card title={weekly ? "Bought in the past two weeks" : "Bought from, among the sector's shoppers"}
             sub={`% of ${sides.map(s => s.market.base).join(" / ")}`} aside={<ExportButtons onExport={exportTable} />}>
-        <div className="kpis">{series.map((s, i) => <div key={s.label} className="kpi"><span>{s.label}</span><b>{pct(values[i])}</b>
+        <div className="kpis">{series.map((s, i) => <div key={s.label} className={`kpi${i ? "" : " lead"}`}><span>{s.label}</span><b>{pct(values[i])}</b>
           <small>{(s.counts[0] ?? 0).toLocaleString("en-US")} of {s.base.toLocaleString("en-US")}</small></div>)}</div>
         <EChart label="Shoppers by retailer" height={Math.max(160, series.length * 34 + 30)} option={{
           tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v: unknown) => `${v}%` },
