@@ -9,6 +9,9 @@ const RELEASES: { date: string; entries: Entry[] }[] = [{
     { title: "Who shops there: generation, income, region and area as side-by-side bars",
       body: "In the Retailer databank, “Who shops there” now draws generation, household income, region and area as horizontal bars, one per retailer, in every view (Retailer, Compare retailers, Sector, Compare sectors). A grey line across each group marks the share of all adults (or of the sector's shoppers), so a bar past the line means that group is over-represented among the retailer's shoppers. Each retailer's percentage is written in its colour on the right of every group. Gender stays a pie, and hovering still shows every figure.",
       link: ["/retailers?view=retailers", "Open the Retailer databank"] },
+    { title: "In store vs online now goes back to August 2022",
+      body: "In store vs online drew each category's trend only from January 2024, with an empty stretch before it, because the in-store and online questions were asked as Q4 and Q5 until December 2023 and the page read only q2 and q3 (which held other questions in those weeks). It now reads both, so every week from August 2022 is there: 196 weeks instead of 125, and each one can be picked in the Week list. Weeks in which q2 and q3 asked something else no longer appear in the list. The trend chart is now as tall as the category chart beside it, so its card no longer has an empty space underneath. Books, movies, music or video games now appears too: it was missing every week because the online question adds “(incl. digital purchases)” to its name.",
+      link: ["/channels", "Open In store vs online"] },
   ],
 }, {
   date: "15 November 2026",

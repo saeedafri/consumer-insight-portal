@@ -1,7 +1,7 @@
 // In store vs online (/app/channels): which categories people bought in a store and which online in the past two weeks,
-// from the weekly questions q2 (in a store) and q3 (online). Two published question files (every week since 2020, every
-// group, exact counts; etl → api/v1/questions/CSI-US/tracker/q2|q3.json.gz) are fetched once and cached; every pick of
-// week, group or category is computed here in the browser, so nothing runs on the server when someone changes a filter.
+// from the weekly tracker: Q4/Q5 (Aug 2022 to Dec 2023), then Q2/Q3 and q2/q3 (from Jan 2024). Four published question
+// files (every group, exact counts; etl → api/v1/questions/CSI-US/tracker/q2|q3|Q4|Q5.json.gz) are fetched once and cached;
+// every pick of week, group or category is computed here in the browser, so nothing runs on the server when someone changes a filter.
 // Opened from the left menu (Core research) and the Home page's card; week, group and category are kept in the address.
 import { useMemo } from "react";
 import { useSearchParams } from "react-router";
@@ -17,31 +17,57 @@ const pct = (v: number | null | undefined) => v == null ? "–" : `${v.toFixed(1
 const time = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
 const SKIP = /^(none of|other|don.?t know)/i;
 
-/** A question file as share lookups: share(survey_id, "dim:value", answer label) → % of the group asked, or null. */
-function shares(file: QuestionFile) {
+// The tracker renumbered the two questions, and a code also held other questions in other weeks (q2 was "places you
+// are avoiding" until Dec 2023, Q4 a food-retailer question from Jan 2024): only the weeks whose wording is this question count.
+const IN_STORE = /in a store in the past two weeks/i, ONLINE = /online in the past two weeks/i;
+
+/** Question files as one share lookup, over the weeks that asked `wording`: share(survey_id, "dim:value", answer label)
+ *  → % of the group asked, or null; weeks: survey_id → date; labels: every answer those weeks gave. */
+function shares(files: QuestionFile[], wording: RegExp) {
   const cells = new Map<string, [number | null, number]>();
-  file.w.forEach((w, k) => cells.set(`${file.waves[w][0]}|${file.cuts[file.c[k]].join(":")}|${file.answers[file.a[k]][0]}`, [file.n[k], file.b[k]]));
-  return (survey: number, cut: string, label: string) => {
+  const weeks = new Map<number, string>(), labels = new Set<string>();
+  for (const file of files) {
+    const kept = file.waves.map(w => wording.test(file.versions[w[2] - 1] ?? ""));
+    file.waves.forEach((w, i) => kept[i] && weeks.set(w[0], w[1]));
+    file.w.forEach((w, k) => {
+      if (!kept[w]) return;
+      const label = file.answers[file.a[k]][0];
+      labels.add(label);
+      cells.set(`${file.waves[w][0]}|${file.cuts[file.c[k]].join(":")}|${label}`, [file.n[k], file.b[k]]);
+    });
+  }
+  const share = (survey: number, cut: string, label: string) => {
     const cell = cells.get(`${survey}|${cut}|${label}`);
     return cell && cell[0] != null && cell[1] ? 100 * cell[0] / cell[1] : null;
   };
+  return { share, weeks, labels };
 }
 
 export default function Channels() {
   const waves = useWaves().data;
   const tracker = waves?.find(w => w.survey_family === "CSI-US" && w.study_type === "tracker");
-  const store = useQuestion(tracker, "q2"), online = useQuestion(tracker, "q3");
+  const files = [useQuestion(tracker, "q2"), useQuestion(tracker, "Q4"), useQuestion(tracker, "q3"), useQuestion(tracker, "Q5")];
   const [params, setParams] = useSearchParams();
   useTheme();   // a theme switch re-renders, so the series take the new theme's colours (C)
+  const loaded = files.map(f => f.data);
   const data = useMemo(() => {
-    if (!store.data || !online.data) return null;
-    const both = new Set(online.data.waves.map(w => w[0]));
-    const weeks = store.data.waves.filter(w => both.has(w[0])).sort((x, y) => y[1].localeCompare(x[1]));   // newest first
-    return { weeks, cuts: store.data.cuts, inStore: shares(store.data), onLine: shares(online.data),
-             labels: new Set(online.data.answers.map(a => a[0])) };
-  }, [store.data, online.data]);
-  if (!waves || store.isLoading || online.isLoading) return <SkeletonScreen kind="page" />;
-  if (store.error || online.error) return <Failure error={store.error ?? online.error} />;
+    if (loaded.some(f => !f)) return null;
+    const [q2, Q4, q3, Q5] = loaded as QuestionFile[];
+    const store = shares([q2, Q4], IN_STORE), online = shares([q3, Q5], ONLINE);
+    const weeks = [...store.weeks].filter(([id]) => online.weeks.has(id)).sort((x, y) => y[1].localeCompare(x[1]));   // newest first
+    // the online list adds a note to an answer ("Books, movies, music or video games (incl. digital purchases)"): an
+    // online answer that is an in-store one plus " (…)" is that answer, else Books never pairs and is left out
+    const onlineName = new Map([...online.labels].flatMap(l => {
+      const own = [...store.labels].find(s => l.startsWith(`${s} (`));
+      return own && !online.labels.has(own) ? [[own, l] as const] : [];
+    }));
+    return { weeks, cuts: q2.cuts, inStore: store.share, storeLabels: store.labels,
+             onLine: (survey: number, cut: string, label: string) => online.share(survey, cut, onlineName.get(label) ?? label),
+             labels: new Set([...online.labels, ...onlineName.keys()]) };
+  }, loaded);   // the four files are the dependencies
+  const failed = files.find(f => f.error)?.error;
+  if (!waves || files.some(f => f.isLoading)) return <SkeletonScreen kind="page" />;
+  if (failed) return <Failure error={failed} />;
   if (!data || !data.weeks.length) return <Empty>In store and online buying has not been asked yet.</Empty>;
   const pick = (k: string, v: string) => setParams(p => { p.set(k, v); return p; }, { replace: true });
   const at = Math.max(0, data.weeks.findIndex(w => String(w[0]) === params.get("w")));
@@ -49,16 +75,18 @@ export default function Channels() {
   const prior = data.weeks[at + 1];
   const cut = data.cuts.some(c => c.join(":") === params.get("g")) ? params.get("g")! : "total:Total";
   // the categories this week asked both ways, biggest in store first
-  const categories = store.data!.answers.map(a => a[0]).filter(l => data.labels.has(l) && !SKIP.test(l) && data.inStore(survey, cut, l) != null)
+  const categories = [...data.storeLabels].filter(l => data.labels.has(l) && !SKIP.test(l) && data.inStore(survey, cut, l) != null)
     .sort((x, y) => (data.inStore(survey, cut, y) ?? 0) - (data.inStore(survey, cut, x) ?? 0));
   const category = categories.includes(params.get("c") ?? "") ? params.get("c")! : categories[0];
   const groupName = cut === "total:Total" ? "Everyone" : `${CUT_NAMES[cut.split(":")[0]] ?? ""}: ${cut.split(":")[1]}`;
   const nowStore = data.inStore(survey, cut, category), nowOnline = data.onLine(survey, cut, category);
   const change = (fn: typeof data.inStore, now: number | null) => prior && now != null && fn(prior[0], cut, category) != null ? now - fn(prior[0], cut, category)! : null;
+  // both cards draw at one height, so the trend card has no empty space under its chart beside the long category list
+  const height = Math.max(340, categories.length * 30 + 60);
   return <div className="stack">
     <div className="page-head"><div>
       <h1>In store vs online</h1>
-      <p className="lede">Which categories people bought in a store, and which online, in the past two weeks. Every weekly survey since 2020; pick a week,
+      <p className="lede">Which categories people bought in a store, and which online, in the past two weeks. Every weekly survey since August 2022; pick a week,
         a group of people and a category, or click a category in the chart.</p>
     </div></div>
 
@@ -86,7 +114,7 @@ export default function Channels() {
 
     <div className="grid g2">
       <Card title="Every category, this week" sub={`${groupName} · ${fmtDate(date)} · % who bought each in a store (red) and online (blue)`}>
-        <EChart height={Math.max(260, categories.length * 30 + 60)} label={`In store and online buying by category, ${fmtDate(date)}`}
+        <EChart height={height} label={`In store and online buying by category, ${fmtDate(date)}`}
                 onClick={p => pick("c", p.name)}
                 option={{
                   tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v: number) => pct(v) },
@@ -100,14 +128,13 @@ export default function Channels() {
                 }} />
       </Card>
       <Card title={category} sub={`${groupName} · every week since ${fmtDate(data.weeks.at(-1)![1])} · in a store (red) vs online (blue)`}>
-        <EChart height={340} label={`${category}: in store vs online over time`}
+        <EChart height={height} label={`${category}: in store vs online over time`}
                 option={{
                   tooltip: { ...tooltip(), trigger: "axis", valueFormatter: (v: number | null) => pct(v) },
                   legend: { top: 0, left: 0, textStyle: axisText() },
                   grid: { left: 8, right: 16, top: 36, bottom: 40, containLabel: true },
                   xAxis: { type: "time", axisLabel: valueText() },
                   yAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" } },
-                  dataZoom: [{ type: "slider", height: 18, bottom: 6, startValue: time(data.weeks[Math.min(data.weeks.length - 1, 51)][1]) }, { type: "inside" }],
                   series: [["In a store", data.inStore, C.red], ["Online", data.onLine, C.blue]].map(([name, fn, color]) => ({
                     type: "line", name, showSymbol: false, smooth: 0.2, color, lineStyle: { width: 2 },
                     data: [...data.weeks].reverse().map(w => [time(w[1]), (fn as typeof data.inStore)(w[0], cut, category)]) })),
@@ -115,6 +142,6 @@ export default function Channels() {
       </Card>
     </div>
     <p className="source-line">Source: Coresight Research US Consumer Survey, weekly tracker, about 400 US adults a week; questions q2 (in a store) and
-      q3 (online), past two weeks. Unweighted. Groups under 30 people are not shown.</p>
+      q3 (online), asked as Q4 and Q5 until December 2023, past two weeks. Unweighted. Groups under 30 people are not shown.</p>
   </div>;
 }
