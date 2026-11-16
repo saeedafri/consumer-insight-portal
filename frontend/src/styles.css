@@ -1032,16 +1032,22 @@ code.key { display: block; padding: 8px 10px; margin-bottom: 8px; background: va
 .kpis .kpi b { font: 800 24px/1 var(--font-head); letter-spacing: -.03em; color: var(--ink); }
 .kpis .kpi small { font-size: 11px; color: var(--ink-3); }
 .chart-cell { margin: 0; min-width: 0; }
+/* a row of small charts, four across, whose last row is centred (five retailers' pies: the fifth no longer sits alone
+   at the left edge with the row's white space beside it, 16 Nov 2026) */
+.center-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; }
+.center-row > * { flex: 0 1 calc((100% - 48px) / 4); }
+@media (max-width: 1180px) { .center-row > * { flex-basis: calc((100% - 16px) / 2); } }
+@media (max-width: 900px) { .center-row > * { flex-basis: 100%; } }
 .chart-cell figcaption { font: 750 13px/1.3 var(--font-head); color: var(--ink); text-align: center; margin: 4px 0 0; }
 @media (max-width: 700px) { .retail-side > label, .picker { flex: 1 1 100%; max-width: none; } .retail-bar > .seg { margin-left: 0; } }
 
-/* Home (screens/Home.tsx): the Ask CIP panel, research cards, this week's channels, the cross-tab way in */
-.latest-pill { align-self: center; text-decoration: none; padding: 8px 14px; font-size: 12px; }
+/* Home (screens/Home.tsx): the question panel, then folds (research cards, this week's groceries, the cross-tab way in), the latest wave */
+.latest-pill { align-self: flex-start; text-decoration: none; padding: 8px 14px; font-size: 12px; }
 .latest-pill span { font-size: 9px; margin-right: 2px; }
 .ask-hero { padding: 26px 28px; border-radius: var(--radius); color: #fff;
             background: linear-gradient(135deg, #A61F26 0%, #C42829 55%, #D62E2F 100%); box-shadow: 0 14px 34px rgba(214, 46, 47, .18); }   /* white text 4.9:1 or better across it */
 :root[data-theme="dark"] .ask-hero { background: linear-gradient(135deg, #5A1A1E 0%, #7A2226 60%, #8E2A2E 100%); box-shadow: none; border: 1px solid #8E2A2E; }
-.ask-hero h2 { margin: 0 0 6px; font: 800 26px/1.15 var(--font-head); letter-spacing: -.03em; color: #fff; }
+.ask-hero h1 { margin: 0 0 6px; font: 800 26px/1.15 var(--font-head); letter-spacing: -.03em; color: #fff; }
 .ask-hero > p { margin: 0 0 18px; font-size: 13px; color: rgba(255, 255, 255, .88); }
 .ask-hero .ask-box { background: #fff; border-color: transparent; color: #666D76; }
 .ask-hero .ask-box input { color: #2D2A29; }
@@ -1061,6 +1067,17 @@ code.key { display: block; padding: 8px 10px; margin-bottom: 8px; background: va
 .home a.card.kpi { text-decoration: none; color: inherit; }
 .home .report-section { margin-bottom: 12px; }
 .section-note { margin: -6px 0 14px; font-size: 12px; }
+.home-fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none; cursor: pointer;
+                       padding: 12px 0; border-bottom: 1px solid var(--line); }
+.home-fold > summary::-webkit-details-marker { display: none; }
+.home-fold > summary .report-section { margin: 0; }
+.home-fold > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.home-fold .fold-icon { color: var(--ink-3); transition: transform .15s; }
+.home-fold[open] .fold-icon { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .home-fold .fold-icon { transition: none; } }
+.home-fold .fold-body { padding-top: 16px; }
+.home-fold .fold-body .section-note { margin-top: 0; }
+.runs-filter { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; font-size: 13px; color: var(--ink-2); }
 .dig-deeper { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; background: var(--red-wash); border-color: color-mix(in srgb, var(--red) 18%, var(--line)); }
 .dig-deeper h2 { margin: 0 0 4px; font: 780 16px/1.3 var(--font-head); }
 .dig-deeper p { margin: 0; }

@@ -102,7 +102,7 @@ export default function Retailers() {
       <Reach data={data} sides={sides} series={series} />
       {mode === "retailer" && <Everywhere data={data} name={sides[0].picked[0]?.name ?? ""} />}
       <ShopperProfile data={data} sides={sides} series={series} />
-      {sides[0].market.sector ? null : <Sentiment data={data} side={sides[0]} />}
+      <Sentiment data={data} sides={sides} />
       <p className="source-line">Source: Coresight Research US Consumer Survey, weekly tracker. {sides.map(s =>
         `${s.market.name}: ${weekSpan(data, s.weeks)}, base ${s.market.base}`).join("; ")}. Unweighted. Shopper profiles shown from
         {" "}{data.min_buyers} shoppers; groups do not add to 100% where people preferred not to say.</p>
@@ -249,7 +249,7 @@ function ShopperProfile({ data, sides, series }: { data: Data; sides: Side[]; se
   return <Card title="Who shops there" sub={`% of each retailer's shoppers${hidden.length ? ` · not shown (under ${data.min_buyers} shoppers): ${hidden.map(s => s.label).join(", ")}` : ""}`}
                aside={<ExportButtons onExport={exportTable} />}>
     {shown.length ? <>
-      <div className={`grid g${Math.min(4, shown.length)}`}>{shown.map(s => <figure key={s.label} className="chart-cell">
+      <div className="center-row">{shown.map(s => <figure key={s.label} className="chart-cell">
         <figcaption>{s.label}: {(TITLES[dims[0][0]] ?? dims[0][0]).toLowerCase()}</figcaption>
         <EChart label={`${s.label}: gender`} height={200} option={{
           tooltip: { trigger: "item", valueFormatter: (v: unknown) => `${v}%` },
@@ -287,17 +287,21 @@ function ShopperProfile({ data, sides, series }: { data: Data; sides: Side[]; se
   </Card>;
 }
 
-/** How positive people feel (the apparel survey's grid): each retailer's newest figure up to the last chosen week. */
-function Sentiment({ data, side }: { data: Data; side: Side }) {
-  const until = data.weeks[side.weeks[side.weeks.length - 1]].date;
-  const found = side.picked.map(r => ({ name: r.name, figure: (r.sentiment ?? []).filter(([d]) => d <= until).pop() ?? r.sentiment?.[0] ?? null }));
+/** How positive people feel (each sector module's retailer grid, etl/retailers.py sentiment): each retailer's newest
+ *  figure up to its side's last chosen week, named with the module that asked it. */
+function Sentiment({ data, sides }: { data: Data; sides: Side[] }) {
+  const found = sides.flatMap(side => {
+    const until = data.weeks[side.weeks[side.weeks.length - 1]].date;
+    return side.picked.map(r => ({ name: r.name, figure: (r.sentiment ?? []).filter(([d]) => d <= until).pop() ?? r.sentiment?.[0] ?? null }));
+  });
   if (!found.some(f => f.figure)) return null;
-  return <Card title="How positive people feel" sub="Very or somewhat positive, among those asked: the apparel survey asks about 28 apparel retailers every few months">
-    <EChart label="Sentiment" height={Math.max(140, found.length * 34 + 30)} option={{
+  return <Card title="How positive people feel" sub="Very or somewhat positive, among those asked: each sector's module asks about its own retailers every 12 weeks or so">
+    <EChart label="Sentiment" height={Math.max(140, found.length * 44 + 30)} option={{
       tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v: unknown) => (v == null ? "not asked" : `${v}%`) },
       grid: { left: 8, right: 48, top: 8, bottom: 8, containLabel: true },
       xAxis: { type: "value", max: 100, axisLabel: { formatter: "{value}%" } },
-      yAxis: { type: "category", data: found.map(f => f.figure ? `${f.name} (${fmtDate(f.figure[0])}, n=${f.figure[2]})` : `${f.name} (not asked)`).reverse(), axisLabel: { width: 260, overflow: "truncate" } },
+      yAxis: { type: "category", data: found.map(f => f.figure ? `${f.name}\n${[f.figure[3], fmtDate(f.figure[0]), `n=${f.figure[2]}`].filter(Boolean).join(" · ")}` : `${f.name}\nnot asked`).reverse(),
+               axisLabel: { width: 360, overflow: "truncate", lineHeight: 15 } },
       series: [{ type: "bar", barMaxWidth: 18, label: { show: true, position: "right", formatter: "{c}%" },
                  data: found.map((f, i) => ({ value: f.figure ? share(f.figure[1], f.figure[2]) : null, itemStyle: { color: colour(i) } })).reverse() }],
     }} />

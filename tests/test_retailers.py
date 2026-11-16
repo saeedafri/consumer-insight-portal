@@ -39,7 +39,7 @@ def test_each_week_keeps_counts_so_any_weeks_add_up():
     assert sum(walmart["weeks"][w][0] for w in "01") == 60 and sum(walmart["weeks"][w][3] for w in "01") == 40
     assert costco["weeks"]["0"][0] == 1 and costco["weeks"]["1"][0] == 2
     assert doc["weeks"][0]["profile"][:gender] == [20, 20]   # everyone, for reference
-    assert walmart["sentiment"] == [["2026-11-02", 6, 10]] and costco["sentiment"] is None   # 6 of 10 positive
+    assert walmart["sentiment"] == [["2026-11-02", 6, 10, "Apparel"]] and costco["sentiment"] is None   # 6 of 10 positive
 
 
 def test_a_sector_counts_its_buyers_from_its_own_question_in_its_own_weeks():
@@ -53,3 +53,13 @@ def test_a_sector_counts_its_buyers_from_its_own_question_in_its_own_weeks():
     assert sector["sector"] and sector["weeks"] == [0] and sector["asked"] == [10] and sector["bought"] == [10]
     kohls, macys = sector["retailers"]
     assert (kohls["name"], kohls["weeks"]["0"][0], macys["weeks"]["0"][0]) == ("Kohl's", 5, 3)   # of 10 buyers
+
+
+def test_sentiment_comes_from_every_sector_grid_not_only_apparel():
+    """16 Nov 2026: Costco and the dollar stores showed "not asked" because only the apparel grid (AP8) was read."""
+    people = week(EVERYONE, 0, 0b11)
+    people["questions"]["M3"] = {"rows": [[7, 1, "Costco", 1, "Very positive"], [7, 2, "Costco", 2, "Very negative"]],
+                                 "bits": {(7, 1): 0b111, (7, 2): 0b1000}}   # 4 asked about Costco: 3 positive
+    costco = next(r for r in retailers.build([({"survey_id": 1, "wave_date": "2026-11-09"}, people)])["markets"][0]["retailers"]
+                  if r["name"] == "Costco")
+    assert costco["sentiment"] == [["2026-11-09", 3, 4, "Mass merchants / warehouse clubs"]]

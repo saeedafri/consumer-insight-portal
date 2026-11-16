@@ -149,7 +149,7 @@ export const useSectors = () =>
 export interface RetailMarket {
   name: string; sector: boolean; base: string; purchase: string | null;
   weeks: number[]; asked: number[]; bought: (number | null)[]; buyers: number[][];
-  retailers: { name: string; weeks: Record<string, number[]>; sentiment: [string, number, number][] | null }[];
+  retailers: { name: string; weeks: Record<string, number[]>; sentiment: [string, number, number, string?][] | null }[];   // [date, positive, asked, module]
 }
 export interface Retailers {
   weeks: { survey_id: number; date: string; n: number; profile: number[] }[];

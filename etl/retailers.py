@@ -12,8 +12,8 @@ the last four, any twelve) is the sum of their counts, which the screen adds in 
   sectors  each sector's retailer question (config/sectors.yml tables: Retailers), asked of the sector's buyers in the
            weeks that ran the sector (its module tag): % of those buyers, and the sector's purchase rate
 For each retailer and week: its shoppers and their split by gender, generation, household income, region and area
-(config/retailers.yml profile); for each week, everyone's split for reference. Sentiment: the apparel grid (AP8), % positive
-per week asked. Rules: config/retailers.yml and config/sectors.yml. Checked by tests/test_retailers.py.
+(config/retailers.yml profile); for each week, everyone's split for reference. Sentiment: each sector module's
+retailer grid (config/retailers.yml sentiment), % positive per week asked, with the module's name. Rules: config/retailers.yml and config/sectors.yml. Checked by tests/test_retailers.py.
 """
 from __future__ import annotations
 
@@ -102,19 +102,21 @@ def week_markets(wave: dict, people: dict) -> dict:
 
 
 def sentiment(wave: dict, people: dict) -> dict:
-    """{retailer key: [positive, asked]} from the week's apparel grid (config/retailers.yml sentiment), {} if not asked."""
+    """{retailer key: [positive, asked, module]} from the week's retailer grids (config/retailers.yml sentiment), {} if
+    none was asked. A week runs one sector, so a retailer is in one grid; the off-price weeks ask two (O4, DS8) of different retailers."""
     rules = settings()["sentiment"]
     aliases = {key(grid): key(weekly) for weekly, grid in settings()["aliases"].items()}
-    grid = people["questions"].get(rules["question"])
     found = {}
-    for item in {row[0] for row in grid["rows"]} if grid else ():
-        rows = [row for row in grid["rows"] if row[0] == item]
-        asked = 0
-        for row in rows:
-            asked |= grid["bits"].get((row[0], row[1]), 0)
-        liked = sum(grid["bits"].get((row[0], row[1]), 0).bit_count() for row in rows if row[4] in rules["positive"])
-        if asked:
-            found[aliases.get(key(rows[0][2]), key(rows[0][2]))] = [liked, asked.bit_count()]
+    for code, module in rules["questions"].items():
+        grid = people["questions"].get(code)
+        for item in {row[0] for row in grid["rows"]} if grid else ():
+            rows = [row for row in grid["rows"] if row[0] == item]
+            asked = 0
+            for row in rows:
+                asked |= grid["bits"].get((row[0], row[1]), 0)
+            liked = sum(grid["bits"].get((row[0], row[1]), 0).bit_count() for row in rows if row[4] in rules["positive"])
+            if asked:
+                found.setdefault(aliases.get(key(rows[0][2]), key(rows[0][2])), [liked, asked.bit_count(), module])
     return found
 
 
@@ -158,7 +160,7 @@ def build(people_by_week: list[tuple[dict, dict]]) -> dict:
                             "purchase": (sector.get("purchase") or {}).get("label") if sector else None,
                             "weeks": m["weeks"], "asked": m["asked"], "bought": m["bought"], "buyers": m["buyers"],
                             "retailers": [{"name": r["name"], "weeks": {str(w): c for w, c in r["weeks"].items()},
-                                           "sentiment": liked.get(k) if name == "weekly" else None}
+                                           "sentiment": liked.get(k)}
                                           for k, r in sorted(m["retailers"].items(), key=lambda kv: -(kv[1]["weeks"].get(newest) or [0])[0])]})
     return {"weeks": weeks, "groups": {d: list(g) for d, g in rules["profile"].items()}, "min_buyers": rules["min_buyers"],
             "pool": rules["pool"], "markets": out_markets}
