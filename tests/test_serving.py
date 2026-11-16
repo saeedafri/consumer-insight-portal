@@ -22,16 +22,21 @@ def seed(conn, survey_id, day, qualified, xm1_yes, xm1_base, path=None,
                          " 'tracker', 'verified')"), {"s": survey_id, "p": path or f"p{survey_id}", "d": day})
     conn.execute(sa.text("INSERT INTO cip_respondent (survey_id, record_no, is_qualified) VALUES (:s, :r, 1)"),
                  [{"s": survey_id, "r": r} for r in range(qualified)])
-    qid = conn.execute(sa.text("INSERT INTO cip_question (survey_id, qcode, qtext, qtype) VALUES (:s, 'XM1', :t, 'single')"),
-                       {"s": survey_id, "t": qtext}).lastrowid
-    for code, n in ((1, xm1_yes), (2, xm1_base - xm1_yes)):
+    add_question(conn, survey_id, "XM1", qtext, xm1_yes, xm1_base)
+
+
+def add_question(conn, survey_id, qcode, qtext, yes, base, labels=("Yes", "No")):
+    """One single-choice question of a seeded wave: its two answers, Total and one generation cut."""
+    qid = conn.execute(sa.text("INSERT INTO cip_question (survey_id, qcode, qtext, qtype) VALUES (:s, :c, :t, 'single')"),
+                       {"s": survey_id, "c": qcode, "t": qtext}).lastrowid
+    for code, n in ((1, yes), (2, base - yes)):
         oid = conn.execute(sa.text("INSERT INTO cip_option (question_id, value_code, value_label) VALUES (:q, :c, :l)"),
-                           {"q": qid, "c": code, "l": "Yes" if code == 1 else "No"}).lastrowid
+                           {"q": qid, "c": code, "l": labels[code - 1]}).lastrowid
         for dim, value, scale in (("total", "Total", 1), ("generation", "GenZ", 0.1)):
             conn.execute(sa.text("INSERT INTO cip_agg_cell (survey_id, cell_key, question_id, option_id, dim, dim_value,"
                                  " n, base_n) VALUES (:s, :k, :q, :o, :d, :v, :n, :b)"),
                          {"s": survey_id, "k": f"{qid}:{oid}:{dim}", "q": qid, "o": oid, "d": dim, "v": value,
-                          "n": round(n * scale), "b": round(xm1_base * scale)})
+                          "n": round(n * scale), "b": round(base * scale)})
 
 
 def rows(engine, survey_id, dim="total"):
@@ -234,6 +239,38 @@ def test_the_question_file_holds_every_wave_and_cut_with_its_versions(csi_db):
     assert data["answers"] == [["", 1, "Yes"], ["", 2, "No"]] and data["cuts"] == [["total", "Total"], ["generation", "GenZ"]]
     cells = list(zip(data["w"], data["c"], data["a"], data["n"], data["b"]))
     assert (2, 0, 0, 190, 400) in cells and (1, 1, 0, 20, 40) in cells and len(cells) == 12
+
+
+def test_the_question_file_follows_its_wording_across_renumbered_codes(csi_db):
+    """15 Nov 2026: the tracker renumbers questions (q1 was Q8_2 in earlier waves), and a question file read only its own
+    code, so Compare and Trends lost half the history (16,196 waves of the US tracker). The same wording under another
+    code joins; a wave that asked q1 for another question keeps its own; the same wording over another answer list
+    (Q5) stays out; a different wording never joins."""
+    done = "Which, if any, of these have you done in the past two weeks?"
+    with csi_db.begin() as conn:
+        seed(conn, 304, date(2023, 12, 25), qualified=400, xm1_yes=100, xm1_base=400, qtext="Are you currently avoiding public areas?")
+        add_question(conn, 304, "Q8_2", done, 150, 400)    # asked both: q1 for another question, Q8_2 for this one
+        for sid, day, code, wording, labels in ((300, date(2024, 1, 1), "Q8_2", done, ("Yes", "No")),
+                                                (301, date(2024, 1, 8), "q1", done, ("Yes", "No")),
+                                                (302, date(2024, 1, 15), "q1", done, ("Yes", "No")),
+                                                (303, date(2024, 1, 22), "Q5", done, ("Walmart", "Target")),
+                                                (305, date(2024, 1, 29), "Q9", "Which, if any, of these have you done in the past month?", ("Yes", "No"))):
+            seed(conn, sid, day, qualified=400, xm1_yes=1, xm1_base=400, qtext="Unrelated XM1")
+            add_question(conn, sid, code, wording, 200, 400, labels)
+        seed(conn, 306, date(2024, 2, 5), qualified=400, xm1_yes=1, xm1_base=400, qtext="Unrelated XM1")
+        add_question(conn, 306, "Q7", done, 150, 400, ("No", "Yes"))   # its own numbering: No is 1 (150), Yes is 2 (250)
+        conn.execute(sa.text("UPDATE cip_question SET qcode = 'q1' WHERE survey_id = 304 AND qcode = 'XM1'"))
+    for sid in (300, 301, 302, 303, 304, 305, 306):
+        serving.build_wave(sid)
+    data = served(payloads.question("CSI-US", "tracker", "q1"))
+    assert data["waves"] == [[304, "2023-12-25", 1], [300, "2024-01-01", 2], [301, "2024-01-08", 2], [302, "2024-01-15", 2],
+                             [306, "2024-02-05", 2]]
+    assert data["versions"] == ["Are you currently avoiding public areas?", done] and data["codes"] == ["Q7", "Q8_2"]
+    # Q7 numbered its answers the other way round: they join q1's Yes and No, not two more rows each half empty
+    assert sorted(a[2] for a in data["answers"]) == ["No", "Yes"]
+    yes = next(i for i, a in enumerate(data["answers"]) if a[2] == "Yes")
+    assert (4, 0, yes, 250, 400) in list(zip(data["w"], data["c"], data["a"], data["n"], data["b"]))   # 306's 250 who said Yes
+    assert "codes" not in served(payloads.question("CSI-US", "tracker", "XM1"))   # nothing joined: the file is as before
 
 
 def test_a_reused_code_keeps_each_questions_own_answer_labels():

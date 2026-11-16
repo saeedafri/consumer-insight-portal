@@ -7,6 +7,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowRight, Cpu, Gauge, Layers, MessageSquareText, ShoppingBag, Store, Table2 } from "lucide-react";
+import MicButton from "../components/MicButton";
 import type { LucideIcon } from "lucide-react";
 import { allowed, useBook, useMe, useReportWaves, useWaves } from "../api";
 import type { Book } from "../api";
@@ -58,6 +59,7 @@ export default function Home() {
         <MessageSquareText size={17} strokeWidth={1.8} aria-hidden="true" />
         <label className="sr-only" htmlFor="home-ask">Your question</label>
         <input id="home-ask" value={text} onChange={e => setText(e.target.value)} placeholder="e.g. How are consumers feeling about inflation?" />
+        <MicButton text={text} setText={setText} />
         <button className="btn primary" disabled={text.trim().length < 3}>Ask <ArrowRight size={15} aria-hidden="true" /></button>
       </form>
       <div className="try"><span>Try asking</span>{EXAMPLES.map(q => <button key={q} type="button" onClick={() => ask(q)}>{q}</button>)}</div>

@@ -4,12 +4,21 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "16 November 2026",
+  entries: [
+    { title: "Who shops there: generation, income, region and area as side-by-side bars",
+      body: "In the Retailer databank, “Who shops there” now draws generation, household income, region and area as horizontal bars, one per retailer, in every view (Retailer, Compare retailers, Sector, Compare sectors). A grey line across each group marks the share of all adults (or of the sector's shoppers), so a bar past the line means that group is over-represented among the retailer's shoppers. Each retailer's percentage is written in its colour on the right of every group. Gender stays a pie, and hovering still shows every figure.",
+      link: ["/retailers?view=retailers", "Open the Retailer databank"] },
+  ],
+}, {
   date: "15 November 2026",
   entries: [
+    { title: "Compare waves and Trends now find every wave that asked the same question",
+      body: "The weekly tracker renumbers its questions over the years (this week's Q1 was Q8_2 and Q10_1 in earlier waves), and Compare waves and Trends looked only under the question's own number, so about half of each question's history was missing. They now follow the question itself: every wave that asked exactly the same wording joins, under whatever number it had, as long as most of its answers are the same. A question that only shares a number (the 2022–23 Q1 about avoiding public areas) stays out, and so does the same wording over a different list. For this week's 41 questions, the waves you can compare go from 1,737 to 3,097: Q1 from 125 to 195 waves, gender from 72 to 192. The source line names the earlier numbers it joined. The questions left out are now listed once each, with how many waves asked them and when, instead of the same wording repeated for every wave, and a table compares only the answers the waves on screen gave." },
     { title: "Ask CIP moves you to the new answer when you continue the analysis",
       body: "Clicking a question under “Continue the analysis” now scrolls the page back up to the box, where the new answer appears, instead of leaving you looking at the previous one at the bottom." },
     { title: "Speak your question to Ask CIP",
-      body: "Ask CIP now has a microphone button: press it and speak your question instead of typing it, and the words appear in the box for you to check and send. It uses the browser's own speech-to-text, so nothing is recorded or sent to Coresight and no AI is used; the browser asks your permission the first time and shows while it is listening. The button appears only in browsers that can do this (Chrome, Edge, Safari)." },
+      body: "Ask CIP now has a microphone button: press it and speak your question instead of typing it, and the words appear in the box for you to check and send. It uses the browser's own speech-to-text (Chrome and Edge use Google's or Microsoft's speech service, Safari Apple's), so nothing reaches CIP's servers and it costs CIP nothing; the browser asks your permission the first time and shows while it is listening. The mic is in both Ask CIP boxes: on the Home page and on the Ask CIP page. The button appears only in browsers that can do this (Chrome, Edge, Safari)." },
     { title: "A second check of every state: the Monday watch, Forsta retries, China uploads and deploys",
       body: "A second check of the portal's state machines on staging found four slips, now fixed, and confirmed the 15 November fixes live. When another load held the lock at the moment Monday's watch checked, the watch could not see that the wave was in, and at its deadline told Teams \"not in after 54 h (status: unknown)\"; it now reads the wave's status at every check. A 30-minute check no longer writes over the watch's sign of life, which let the checks keep cutting in ahead of it. A Forsta wave that kept failing while live is tried again the moment Forsta closes it, when its final data is readable, not 6 hours later. A China week loaded on the Upload survey page now judges the team's metric alerts, as every other load does. And a deploy now waits until the new container has its data in place (/readyz), not only until it answers." },
     { title: "Ask CIP puts misspelt words right and suggests questions as you type, at no cost",

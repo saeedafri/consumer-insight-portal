@@ -16,20 +16,8 @@ import { ExportButtons } from "../components/bits";
 import { downloadTable } from "../csv";
 import { blues, C, heatStep, labelOn, scaleColours, useTheme } from "../theme";
 import { useWeighted } from "../weight";
-import { ArrowRight, ArrowUpRight, MessageSquare, Mic } from "lucide-react";
-
-// Voice dictation for the Ask box: the browser's own speech-to-text (Web Speech API). Nothing is sent to our server and
-// no AI is used; the words appear in the box and the person still presses Ask. It is visible and user-started only — the
-// mic button turns it on, and the browser asks permission and shows while it is recording. Chrome, Edge and Safari have
-// it; where it is missing (Firefox) the button is not shown (speechRecognition returns null). (15 Nov 2026)
-type HeardEvent = { results: ArrayLike<ArrayLike<{ transcript: string }>> };
-type Dictation = { lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void; abort(): void;
-  onresult: ((e: HeardEvent) => void) | null; onend: (() => void) | null; onerror: (() => void) | null };
-const speechRecognition = (): (new () => Dictation) | null => {
-  if (typeof window === "undefined") return null;
-  const w = window as unknown as { SpeechRecognition?: new () => Dictation; webkitSpeechRecognition?: new () => Dictation };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
-};
+import { ArrowRight, ArrowUpRight, MessageSquare } from "lucide-react";
+import MicButton from "../components/MicButton";
 
 const EXAMPLES = ["How are higher gasoline prices affecting consumer spending?", "What share bought from Amazon in all waves?",
                   "Holiday shopping progress by generation", "Economy better or worse, every 4 weeks",
@@ -288,20 +276,6 @@ export default function Ask() {
   }, [typed]);   // eslint-disable-line react-hooks/exhaustive-deps
   // a question in the address (the Home page's box, a shared link) is answered on arrival
   useEffect(() => { const q = params.get("q"); if (q) void ask(q); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
-  const [Recogniser] = useState(speechRecognition);   // the browser's speech-to-text, or null where it is missing
-  const [listening, setListening] = useState(false);
-  const hearing = useRef<Dictation | null>(null);
-  const dictate = () => {
-    if (!Recogniser) return;
-    if (hearing.current) { hearing.current.stop(); return; }   // the button toggles: press again to stop
-    const r = new Recogniser();
-    r.lang = "en-US"; r.interimResults = true; r.continuous = false;
-    const before = text.trim() ? text.trim() + " " : "";   // dictation adds to what is already typed
-    r.onresult = e => setText(before + Array.from(e.results, said => said[0].transcript).join(""));
-    r.onend = r.onerror = () => { hearing.current = null; setListening(false); };
-    hearing.current = r; setListening(true); r.start();
-  };
-  useEffect(() => () => hearing.current?.abort(), []);   // leaving the screen stops the mic
   return <>
     <div className="page-head"><div>
       <h1>Ask CIP</h1>
@@ -317,9 +291,7 @@ export default function Ask() {
             if (!e.target.value.trim()) { setReplies([]); setError(""); setParams({}, { replace: true }); }
           }} onKeyDown={e => { if (e.key === "Escape") setOffer(null); }}
             placeholder="e.g. How are higher gasoline prices affecting consumer spending?" autoFocus />
-          {Recogniser && <button type="button" className={`btn ask-mic${listening ? " on" : ""}`} aria-pressed={listening}
-            aria-label={listening ? "Stop dictation" : "Speak your question"} title={listening ? "Listening — press to stop" : "Speak your question"}
-            onClick={dictate}><Mic size={16} aria-hidden="true" />{listening ? "Listening…" : ""}</button>}
+          <MicButton text={text} setText={setText} />
           <button className="btn primary" disabled={busy || text.trim().length < 3}><ArrowRight size={15} aria-hidden="true" />{busy ? "Finding…" : "Ask"}</button>
         </form>
         <span className="seg ask-audience" role="group" aria-label="Answer view">

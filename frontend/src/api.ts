@@ -198,6 +198,7 @@ export interface QuestionFile {
   qcode: string; waves: [number, string, number][]; versions: string[];   // [survey_id, date, version]; wording per version
   answers: [string, number | null, string][]; cuts: [string, string][];   // [item_label, code, label]; [dim, value]
   w: number[]; c: number[]; a: number[]; n: (number | null)[]; b: number[];   // n: null under HIDDEN_BASE people
+  codes?: string[];   // other codes the same question was asked under in earlier waves, joined in (shared/data/payloads.py)
 }
 export const CUT_NAMES: Record<string, string> = { gender: "Gender", age_band: "Age band", generation: "Generation", income_band: "Household income",
                                                    census_region: "Census region", urbanicity: "Urbanicity" };

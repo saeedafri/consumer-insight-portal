@@ -257,14 +257,32 @@ function ShopperProfile({ data, sides, series }: { data: Data; sides: Side[]; se
           series: [{ type: "pie", radius: "62%", center: ["50%", "44%"], label: { position: "inside", formatter: "{d}%", color: "#fff", fontWeight: 700 }, color: [C.s2, C.red, C.other],
                      data: dims[0][1].map((g, i) => ({ name: g, value: share(s.counts[offset + i] ?? 0, s.counts[0]) })) }],
         }} /></figure>)}</div>
-      <div className="grid g2">{dims.slice(1).map(([d, groups], k) => <figure key={d} className="chart-cell"><figcaption>{TITLES[d] ?? d}</figcaption>
-        <EChart label={TITLES[d] ?? d} height={240} option={{
-          tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v: unknown) => `${v}%` },
-          legend: { bottom: 0, type: "scroll" }, grid: { left: 40, right: 12, top: 12, bottom: 44 },
-          xAxis: { type: "category", data: groups }, yAxis: { type: "value", axisLabel: { formatter: "{value}%" } },
-          series: rows.map((r, j) => ({ name: r.label, type: "bar", barMaxWidth: 22, color: j >= shown.length ? C.other : colour(series.indexOf(shown[j])),
-                                        data: groups.map((_, i) => share(r.at(start(k + 1) + i) ?? 0, r.n)) })),
-        }} /></figure>)}</div>
+      <div className="grid g2">{dims.slice(1).map(([d, groups], k) => {
+        const values = rows.map(r => groups.map((_, i) => share(r.at(start(k + 1) + i) ?? 0, r.n)));
+        // Horizontal bars (design reference, 16 Nov 2026): a bar per retailer, the base's own share (all adults, or the
+        // sector's shoppers) as a grey tick across the group, so a bar past the tick is over-represented, and each
+        // retailer's % in its colour in a column on the right (at the bar's end the tick could cross it).
+        // The ticks sit on a hidden value axis (-0.5 … n-0.5) because a category axis rounds positions to whole groups.
+        return <figure key={d} className="chart-cell"><figcaption>{TITLES[d] ?? d}</figcaption>
+        <EChart label={TITLES[d] ?? d} height={Math.max(200, groups.length * (shown.length * 14 + 18) + 50)} option={{
+          tooltip: { trigger: "axis", axisPointer: { type: "shadow" },   // lists the ticks too: they sit on another axis
+                     formatter: ([p]: { dataIndex: number; axisValueLabel: string }[]) => [p.axisValueLabel,
+                       ...rows.map((r, j) => `${r.label}: ${pct(values[j][p.dataIndex])}`)].join("<br/>") },
+          legend: { bottom: 0, type: "scroll" }, grid: { left: 8, right: 8, top: 8, bottom: 36, containLabel: true },
+          xAxis: { type: "value", axisLabel: { formatter: "{value}%" } },
+          yAxis: [{ type: "category", data: groups, inverse: true, axisLabel: { width: 120, overflow: "truncate" } },
+                  { type: "value", show: false, min: -0.5, max: groups.length - 0.5, inverse: true },
+                  { type: "category", data: groups, inverse: true, position: "right", axisLabel: { align: "right", margin: 48, lineHeight: 14,
+                    formatter: (_: string, i: number) => shown.map((_, j) => `{s${j}|${pct(values[j][i])}}`).join("\n"),
+                    rich: Object.fromEntries(shown.map((s, j) => [`s${j}`, { color: colour(series.indexOf(s)), fontWeight: 700, fontSize: 11 }])) } }],
+          series: rows.map((r, j) => j < shown.length
+            ? { name: r.label, type: "bar", barMaxWidth: 12, barGap: "15%", color: colour(series.indexOf(shown[j])), data: values[j] }
+            : { name: r.label, type: "line", yAxisIndex: 1, color: C.other, showSymbol: false, lineStyle: { opacity: 0 },
+                data: values[j].map((v, i) => [v, i]),   // invisible: keeps the ticks inside the value axis's range
+                markLine: { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: C.other, width: 2, type: "solid" },
+                            data: values[j].map((v, i) => [{ coord: [v, i - 0.42] }, { coord: [v, i + 0.42] }]) } }),
+        }} /></figure>;
+      })}</div>
     </> : <p className="muted">Too few shoppers in the chosen weeks to describe: choose more weeks.</p>}
   </Card>;
 }

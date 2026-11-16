@@ -108,7 +108,8 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
              "weighted": 1,     # books carry Census-weighted figures (etl/weighting.py, 24 Oct 2026)
              "open_ends": 1,    # books chart coded open-ended questions (etl/open_ends.py, 24 Oct 2026)
              "cut_inventory": 1,  # each wave's complete cuts directory is the question discovery catalogue
-             "answer_labels": 1}  # a reused code keeps each question's own answer labels (payloads.question_from, 12 Nov 2026)
+             "answer_labels": 1,  # a reused code keeps each question's own answer labels (payloads.question_from, 12 Nov 2026)
+             "same_question_codes": 1}  # a question file holds its wording's waves under other codes (payloads.same_wording_rows, 15 Nov 2026)
     rules_changed = last.get("rules", {"hidden_base": 30}) != rules   # a new small-cell rule: every file is rebuilt
     before = {} if rules_changed else last.get("built", {})
     start = time.perf_counter()
@@ -199,11 +200,16 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
             listed = {w[0] for w in json.loads(gzip.decompress(path.read_bytes()))["waves"]}
             if listed & set(fresh):
                 redone.add((family, study, path.name.removesuffix(".json.gz")))
+    # a question file holds the waves that asked its wording under other codes (payloads.same_wording_rows): each family's
+    # wordings are read once for all its files. ponytail: a new wave rebuilds only the codes it asked; an older code that
+    # shared a wording (Q8_2, Q11…) gains new weeks at the next full rebuild (a `rules` bump), since rebuilding those 112
+    # files every week made the weekly publish ~4x heavier, and Compare from an old wave only shows waves up to it
+    wordings = {f: payloads.family_wordings(*f) for f in redo}
     questions = sorted(redone)
 
     def question(q) -> int:   # Compare and Trends both read it
         family, study, qcode = q
-        data, target = payloads.question(family, study, qcode), out / "api/v1/questions" / family / study / qcode
+        data, target = payloads.question(family, study, qcode, wordings[(family, study)]), out / "api/v1/questions" / family / study / qcode
         if not data["waves"]:   # no wave asks it any more
             target.with_name(target.name + ".json.gz").unlink(missing_ok=True)
             return 0

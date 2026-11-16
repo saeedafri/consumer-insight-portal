@@ -96,7 +96,8 @@ function Table({ f, cell, dim, current, events, titles, from }: { f: QuestionFil
   };
   const label = (a: number) => answerLabel(f.answers[a]);
   const lastIdx = chosen.at(-1)?.i ?? me;
-  const ranked = f.answers.map((_, k) => k).filter(k => eligible.some(w => cell(w.i, 0, k)))
+  // answers the shown waves gave: an answer only older waves had ("Bought groceries online" in 2021) is a row of dashes
+  const ranked = f.answers.map((_, k) => k).filter(k => chosen.some(w => cell(w.i, 0, k)))
     .sort((x, y) => (cell(lastIdx, 0, y)?.pct ?? -1) - (cell(lastIdx, 0, x)?.pct ?? -1));
   const asked = Number(params.get("ans"));   // from a shared link: anything not an answer of this version falls back
   const answer = ranked.includes(asked) ? asked : ranked[0] ?? 0;
@@ -149,19 +150,23 @@ function Table({ f, cell, dim, current, events, titles, from }: { f: QuestionFil
         })}</tbody>
       </table></div>}
       <SourceLine wave={fmtDate(chosen.at(-1)?.wave_date ?? f.waves[me][1])} base="n per cell" from={from}
-                  extra={`${chosen.length} waves · cells under ${HIDDEN} hidden · ▲▼ single comparisons, not corrected`} />
+                  extra={`${chosen.length} waves${f.codes?.length ? ` · earlier waves asked it as ${f.codes.join(", ")}` : ""} · cells under ${HIDDEN} hidden · ▲▼ single comparisons, not corrected`} />
     </Card>
     <Other d={d} />
   </>;
 }
 
+/** The other questions this code was used for: one line per question with its waves and dates (one line per wave
+ *  repeated the same wording eight times, 15 Nov 2026). Newest question first. */
 function Other({ d }: { d: { qcode: string; not_comparable: { survey_id: number; wave_date: string; text: string }[] } }) {
   if (!d.not_comparable.length) return null;
-  const shown = d.not_comparable.slice(-8).reverse();
-  return <Card title="Not compared: the same code, a different question" sub={`${d.not_comparable.length} waves of this survey used ${d.qcode} for another question. They are left out.`}>
+  const asked = new Map<string, { wave_date: string }[]>();
+  for (const w of d.not_comparable) asked.set(w.text, [...(asked.get(w.text) ?? []), w]);   // oldest first, as the file lists them
+  const questions = [...asked].sort((x, y) => y[1].at(-1)!.wave_date.localeCompare(x[1].at(-1)!.wave_date));
+  return <Card title="Not compared: a different question under the same code"
+               sub={`${d.not_comparable.length} waves used ${d.qcode} to ask ${questions.length === 1 ? "another question" : `${questions.length} other questions`}. They are left out.`}>
     <ul style={{ margin: 0, paddingLeft: 18 }}>
-      {shown.map(w => <li key={w.survey_id}><b>{fmtDate(w.wave_date)}</b>: <span className="muted">“{w.text.length > 140 ? w.text.slice(0, 139) + "…" : w.text}”</span></li>)}
+      {questions.map(([text, ws]) => <li key={text}><b>{ws.length} wave{ws.length === 1 ? "" : "s"}, {fmtDate(ws[0].wave_date)}{ws.length > 1 ? ` – ${fmtDate(ws.at(-1)!.wave_date)}` : ""}</b>: <span className="muted">“{text.length > 140 ? text.slice(0, 139) + "…" : text}”</span></li>)}
     </ul>
-    {d.not_comparable.length > shown.length && <p className="muted" style={{ fontSize: 12 }}>and {d.not_comparable.length - shown.length} earlier waves.</p>}
   </Card>;
 }

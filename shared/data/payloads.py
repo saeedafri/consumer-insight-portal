@@ -497,16 +497,85 @@ _QUESTION_ROWS = ("SELECT survey_id, dim, dim_value, item_label, option_code, op
                   " FROM srv_result WHERE survey_id IN :ids AND qcode = :q")
 
 
-def question(family: str, study_type: str, qcode: str) -> dict:
+SAME_ANSWERS = 0.6   # share of a borrowed wave's answers that must be the question's own (Ask's index uses the same share)
+_OTHER_CODE_ROWS = ("SELECT survey_id, dim, dim_value, item_label, option_code, option_label, sort_order, n, base_n,"
+                    " concept_option_id FROM srv_result WHERE ")   # then (qcode = :cK AND survey_id IN :wK) OR … per code
+
+
+def family_wordings(family: str, study_type: str) -> dict[str, list[tuple[int, str, str]]]:
+    """Every question wording in a family's waves: normalised wording -> [(survey_id, qcode, wording)], sorted. etl/publish.py
+    reads it once per family and hands it to question() for each of the family's hundreds of question files."""
+    with get_engine("app").connect() as conn:
+        ids = [w["survey_id"] for w in _family(conn, family, study_type)]
+        found = conn.execute(text("SELECT survey_id, qcode, qtext FROM cip_question WHERE survey_id IN :ids")
+                             .bindparams(bindparam("ids", expanding=True)), {"ids": ids or [-1]}).all()
+    index: dict = defaultdict(list)
+    for sid, code, wording in sorted(r for r in found if r[2]):
+        index[normalise_text(wording)].append((sid, code, wording))
+    return dict(index)
+
+
+def same_wording_rows(conn, wordings: dict, qcode: str, rows: list[dict]) -> tuple[list[dict], list[str]]:
+    """The same question asked under another code: the tracker renumbers its questions (q1 was Q8_2, Q10_1 and Q3 in
+    earlier waves), and a file of one code saw only its own waves (15 Nov 2026: 16,196 waves of the US tracker missing
+    from Compare and Trends). Adds the rows of every wave that never asked `qcode` but asked one of its wordings under
+    another code. Only the exact wording joins (normalise_text: "dollar store" never joins "drug store"), and only when
+    most of the wave's answers are the question's own (SAME_ANSWERS): a generic wording over another list stays out.
+    A wave that asked `qcode` for another question keeps its own rows: a file holds each wave once."""
+    answer = lambda r: (normalise_text(r["item_label"]), normalise_text(r["option_label"] or r["item_label"]))   # noqa: E731  row and label: a grid's retailer counts
+    asked = {r["survey_id"] for r in rows}
+    own: dict = defaultdict(set)   # the question's wordings, each with the answers its own waves gave
+    coded: dict = {}               # each answer as the question's own waves code it
+    for r in rows:
+        if r["dim"] == "total":
+            own[normalise_text(r["qtext"])].add(answer(r))
+            coded.setdefault(answer(r), (r["item_label"], r["option_code"]))
+    picked: dict = {}   # survey_id -> (code, wording): the first code, in order, that asked one of its wordings
+    for wording in own:
+        for sid, code, raw in wordings.get(wording, ()):
+            if sid not in asked and code.lower() != qcode.lower():
+                picked.setdefault(sid, (code, raw))
+    if not picked:
+        return [], []
+    waves_of: dict = defaultdict(list)
+    for sid, (code, _) in picked.items():
+        waves_of[code].append(sid)
+    # one round trip for exactly each code's waves (gender was asked under 28 codes): "code IN … AND wave IN …" read
+    # every question those codes held in every wave, 27 s for one file
+    pairs = sorted(waves_of.items())
+    query = text(_OTHER_CODE_ROWS + " OR ".join(f"(qcode = :c{k} AND survey_id IN :w{k})" for k in range(len(pairs))))
+    found: dict = defaultdict(list)
+    for r in conn.execute(query.bindparams(*(bindparam(f"w{k}", expanding=True) for k in range(len(pairs)))),
+                          {**{f"c{k}": code for k, (code, _) in enumerate(pairs)}, **{f"w{k}": sids for k, (_, sids) in enumerate(pairs)}}).mappings():
+        found[r["survey_id"]].append(r)
+    kept, codes = [], set()
+    for sid, wave_rows in found.items():
+        said = {answer(r) for r in wave_rows if r["dim"] == "total"}
+        if said and len(said & own[normalise_text(picked[sid][1])]) >= SAME_ANSWERS * len(said):
+            # the question's own codes for the answers it shares: Q31 coded "Very liberal" 5 where D7 codes it 1,
+            # and kept apart the answer showed twice, each half empty
+            for r in wave_rows:
+                item, option = coded.get(answer(r), (r["item_label"], r["option_code"]))
+                kept.append({**r, "qtext": picked[sid][1], "item_label": item, "option_code": option})
+            codes.add(picked[sid][0])
+    return kept, sorted(codes)
+
+
+def question(family: str, study_type: str, qcode: str, wordings: dict | None = None) -> dict:
     """One question across every wave of its family, for every cut at once: what Compare and Trends draw from, so
-    picking waves or a cut on screen needs no further request. The ETL publishes one per question (etl/publish.py)."""
+    picking waves or a cut on screen needs no further request. The ETL publishes one per question (etl/publish.py),
+    passing the family's wordings; it holds the waves that asked the same question under another code too, and names
+    those codes in "codes" for the screens' source line."""
+    wordings = family_wordings(family, study_type) if wordings is None else wordings
     with get_engine("app").connect() as conn:
         waves = _family(conn, family, study_type)
         rows = conn.execute(text(_QUESTION_ROWS).bindparams(bindparam("ids", expanding=True)),
                             {"ids": [w["survey_id"] for w in waves] or [-1], "q": qcode}).mappings().all()
         rows = worded(conn, rows, qcode)
+        borrowed, codes = same_wording_rows(conn, wordings, qcode, rows)
     country = next((code for code, c in countries().items() if c.get("family") == family), "US")
-    return question_from(qcode, waves, rows, countries().get(country, {}).get("cuts", {}))
+    data = question_from(qcode, waves, rows + borrowed, countries().get(country, {}).get("cuts", {}))
+    return {**data, "codes": codes} if codes else data
 
 
 def question_from(qcode: str, waves: list[dict], rows: list[dict], order: dict) -> dict:
