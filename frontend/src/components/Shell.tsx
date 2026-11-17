@@ -259,7 +259,7 @@ function SiteFooter({ theme }: { theme: Theme }) {
     <div className="site-foot-cols">
       <section>
         <img src={theme === "dark" ? "/coresight-logo-reversed.png" : "/coresight-logo.png"} alt="Coresight Research" width="120" height="60" />
-        <h2>Consumer Intelligence Portal</h2>
+        <h2>Consumer Intelligence Platform</h2>
         <ul>
         <li><a href={SITE + "/"}>Back to coresight.com</a></li>
         <li><Link to="/methodology">Methodology</Link></li>
@@ -316,9 +316,9 @@ function SiteHeader({ here, railHidden, onToggleRail, theme, onTheme, menuOpen, 
         {railHidden ? <PanelLeftOpen size={17} strokeWidth={1.8} aria-hidden="true" /> : <PanelLeftClose size={17} strokeWidth={1.8} aria-hidden="true" />}</button>} />
       <TooltipContent side="right">{railHidden ? "Show the menu" : "Hide the menu"} (Ctrl/⌘ B)</TooltipContent>
     </Tooltip>
-    <Link to="/" className="site-brand" aria-label="Consumer Intelligence Portal home">
+    <Link to="/" className="site-brand" aria-label="Consumer Intelligence Platform home">
       <img src={theme === "dark" ? "/coresight-logo-reversed.png" : "/coresight-logo.png"} alt="" width="76" height="38" />
-      <span>Consumer Intelligence Portal{here && <small> / {here}</small>}</span>
+      <span>Consumer Intelligence Platform{here && <small> / {here}</small>}</span>
     </Link>
     {allowed(me, "search") && <button className="icon-btn search-toggle" onClick={() => { setSearchOpen(o => !o); setTimeout(() => search.current?.focus()); }}
             aria-label="Search every question" aria-expanded={searchOpen}>

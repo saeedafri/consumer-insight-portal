@@ -4,6 +4,12 @@ Every feature, enhancement and update, newest first: the same entries as the por
 (`frontend/src/screens/WhatsNew.tsx`). Add each change to both; `tests/test_docs.py` fails if they differ.
 The API and the MCP connector are documented in [API.md](API.md).
 
+## 17 November 2026
+
+### The portal is now called Consumer Intelligence Platform
+
+Consumer Intelligence Portal is renamed Consumer Intelligence Platform, still CIP for short. The new name is at the top of every page, on the public pages and their titles in search results, on the sign-in page, in the data summary emails, in the Excel downloads and in the MCP connector's description. Ask CIP keeps its name.
+
 ## 16 November 2026
 
 ### Home: one question box, then sections you open, sorted by how often the research runs

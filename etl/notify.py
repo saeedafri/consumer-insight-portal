@@ -157,7 +157,7 @@ def page_shell(headline: str, inner: str) -> str:
     """One short branded email: a red title bar, then plain paragraphs (nothing to scroll through)."""
     return (f'<div style="font-family:Segoe UI,Arial,sans-serif;color:#2d2a29;max-width:600px;font-size:14px;line-height:1.5">'
             f'<div style="background:{RED};color:#fff;padding:12px 16px"><div style="font-size:12px;opacity:.9">Coresight Research · '
-            f'Consumer Intelligence Portal</div><div style="font-size:17px;font-weight:600;margin-top:2px">{html.escape(headline)}</div></div>'
+            f'Consumer Intelligence Platform</div><div style="font-size:17px;font-weight:600;margin-top:2px">{html.escape(headline)}</div></div>'
             f'<div style="padding:4px 2px">{inner}</div></div>')
 
 
@@ -342,8 +342,8 @@ def summary() -> tuple[str, str, str]:
     page = page_shell("What the portal holds today", '<ul style="margin:12px 0 0;padding-left:18px">' +
                       "".join(f'<li style="margin:6px 0">{line}</li>' for line in lines) + "</ul>" +
                       '<p style="color:#6b6a68;font-size:12px">All surveys are in the US; every one was checked against its source before it reached the portal.</p>')
-    subject = f"Consumer Intelligence Portal — data summary as of {time.strftime('%-d %b %Y')}: {count:,} surveys, {people:,} respondents"
-    plain = "What the Consumer Intelligence Portal holds today\n\n" + "\n".join("  " + re.sub("<[^>]+>", "", line) for line in lines) + "\n"
+    subject = f"Consumer Intelligence Platform — data summary as of {time.strftime('%-d %b %Y')}: {count:,} surveys, {people:,} respondents"
+    plain = "What the Consumer Intelligence Platform holds today\n\n" + "\n".join("  " + re.sub("<[^>]+>", "", line) for line in lines) + "\n"
     return subject, plain, page
 
 

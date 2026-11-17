@@ -1,4 +1,4 @@
-"""Comprehensive, exhaustive full-page screenshot capture suite for Consumer Intelligence Portal.
+"""Comprehensive, exhaustive full-page screenshot capture suite for Consumer Intelligence Platform.
 
 Takes full control of every screen, sidebar section, topbar menu, view mode,
 filter tab, demographic cut, interactive question, modal dialog, and dropdown.
@@ -126,7 +126,7 @@ def safe_goto(page: Page, url_path: str, wait_selector: str = "") -> None:
 def main() -> None:
     start_time = time.time()
     print("==================================================================")
-    print("Consumer Intelligence Portal — Full Control Exhaustive Capture Suite")
+    print("Consumer Intelligence Platform — Full Control Exhaustive Capture Suite")
     print(f"Target Server: {BASE_URL}")
     print(f"Output Directory: {OUTPUT_DIR}")
     print("==================================================================\n")

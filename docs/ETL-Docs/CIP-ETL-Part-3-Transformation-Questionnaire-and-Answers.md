@@ -1,6 +1,6 @@
 # CIP ETL Series, Part 3: Transformation, Questionnaire and Answers
 
-**Consumer Intelligence Portal (CIP), Coresight Research**
+**Consumer Intelligence Platform (CIP), Coresight Research**
 Series: How the CIP data pipeline works, explained for managers and the business team
 This part: the first half of the "T" of ETL. How Forsta's questionnaire description (the datamap) becomes clean questions, rows, answer options and fields, and how each respondent's raw record becomes one respondent row and many answer rows
 Previous part: Part 2, Extraction. Next part: Part 4, Transformation (Business Logic)

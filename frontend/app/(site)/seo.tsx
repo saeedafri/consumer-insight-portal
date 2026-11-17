@@ -14,7 +14,7 @@ export const ORG = {
   "@type": "Organization", "@id": SITE + "/#org",
   name: "Coresight Research", url: CORESIGHT, logo: SITE + "/coresight-logo.png",
   sameAs: ["https://www.linkedin.com/company/coresight-research/", CORESIGHT + "/"],
-  description: "Coresight Research runs the Consumer Intelligence Portal: a weekly US consumer survey tracking spending, shopping behavior and sentiment across retail categories since December 2020.",
+  description: "Coresight Research runs the Consumer Intelligence Platform: a weekly US consumer survey tracking spending, shopping behavior and sentiment across retail categories since December 2020.",
   knowsAbout: ["Consumer research", "US consumer survey data", "Retail and consumer trends", "Consumer sentiment", "Shopper behavior", "Consumer spending"],
   areaServed: "United States",
 };

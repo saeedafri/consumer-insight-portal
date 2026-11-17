@@ -1,6 +1,6 @@
-# How a Forsta Survey Becomes a Number on the CIP Portal: A Plain-English Guide
+# How a Forsta Survey Becomes a Number on the CIP Platform: A Plain-English Guide
 
-**Consumer Insight Portal (CIP), Coresight Research**
+**Consumer Intelligence Platform (CIP), Coresight Research**
 For: analysts, research managers, the business team and anyone who reads CIP numbers but does not work on the system
 Companion to: the six-part CIP ETL series in this folder (Parts 1 to 6) and its videos. Each section below names the part that covers the same ground in technical detail.
 Checked against the system as it runs on 15 November 2026.

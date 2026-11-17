@@ -12,7 +12,7 @@ Primary users are Coresight Research analysts, research directors, retail strate
 
 ## Product Purpose
 
-The Consumer Intelligence Portal (CIP) aggregates, harmonizes, and visualizes weekly consumer survey tracker data (spanning from 2018 to the present across 144+ survey waves and over 71,000 qualified respondents). It replaces manual, error-prone spreadsheets with an interactive, research-grade portal that lets analysts and enterprise clients instantly explore survey questions, compare wave-over-wave changes, evaluate two-cut cross-tabulations, and track longitudinal trends with guaranteed mathematical and statistical accuracy.
+The Consumer Intelligence Platform (CIP) aggregates, harmonizes, and visualizes weekly consumer survey tracker data (spanning from 2018 to the present across 144+ survey waves and over 71,000 qualified respondents). It replaces manual, error-prone spreadsheets with an interactive, research-grade portal that lets analysts and enterprise clients instantly explore survey questions, compare wave-over-wave changes, evaluate two-cut cross-tabulations, and track longitudinal trends with guaranteed mathematical and statistical accuracy.
 
 ## Positioning
 

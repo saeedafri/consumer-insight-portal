@@ -283,7 +283,7 @@ async def lifespan(app: FastAPI):
 
 
 # OpenAPI: the typed contract a future chatbot's tools are generated from (api/mcp.py); signed-in only
-app = FastAPI(title="Coresight Consumer Intelligence Portal API", version="1", docs_url=None, redoc_url=None,
+app = FastAPI(title="Coresight Consumer Intelligence Platform API", version="1", docs_url=None, redoc_url=None,
               openapi_url=None, lifespan=lifespan)
 
 

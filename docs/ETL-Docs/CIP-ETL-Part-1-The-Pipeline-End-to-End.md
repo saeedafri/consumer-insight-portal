@@ -1,6 +1,6 @@
 # CIP ETL Series, Part 1: The Pipeline End to End
 
-**Consumer Intelligence Portal (CIP), Coresight Research**
+**Consumer Intelligence Platform (CIP), Coresight Research**
 Series: How the CIP data pipeline works, explained for managers and the business team
 This part: the whole pipeline in one pass, from the moment a survey closes in Forsta to the moment a number appears on a portal screen
 Next parts: Part 2 Extraction, Part 3 Transformation (questionnaire and answers), Part 4 Transformation (business logic), Part 5 Loading and Verification, Part 6 Derived Data, Serving and Publishing

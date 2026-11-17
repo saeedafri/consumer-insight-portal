@@ -2,7 +2,7 @@
 
 **Evaluation Target:** Sub-second ($P_{95} < 0.35\text{ s}$) cross-tabulation and multi-dimensional analytical queries over 10.4M survey response rows.  
 **Evaluated Technologies:** DuckDB Native Format (`.duckdb`), Apache Parquet direct scan via vectorized execution, SQLite Precomputed Cubes (`WITHOUT ROWID`), and SQLite Raw Covering B-Trees.  
-**Repository Context:** Consumer Intelligence Portal (CIP) — Tracking 320+ survey waves, demographic cuts, and ad-hoc cross-tabulations.
+**Repository Context:** Consumer Intelligence Platform (CIP) — Tracking 320+ survey waves, demographic cuts, and ad-hoc cross-tabulations.
 
 ---
 
@@ -43,7 +43,7 @@ To resolve this trade-off against a strict **$P_{95} < 0.35\text{ s}$ ($350\text
 
 ### 2.1 The Survey Response Schema
 
-In the Consumer Intelligence Portal architecture, survey data encompasses 320+ waves, each containing 400 to 1,000+ respondents answering ~50–100 questions. Across historical trackers, this aggregates to **10,400,000 response rows**.
+In the Consumer Intelligence Platform architecture, survey data encompasses 320+ waves, each containing 400 to 1,000+ respondents answering ~50–100 questions. Across historical trackers, this aggregates to **10,400,000 response rows**.
 
 The relational structure corresponds to the portal's serving representation (`srv_answer` in `sql/005_serving.sql`):
 
@@ -445,7 +445,7 @@ If SQLite precomputed tables are maintained for edge caching:
 
 ---
 
-## 6. Production Architecture for Consumer Intelligence Portal (CIP)
+## 6. Production Architecture for Consumer Intelligence Platform (CIP)
 
 ### 6.1 The Two-Tier Hybrid Architecture
 

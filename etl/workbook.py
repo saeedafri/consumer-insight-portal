@@ -57,7 +57,7 @@ def build_workbook(
         ws.row_dimensions[1].height = 26
 
         stamp = ws.cell(row=2, column=1,
-                        value=f"Coresight Research · Consumer Intelligence Portal · "
+                        value=f"Coresight Research · Consumer Intelligence Platform · "
                               f"{datetime.now():%d %b %Y %H:%M}")
         stamp.font = Font(name="Inter", size=9, italic=True, color="6B6A68")
 
@@ -112,7 +112,7 @@ def build_workbook(
 
     rows: list[tuple[str, str]] = [
         ("Exported", f"{datetime.now():%d %B %Y, %H:%M}"),
-        ("Source", "Coresight Consumer Intelligence Portal (CIP tables, cip_stg)"),
+        ("Source", "Coresight Consumer Intelligence Platform (CIP tables, cip_stg)"),
     ]
     rows += list(notes or [])
     rows.append((

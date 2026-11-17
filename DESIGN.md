@@ -1,5 +1,5 @@
 ---
-name: Consumer Intelligence Portal
+name: Consumer Intelligence Platform
 description: Coresight Research survey analytics design system (Research Desk)
 colors:
   primary: "#D62E2F"
@@ -93,7 +93,7 @@ components:
 
 ## Overview
 
-Consumer Intelligence Portal (CIP) follows the **Research Desk (Option C)** design paradigm. The interface is purposefully designed for market researchers, retail executives, and quantitative analysts who examine weekly consumer tracking surveys.
+Consumer Intelligence Platform (CIP) follows the **Research Desk (Option C)** design paradigm. The interface is purposefully designed for market researchers, retail executives, and quantitative analysts who examine weekly consumer tracking surveys.
 
 The system is founded on the conviction that **survey data is sample evidence, not a deterministic financial ledger**. Visual authority is communicated through restraint, structured typographic hierarchy, explicit respondent base annotations ($N$), statistical significance encoding, and clean data density.
 

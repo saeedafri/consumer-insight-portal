@@ -1,6 +1,6 @@
 # CIP ETL Series, Part 2: Extraction
 
-**Consumer Intelligence Portal (CIP), Coresight Research**
+**Consumer Intelligence Platform (CIP), Coresight Research**
 Series: How the CIP data pipeline works, explained for managers and the business team
 This part: the "E" of ETL. How CIP finds every survey, decides which ones to read, and gets the questionnaire and every respondent's data out of the source, safely and completely
 Previous part: Part 1, The Pipeline End to End. Next part: Part 3, Transformation (Questionnaire and Answers)

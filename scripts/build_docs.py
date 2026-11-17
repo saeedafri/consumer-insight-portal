@@ -29,7 +29,7 @@ DIAGRAMS = {
     "The 12-week sector rotation and its paired topics": "08-survey-cadence.png",
     "Life of a survey in the pipeline": "archify-survey-lifecycle.png",
 }
-HEADER = ("**Forsta ETL, data storage and operations for the Consumer Intelligence Portal.** Version 1.0 · "
+HEADER = ("**Forsta ETL, data storage and operations for the Consumer Intelligence Platform.** Version 1.0 · "
           "13 October 2026 · Owner: Data Automation (Coresight Research)\n\nBuilt from the section files in "
           "`docs/technical/` (00–08); the data dictionary is generated from the live database.\n\n")
 
@@ -49,7 +49,7 @@ def as_images(text: str) -> str:
 
 def main() -> int:
     business = (DOCS / "business/Business-Description.md").read_text()
-    business = re.sub(r"\A# .*\n", "**Consumer Intelligence Portal — Business Description**\n", business)
+    business = re.sub(r"\A# .*\n", "**Consumer Intelligence Platform — Business Description**\n", business)
     technical = HEADER + "\n".join((p.read_text()) for p in sorted((DOCS / "technical").glob("0[0-8]-*.md")))
     outputs = {"CIP-Business-Description": business, "CIP-Technical-Specification": technical}
     for name, text in outputs.items():

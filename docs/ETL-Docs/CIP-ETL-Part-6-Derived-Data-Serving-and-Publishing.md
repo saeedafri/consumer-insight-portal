@@ -1,6 +1,6 @@
 # CIP ETL Series, Part 6: Derived Data, Serving and Publishing
 
-**Consumer Intelligence Portal (CIP), Coresight Research**
+**Consumer Intelligence Platform (CIP), Coresight Research**
 Series: How the CIP data pipeline works, explained for managers and the business team
 This part: the last stage of the pipeline. What is built on top of verified data so that every screen, report and email is ready before anyone asks for it: the cube, the serving tables with their week-on-week and year-on-year comparisons and significance flags, the data team's line-by-line file, the search index, open-ended coding, dashboards, the published files, the reports built from them, and the emails
 Previous part: Part 5, Loading and Verification. This is the final part of the series

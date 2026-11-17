@@ -4,6 +4,12 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "17 November 2026",
+  entries: [
+    { title: "The portal is now called Consumer Intelligence Platform",
+      body: "Consumer Intelligence Portal is renamed Consumer Intelligence Platform, still CIP for short. The new name is at the top of every page, on the public pages and their titles in search results, on the sign-in page, in the data summary emails, in the Excel downloads and in the MCP connector's description. Ask CIP keeps its name." },
+  ],
+}, {
   date: "16 November 2026",
   entries: [
     { title: "Home: one question box, then sections you open, sorted by how often the research runs",

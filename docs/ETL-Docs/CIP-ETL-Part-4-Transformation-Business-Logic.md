@@ -1,6 +1,6 @@
 # CIP ETL Series, Part 4: Transformation, Business Logic
 
-**Consumer Intelligence Portal (CIP), Coresight Research**
+**Consumer Intelligence Platform (CIP), Coresight Research**
 Series: How the CIP data pipeline works, explained for managers and the business team
 This part: the second half of the "T" of ETL. The Coresight business rules applied on top of the clean questions and answers: demographic profiles, age bands, generations, income midpoints, census regions, question bases, the survey calendar, concepts that link a question across waves, cohorts, and Census weighting
 Previous part: Part 3, Transformation (Questionnaire and Answers). Next part: Part 5, Loading and Verification

@@ -22,7 +22,7 @@ from etl.serving import CUTS
 
 router = APIRouter()
 VERSION = "2025-06-18"
-INSTRUCTIONS = ("Coresight Research's Consumer Intelligence Portal: weekly US consumer surveys since 2020 and annual and ad hoc "
+INSTRUCTIONS = ("Coresight Research's Consumer Intelligence Platform: weekly US consumer surveys since 2020 and annual and ad hoc "
                 "studies since 2018 (about 400 adults a week). Ask anything with ask; or find questions with search_questions, then read one wave "
                 "with question_results, its history with question_trend, or two demographic cuts with crosstab. "
                 "Figures are unweighted percentages unless weighted=true; cite the survey, wave date and base (n).")

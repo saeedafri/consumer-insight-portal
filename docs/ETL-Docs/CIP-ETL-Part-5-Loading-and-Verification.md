@@ -1,6 +1,6 @@
 # CIP ETL Series, Part 5: Loading and Verification
 
-**Consumer Intelligence Portal (CIP), Coresight Research**
+**Consumer Intelligence Platform (CIP), Coresight Research**
 Series: How the CIP data pipeline works, explained for managers and the business team
 This part: the "L" of ETL, and the proof that comes with it. How data is written into the database, in what order and inside which transactions; how every wave is proven equal to its source before anyone can see it; what happens when something fails; and the checks that keep the whole database healthy over time
 Previous part: Part 4, Transformation (Business Logic). Next part: Part 6, Derived Data, Serving and Publishing

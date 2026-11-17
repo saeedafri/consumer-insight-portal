@@ -289,7 +289,7 @@ def build(survey_id: int, key: str, wave: Optional[Wave] = None) -> bytes:
     for r, (a, b) in enumerate([("Respondents:", "Qualified Only"), ("Additional Filter:", "None"), ("Table Set:", "All"),
                                 ("Percentage Base:", "Total Answering"),
                                 ("Stat Test Levels:", "95 / 90  (z-test)" if tested else "None / None  (z-test)"),
-                                ("Stat Test Groups:", tested or "None"), ("Source:", "Consumer Intelligence Portal (cip_stg), built by the ETL")], start=4):
+                                ("Stat Test Groups:", tested or "None"), ("Source:", "Consumer Intelligence Platform (cip_stg), built by the ETL")], start=4):
         summary.cell(r, 2, a).font = bold
         summary.cell(r, 3, b)
     row = 13
