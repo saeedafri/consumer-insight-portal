@@ -59,7 +59,7 @@ Browser ──▶ nginx ──▶ published files (most requests: ~1 ms, no data
 | Weighting | none by default: every percentage is unweighted, of qualified respondents |
 | Base | each question's own: respondents who were asked it and answered |
 | Small base | under 50: shown, flagged and faded |
-| Suppressed | under 30: two-cut cross-tab and Compare cells show no number |
+| Suppressed | none: every figure is shown however few answered (decision of 23 Oct 2026); bases under 50 are flagged |
 | Significance | two-proportion z-test at 95 %; What changed also applies Benjamini–Hochberg |
 | Comparable | the same question: identical wording or answers harmonised to one concept; a reused code is a new version |
 | Fieldwork over | 9 h after launch, or no quota left, or 400 qualified for a weekly tracker wave |

@@ -180,7 +180,9 @@ def scope(person: dict) -> str:
     # a weekly tracker closed with its menu takes its waves away (sees): two people of one client and tier who differ
     # in it must not share cached answers (15 Nov 2026)
     hidden = sorted(m for m in (rules().get("family_menus") or {}).values() if m not in person["features"])
-    return f"{person['client'] or ''}:{person['tier']}" + (f":without:{'+'.join(hidden)}" if hidden else "")
+    # staff see commissioned studies a client-less outsider does not: never one key for both (review of 20 Nov 2026)
+    owner = person["client"] or ("staff" if internal(person) else "")
+    return f"{owner}:{person['tier']}" + (f":without:{'+'.join(hidden)}" if hidden else "")
 
 
 def owner(wave: dict) -> dict:

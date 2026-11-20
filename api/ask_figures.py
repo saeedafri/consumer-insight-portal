@@ -152,8 +152,13 @@ def compute(counts: dict, plan: dict, visible: set[int], versions: list[int] | N
     """The figures a plan asks for: periods, columns (cuts), and per period × column × answer the people, base and %.
     `versions`: the wordings that make this question (api/ask_index.py splits a reused code); None for all."""
     waves = [w for w in counts["waves"] if w[0] in visible and (versions is None or w[2] in versions)]
-    dates = [w[1] for w in waves]
     index_of = {w[0]: i for i, w in enumerate(counts["waves"])}
+    if not plan["when"] and plan["cuts"]:   # no period named: the newest wave that has the group asked about. 12 of q3's
+        dim, groups = next(iter(plan["cuts"].items()))   # 219 waves have no generation figures, one of them the newest
+        cols = [i for i, (cut, value) in enumerate(counts["cuts"]) if cut == dim and (groups == "all" or value in groups)]
+        having = set(np.asarray(counts["w"])[np.isin(counts["c"], cols)].tolist())   # of that wording ("Gen Z clothing online", 20 Nov 2026)
+        waves = [w for w in waves if index_of[w[0]] in having] or waves
+    dates = [w[1] for w in waves]
     when = plan["when"] or ([{"all": True}] if plan["kind"] == "trend" else [{"latest": 1}])
     grain = plan["grain"]
     picked = [pick(spec, dates) for spec in when]

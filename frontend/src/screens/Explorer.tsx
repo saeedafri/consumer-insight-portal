@@ -1,6 +1,6 @@
 // One question at a time: wording, base, top answer, any chart type that suits it, by Total or a cut.
 import { useMemo, useRef } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { allowed as hasFeature, COLUMNS, isFiller, present, useBook, useMe } from "../api";
 import type { Column } from "../api";
 import { BaseNote, Card, Change, compared, copyLink, Empty, Failure, IconLink, Menu, SkeletonScreen, SourceLine, sourceText, ExportButtons , QuestionCode } from "../components/bits";
@@ -32,10 +32,12 @@ export default function Explorer() {
   const { data: book, isLoading, error } = useBook(id);
   const me = useMe().data;
   const chart = useRef<Chart | null>(null);
-  const question = useMemo(() => book?.questions.find(x => x.id === code) ?? book?.questions[0], [book, code]);
+  // a link's code exactly, else ignoring case ("Q2" for q2); an unknown code says so: it opened the first question (20 Nov 2026)
+  const question = useMemo(() => !code ? book?.questions[0]
+    : book?.questions.find(x => x.id === code) ?? book?.questions.find(x => x.id.toLowerCase() === code.toLowerCase()), [book, code]);
   if (isLoading) return <SkeletonScreen kind="question" />;
   if (error || !book) return <Failure error={error} />;
-  if (!question) return <Empty>This wave has no questions with percentages.</Empty>;
+  if (!question) return <Empty>{book.questions.length ? <>Question {code} is not in this wave. <Link to={`/w/${id}/questions`}>Open its questions</Link></> : "This wave has no questions with percentages."}</Empty>;
   // every question offers all five views (bars, columns, stacked, donut, table); a hand-edited ?view= falls back to bars
   const view = (VIEWS.some(v => v.key === params.get("view")) ? params.get("view") : "bars") as View;
   const shown = present(book.n);   // cuts with respondents in this wave

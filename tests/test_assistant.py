@@ -60,12 +60,127 @@ def test_the_latest_wave_is_people_over_base(index):
     found = assistant.answer("What share bought from Amazon in the latest wave?", index, EVERYONE)
     assert found["mode"] == "figures" and found["sources"][0]["qcode"] == "XQ1"
     assert figure(found, "Amazon") == [42.5]                                    # 170 of 400
+    assert found["table"]["cell_bases"] == [[400], [400]]
+    assert found["scope"] == {"country": "US", "period": "26 Oct 2026", "waves": 1}
     assert "170 of 400" in found["answer"] and found["chart"]["type"] in ("bar", "donut")
+
+
+def test_the_source_history_reflects_only_visible_waves(index):
+    found = assistant.answer("What share bought from Amazon in the latest wave?", index, {107}, key="CSI-US/tracker/XQ1")
+    assert "asked in 1 wave" in found["source_line"]
+    assert "7 Sep 2026" not in found["source_line"]
+    assert found["scope"]["waves"] == 1
+
+
+def test_a_historical_answer_links_to_the_code_that_its_wave_used(tmp_path):
+    root = tmp_path / "CSI-US" / "tracker"
+    root.mkdir(parents=True)
+    words = "Which retailers have you bought from?"
+    for sid, day, code in [(100, DATES[0], "OLD10"), (101, DATES[-1], "NEW20")]:
+        data = question_file([[sid, day, 1]], [words], [["", 1, "Amazon"]], [["total", "Total"]], [(0, 0, 0, 100, 400)])
+        (root / f"{code}.json.gz").write_bytes(gzip.compress(json.dumps(data).encode()))
+    waves = [{"survey_id": 100, "wave_date": DATES[0]}, {"survey_id": 101, "wave_date": DATES[-1]}]
+    index = Index(tmp_path, waves)
+    result = assistant.answer("What share bought from Amazon in September 2026?", index, {100, 101}, key="CSI-US/tracker/NEW20")
+    assert figure(result, "Amazon") == [25.0]
+    assert result["sources"][0]["link"] == "/w/100/questions/OLD10"
+    assert result["sources"][0]["qcode"] == "OLD10"
+
+
+def test_a_calculation_that_finishes_after_cache_reset_stays_uncached(index, monkeypatch):
+    def calculate(*_):
+        with assistant.ANSWERS_LOCK:
+            assistant.clear_answers()
+        return {"mode": "none", "answer": "Test"}
+
+    monkeypatch.setattr(assistant, "answer", calculate)
+    assert assistant.ask("A question", index, EVERYONE, "all")["answer"] == "Test"
+    assert not assistant.ANSWERS
+
+
+def test_ask_count_cache_skips_over_budget_and_duplicate_entries(index, monkeypatch):
+    from api import ask_index
+
+    monkeypatch.setattr(ask_index, "COUNT_CACHE_MB", 0)
+    item = {column: np.zeros(20, dtype=np.int32) for column in "wcanb"}
+    index.keep("first", item)
+    assert index.cached_bytes == 0 and not index.cache
+    monkeypatch.setattr(ask_index, "COUNT_CACHE_MB", 1)
+    index.keep("first", item)
+    index.keep("first", item)
+    assert index.cached_bytes == sum(column.nbytes for column in item.values())
+    assert index.cache["first"] is item
+
+
+def test_grid_answers_show_their_own_bases_and_hide_suppressed_cells():
+    fig = {"periods": [{"label": "Latest wave"}], "columns": [("gender", "Female"), ("gender", "Male")],
+           "answers": ["Store A", "Store B", "Store C"], "grain": None,
+           "pct": np.array([[[100.0, 70.0, 68.8], [np.nan, 40.0, 60.0]]]),
+           "bases": np.array([[[3, 10, 16], [2, 15, 15]]])}
+    table = assistant.figure_table(fig, [0, 1, 2])
+    assert table["rows"] == [["Store A", 100.0, None], ["Store B", 70.0, 40.0], ["Store C", 68.8, 60.0]]
+    assert table["cell_bases"] == [[3, None], [10, 15], [16, 15]]
+    assert table["bases"] == [0, 15]
+    assert assistant.chart(fig, [0, 1, 2])["bases"] == {"Male": 15}
 
 
 def test_a_month_pools_its_waves_exactly(index):
     found = assistant.answer("Amazon retailers bought in October 2026", index, EVERYONE)
     assert figure(found, "Amazon") == [round(100 * sum(AMAZON[4:]) / 1600, 1)]  # four October waves: 620 of 1,600
+
+
+@pytest.mark.parametrize(("question", "reason"), [
+    ("What share of Gen Z women bought from Amazon?", "one demographic dimension"),
+    ("What was the median amount spent at Amazon?", "cannot calculate"),
+    ("Did tariffs cause shoppers to dine out less?", "cannot establish what caused"),
+    ("What is the Census-weighted share of Amazon Prime subscribers?", "unweighted survey results"),
+    ("Use survey weights to show how many bought from Amazon", "unweighted survey results"),
+    ("Do you know how many people bought groceries online who also bought them in-store?", "people who did both things"),
+    ("How many people shopped at both Amazon and Walmart?", "people who did both things"),
+    ("Compare retailers bought in Q4 2026 vs Q1 2027", "one requested period"),
+    ("What share bought from Amazon in 2030?", "was not asked"),
+    ("What share of women bought from Amazon?", "demographic group is unavailable"),
+    ("Compare Gen Z and Boomers who bought from Amazon", "demographic group is unavailable"),
+])
+def test_ask_does_not_substitute_for_unsupported_evidence(index, question, reason):
+    found = assistant.answer(question, index, EVERYONE, quick=True, key="CSI-US/tracker/XQ1")
+    assert found["mode"] == "none" and reason in found["answer"]
+    assert found["table"] is None and not found["sources"]
+
+
+@pytest.mark.parametrize("question", [
+    "What unweighted share bought from Amazon?",
+    "What un-weighted share bought from Amazon?",
+    "Do not use survey weights. What share bought from Amazon?",
+])
+def test_ask_still_answers_an_explicitly_unweighted_request(index, question):
+    found = assistant.answer(question, index, EVERYONE, key="CSI-US/tracker/XQ1")
+    assert found["weighting"] == "unweighted" and figure(found, "Amazon") == [42.5]
+
+
+@pytest.mark.parametrize(("question", "mode"), [
+    ("Compare Gen Z who bought from Amazon in September 2026 vs November 2026", "none"),
+    ("Compare Costco among Millennials in September 2026 vs November 2026", "none"),
+    ("Monthly trend for Millennials shopping in September 2026 vs November 2026", "figures"),
+])
+def test_named_group_comparisons_require_figures_but_trends_allow_gaps(tmp_path, question, mode):
+    root = tmp_path / "CSI-US" / "tracker"
+    root.mkdir(parents=True)
+    waves = [[100, DATES[0], 1], [101, "2026-11-09", 1]]
+    published = question_file(waves, ["Which retailers have you bought from?"], [["", 1, "Amazon"], ["", 2, "Costco"]],
+                              [["total", "Total"], ["generation", "GenZ"], ["generation", "Millennial"]],
+                              [(0, 0, 0, 100, 400), (1, 0, 0, 150, 400), (1, 1, 0, 60, 100),
+                               (0, 2, 0, 33, 100), (1, 2, 0, 30, 100), (1, 2, 1, 70, 100)])
+    with gzip.open(root / "XQ1.json.gz", "wt") as outgoing:
+        json.dump(published, outgoing)
+    index = Index(tmp_path, [{"survey_id": sid, "wave_date": day} for sid, day, _ in waves])
+    found = assistant.answer(question, index, {100, 101}, key="CSI-US/tracker/XQ1")
+    assert found["mode"] == mode
+    if mode == "none":
+        assert "no reportable figures" in found["answer"]
+        assert found["table"] is None and not found["sources"]
+    else:
+        assert figure(found, "Amazon") == [33.0, None, 30.0]
 
 
 def test_each_grain_groups_waves_by_the_calendar(index):
@@ -637,7 +752,7 @@ def test_an_answer_to_a_corrected_question_says_so_and_typing_offers_questions_b
     assert [s["waves"] for s in retailers if s["qcode"] == "XQ1"] == [2]
 
 
-def test_a_kept_ai_reading_is_reused_only_by_the_same_model(tmp_path, monkeypatch):
+def test_a_kept_ai_reading_requires_the_same_model_and_evidence(tmp_path, monkeypatch):
     """An older model's reading turned the reader's right answer wrong ("Satisfaction with shopping in AI platforms":
     D34 → GA2, review of 15 Nov 2026): readings are kept per model and prompt."""
     from api import ask_model
@@ -645,10 +760,72 @@ def test_a_kept_ai_reading_is_reused_only_by_the_same_model(tmp_path, monkeypatc
     monkeypatch.setattr(ask_model, "ready", lambda: False)   # no call: only a kept reading can answer
     line = {"number": 1, "text": "Which retailers have you bought from?", "waves": 9, "first": "2025-01-01", "last": "2026-11-01", "answers": ["Amazon"]}
     monkeypatch.setattr(ask_model, "model", lambda: "gpt-4o-mini")
-    memo = ask_model.hashlib.sha1(ask_model.json.dumps(["gpt-4o-mini", ask_model.SYSTEM, ask_model.same_question("Amazon shoppers"),
-                                                         [line["text"]]]).encode()).hexdigest()[:20]
+    question = "How many bought from Amazon?"
+    memo = ask_model.reading_key("gpt-4o-mini", f"{question}\n1. {ask_model.describe_candidate(line)}")
     (tmp_path / "readings.json").write_text(json.dumps({memo: {"pick": 1, "alt": None, "focus": [], "kind": "share", "grain": "auto",
                                                                "cut": "none", "period": "all"}}))
-    assert ask_model.plan("Amazon shoppers", [line])["pick"] == 1
+    assert ask_model.plan(question, [line])["pick"] == 1
+    assert ask_model.plan("What share bought from Amazon?", [line]) is None
+    assert ask_model.plan(question, [{**line, "answers": ["Costco"]}]) is None
     monkeypatch.setattr(ask_model, "model", lambda: "gpt-4.1-mini")   # another model: its own reading, not the kept one
-    assert ask_model.plan("Amazon shoppers", [line]) is None
+    assert ask_model.plan(question, [line]) is None
+
+
+def test_provider_timeout_with_malformed_cache_uses_the_local_answer(index, tmp_path, monkeypatch):
+    from api import ask_model
+    if index.vectors is None:
+        pytest.skip("search model not downloaded")
+    path = tmp_path / "readings.json"
+    path.write_text("[]")
+    monkeypatch.setattr(ask_model, "READINGS", path)
+    monkeypatch.setattr(ask_model, "ready", lambda: True)
+    calls = []
+
+    def timeout(*_):
+        calls.append(1)
+        raise TimeoutError
+
+    monkeypatch.setattr(ask_model, "call", timeout)
+    found = assistant.answer("Amazon shoppers over time", index, EVERYONE)
+    assert calls == [1]
+    assert found["mode"] in ("figures", "choose") and found.get("understood") != "model"
+    assert path.read_text() == "[]"
+
+
+def test_this_quarter_a_bare_month_and_right_now_are_read_from_todays_calendar(monkeypatch):
+    # 20 Nov 2026: "this quarter" fell back to every wave, "October vs September" named no period, "right now" stayed a
+    # search word and pushed the economy question below a match
+    class Today(ask_reader.date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 11, 20)
+    monkeypatch.setattr(ask_reader, "date", Today)
+    read = lambda q: ask_reader.read(q)["when"]   # noqa: E731
+    assert read("Amazon this quarter") == [{"quarter": (2026, 4)}]
+    assert read("Walmart last quarter") == [{"quarter": (2026, 3)}]
+    assert read("Prime members year to date") == [{"from": "2026-01-01", "to": "2026-11-20"}]
+    assert read("Online shopping in October vs September") == [{"month": (2026, 10)}, {"month": (2026, 9)}]
+    assert read("December holiday spending in December") == [{"month": (2025, 12)}]   # not yet this year: the last one
+    assert read("Q4 holiday spending") == [{"quarter": (2026, 4)}]
+    assert read("How many people may buy online?") == [] and read("What may happen in March?") == [{"month": (2026, 3)}]
+    assert read("How do people feel about the economy right now?") == [{"latest": 1}]
+
+
+def test_an_acronym_no_survey_uses_gets_no_stand_in_figure(index):
+    found = assistant.answer("How many people bought from Amazon on OTT?", index, EVERYONE)
+    assert found["mode"] == "none" and "OTT" in found["answer"]
+    assert assistant.answer("HOW MANY PEOPLE BOUGHT FROM AMAZON IN THE LATEST WAVE", index, EVERYONE)["mode"] == "figures"
+
+
+def test_no_period_and_a_group_reads_the_newest_wave_that_has_the_group(tmp_path):
+    root = tmp_path / "questions" / "CSI-US" / "tracker"
+    root.mkdir(parents=True)
+    cells = [(i, 0, 0, 100, 400) for i in range(8)] + [(i, 1, 0, 30, 100) for i in range(7)]   # newest wave: no Gen Z
+    (root / "XQ2.json.gz").write_bytes(gzip.compress(json.dumps(question_file(
+        [[100 + i, d, 1] for i, d in enumerate(DATES)], ["Have you bought clothing online in the past two weeks?"],
+        [["", 1, "Yes"]], [["total", "Total"], ["generation", "GenZ"]], cells)).encode()))
+    waves = [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping and Spending", "modules": []} for i, d in enumerate(DATES)]
+    found = Index(tmp_path / "questions", waves)
+    fig = ask_figures.compute(found.counts(next(iter(found.docs))), ask_reader.read("Gen Z buying clothing online"), EVERYONE)
+    genz = next(i for i, (_, value) in enumerate(fig["columns"]) if value == "GenZ")
+    assert fig["asked"][-1] == DATES[-2] and round(float(fig["pct"][0, genz, 0]), 1) == 30.0   # 19 Oct, Gen Z 30 of 100

@@ -1,0 +1,136 @@
+{
+  "NEW_SEC_01_api_write_user": {
+    "app_role_user": "cip_app_readonly",
+    "api_write_role_user": "cip_etl_owner",
+    "etl_role_user": "cip_etl_owner"
+  },
+  "NEW_SEC_02_scope_collision": {
+    "staff_internal": true,
+    "external_internal": false,
+    "staff_scope": ":enterprise",
+    "external_scope": ":enterprise",
+    "scope_identical": true,
+    "staff_sees_staff_wave": true,
+    "external_sees_staff_wave": true
+  },
+  "NEW_PUB_01_swap_deletes_live_target": {
+    "target_name": ".build-20261110T000000Z",
+    "symlink_target": ".build-20261110T000000Z",
+    "target_still_exists": false,
+    "current_exists_after_swap": false,
+    "remaining_builds": [
+      ".build-20261115T000000Z",
+      ".build-20261116T000000Z",
+      ".build-20261117T000000Z"
+    ]
+  },
+  "NEW_ETL_01_reconcile_or_bug": {
+    "got": [
+      0,
+      "Walmart",
+      null,
+      null
+    ],
+    "want": [
+      1,
+      "Walmart",
+      null,
+      null
+    ],
+    "reconcile_marks_same": true
+  },
+  "NEW_STAT_01_weekly_report_wrong_contrast": {
+    "weekly_pcts": [
+      60.0,
+      40.0,
+      40.0,
+      40.0,
+      60.0
+    ],
+    "four_week_rolling_avgs": [
+      45.0,
+      45.0
+    ],
+    "week_change_4wra": 0.0,
+    "tested_last_vs_prev_week_p": 1.54e-08,
+    "flagged_week_significant": true
+  },
+  "NEW_STAT_02_dashboards_fdr_bypass": {
+    "tested_on_quiet_wave": null,
+    "uncorrected_sig_55_vs_47_5_n400": true
+  },
+  "NEW_STAT_03_classify_age_topcode": {
+    "70_or_more": {
+      "age": null,
+      "band": "Over 60",
+      "gen": "Boomer",
+      "mid": null
+    },
+    "65_plus": {
+      "age": null,
+      "band": "Over 60",
+      "gen": "Boomer",
+      "mid": null
+    },
+    "over_60": {
+      "age": null,
+      "band": "Over 60",
+      "gen": "Boomer",
+      "mid": 67.0
+    }
+  },
+  "NEW_ETL_02_sharepoint_may_2026": {
+    "input": [
+      "2026",
+      "May 2026"
+    ],
+    "parsed_week": "2026-05-20"
+  },
+  "NEW_ETL_03_fieldwork_xml_crash": {
+    "exception": "TypeError: summary() missing 1 required positional argument: 'wave'"
+  },
+  "NEW_ASK_01_spelling_cross_tenant_leak": {
+    "user_visible_waves": [
+      1
+    ],
+    "input_question": "How many bought Zephyrum?",
+    "leaked_corrected_field": null,
+    "mode": "none"
+  },
+  "NEW_ASK_02_no_figure_missing_understood": {
+    "no_figure_keys": [
+      "answer",
+      "chart",
+      "mode",
+      "no_source",
+      "plan",
+      "sources",
+      "suggestions",
+      "table"
+    ],
+    "understood_value": null,
+    "ask_tsx_check_condition_passes": false
+  },
+  "NEW_FE_01_channels_under30_cells": {
+    "q2": {
+      "count_lt_30": 15981,
+      "min_base": 1
+    },
+    "q3": {
+      "count_lt_30": 10157,
+      "min_base": 1
+    },
+    "Q4": {
+      "count_lt_30": 10544,
+      "min_base": 1
+    },
+    "Q5": {
+      "count_lt_30": 9778,
+      "min_base": 1
+    }
+  },
+  "NEW_FE_02_inline_comment_swallows": {
+    "theme_ts_L39": "blue: \"#A3C0CE\", bar: \"#6491A9\", s1: \"#A3C0CE\",   // bar: the mockups' mid blue, 4.5:1 on the cards s2: \"#7FA7BC\", s3: \"#5C8DA8\", other: \"#8C8785\",",
+    "retailers_tsx_L186": "return { name: ser.label, type: \"line\", connectNulls: side.market.sector,   // a sector runs every few months: its surveys joined symbolSize: 5, color: colour(series.indexOf(ser)),"
+  }
+}

@@ -677,3 +677,25 @@ def test_alerts_go_to_teams_and_their_owner_and_never_fail_a_load(monkeypatch):
     monkeypatch.setattr(team, "due_alerts", lambda ids: 1 / 0)
     notify.alerts([412])
     assert notify.sent[-1] == ("email", "CIP pipeline FAILED: checking the metric alerts")
+
+
+def test_reconcile_detects_a_flipped_multi_answer(csi_db):
+    # a multi-answer's 0 and 1 share one item label when the datamap labels them No/Yes: the code must decide
+    # (review of 20 Nov 2026: a flipped answer passed on its label)
+    import copy
+
+    datamap = copy.deepcopy(REAL_SHAPES)
+    q1 = next(q for q in datamap["questions"] if q["qlabel"] == "q1")
+    for variable in q1["variables"][:2]:
+        variable["values"] = [{"value": 0, "title": "No"}, {"value": 1, "title": "Yes"}]
+
+    class MultiLabels(FakeForsta):
+        def survey_datamap(self, path):
+            return datamap
+
+    path = "selfserve/58f/260907"
+    initial = [record(n) for n in range(1, 5)] + [record(5, status="1")]
+    sid = forsta_etl.load_survey(MultiLabels(data={path: initial}), path)
+    flipped = [dict(row, q1r1="0") for row in initial]
+    checked, problems = forsta_etl.reconcile_survey(sid, MultiLabels(data={path: flipped}))
+    assert checked > 0 and any("q1r1" in problem for problem in problems)

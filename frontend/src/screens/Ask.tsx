@@ -1,7 +1,6 @@
 // Ask CIP (/app/ask): a question in plain words, answered from the portal's own published survey figures with
-// the chart that fits (api/assistant.py, no database). Each question is asked twice: quick (the nearest survey question
-// by meaning, ~100 ms) is shown at once; when it says check, the AI model's reading follows and replaces it only if it
-// found a differently worded question (the same wording asked by another study is the same answer). A conversation:
+// the chart that fits (api/assistant.py, no database). Quick results appear first. An optional AI check can refine
+// the selected question, period or cut. A conversation:
 // each answer appears right under the box, newest first. Client view leads with the figures that matter (stat tiles),
 // the chart the dataviz forms pick (a line, ranked bars, one segmented bar, 100% stacked bars, a heatmap, a dumbbell),
 // what the figures tell, and questions to continue with; Analyst view adds the exact sentences, notes, how the question
@@ -23,14 +22,15 @@ const EXAMPLES = ["How are higher gasoline prices affecting consumer spending?",
                   "Holiday shopping progress by generation", "Economy better or worse, every 4 weeks",
                   "Compare the first and latest wave of holiday shopping progress", "Top beauty retailers",
                   "How worried are people about tariffs?", "Top food retailers, last 8 weeks"];
-const FIGURE = /([+−-]?\d[\d,]*(?:\.\d+)?%|[+−-]\d+(?:\.\d+)? pts|\d[\d,]* of [\d,]+ respondents)/g;
+const FIGURE = /([+−-]?\d[\d,]*(?:\.\d+)?%|[+−-]\d+(?:\.\d+)? percentage points|\d[\d,]* of [\d,]+ respondents)/g;
 const AUDIENCE = "cip_ask_view";   // this viewer's choice of view, kept in their browser
 type Audience = "client" | "analyst";
 const savedAudience = (): Audience => { try { return localStorage.getItem(AUDIENCE) === "analyst" ? "analyst" : "client"; } catch { return "client"; } };
 
 /** A sentence with its figures in bold, the way an analyst scans it. */
 const Bold = ({ text }: { text: string }) =>
-  <>{text.split(FIGURE).map((part, i) => i % 2 ? <b key={i}>{part}</b> : <Fragment key={i}>{part}</Fragment>)}</>;
+  <>{text.replace(/\bpts\b/g, "percentage points").replace(/\bGenZ\b/g, "Gen Z").replace(/\bn=([\d,]+)/g, "$1 responses")
+    .split(FIGURE).map((part, i) => i % 2 ? <b key={i}>{part}</b> : <Fragment key={i}>{part}</Fragment>)}</>;
 
 type View = "line" | "bar" | "column" | "donut" | "table" | "split" | "stacked" | "heatmap" | "dumbbell";
 const VIEW_NAMES: Record<View, string> = { line: "Line", bar: "Bars", column: "Columns", donut: "Donut", table: "Table",
@@ -137,26 +137,27 @@ const Tiles = ({ tiles }: { tiles: AskTile[] }) =>
   <div className="grid g3 ask-tiles">{tiles.map((t, i) => <div key={t.label} className={`kpi ask-tile${i ? "" : " lead"}`}>
     <div className="k-label">{t.label}</div><div className="k-value">{t.value}</div><div className="k-note">{t.note}</div></div>)}</div>;
 
-/** Every figure: answers down the side, periods across; a long series turns round (periods down the side). */
+/** The exact base follows its figure, including in tables turned sideways for long series. */
 function Figures({ table }: { table: NonNullable<Answer["table"]> }) {
-  const cell = (v: string | number | null) => (v == null ? "—" : `${v}%`);
-  const across = table.head.length - 1;
-  if (across <= 8)
+  const cell = (row: number, col: number) => {
+    const share = table.rows[row][col + 1];
+    const base = table.cell_bases?.[row][col];
+    return share == null ? "—" : <>{share}%{base != null && <small className="muted"> (n={base.toLocaleString("en-US")})</small>}</>;
+  };
+  if (table.head.length <= 9)
     return <table className="data">
       <thead><tr>{table.head.map((h, i) => <th key={i} className={i ? "num" : undefined}>{h}</th>)}</tr></thead>
-      <tbody>{table.rows.map(r => <tr key={String(r[0])}><th scope="row">{r[0]}</th>{r.slice(1).map((v, i) => <td key={i} className="num">{cell(v)}</td>)}</tr>)}</tbody>
-      <tfoot><tr><th scope="row">Base (n)</th>{table.bases.map((b, i) => <td key={i} className="num">{b ? b.toLocaleString("en-US") : "—"}</td>)}</tr></tfoot>
+      <tbody>{table.rows.map((r, row) => <tr key={row}><th scope="row">{r[0]}</th>{r.slice(1).map((_, col) => <td key={col} className="num">{cell(row, col)}</td>)}</tr>)}</tbody>
     </table>;
   return <table className="data">
-    <thead><tr><th>Period</th>{table.rows.map(r => <th key={String(r[0])} className="num">{r[0]}</th>)}<th className="num">Base (n)</th></tr></thead>
-    <tbody>{table.head.slice(1).map((period, p) => <tr key={p}><th scope="row">{period}</th>
-      {table.rows.map(r => <td key={String(r[0])} className="num">{cell(r[p + 1])}</td>)}
-      <td className="num">{table.bases[p] ? table.bases[p].toLocaleString("en-US") : "—"}</td></tr>)}</tbody>
+    <thead><tr><th>Period or group</th>{table.rows.map((r, row) => <th key={row} className="num">{r[0]}</th>)}</tr></thead>
+    <tbody>{table.head.slice(1).map((period, col) => <tr key={col}><th scope="row">{period}</th>
+      {table.rows.map((_, row) => <td key={row} className="num">{cell(row, col)}</td>)}</tr>)}</tbody>
   </table>;
 }
 
-function Reply({ question, answer, audience, weighted, checking, checked, onAsk }: { question: string; answer: Answer; audience: Audience; weighted: boolean;
-                                                                                    checking: boolean; checked: boolean; onAsk: (q: string, key?: string) => void }) {
+function Reply({ question, answer, audience, weighted, checking, onAsk }: { question: string; answer: Answer; audience: Audience; weighted: boolean;
+                                                                                    checking: boolean; onAsk: (q: string, key?: string) => void }) {
   const chart = answer.chart;
   const offered = chart ? views(chart) : [];
   const [picked, setView] = useState<View | null>(null);
@@ -165,6 +166,7 @@ function Reply({ question, answer, audience, weighted, checking, checked, onAsk 
   const height = chart ? (view === "bar" ? Math.max(180, chart.categories.length * (chart.series.length > 1 ? 34 : 26) + 40)
                           : view === "stacked" ? Math.max(160, chart.categories.length * 40 + 60) : view === "split" ? 120 : 320) : 0;
   const source = answer.sources[0];
+  const scope = answer.scope;
   const analyst = audience === "analyst";
   const isAdmin = !!useMe().data?.permissions?.includes("admin_pages");
   const [verified, setVerified] = useState("");
@@ -173,7 +175,7 @@ function Reply({ question, answer, audience, weighted, checking, checked, onAsk 
     catch (e) { setVerified(e instanceof Error ? e.message : String(e)); }
   };
   // verified and named: right 99%+ in the per-survey checks (etl/ask_quality.py); the rest are best matches to check
-  const how = { verified: "Verified answer", named: "Verified: the survey question's own name, figures computed",
+  const how = { verified: "Verified answer", named: "Matched survey question",
                 learned: "Answered as a question settled earlier by the AI check, figures computed",
                 name: "Best match by name: other survey questions share this name (below)",
                 model: "Best match, understood by AI: check the question below", reader: "Best match, read by Ask's own model: check the question below",
@@ -182,19 +184,39 @@ function Reply({ question, answer, audience, weighted, checking, checked, onAsk 
   const drawn = useRef<Chart | null>(null);
   const file = `ask-${(source?.qcode ?? "answer").toLowerCase()}`;
   const notes = [question, answer.source_line ?? "", "Unweighted figures, from Coresight's surveys (Ask CIP)."];
+  if (scope) notes.splice(1, 0, `Data used: ${scope.period} · ${scope.waves} ${scope.waves === 1 ? "wave" : "waves"} · ${scope.country}`);
   const tiles = answer.tiles ?? [];
+  const table = answer.table;
+  /** Include denominators in data downloads without treating them as percentages in PowerPoint charts. */
+  const exportFigures = (format: Parameters<typeof downloadTable>[0]) => {
+    if (!table) return;
+    const cellBases = table.cell_bases;
+    const rows = cellBases && (format === "csv" || format === "xlsx")
+      ? table.rows.flatMap((row, i) => [row, [`${row[0]} · Base (n)`, ...cellBases[i]]])
+      : table.rows;
+    return downloadTable(format, file, table.head, rows, notes);
+  };
   return <article className="card ask-reply">
     <div className="ask-head">
       <p className="ask-q"><MessageSquare size={15} strokeWidth={1.8} aria-hidden="true" /> {question}
         {answer.corrected && <span className="small muted ask-corrected"> · answered as “{answer.corrected}”, the spelling put right</span>}</p>
-      {answer.table && <ExportButtons onExport={format => downloadTable(format, file, answer.table!.head, answer.table!.rows, notes)}
+      {table && !checking && <ExportButtons pin={false} onExport={exportFigures}
         png={chart && !drawnByHand ? () => drawn.current && downloadPng(drawn.current, answer.headline || question, answer.source_line ?? "", file) : undefined} />}
     </div>
     {answer.no_source
       ? <p className="ask-headline">{answer.answer}</p>
       : <>
-        {tiles.length > 0 && <Tiles tiles={tiles} />}
-        {(analyst || !tiles.length) && <p className="ask-headline"><Bold text={answer.headline || answer.answer.split("\n")[1] || ""} /></p>}
+        <p className="ask-headline"><Bold text={answer.headline || answer.takeaway || answer.answer.split("\n")[1] || ""} /></p>
+        {source && <p className="small muted ask-source">
+          {scope && <>{scope.country === "US" ? "United States" : scope.country === "CN" ? "China" : scope.country}
+            {" · "}{scope.period}{" · "}{scope.waves} {scope.waves === 1 ? "survey wave" : "survey waves"}{" · Unweighted · "}</>}
+          <Link to={source.link}>Source {source.qcode} →</Link>
+        </p>}
+        {(how || checking) && <p className="small muted ask-how">{checking ? "Checking the survey match…" : analyst ? how :
+          answer.understood === "verified" ? "Verified survey match" : answer.understood === "named" ? "Matched survey question" : "Closest survey match"}
+          {analyst && isAdmin && answer.verify && !checking && answer.understood !== "verified" && <>{" · "}
+          {verified ? <span role="status">{verified}</span> : <button type="button" className="linklike" onClick={() => void saveVerified()}>Save as verified</button>}</>}</p>}
+        {analyst && tiles.length > 0 && <Tiles tiles={tiles} />}
         {analyst && !!answer.points?.length && <ul className="ask-points">{answer.points.map((p, i) => <li key={i}><Bold text={p} /></li>)}</ul>}
         {chart && offered.length > 1 && <span className="seg ask-views" role="group" aria-label="Chart type">
           {offered.map(v => <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>{VIEW_NAMES[v]}</button>)}</span>}
@@ -202,18 +224,14 @@ function Reply({ question, answer, audience, weighted, checking, checked, onAsk 
         {chart && view === "dumbbell" && <Dumbbell chart={chart} />}
         {chart && !drawnByHand && <EChart key={view} option={option(chart, view)} height={height} label={answer.headline || question} onReady={c => { drawn.current = c; }} />}
         {chart && view === "table" && answer.table && <div className="table-wrap"><Figures table={answer.table} /></div>}
-        {answer.takeaway && <div className="ask-takeaway"><b>What this tells us</b><p><Bold text={answer.takeaway} /></p></div>}
+        {answer.takeaway && answer.takeaway !== answer.headline && <div className="ask-takeaway"><b>What this tells us</b><p><Bold text={answer.takeaway} /></p></div>}
         {(!!answer.notes?.length || weighted) && <ul className="ask-notes small muted">
           {answer.notes?.map((n, i) => <li key={i}>{n}</li>)}
           {weighted && <li>Your Weighted switch is on, but Ask CIP answers with unweighted figures (as Forsta shows them).</li>}
         </ul>}
-        {source && <p className="small muted ask-source">{answer.source_line}{" "}
-          <Link to={source.link}>Open {source.link.includes("/trends/") ? "in Trends" : "in Question explorer"} →</Link></p>}
-        {analyst && <p className="small muted ask-how">{how}{checking && " · checking with AI…"}{checked && " · checked by AI"}{answer.changed && ` · updated by AI (first shown: ${answer.changed})`}{isAdmin && answer.verify && answer.understood !== "verified" && <>{" · "}
-          {verified ? <span role="status">{verified}</span> : <button type="button" className="linklike" onClick={() => void saveVerified()}>Save as verified</button>}</>}</p>}
-        {!analyst && (checking || answer.changed) && <p className="small muted ask-how">{checking ? "Checking with AI…" : `Updated by AI (first shown: ${answer.changed})`}</p>}
-        {analyst && answer.table && <details className="ask-figures" open><summary>Every figure and its base</summary>
-          <div className="table-wrap"><Figures table={answer.table} /></div></details>}
+        {table && view !== "table" && <details className="ask-figures" open={analyst}><summary>Figures and sample sizes</summary>
+          {source && <p className="small muted">{answer.source_line}</p>}
+          <div className="table-wrap"><Figures table={table} /></div></details>}
       </>}
     {!!answer.next?.length && <div className="ask-more">
       <p className="small muted">Continue the analysis</p>
@@ -223,7 +241,7 @@ function Reply({ question, answer, audience, weighted, checking, checked, onAsk 
     {answer.suggestions.length > 0 && <div className="ask-more">
       <p className="small muted">{answer.mode === "choose" ? "Choose one" : answer.no_source ? "Closest questions" : answer.suggestions[0]?.alt ? "Did you mean" : "Other questions that match"}</p>
       <div className="tagrow">{answer.suggestions.map(s => <button key={s.key} type="button" className={s.alt ? "tag sig" : "tag"} title={s.text}
-        onClick={() => onAsk(s.text)}>{s.qcode}: {s.text.length > 70 ? s.text.slice(0, 69) + "…" : s.text}</button>)}</div>
+        onClick={() => onAsk(question, s.key)}>{s.qcode}: {s.text.length > 70 ? s.text.slice(0, 69) + "…" : s.text}</button>)}</div>
     </div>}
   </article>;
 }
@@ -231,7 +249,9 @@ function Reply({ question, answer, audience, weighted, checking, checked, onAsk 
 export default function Ask() {
   const [params, setParams] = useSearchParams();
   const [text, setText] = useState(params.get("q") ?? "");
-  const [replies, setReplies] = useState<{ question: string; answer: Answer; checking?: boolean; checked?: boolean }[]>([]);   // this visit's conversation, newest first
+  const [replies, setReplies] = useState<{ id: number; question: string; answer: Answer; checking: boolean }[]>([]);   // this visit's conversation, newest first
+  const active = useRef<AbortController | null>(null);
+  const sequence = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [offer, setOffer] = useState<AskOffer | null>(null);   // while typing: the words put right, questions by name
@@ -240,28 +260,45 @@ export default function Ask() {
   const [audience, setAudience] = useState<Audience>(savedAudience);
   const weighted = useWeighted();
   const choose = (a: Audience) => { setAudience(a); try { localStorage.setItem(AUDIENCE, a); } catch { /* private window */ } };
-  // a "Continue the analysis" question carries its survey question's key: answered from that question, by its rules
+  /** Keep one active question so a late reply cannot overwrite a newer one or reappear after clearing. */
   const ask = async (question: string, key?: string) => {
     question = question.trim();
     if (question.length < 3) return;
+    active.current?.abort();
+    const request = new AbortController();
+    active.current = request;
+    const id = ++sequence.current;
+    const { signal } = request;
     asked.current = question;
     setText(question);
-    setParams({ q: question }, { replace: true });
+    setParams(key ? { q: question, key } : { q: question }, { replace: true });
+    setReplies(replies => replies.map(reply => reply.checking ? { ...reply, checking: false } : reply));
     setBusy(true); setError(""); setOffer(null);
+    const body = { question, ...(key ? { key } : {}) };
     try {
-      const answer = await send<Answer>("POST", "/api/v1/ask", { question, quick: true, ...(key ? { key } : {}) });
-      setReplies(r => [{ question, answer, checking: !!answer.check }, ...r].slice(0, 20));
-      // the answer appears at the top: bring the box and the new answer back into view, so a click near the bottom
-      // ("Continue the analysis") does not leave the reader looking at the old answer (15 Nov 2026)
-      requestAnimationFrame(() => panel.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-      if (answer.check) {   // the model's reading, after the quick answer is on screen: replaces it only for another question
-        const settle = (better: Answer | null) => setReplies(r => r.map(x => x.answer !== answer ? x : !better
-          || (better.mode === answer.mode && better.sources[0]?.question === answer.sources[0]?.question) ? { ...x, checking: false, checked: !!better }
-          : { question, answer: { ...better, changed: answer.sources[0]?.qcode } }));
-        send<Answer>("POST", "/api/v1/ask", { question, check: true }).then(settle, () => settle(null));
+      const answer = await send<Answer>("POST", "/api/v1/ask", { ...body, quick: true }, signal);
+      if (signal.aborted) return;
+      setReplies(replies => [{ id, question, answer, checking: !!answer.check }, ...replies].slice(0, 20));
+      requestAnimationFrame(() => {
+        if (!signal.aborted) panel.current?.scrollIntoView({
+          behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start",
+        });
+      });
+      if (answer.check) {
+        const settle = (checked: Answer | null) => {
+          if (signal.aborted) return;
+          setReplies(replies => replies.map(reply => reply.id !== id ? reply : {
+            ...reply, checking: false,
+            answer: checked?.understood === "model" ? checked : reply.answer,
+          }));
+        };
+        void send<Answer>("POST", "/api/v1/ask", { ...body, check: true }, signal).then(settle, () => settle(null));
       }
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
+    } catch (e) {
+      if (!signal.aborted) setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (!signal.aborted) setBusy(false);
+    }
   };
   // after a pause in typing (250 ms), what the box offers: no model and no cost, never for the question just asked
   // (15 Nov 2026: a typo such as "subcription" found nothing, and nothing helped while typing)
@@ -275,11 +312,15 @@ export default function Ask() {
     return () => { current = false; clearTimeout(wait); };
   }, [typed]);   // eslint-disable-line react-hooks/exhaustive-deps
   // a question in the address (the Home page's box, a shared link) is answered on arrival
-  useEffect(() => { const q = params.get("q"); if (q) void ask(q); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const q = params.get("q");
+    if (q) void ask(q, params.get("key") ?? undefined);
+    return () => active.current?.abort();
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   return <>
     <div className="page-head"><div>
       <h1>Ask CIP</h1>
-      <p className="lede">Ask anything about the surveys in plain words: a share, how many people, the top answers, a trend by week, two weeks, four weeks, month, quarter or year, a comparison, or a cut such as generation. Every figure is exact, from the surveys only.</p>
+      <p className="lede">Ask about the surveys in plain words. Get a figure, compare periods, or see how answers differ across groups. Each result links to its source.</p>
     </div></div>
     <div className="stack">
       <section className="card ask-panel" ref={panel}>
@@ -288,7 +329,11 @@ export default function Ask() {
           <label className="sr-only" htmlFor="ask">Your question</label>
           <input id="ask" value={text} onChange={e => {   // the box emptied: the answers go with it
             setText(e.target.value);
-            if (!e.target.value.trim()) { setReplies([]); setError(""); setParams({}, { replace: true }); }
+            if (!e.target.value.trim()) {
+              active.current?.abort();
+              asked.current = "";
+              setBusy(false); setReplies([]); setError(""); setParams({}, { replace: true });
+            }
           }} onKeyDown={e => { if (e.key === "Escape") setOffer(null); }}
             placeholder="e.g. How are higher gasoline prices affecting consumer spending?" autoFocus />
           <MicButton text={text} setText={setText} />
@@ -303,13 +348,14 @@ export default function Ask() {
           {offer.suggestions.map(s => <button key={s.key} type="button" className="tag" title={`${s.qcode}: asked in ${s.waves} ${s.waves === 1 ? "wave" : "waves"}`}
             onClick={() => void ask(s.text, s.key)}>{s.text} <span className="muted">· {s.waves} {s.waves === 1 ? "wave" : "waves"}</span></button>)}
         </div>}
+        <p className="sr-only" role="status">{busy ? "Finding survey evidence." : replies.length ? "New answer available." : ""}</p>
         {error && <p className="state error" role="alert">Could not answer: {error}</p>}
         {!replies.length && <div className="tagrow ask-examples" aria-label="Example questions">
           {EXAMPLES.map(q => <button key={q} type="button" className="tag" onClick={() => void ask(q)}>{q}</button>)}
         </div>}
       </section>
-      {replies.map((r, i) => <Reply key={replies.length - i} question={r.question} answer={r.answer} audience={audience} weighted={weighted}
-                                    checking={!!r.checking} checked={!!r.checked} onAsk={(q, key) => void ask(q, key)} />)}
+      {replies.map(r => <Reply key={r.id} question={r.question} answer={r.answer} audience={audience} weighted={weighted}
+                                    checking={r.checking} onAsk={(q, key) => void ask(q, key)} />)}
     </div>
   </>;
 }

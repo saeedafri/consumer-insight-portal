@@ -2,8 +2,11 @@
 live link): a file the build also gzipped goes out gzipped to a browser that accepts it, plain to one that does not,
 and a repeat visit with the same ETag gets a 304. Also the build step that announces the portal's code in its page."""
 import gzip
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 from starlette.testclient import TestClient
 
@@ -29,6 +32,7 @@ def test_gzipped_copy_is_sent_when_the_browser_accepts_it(tmp_path):
     assert again.status_code == 304
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not installed: the image build runs this script itself")
 def test_build_announces_the_portal_code_the_first_scripts_load(tmp_path):
     """frontend/scripts/preload-portal.mjs (npm run build): the files named inside the page's first scripts are
     preloaded from the page's <head>; files the HTML already names are not repeated."""

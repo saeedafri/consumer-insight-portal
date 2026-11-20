@@ -83,6 +83,33 @@ def test_mysql_collation_forbids_naive_python_grouping():
     assert len({"Male", "male", "e", "é"}) == 4
 
 
+def test_fieldwork_replacement_keeps_the_old_file_if_the_disk_write_fails(tmp_path, monkeypatch):
+    """An idle refresh writes an already-live file. Preserve its name and hard links on failure."""
+    fieldwork = tmp_path / "api/v1/fieldwork"
+    target = fieldwork.with_suffix(".json.gz")
+    old = {"status": "old"}
+    publish.write(fieldwork, old)
+    retained = tmp_path / "previous.json.gz"
+    retained.hardlink_to(target)
+    previous = target.read_bytes()
+    write_bytes = Path.write_bytes
+
+    def failed_disk_write(path, content):
+        assert target.read_bytes() == previous
+        write_bytes(path, content[:6])
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr(Path, "write_bytes", failed_disk_write)
+    with pytest.raises(OSError, match="disk unavailable"):
+        publish.write(fieldwork, {"status": "new"})
+    assert target.read_bytes() == retained.read_bytes() == previous
+    assert list(fieldwork.parent.iterdir()) == [target]
+    monkeypatch.setattr(Path, "write_bytes", write_bytes)
+    publish.write(fieldwork, {"status": "new"})
+    assert json.loads(gzip.decompress(target.read_bytes())) == {"status": "new"}
+    assert retained.read_bytes() == previous
+
+
 def test_people_closes_the_stream_when_row_iteration_fails():
     class BrokenStream:
         closed = False
@@ -288,3 +315,12 @@ def test_a_rollback_never_lands_on_a_version_a_killed_publish_left_half_written(
     time.sleep(0.01)
     publish.publish(tmp_path, jobs=1)
     assert publish.rollback(tmp_path).name == first.name
+
+
+def test_swap_to_an_older_version_never_deletes_it(tmp_path):
+    # a rollback or restore with more than KEEP versions on disk deleted the version it had just made live (20 Nov 2026)
+    versions = [tmp_path / f".build-202611{day}T000000Z" for day in (10, 15, 16, 17)]
+    for version in versions:
+        (version / "api" / "v1").mkdir(parents=True)
+    publish.swap(tmp_path, versions[0])
+    assert versions[0].is_dir() and (tmp_path / "current").resolve() == versions[0].resolve()

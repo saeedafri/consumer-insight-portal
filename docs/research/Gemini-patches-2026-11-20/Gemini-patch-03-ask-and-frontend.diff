@@ -1,0 +1,146 @@
+--- a/api/ask_index.py	2026-11-20 02:04:36
++++ b/api/ask_index.py	2026-11-20 02:54:00
+@@ -350,7 +350,7 @@
+         close = difflib.get_close_matches(word, self.vocabulary, n=1, cutoff=0.85)   # whole words: "submarine" stays unknown
+         return close[0][:5] if close and close[0][:5] in self.postings else None
+ 
+-    def correct_spelling(self, question: str) -> str:
++    def correct_spelling(self, question: str, visible: set[int] | None = None) -> str:
+         """The question with a misspelt word put right: a word of 5+ letters no survey question uses, closest to a word of
+         a long-running retailer, brand or store list's answers (0.85: "walmrt" → "walmart"), else to a survey word with
+         the same first two letters and a length within one (0.88: "subcription" → "subscription", staging 13 Nov 2026);
+@@ -359,13 +359,21 @@
+         a survey word with an ending (-s, -ed, -ing…) is left alone, and so is an English word the search model knows
+         whole (english_words: "marking" became "making", "debut" "debt"). Of 3,211 test questions six change, each a
+         real typo (review of 15 Nov 2026)."""
++        def visible_word(candidate: str) -> bool:
++            if visible is None:
++                return True
++            keys = self.postings.get(candidate[:5], ())
++            return any(not visible.isdisjoint(self.docs[k]["surveys"]) for k in keys)
++
+         def fix(found: re.Match) -> str:
+             word = found.group(0).lower()
+             if (len(word) < 5 or word[:5] in self.postings or word in self.word_set or word in STOP or word in self.english
+                     or self.inflected(word)):
+                 return found.group(0)
+-            close = difflib.get_close_matches(word, self.brand_words, n=1, cutoff=0.85) or difflib.get_close_matches(
+-                word, [w for w in self.by_start.get(word[:2], []) if abs(len(w) - len(word)) <= 1], n=1, cutoff=0.88)
++            brands = [w for w in self.brand_words if visible_word(w)]
++            pool = [w for w in self.by_start.get(word[:2], []) if abs(len(w) - len(word)) <= 1 and visible_word(w)]
++            close = difflib.get_close_matches(word, brands, n=1, cutoff=0.85) or difflib.get_close_matches(
++                word, pool, n=1, cutoff=0.88)
+             if not close:
+                 return found.group(0)
+             return close[0].capitalize() if found.group(0)[0].isupper() else close[0]   # "Walmrt" → "Walmart"
+--- a/api/assistant.py	2026-11-20 02:30:18
++++ b/api/assistant.py	2026-11-20 02:54:39
+@@ -119,7 +119,7 @@
+     typed ("ama prim" finds "Amazon Prime membership"), longest-running first. Names only, no search and no model: a few milliseconds, no cost.
+     Each carries its survey question's key, so choosing one answers from that question (15 Nov 2026)."""
+     asked = " ".join(str(typed).split())[:200]
+-    fixed = index.correct_spelling(asked)
++    fixed = index.correct_spelling(asked, visible)
+     words = [w for w in re.findall(r"[a-z0-9]+", fixed.lower()) if w not in STOP and len(w) >= 2]
+     found: dict[str, dict] = {}
+     if words:
+@@ -489,21 +489,21 @@
+     the nearest survey question by meaning and the rules, no model (~100 ms); check is then true when the model's reading
+     may differ, and the page asks again without quick to have it read (the Ask page shows the quick answer meanwhile).
+     key: a follow-up's survey question (follow_ups), answered from it when this person may see it; else ignored."""
+-    question = index.correct_spelling(" ".join(str(question).split())[:500])   # "walmrt shoppers" is Walmart's
++    question = index.correct_spelling(" ".join(str(question).split())[:500], visible)   # scoped to caller's visible waves
+     plan = ask_reader.read(question)
+     text = plan["question"]
+-    if re.search(r"\b(?:census|survey|population)[ -]weighted\b|\b(?<!un[- ])(?<!not )weighted "
+-                 r"(?:share|percentage|proportion|averages?|means?|medians?|rates?|estimates?|results?|figures?|counts?|data|by)\b|"
++    if re.search(r"\b(?:census|survey|population)[ -]weighted\b|\b(?<!un[- ])(?<!not )weighted\b(?!\s+(?:not|off|disabled))|"
+                  r"\b(?<!not )(?<!don't )(?:use|apply) (?:survey |census |population )?(?:weights|weighting)\b", text):
+         return no_figure("Ask CIP uses unweighted survey results. Ask for the unweighted figure or check whether your survey view offers Census weighting.", plan)
+     if re.search(r"\b(?:who also (?:bought|purchased|used|shopped|selected|chose|answered)|"
+-                 r"(?:bought|purchased|shopped) (?:from|at) both)\b", text):
+-        return no_figure("This question needs a count of people who did both things. Try Audiences to check for overlap within a survey wave, or ask about each group separately.", plan)
++                 r"(?:bought|purchased|used|shopped|selected|chose) (?:from |at )?both\b|"
++                 r"overlap between\b|either .{1,40} or .{1,40}\b)", text):
++        return no_figure("This question needs a count of people who did both things (or either answer combined). Try Audiences to check within a survey wave, or ask about each option separately.", plan)
+     if re.search(r"\b(?:causal effect|causal impact|did .{1,80} cause|what caused|how much did .{1,80} cause)\b", plan["question"]):
+         return no_figure("These survey results cannot establish what caused the change. Try asking what respondents reported or how their answers changed over time.", plan)
+     if len(plan["cuts"]) > 1:
+         return no_figure("Ask CIP can analyze one demographic dimension at a time. Try one group or use Cross-tabs for two dimensions.", plan)
+-    if re.search(r"\b(?:median|average (?:price|amount|cost|spend(?:ing)?))\b", plan["question"]):
++    if re.search(r"\b(?:median|(?:average|mean) (?:price|amount|cost|spend(?:ing)?)|on average .{1,40}(?:spend|spent|pay|paid))\b", plan["question"]):
+         return no_figure("Ask CIP cannot calculate that spending or price statistic from its published response shares. Try a spending range or ask what share chose one.", plan)
+     selected = next((sid for sid in reversed(index.docs[key]["surveys"]) if sid in visible), None) if key in index.docs else None
+     if selected is not None:   # a follow-up keeps the selected question's country
+@@ -823,7 +823,7 @@
+     # keeps its answers too, or every repeat was worked out again (second review, 15 Nov 2026)
+     vectors_ready = index.vectors is not None or getattr(index, "settled", True)
+     found = answer(question, index, visible, quick, key)
+-    if (fixed := index.correct_spelling(question)) != question:   # the page says so: "answered as …, the spelling put right"
++    if (fixed := index.correct_spelling(question, visible)) != question:   # scoped to caller's visible waves
+         found = {**found, "corrected": fixed}
+     if found.get("understood") == "model" and found.get("mode") == "figures":
+         learn(found["verify"], index)
+--- a/frontend/src/screens/Ask.tsx	2026-11-20 01:56:43
++++ b/frontend/src/screens/Ask.tsx	2026-11-20 02:54:00
+@@ -241,7 +241,7 @@
+     {answer.suggestions.length > 0 && <div className="ask-more">
+       <p className="small muted">{answer.mode === "choose" ? "Choose one" : answer.no_source ? "Closest questions" : answer.suggestions[0]?.alt ? "Did you mean" : "Other questions that match"}</p>
+       <div className="tagrow">{answer.suggestions.map(s => <button key={s.key} type="button" className={s.alt ? "tag sig" : "tag"} title={s.text}
+-        onClick={() => onAsk(answer.no_source ? question : s.text, s.key)}>{s.qcode}: {s.text.length > 70 ? s.text.slice(0, 69) + "…" : s.text}</button>)}</div>
++        onClick={() => onAsk(question, s.key)}>{s.qcode}: {s.text.length > 70 ? s.text.slice(0, 69) + "…" : s.text}</button>)}</div>
+     </div>}
+   </article>;
+ }
+@@ -289,7 +289,7 @@
+           if (signal.aborted) return;
+           setReplies(replies => replies.map(reply => reply.id !== id ? reply : {
+             ...reply, checking: false,
+-            answer: checked?.understood === "model" ? checked : reply.answer,
++            answer: checked && (checked.understood === "model" || checked.mode === "none") ? checked : reply.answer,
+           }));
+         };
+         void send<Answer>("POST", "/api/v1/ask", { ...body, check: true }, signal).then(settle, () => settle(null));
+--- a/frontend/src/screens/Explorer.tsx	2026-11-12 12:50:39
++++ b/frontend/src/screens/Explorer.tsx	2026-11-20 02:57:15
+@@ -32,10 +32,16 @@
+   const { data: book, isLoading, error } = useBook(id);
+   const me = useMe().data;
+   const chart = useRef<Chart | null>(null);
+-  const question = useMemo(() => book?.questions.find(x => x.id === code) ?? book?.questions[0], [book, code]);
++  const question = useMemo(() => {
++    if (!book?.questions.length) return undefined;
++    if (!code) return book.questions[0];
++    const needle = code.toLowerCase();
++    return book.questions.find(x => x.id === code || x.id.toLowerCase() === needle || x.number.toLowerCase() === needle);
++  }, [book, code]);
+   if (isLoading) return <SkeletonScreen kind="question" />;
+   if (error || !book) return <Failure error={error} />;
+-  if (!question) return <Empty>This wave has no questions with percentages.</Empty>;
++  if (!book.questions.length) return <Empty>This wave has no questions with percentages.</Empty>;
++  if (!question) return <Empty>Question “{code}” was not found in this wave. Select a question from the list.</Empty>;
+   // every question offers all five views (bars, columns, stacked, donut, table); a hand-edited ?view= falls back to bars
+   const view = (VIEWS.some(v => v.key === params.get("view")) ? params.get("view") : "bars") as View;
+   const shown = present(book.n);   // cuts with respondents in this wave
+--- a/frontend/src/theme.ts	2026-11-08 21:14:09
++++ b/frontend/src/theme.ts	2026-11-20 02:54:00
+@@ -36,7 +36,7 @@
+ };
+ const DARK: typeof LIGHT = {
+   ...LIGHT, redLine: "#E5484A", ink: "#F2F4F6", ink2: "#B2BCC5", ink3: "#97A3AE", paper: "#13171B", surface: "#20252A", raised: "#2A3037",
+-  blue: "#A3C0CE", bar: "#6491A9", s1: "#A3C0CE",   // bar: the mockups' mid blue, 4.5:1 on the cards s2: "#7FA7BC", s3: "#5C8DA8", other: "#8C8785",
++  blue: "#A3C0CE", bar: "#6491A9", s1: "#A3C0CE", s2: "#7FA7BC", s3: "#5C8DA8", other: "#8C8785",   // bar: mid blue, 4.5:1 on cards
+   grey: "#97A3AE", silver: "#5A646E", line: "#323A42", lineStrong: "#6B7680", mist: "#323A42", warn: "#FEBC20",
+   negStrong: "#C9C5C3", negMild: "#8C8785", posMild: "#D07676", posStrong: "#E5484A",
+   heat: ["#2C3134", "#344550", "#41606F", "#5C8DA8", "#86AEC2", "#B9D2DE"],
+--- a/frontend/src/screens/Retailers.tsx	2026-11-16 19:54:17
++++ b/frontend/src/screens/Retailers.tsx	2026-11-20 02:54:39
+@@ -183,7 +183,7 @@
+   const trend = series.map(ser => {
+     const side = sides[ser.side];
+     const r = side.picked.find(p => ser.label.startsWith(p.name))!;
+-    return { name: ser.label, type: "line", connectNulls: side.market.sector,   // a sector runs every few months: its surveys joined symbolSize: 5, color: colour(series.indexOf(ser)),
++    return { name: ser.label, type: "line", connectNulls: side.market.sector, symbolSize: 5, color: colour(series.indexOf(ser)),   // a sector runs every few months: its surveys joined
+              data: trendWeeks.map(w => { const c = r.weeks[String(w)]; const i = side.market.weeks.indexOf(w); return c && i >= 0 ? share(c[0], side.market.asked[i]) : null; }) };
+   });
+   const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, "Retailer shoppers",

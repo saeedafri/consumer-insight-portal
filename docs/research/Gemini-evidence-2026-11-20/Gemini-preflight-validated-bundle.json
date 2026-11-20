@@ -1,0 +1,85 @@
+{
+  "decision": "BLOCK",
+  "ready": false,
+  "mode": "quality",
+  "next_step": "Keep CPU runtime. Do NOT spend GPU units. Fix every blocking_reason, rebuild publications with rules.answer_labels=1, add independently reviewed dev/test/future cases, and rerun CPU preflight.",
+  "blocking_reasons": [
+    "dataset-report.json does not confirm rules.answer_labels=1 on both source publications; rebuild publications first.",
+    "train needs at least 10 no_answer cases to supervise the zero abstention logit; found 0.",
+    "dev needs >= 35 distinct reviewed groups usable by the reader; found 0.",
+    "test needs >= 30 distinct reviewed groups usable by the reader; found 0.",
+    "future needs >= 30 distinct reviewed groups usable by the reader; found 0.",
+    "dev needs both reviewed answerable targets and reviewed no_answer cases reaching the reader.",
+    "test needs both reviewed answerable targets and reviewed no_answer cases reaching the reader.",
+    "future needs both reviewed answerable targets and reviewed no_answer cases reaching the reader.",
+    "future needs at least one reviewed answerable target group backed by a wave strictly after train_through."
+  ],
+  "warnings": [],
+  "cases_sha256": "e84f0bc0e7bb0ff5b0f8abfb53f01aff9003583f0f757d003e6a8584836589ad",
+  "dataset": {
+    "train_through": "2026-10-26",
+    "test_through": "2026-11-09",
+    "cases_sha256": "e84f0bc0e7bb0ff5b0f8abfb53f01aff9003583f0f757d003e6a8584836589ad"
+  },
+  "baseline_artifacts": {
+    "model_optimized.onnx": {
+      "bytes": 23014303,
+      "sha256": "bb2e99243579f3d5ed780d65b141bd695df04a623c8ef0f62bd781a7d895e8dc"
+    },
+    "tokenizer.json": {
+      "bytes": 711396,
+      "sha256": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66"
+    },
+    "calibration.json": {
+      "bytes": 477,
+      "sha256": "ca168c94cd252472fbc316aedf7da55dd5eab80991d215d26fdafe6d28900dad"
+    }
+  },
+  "split_sizes": {
+    "train": 170,
+    "dev": 203,
+    "test": 77,
+    "future": 0
+  },
+  "splits": {
+    "train": {
+      "cases": 170,
+      "candidate_pairs": 1574,
+      "reader_reached": 170,
+      "target_in_candidates": 170,
+      "no_answer": 0,
+      "unusable": 0,
+      "reviewed_usable_groups": 0
+    },
+    "dev": {
+      "cases": 203,
+      "candidate_pairs": 233,
+      "reader_reached": 17,
+      "target_in_candidates": 16,
+      "no_answer": 0,
+      "unusable": 187,
+      "reviewed_usable_groups": 0
+    },
+    "test": {
+      "cases": 77,
+      "candidate_pairs": 98,
+      "reader_reached": 7,
+      "target_in_candidates": 6,
+      "no_answer": 0,
+      "unusable": 71,
+      "reviewed_usable_groups": 0
+    },
+    "future": {
+      "reviewed_usable_groups": 0
+    }
+  },
+  "later_reviewed_target_groups": 0,
+  "runtime": {
+    "timestamp_utc": "2026-11-19T21:16:15Z",
+    "python": "3.13.12",
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "cpu_count": 10
+  },
+  "scope": "CPU-only preflight gate. Passing preflight authorizes one bounded experiment, never production promotion."
+}

@@ -1,0 +1,60 @@
+Captured UTC: 2026-11-19T21:00:11Z
+HEAD: 312e769667ec5ec29107649c6786d8add7937668
+Branch: master
+Status:
+ M api/ask_index.py
+ M api/ask_model.py
+ M api/ask_reader.py
+ M api/assistant.py
+ M api/main.py
+ M docs/API.md
+ M docs/CHANGELOG.md
+ M etl/publish.py
+ M frontend/src/api.ts
+ M frontend/src/components/bits.tsx
+ M frontend/src/screens/ApiGuide.tsx
+ M frontend/src/screens/Ask.tsx
+ M frontend/src/screens/WhatsNew.tsx
+ M scripts/ask_golden.py
+ M status/README.md
+ M tests/test_api_speed.py
+ M tests/test_assistant.py
+ M tests/test_publish.py
+?? docs/ETL-Docs/videos/
+?? docs/research/CIP-platform-and-Ask-review-2026-11-20.md
+?? scripts/colab/ask_cip_train.ipynb
+?? scripts/colab/ask_cip_train.py
+?? tests/test_ask_colab.py
+?? tests/test_ask_golden.py
+
+SHA256 of modified & key untracked files:
+5d4828785d1e61187cef112b75195d5032bad1cebf79e45aabf41828007363dc  api/ask_index.py
+ac0f5b91895c0f30a9d16686eeb9723cba23047535d151489e5d2cc9bbe68b00  api/ask_model.py
+70978315feac4ad77bfb3e8a34c238a47c1718c1de1c08c19c2f5117c08c7584  api/ask_reader.py
+7a4a6190eb7e043fd25dd84ce3106d2d085481d3a3a18404d01588c337be0257  api/assistant.py
+6057882a62bd594d441caf24a8d3aa73082e59e630ab11f199b3e8f2556251ef  api/main.py
+9216d0d7205f63ce949257e15a779d347d3883fd0f009927db47aea19227ae2a  docs/API.md
+87d561a8fe53c5d25e7a7e28bc7e6031bed1f0d747ee8c2f650fbfa16f52e66c  docs/CHANGELOG.md
+e43171642a0d8abb13fdc3ced94536f5064dda8df30b0097481778cc72d318a6  etl/publish.py
+eff8e20247f83f0a8de4cca962d8a957fa8c9b1792e8e57a23c1ee27191dc7ef  frontend/src/api.ts
+728733e1935ba833b5924c0de961437b9a3d602ac6ce888b14c97bfb62612c11  frontend/src/components/bits.tsx
+d288c1af588d867cb9ac4cc724d38c6191b67fdf022b9a17f21dc38376486610  frontend/src/screens/ApiGuide.tsx
+0e4f21b6f313cbdb53f310de0fefe950c00712d24b20ce8347a807269169b004  frontend/src/screens/Ask.tsx
+a116defab0588d95945c112132b18a3d7d9fcd1b2885a884e316bf9e03c93138  frontend/src/screens/WhatsNew.tsx
+6d17558a7b545b9ec954c296d348596b320a2f6c498ea66ed319ceca8b265380  scripts/ask_golden.py
+216857ae5ecbb1d642eddb7060698a3295024775c778670ca43819e2835883af  status/README.md
+138af6932f4e22367aedd38a13cb23dd5c22fab9cce1bc6f35b894762c5f8c0d  tests/test_api_speed.py
+83e7f44231469a1fbd2589fc697f64acb3f658ebf6baba67b48c4356fc3efc8d  tests/test_assistant.py
+f891dfb456384c1c6603fbaf303abf31ebc3efd32a0c30248709cecfb162b30e  tests/test_publish.py
+fd11438a8ded4e81fcf8b2db7ae8b5623d581ddab4a88b34c38f3b438e20d8bf  tests/test_ask_colab.py
+4301bc4df883995e90ae53fdaa082f96931a06b4852724f4e80adab482214d98  tests/test_ask_golden.py
+12f069eafe4ea9cd061c56d22c61ec3a2924562e9ffe5012a90f9ea4fc097a04  docs/research/CIP-platform-and-Ask-review-2026-11-20.md
+9450c0de2d5eab96823052794d617a34d5ee9f75b1aaafe9394114fb6fbfbb6a  scripts/colab/ask_cip_train.py
+d5a3fce05532563da14d9817b34e25dc46631e7881df0062a177f64cff10f827  scripts/colab/ask_cip_train.ipynb
+6909503215377665affe5b0081276c10a3b581332f81de6190a57fdf00a1bbb7  frontend/package.json
+8c1bebd2191fe796d0f4b7f767b790ac05f86d62250f89cf407347af372ef465  frontend/package-lock.json
+bb2e99243579f3d5ed780d65b141bd695df04a623c8ef0f62bd781a7d895e8dc  models/ask-reader/model_optimized.onnx
+d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66  models/ask-reader/tokenizer.json
+ca168c94cd252472fbc316aedf7da55dd5eab80991d215d26fdafe6d28900dad  models/ask-reader/calibration.json
+51f1bd0addd6e859e42c2c8021a5e5461385bb676a649f4b269aa445449f2431  models/bge-small-en-v1.5/model_optimized.onnx
+d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66  models/bge-small-en-v1.5/tokenizer.json

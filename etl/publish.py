@@ -38,6 +38,7 @@ import shutil
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -65,8 +66,13 @@ def write(path: Path, data) -> int:
     body = data if isinstance(data, bytes) else payloads.encode(data)
     path.parent.mkdir(parents=True, exist_ok=True)
     target = path.with_name(path.name + ".json.gz")
-    target.unlink(missing_ok=True)   # it may be a hard link to the live version's file: never write through it
-    target.write_bytes(gzip.compress(body, 6))
+    part = target.with_name(f".cip-{os.getpid()}-{threading.get_ident()}.part")
+    try:
+        part.write_bytes(gzip.compress(body, 6))
+        part.replace(target)   # preserve the old file during a live refresh and never write through a hard link
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
     return len(body)
 
 
@@ -268,7 +274,8 @@ def swap(root: Path, target: Path) -> None:
     os.replace(link, root / "current")
     versions = sorted(p for p in root.glob(".build-*") if p.is_dir())
     for old in versions[:-KEEP]:
-        shutil.rmtree(old, ignore_errors=True)
+        if old.name != target.name:   # a rollback or restore to an older version must not delete what it just made live (review of 20 Nov 2026)
+            shutil.rmtree(old, ignore_errors=True)
     # nginx's cached answers need no emptying: their key holds the published version (deploy/cip_locations.conf,
     # $realpath_root), so the new version starts new keys at once; the old ones are never asked for again and nginx
     # drops them itself (deploy/nginx.conf proxy_cache_path: unused for 7 days, or past 512 MB)

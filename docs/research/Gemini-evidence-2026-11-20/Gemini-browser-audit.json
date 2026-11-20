@@ -1,0 +1,72 @@
+{
+  "step1_url": "http://127.0.0.1:18112/app/ask",
+  "step1_title": "Portal · Coresight Consumer Intelligence Platform",
+  "step2_prime": {
+    "headline": "66.2% answered “I have an Amazon Prime membership myself” on 7 Sep 2026 (233 of 352 respondents).",
+    "source": "United States · 7 Sep 2026 · 1 survey wave · Unweighted · Source EC6 →",
+    "how": "Closest survey match",
+    "has_pin_btn": false,
+    "has_export_btn": true,
+    "table_text": "Answer7 Sep 2026I have an Amazon Prime membership myself66.2% (n=352)I do not have access to Amazon Prime membership22.7% (n=352)I have access to Amazon Prime membership benefits through someone else in my household, but I do not have an Amazon Prime membershi"
+  },
+  "step3_initial": {
+    "headline": "At least one requested period has no comparable survey data. Try a single period or choose two available periods in Trends.",
+    "tags": [
+      "q3: Online purchases categories",
+      "EC2: Retailers purchased from online",
+      "Q58: Categories bought online",
+      "G4: Retailers for online grocery purchases"
+    ]
+  },
+  "step3_after_q3": {
+    "question": "Did more people buy online in October 2026 than September 2026?",
+    "headline": "“Food or beverages (i.e., groceries)”: 27.8% over 7 Sep 2026 – 28 Sep 2026 (1,612 responses) vs 29.5% over 5 Oct 2026 – 26 Oct 2026 (1,609 responses), +1.7 percentage points, not a significant change.",
+    "source": "United States · 7 Sep 2026 – 28 Sep 2026 vs 5 Oct 2026 – 26 Oct 2026 · 8 survey waves · Unweighted · Source q3 →",
+    "takeaway": "What this tells us29.5% chose “Food or beverages (i.e., groceries)” over 5 Oct 2026 – 26 Oct 2026, up 1.7 points since 7 Sep 2026 – 28 Sep 2026.",
+    "other_match_tags": [
+      "EC2: Retailers purchased from online",
+      "DP1: Department store purchases",
+      "EC4: Categories purchased online",
+      "EC1: Online purchases in past three months"
+    ]
+  },
+  "step3_after_clicking_other_match_ec2": {
+    "input_value": "Retailers purchased from online",
+    "url": "http://127.0.0.1:18112/app/ask?q=Retailers+purchased+from+online&key=CSI-US%2Ftracker%2FEC2",
+    "question": "Retailers purchased from online",
+    "headline": "73.6% answered “Amazon” on 7 Sep 2026, the latest (259 of 352 respondents).",
+    "source": "United States · 28 Feb 2022 – 7 Sep 2026 · 22 survey waves · Unweighted · Source EC2 →"
+  },
+  "step4_mobile_ask": {
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "horizontal_overflow_px": 0,
+    "ask_box_height": 54
+  },
+  "step4_mobile_drawer": {
+    "drawer_present": true,
+    "drawer_width": 280,
+    "close_button_inside_drawer": 0
+  },
+  "step5_explorer_upper_Q2": {
+    "url": "http://127.0.0.1:18112/app/w/533/questions/Q2",
+    "h1": "Which, if any, of these have you done in the past two weeks?",
+    "q_head": "Consumer Intelligence Platform",
+    "body_snippet": "Q1Which, if any, of these have you done in the past two weeks?1 of 41▾Filter questionsShopping and SpendingQ1Which, if any, of these have you done in the past two weeks?n=404Q2Which, if any, of these categories have you purchased IN A STORE in the past two weeks?n=404Q3And which, if any, of these categories have you pu"
+  },
+  "step5_explorer_lower_q2": {
+    "url": "http://127.0.0.1:18112/app/w/533/questions/q2",
+    "h1": "Which, if any, of these categories have you purchased IN A STORE in the past two weeks?",
+    "q_head": "Consumer Intelligence Platform",
+    "body_snippet": "Q2Which, if any, of these categories have you purchased IN A STORE in the past two weeks?2 of 41▾Filter questionsShopping and SpendingQ1Which, if any, of these have you done in the past two weeks?n=404Q2Which, if any, of these categories have you purchased IN A STORE in the past two weeks?n=404Q3And which, if any, of t"
+  },
+  "step6_sectors_pin": {
+    "url": "http://127.0.0.1:18112/app/sectors",
+    "pin_buttons_count": 1,
+    "pin_button_texts": [
+      "Pin"
+    ]
+  },
+  "console_errors": [],
+  "page_errors": []
+}

@@ -4,6 +4,18 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "20 November 2026",
+  entries: [
+    { title: "Ask reads dates as you say them, and safer weekly loads and deploys",
+      body: "Ask CIP reads \"this quarter\", \"last quarter\", \"this year\", \"year to date\", \"right now\", a month without a year (\"October vs September\") and a quarter without a year (\"Q4\") as calendar periods, and says when a question was not asked then. A comparison whose best match lacks one of the months uses a near-equal question that has both. An abbreviation no survey uses, such as OTT, gets the closest survey questions instead of an unrelated figure. A question about one group with no period named uses the newest wave that has that group. When a newly loaded wave's answers differ from Forsta, or the portal files fail to publish, its metric alerts and its loaded email are held and the failure email says why. Excel and PowerPoint downloads are built one at a time, so they no longer slow the rest of the portal; a second one waits a moment or asks you to retry. Every deploy now runs the full test suite first." },
+    { title: "Fixes from the 20 November code reviews",
+      body: "Choosing another matching question in Ask keeps your dates and groups. A link with a question code in other capitals opens that question, and an unknown code says so instead of showing the first question. In dark mode the second, third and other chart series have their own colours again, and the Retailer databank's trend lines their markers. The In store vs online footnote no longer says small groups are hidden: every group is shown, with its base. Behind the scenes: rolling back to an older published version keeps that version, the Forsta check catches a multi-answer stored the wrong way round, a China folder named with a month and year is not read as a day, the audiences rules file is found again, and staff never share cached answers with someone outside Coresight." },
+    { title: "Ask puts the finding and its survey source first",
+      body: "Ask CIP leads with a plain-language result, followed by the country, periods, number of survey waves, weighting and source link. It explains when a survey cannot establish what caused a change. For a request for weighted figures or for the same people across two answers, Ask explains what it can calculate and where to check next. A comparison explains when a requested group has no figures for one of the periods. If a cached data request overlaps a publication change, the API asks the caller to retry against the new version. A failed refresh of an existing published file keeps the previous file readable." },
+    { title: "Ask CIP shows the sample size behind each figure",
+      body: "Ask CIP shows each figure with its own sample size in the table and in CSV and Excel. A chart labels the group with a sample size when its figures share one base. Suggested questions keep their selected survey question, clearing the box cancels the active request, and optional AI checks can update the period or group as well as the question. The answer view shows how the question was matched. Ask explains when it lacks a requested period or demographic group." },
+  ],
+}, {
   date: "17 November 2026",
   entries: [
     { title: "The portal is now called Consumer Intelligence Platform",

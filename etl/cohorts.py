@@ -33,7 +33,7 @@ from shared.core.database import get_engine
 
 log = logging.getLogger("cip.cohorts")
 
-CONFIG = Path(__file__).resolve().parents[2] / "config" / "cohorts.yml"
+CONFIG = Path(__file__).resolve().parents[1] / "config" / "cohorts.yml"
 
 
 def _named(rule: dict) -> set[str]:

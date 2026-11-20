@@ -227,19 +227,20 @@ export function Menu({ label, icon, children, keep = false, name, className = ""
 
 /** CSV, Excel, PowerPoint (and the chart as PNG) of the same table under one Export menu, and Pin to a board:
  *  every download on every screen carries the same rows and notes. */
-export function ExportButtons({ onExport, png }: { onExport: (format: Format) => unknown; png?: () => unknown }) {
+export function ExportButtons({ onExport, png, pin = true }: { onExport: (format: Format) => unknown; png?: () => unknown; pin?: boolean }) {
   const me = useMe().data;
   const [note, setNote] = useState("");
   const run = (format: Format) => { setNote(""); void Promise.resolve().then(() => onExport(format)).catch((e: Error) => setNote(e.message)); };
   const files = allowed(me, "export");
-  if (!files && !png && !allowed(me, "boards")) return null;
+  const canPin = pin && allowed(me, "boards");
+  if (!files && !png && !canPin) return null;
   return <div className="head-actions export" role="group" aria-label="Download">
     {(files || png) && <Menu label="Export" icon={<IconDownload />}>
       {files && ([["csv", "CSV"], ["xlsx", "Excel"], ["pptx", "PowerPoint"]] as const).map(([format, label]) =>
         <button key={format} onClick={() => run(format)} aria-label={`Download this table as ${label}`}>{label}</button>)}
       {png && <button onClick={() => void png()} aria-label="Download the chart as a PNG image (light theme, with the source line)">PNG image</button>}
     </Menu>}
-    {allowed(me, "boards") && <button className="btn" onClick={() => run("board")} aria-label="Pin this table, as it is now, to a board you can share and download as a deck">
+    {canPin && <button className="btn" onClick={() => run("board")} aria-label="Pin this table, as it is now, to a board you can share and download as a deck">
       <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M16 3l5 5-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4z" /></svg> Pin
     </button>}
     {note && <span className="muted" role="alert" style={{ alignSelf: "center", padding: "0 8px" }}>{note}</span>}

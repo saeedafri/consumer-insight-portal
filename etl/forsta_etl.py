@@ -510,11 +510,12 @@ def _reconcile(survey_id, client, index):
                         continue
                     checked += 1
                     got = stored.get(name)
-                    same = got is not None and (
-                        (want[0] is not None and got[0] == want[0]) or
+                    # both sides coded: the code decides; a multi-answer's 0 and 1 share one item label, so a flipped
+                    # answer passed on its label (review of 20 Nov 2026)
+                    same = got is not None and (got[0] == want[0] if want[0] is not None and got[0] is not None else (
                         (want[1] is not None and got[1] == want[1]) or
                         (want[2] is not None and got[2] is not None and round(float(got[2]), 4) == round(want[2], 4)) or
-                        (want[3] is not None and got[3] == want[3]))
+                        (want[3] is not None and got[3] == want[3])))
                     if not same and len(problems) < 200:
                         problems.append(f"{rec.get('uuid')} {name}: Forsta {value!r}, stored {got}")
     except ForstaError as exc:                    # 428 = hibernated: nothing to compare against until reactivated

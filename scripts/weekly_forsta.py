@@ -12,9 +12,10 @@ Forsta closes it. Any other day it is one run. A run that finds nothing new cost
 queries; integrity and publication drift run after a load and on Friday.
 
 Exit codes: 0 everything due loaded and verified · 1 a wave failed to load or
-verify · 2 Forsta rejected the key or the schema is behind the code · 3 loaded, but a published number moved ·
-4 the database stayed unreachable (4 tries, 5 minutes apart) · 5 the integrity check found something it
-could not heal (etl/integrity.py).
+verify (a loaded wave whose answers differ from Forsta counts: no alerts and no "loaded" email for it) · 2 Forsta
+rejected the key or the schema is behind the code · 3 loaded, but a published number moved · 4 the database stayed
+unreachable (4 tries, 5 minutes apart) · 5 the integrity check found something it could not heal (etl/integrity.py) ·
+6 the portal files could not be published (the previous version stays live; no "loaded" email).
 
 Every warning and error also goes to logs/forsta-etl-errors.jsonl, one JSON object per line (run, step,
 error type, traceback); secrets from the environment are masked in both logs.
@@ -130,12 +131,16 @@ def run(client=None) -> int:
         if full:
             FULL_CHECKED.write_text(today)
     broken = integrity.run()                        # heals derived rows; reports the rest
+    # a wave whose answers differ from Forsta is not announced: no metric alerts, no "loaded" email, exit 1 (20 Nov
+    # 2026: both went out before the failure email, so the team could act on numbers the check had just doubted)
+    held = set()
     for path in result["loaded"]:                   # verify counted the answers; this compares their values (one GET)
         try:
             checked, problems = forsta_etl.reconcile_survey(forsta_etl.survey_id_of(path), client)
         except Exception as exc:
             checked, problems = 0, [f"{type(exc).__name__}: {str(exc)[:200]}"]
         if problems or checked == 0:
+            held.add(path)
             broken.append(f"survey {path}: {len(problems)} of {checked} answers differ from Forsta {problems[:3]}"
                           if checked else f"survey {path}: no answer could be compared with Forsta")
     if result["loaded"]:                            # the topic dashboards (config/dashboards.yml) of the new waves
@@ -145,22 +150,25 @@ def run(client=None) -> int:
             dashboards.build_for([forsta_etl.survey_id_of(path) for path in result["loaded"]])
         except Exception as exc:                    # last week's dashboards stay live; say so
             tell(notify.failure, "building the topic dashboards", str(exc))
-        notify.alerts([forsta_etl.survey_id_of(path) for path in result["loaded"]])   # the team's metric alerts (api/team.py)
+        notify.alerts([forsta_etl.survey_id_of(path) for path in result["loaded"] if path not in held])   # the team's metric alerts (api/team.py)
         for path in result["loaded"]:               # open-ended answers coded into themes, charted with the rest
             try:
                 open_ends.code_wave(forsta_etl.survey_id_of(path))
             except Exception as exc:
                 tell(notify.failure, f"coding the open-ended answers of {path}", str(exc))
     # the standard screens as prebuilt files; after a failed reload too, which took that wave's serving rows away
+    published = True
     if result["loaded"] or result["failed"] or ahead or not (publish.ROOT / "current").exists():
         try:
             publish.publish()
         except Exception as exc:                    # the previous version stays live; say so
+            published = False
             tell(notify.failure, "publishing the portal files", str(exc))
     elif kept:                                      # no new version: only the Fieldwork file is refreshed in place
         fieldwork.publish(publish.ROOT / "current", publish.write)
-    for path in result["loaded"]:                   # the team's email last: its dashboards and screens are live by now
-        tell(notify.survey_loaded, forsta_etl.survey_id_of(path))
+    for path in result["loaded"] if published else []:   # the team's email last: its dashboards and screens are live by now
+        if path not in held:
+            tell(notify.survey_loaded, forsta_etl.survey_id_of(path))
     if broken:   # the count in the subject: a different problem is told at once, not after the 6-hour repeat window
         tell(notify.failure, f"integrity check: {len(broken)} problem{'s' if len(broken) > 1 else ''}", "\n".join(broken))
     if result["failed"]:
@@ -176,7 +184,7 @@ def run(client=None) -> int:
     if len(moved):
         tell(notify.failure, f"published numbers moved in {len(moved)} publication{'s' if len(moved) > 1 else ''}",
              moved.to_string(index=False))
-    return 3 if len(moved) else 5 if broken else 0
+    return 1 if held else 6 if not published else 3 if len(moved) else 5 if broken else 0
 
 
 def watch(week: dict) -> int:

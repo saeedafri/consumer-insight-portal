@@ -30,7 +30,8 @@ import os
 import re
 import threading
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Optional
@@ -95,6 +96,7 @@ STAMP: tuple = ()
 SCHEDULE: Payload | None = None          # the launch plan against the Forsta register, rebuilt every poll
 SERVING: tuple = ()                      # (count, newest built_at) of srv_wave: the serving data's version
 RESULTS: OrderedDict[tuple, Payload] = OrderedDict()   # (version, kind, args) → finished response, least recent first
+RESULTS_LOCK = threading.Lock()                     # the refresh thread and async requests both invalidate this cache
 CACHE_BYTES = int(os.environ.get("CIP_CACHE_MB", "256")) * 2**20   # per worker: the cache never grows past this
 CACHED_BYTES = 0
 CACHE_COUNTS = {"hits": 0, "misses": 0}   # RESULTS answered from memory vs built, since this process started (Logs page)
@@ -102,14 +104,21 @@ BUILD_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_BUILD_SLOTS", "8")))   #
 BUILD_WAIT = float(os.environ.get("CIP_BUILD_WAIT", "3"))
 ASK_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_ASK_SLOTS", "6")))   # Ask questions at once per worker: most of a new one
 ASK_WAIT = 8.0                                                              # is ~2 s waiting on the model (no CPU); seconds a question queues   # seconds a request may queue for a slot before "busy, retry"
+# one Excel/PowerPoint build at a time per worker: on the one vCPU, parallel exports raised everyone's p95 about 7x
+# (Codex review, 20 Nov 2026); a second one queues briefly, then "busy, retry"
+EXPORT_SLOTS = asyncio.Semaphore(1)
+EXPORT_WAIT = 20.0
+ASK_GENERATION_LOCK = threading.Lock()   # choose the active path after the preceding index build releases it
 CATALOGUE: SearchIndex | None = None     # every reportable question of every built wave (api/search.py)
 CATALOGUE_ROWS: tuple = ()               # what CATALOGUE was built from, to build a filtered one per scope
 SCOPED: dict[str, SearchIndex] = {}      # scope (shared/core/access.scope) → the catalogue of the waves it may see
 WAVES: tuple = ((), [])                  # (data version, every built wave described): the visibility rule's input
+PUBLISHED_WAVES: tuple = (None, [])       # (resolved path, published wave descriptions): Ask stays on this generation
 WAVES_LOCK = threading.Lock()            # one thread rebuilds the list; a burst after a deploy waits for it, not the pool
 CACHE_RESULTS = os.environ.get("CIP_RESULT_CACHE", "1") != "0"   # 0 only to measure the database path
 PUBLISHED = PUBLISH_ROOT / "current"     # the ETL's prebuilt responses (etl/publish.py): no database work on a view
 PUBLISHED_VERSION = ""
+READ_ROOT: ContextVar[Path | None] = ContextVar("published_read_root", default=None)
 
 
 def load_published() -> None:
@@ -139,9 +148,21 @@ def published_changed() -> bool:
         CATALOGUE = _load_catalogue()
         SCOPED.clear()
     version = os.path.realpath(PUBLISHED)
-    if serving != SERVING or version != PUBLISHED_VERSION:   # new data or a new publish: old answers are never asked for again
-        SERVING, PUBLISHED_VERSION, RESULTS, CACHED_BYTES = serving, version, OrderedDict(), 0
+    with RESULTS_LOCK:
+        if serving != SERVING or version != PUBLISHED_VERSION:
+            SERVING, PUBLISHED_VERSION, RESULTS, CACHED_BYTES = serving, version, OrderedDict(), 0
     return dashboards != STAMP
+
+
+@contextmanager
+def read_generation(root: Path | None = None):
+    """Pin related files to one resolved publication, including reads in the request's worker thread."""
+    root = root or READ_ROOT.get() or Path(os.path.realpath(PUBLISHED))
+    token = READ_ROOT.set(root)
+    try:
+        yield root
+    finally:
+        READ_ROOT.reset(token)
 
 
 def published_file(*parts: str) -> Payload | None:
@@ -149,7 +170,7 @@ def published_file(*parts: str) -> Payload | None:
     publish, a single-wave family's trend): the caller then builds it from the database."""
     if any(not p or p.startswith(".") or ".." in p or "/" in p or "\\" in p for p in parts):
         return None
-    path = PUBLISHED.joinpath("api", "v1", *parts)
+    path = (READ_ROOT.get() or PUBLISHED).joinpath("api", "v1", *parts)
     try:
         gz = path.with_name(path.name + ".json.gz").read_bytes()
     except OSError:
@@ -319,21 +340,28 @@ async def openapi(who: dict = Depends(user)) -> dict:
     return app.openapi()
 
 
-def all_waves() -> list[dict]:
-    """Every built wave, described (payloads.describe), from the published list or the database: once per data version."""
-    global WAVES
-    version = (SERVING, PUBLISHED_VERSION, os.path.realpath(PUBLISHED))
-    if WAVES[0] == version:
-        return WAVES[1]
-    with WAVES_LOCK:
-        if WAVES[0] != version:
-            listed = published_file("waves")
-            published = json.loads(listed.body) if listed else []
-            # a wave built since the last publish (532 on a machine with no ETL loop) is listed from the database, its
-            # screens built live, instead of answering "No such wave"; one read per data version, none when they agree
-            waves = payloads.waves(_boards()) if not published or (SERVING and len(published) < SERVING[0]) else published
-            WAVES = (version, [payloads.describe(w) for w in waves])
-        return WAVES[1]
+def all_waves(*, published_only: bool = False) -> list[dict]:
+    """Describe published waves once per generation. Non-Ask screens can also list a newly built database wave."""
+    global WAVES, PUBLISHED_WAVES
+    with read_generation() as root:
+        serving = SERVING
+        version = (serving, root)
+        cached = PUBLISHED_WAVES if published_only else WAVES
+        if cached[0] == (root if published_only else version):
+            return cached[1]
+        with WAVES_LOCK:
+            if PUBLISHED_WAVES[0] != root:
+                listed = published_file("waves")
+                published = json.loads(listed.body) if listed else []
+                PUBLISHED_WAVES = (root, [payloads.describe(w) for w in published])
+            if published_only:
+                return PUBLISHED_WAVES[1]
+            if WAVES[0] != version:
+                waves = PUBLISHED_WAVES[1]
+                if not waves or (serving and len(waves) < serving[0]):
+                    waves = [payloads.describe(w) for w in payloads.waves(_boards())]
+                WAVES = (version, waves)
+            return WAVES[1]
 
 
 async def visible(who: dict, survey_id: int) -> dict:
@@ -386,30 +414,35 @@ async def cached_payload(key: tuple, build, *args) -> Payload:
     changes. Least recently used responses leave first once the cache reaches CACHE_BYTES."""
     global CACHED_BYTES, RESULTS, PUBLISHED_VERSION
     version = os.path.realpath(PUBLISHED)
-    if version != PUBLISHED_VERSION:   # a publish swapped in new files: drop old answers now, not at the next poll, or
-        RESULTS, CACHED_BYTES, PUBLISHED_VERSION = OrderedDict(), 0, version   # nginx files one under the new key
-    item = RESULTS.get(key) if CACHE_RESULTS else None
-    if item is not None:
-        RESULTS.move_to_end(key)
-        CACHE_COUNTS["hits"] += 1
-        return item
-    CACHE_COUNTS["misses"] += 1
-    # admission control: a burst of cache misses queues briefly for a slot, then gets a fast 503 the screen
-    # turns into "busy, retry" — never a pile-up that slows every request on the one core
+    with RESULTS_LOCK:
+        if version != PUBLISHED_VERSION:   # nginx uses the new path immediately, before our refresh poll
+            RESULTS, CACHED_BYTES, PUBLISHED_VERSION = OrderedDict(), 0, version
+        cache = RESULTS
+        item = cache.get(key) if CACHE_RESULTS else None
+        if item is not None:
+            cache.move_to_end(key)
+            CACHE_COUNTS["hits"] += 1
+            return item
+        CACHE_COUNTS["misses"] += 1
     try:
         await asyncio.wait_for(BUILD_SLOTS.acquire(), BUILD_WAIT)
     except asyncio.TimeoutError:
         raise HTTPException(503, "Busy: please retry in a few seconds", headers={"Retry-After": "3"})
     try:
-        item = await run_in_threadpool(build, *args)
+        with read_generation(Path(version)):
+            item = await run_in_threadpool(build, *args)
     finally:
         BUILD_SLOTS.release()
-    if CACHE_RESULTS and key not in RESULTS:
-        RESULTS[key] = item
-        CACHED_BYTES += len(item.body) + len(item.gz)
-        while CACHED_BYTES > CACHE_BYTES and len(RESULTS) > 1:
-            _, old = RESULTS.popitem(last=False)
-            CACHED_BYTES -= len(old.body) + len(old.gz)
+    size = len(item.body) + len(item.gz)
+    with RESULTS_LOCK:
+        if cache is not RESULTS or version != os.path.realpath(PUBLISHED):
+            raise HTTPException(503, "Survey data was updated. Please retry.", headers={"Retry-After": "1"})
+        if CACHE_RESULTS and size <= CACHE_BYTES and key not in cache:
+            while CACHED_BYTES + size > CACHE_BYTES:
+                _, old = cache.popitem(last=False)
+                CACHED_BYTES -= len(old.body) + len(old.gz)
+            cache[key] = item
+            CACHED_BYTES += size
     return item
 
 
@@ -604,7 +637,7 @@ def crosstab_payload(survey_id: int, qcode: str, cuts: tuple, weeks: int) -> Pay
         return to_payload(payloads.crosstab_from(survey_id, qcode, cuts, pool, parts))
     # a published wave's cuts folder lists every question it has (etl/publish.py): one missing from it (an "other,
     # please specify" text) is not in the wave, so say so now instead of a 1–5 s database round trip to the same 404
-    folder = PUBLISHED / "api" / "v1" / "waves" / str(survey_id) / "cuts"
+    folder = (READ_ROOT.get() or PUBLISHED) / "api" / "v1" / "waves" / str(survey_id) / "cuts"
     if survey_id not in parts and folder.is_dir():
         # q1 or XM3 typed in another case (an API key, the MCP connector): the files are named as the wave spells the
         # code, and a case-sensitive disk would say 404 where /results answers; no two codes of a wave differ by case
@@ -625,7 +658,7 @@ async def question(family: str, study_type: str, qcode: str, request: Request, w
     scope = access.scope(who)
     def build() -> Payload:
         found = published_file("questions", family, study_type, qcode)
-        if found is None and not family.startswith(".") and (PUBLISHED / "api" / "v1" / "questions" / family / study_type).is_dir():
+        if found is None and not family.startswith(".") and ((READ_ROOT.get() or PUBLISHED) / "api" / "v1" / "questions" / family / study_type).is_dir():
             # publish writes every question of a published family that has figures; one missing (an "other, please
             # specify" text) has none: the same empty file the database gave after 1-5 s, now without the round trip
             found = to_payload(payloads.question_from(qcode, [], [], {}))
@@ -657,7 +690,9 @@ app.include_router(ingest.router)                                 # /api/v1/admi
 app.include_router(ingest.hooks)                                  # /api/v1/admin/sharepoint/notify: SharePoint webhook (api/ingest.py)
 
 def book_data(survey_id: int) -> Optional[dict]:
-    return _parsed_book(survey_id, PUBLISHED_VERSION)
+    """Read the parsed book for the active publication, independent of the result cache's refresh."""
+    with read_generation() as root:
+        return _parsed_book(survey_id, str(root))
 
 
 @lru_cache(maxsize=128)   # parsed once per published version: Ask CIP reads up to 12 books per question
@@ -669,19 +704,27 @@ def _parsed_book(survey_id: int, version: str) -> Optional[dict]:
         return None
 
 
+def read_ask_index():
+    """Build the question index and its visible wave input from the same pinned files."""
+    with ASK_GENERATION_LOCK, read_generation(Path(os.path.realpath(PUBLISHED))) as root:
+        waves = all_waves(published_only=True)
+        if not waves:
+            raise HTTPException(503, "Survey data is being published. Please retry.", headers={"Retry-After": "3"})
+        return assistant.index_for(root / "api/v1/questions", str(root), waves), waves
+
+
 def warm_ask() -> None:
     """Build Ask CIP's question index at start and after each publish (the minute loop), in the background
     (api/assistant.py index_for: nothing to do when the published version is the same)."""
     try:
-        assistant.index_for(PUBLISHED / "api" / "v1" / "questions", os.path.realpath(PUBLISHED), all_waves())
+        read_ask_index()
     except Exception as exc:   # noqa: BLE001 — the first question builds it instead
         log.warning("Ask CIP index not built at start: %s", type(exc).__name__)
 
 
 async def ask_index(who: dict):
     """Ask CIP's question index (built at start; again after a publish) and the surveys this person may see."""
-    waves = await run_in_threadpool(all_waves)
-    index = await run_in_threadpool(assistant.index_for, PUBLISHED / "api" / "v1" / "questions", os.path.realpath(PUBLISHED), waves)
+    index, waves = await run_in_threadpool(read_ask_index)
     return index, {w["survey_id"] for w in waves if access.sees(who, w)}
 
 
@@ -761,7 +804,14 @@ async def export(kind: str, request: Request, who: dict = Depends(user)) -> Resp
         spec = exports.check(await team.json_body(request))
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(422, str(exc))
-    body = await run_in_threadpool(exports.build_xlsx if kind == "xlsx" else exports.build_pptx, spec)
+    try:
+        await asyncio.wait_for(EXPORT_SLOTS.acquire(), EXPORT_WAIT)
+    except asyncio.TimeoutError:
+        raise HTTPException(503, "Another download is being built: try again in a few seconds", headers={"Retry-After": "5"})
+    try:
+        body = await run_in_threadpool(exports.build_xlsx if kind == "xlsx" else exports.build_pptx, spec)
+    finally:
+        EXPORT_SLOTS.release()
     audit.record(request, "export", target=spec["name"], detail={"kind": kind, "rows": len(spec["rows"])})
     return Response(body, media_type=EXPORT_TYPES[kind], headers={"Content-Disposition": f'attachment; filename="{spec["name"]}.{kind}"'})
 

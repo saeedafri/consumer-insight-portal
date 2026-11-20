@@ -183,7 +183,7 @@ function Reach({ data, sides, series }: { data: Data; sides: Side[]; series: Ser
   const trend = series.map(ser => {
     const side = sides[ser.side];
     const r = side.picked.find(p => ser.label.startsWith(p.name))!;
-    return { name: ser.label, type: "line", connectNulls: side.market.sector,   // a sector runs every few months: its surveys joined symbolSize: 5, color: colour(series.indexOf(ser)),
+    return { name: ser.label, type: "line", connectNulls: side.market.sector, symbolSize: 5, color: colour(series.indexOf(ser)),   // a sector runs every few months: its surveys joined
              data: trendWeeks.map(w => { const c = r.weeks[String(w)]; const i = side.market.weeks.indexOf(w); return c && i >= 0 ? share(c[0], side.market.asked[i]) : null; }) };
   });
   const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, "Retailer shoppers",

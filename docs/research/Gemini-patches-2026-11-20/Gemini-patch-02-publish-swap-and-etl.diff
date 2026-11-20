@@ -1,0 +1,36 @@
+--- a/etl/publish.py
++++ b/etl/publish.py
+@@ -273,8 +273,10 @@
+     link.symlink_to(target.name)
+     os.replace(link, root / "current")
+     versions = sorted(p for p in root.glob(".build-*") if p.is_dir())
++    active = target.resolve()
+     for old in versions[:-KEEP]:
+-        shutil.rmtree(old, ignore_errors=True)
++        if old.resolve() != active:
++            shutil.rmtree(old, ignore_errors=True)
+     # nginx's cached answers need no emptying: their key holds the published version (deploy/cip_locations.conf,
+     # $realpath_root), so the new version starts new keys at once; the old ones are never asked for again and nginx
+     # drops them itself (deploy/nginx.conf proxy_cache_path: unused for 7 days, or past 512 MB)
+--- a/etl/cohorts.py
++++ b/etl/cohorts.py
+@@ -33,7 +33,7 @@
+ 
+ log = logging.getLogger("cip.cohorts")
+ 
+-CONFIG = Path(__file__).resolve().parents[2] / "config" / "cohorts.yml"
++CONFIG = Path(__file__).resolve().parents[1] / "config" / "cohorts.yml"
+ 
+ 
+ def _named(rule: dict) -> set[str]:
+--- a/etl/sharepoint_china.py
++++ b/etl/sharepoint_china.py
+@@ -45,7 +45,7 @@
+ GRAPH = "https://graph.microsoft.com/v1.0"
+ ATTEMPTS = 3   # failed loads of one version of a pair before it waits for new files (forsta_etl.MAX_ATTEMPTS, same rule)
+ UPLOAD_DIR = Path(os.environ.get("CIP_UPLOAD_DIR") or Path(__file__).resolve().parents[1] / "data/uploads")
+-WEEK = re.compile(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})", re.I)   # "Survey of Oct 26"
++WEEK = re.compile(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})(?!\d)", re.I)   # "Survey of Oct 26"
+ 
+ 
+ def settings() -> Optional[dict]:

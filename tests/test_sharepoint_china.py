@@ -189,3 +189,9 @@ def test_a_loaded_week_is_judged_for_alerts_and_a_pass_that_meets_the_lock_keeps
     assert list(sharepoint_china.UPLOAD_DIR.iterdir()) == []
     monkeypatch.setattr(baidu_qss_export, "load", real)
     assert len(sharepoint_china.run()) == 2 and [len(ids) for ids in judged] == [1, 1]
+
+
+def test_a_month_and_year_folder_is_not_read_as_a_day():
+    # "May 2026" was read as 20 May 2026 (review of 20 Nov 2026)
+    assert sharepoint_china.folder_week(("2026", "May 2026")) is None
+    assert sharepoint_china.folder_week(("2026", "May 20")) == "2026-05-20"

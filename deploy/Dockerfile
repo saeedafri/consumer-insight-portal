@@ -12,6 +12,7 @@ COPY deploy/csp_map.mjs ./
 # the CSP hashes of each page's inline scripts (Next.js's own and the theme one): api/main.py policy() does the same
 RUN npm run build && node csp_map.mjs out > /w/cip_csp_map.conf
 
+# MALLOC_ARENA_MAX=2: glibc's per-thread memory pools grow a threaded Python's memory without use (20 Nov 2026)
 # Azure App Service: one web app runs one container on one port, so nginx, the API and the ETL share this image
 # (deploy/start.sh). Built on the official nginx image (its njs module checks the sign-in cookie); Debian trixie
 # brings Python 3.13. Everything runs as the unprivileged user cip; the platform ends TLS in front of port 8080.
@@ -63,7 +64,7 @@ ENV PATH=/opt/venv/bin:$PATH CIP_BUILD=$CIP_BUILD APP_ENV=production WEB_CONCURR
     CIP_WEB_DIR=/srv/cip/web CIP_PUBLISH_DIR=/srv/cip/published CIP_REVOKED_FILE=/srv/cip/state/revoked.txt \
     CIP_TEAM_STAMP=/srv/cip/state/team.stamp CIP_NGINX_CACHE=/var/cache/nginx/data CIP_NGINX_URL=http://127.0.0.1:8080 \
     CIP_CODED_DIR=/tmp/cip-keep/coded CIP_LOG_DIR=/srv/cip/logs \
-    STG_DB_SSL_CA=/srv/cip/DigiCertGlobalRootG2.crt.pem PYTHONDONTWRITEBYTECODE=1
+    STG_DB_SSL_CA=/srv/cip/DigiCertGlobalRootG2.crt.pem PYTHONDONTWRITEBYTECODE=1 MALLOC_ARENA_MAX=2
 USER cip
 EXPOSE 8080
 CMD ["bash", "deploy/start.sh"]

@@ -89,12 +89,18 @@ def index_for(root: Path, version: str, waves: list[dict]) -> Index:
     """The question index of this published version, built once (other threads wait for it, never build twice)."""
     with INDEX_LOCK:
         if INDEX["version"] != version or not INDEX["index"].docs:   # empty: built before a deploy restored the files
-            INDEX.update(version=version, index=Index(root, waves))
+            INDEX.update(version=version, index=Index(root.resolve(), waves))
             INDEX["index"].settled = False   # until add_vectors ends, with or without vectors: ask() keeps no answer before
             threading.Thread(target=settle, args=(INDEX["index"],), daemon=True, name="ask-vectors").start()
             with ANSWERS_LOCK:
-                ANSWERS.clear()
+                clear_answers()
         return INDEX["index"]
+
+
+def clear_answers() -> None:
+    """Replace the cache while holding ANSWERS_LOCK so in-flight answers cannot refill it."""
+    global ANSWERS
+    ANSWERS = OrderedDict()
 
 
 SUGGEST = 6   # suggestions offered while someone types (api/main.py ask_suggest)
@@ -192,6 +198,12 @@ def single_choice(fig: dict, column: int = 0) -> bool:
     return bool(totals) and all(abs(t - 100) <= 1.5 for t in totals)
 
 
+def common_base(cells) -> int:
+    """Return the base shared by every displayed cell, or zero if no one base applies."""
+    bases = set(cells) - {None}
+    return bases.pop() if len(bases) == 1 else 0
+
+
 def chart(fig: dict, shown: list[int]) -> dict | None:
     """The chart that fits the figures (the dataviz skill's forms, 15 Nov 2026). Over time: a line (a yes/no draws its
     main answer alone: the other line only mirrors it), a dumbbell for two periods compared (before → after per answer), one line
@@ -218,11 +230,13 @@ def chart(fig: dict, shown: list[int]) -> dict | None:
         return {"type": "line", "categories": [p["label"] for p in periods],
                 "series": [{"name": answers[a], "data": [pct(p, 0, a) for p in range(len(periods))]} for a in lines], "unit": "%"}
     if len(columns) > 1:
-        bases = {v: int(fig["bases"][0, c].max()) for c, (_, v) in enumerate(columns)}   # each group's n by its name, drawn beside it
-        if all(single_choice(fig, c) for c in range(len(columns))) and len(every) <= SPLIT_MAX:
+        stacked = all(single_choice(fig, c) for c in range(len(columns))) and len(every) <= SPLIT_MAX
+        rows = every if stacked else ((shown if len(shown) >= HEATMAP_MIN else ranked(fig)[:8]) if len(columns) >= HEATMAP_MIN else shown)
+        bases = {v: base for c, (_, v) in enumerate(columns)
+                 if (base := common_base(int(fig["bases"][0, c, a]) for a in rows if pct(0, c, a) is not None))}
+        if stacked:
             return {"type": "stacked", "categories": [v for _, v in columns], "bases": bases,
-                    "series": [{"name": answers[a], "data": [pct(0, c, a) for c in range(len(columns))]} for a in every], "unit": "%"}
-        rows = (shown if len(shown) >= HEATMAP_MIN else ranked(fig)[:8]) if len(columns) >= HEATMAP_MIN else shown   # few named: the 8 largest
+                    "series": [{"name": answers[a], "data": [pct(0, c, a) for c in range(len(columns))]} for a in rows], "unit": "%"}
         return {"type": "heatmap" if len(columns) >= HEATMAP_MIN and len(rows) >= HEATMAP_MIN else "grouped", "categories": [answers[a] for a in rows], "bases": bases,
                 "series": [{"name": v, "data": [pct(0, c, a) for a in rows]} for c, (_, v) in enumerate(columns)], "unit": "%"}
     if single_choice(fig) and len(every) <= SPLIT_MAX:
@@ -236,9 +250,10 @@ def chart(fig: dict, shown: list[int]) -> dict | None:
 def write(plan: dict, fig: dict, doc: dict, named: list[int]) -> tuple[list[str], list[int]]:
     """The answer's sentences, and the answers they are about."""
     periods, columns, kind = fig["periods"], fig["columns"], plan["kind"]
+    asked = fig["asked"]
     say = [f"From “{doc['text'][:220]}” ({FAMILY.get(doc['family'], doc['family'].replace('_', ' ').title())}, "
-           f"{doc['qcode']}, asked in {doc['waves']} {'wave' if doc['waves'] == 1 else 'waves'}, "
-           f"{ask_figures.label_date(doc['first'])} – {ask_figures.label_date(doc['last'])})."]
+           f"{doc['qcode']}, asked in {len(asked)} {'wave' if len(asked) == 1 else 'waves'}, "
+           f"{ask_figures.label_date(asked[0])} – {ask_figures.label_date(asked[-1])})."]
     base = lambda p, c, a: int(fig["bases"][p, c, a])   # noqa: E731
     people = lambda p, c, a: int(fig["people"][p, c, a])   # noqa: E731
     shown = named or ranked(fig)[: (plan["top"] or TOP) if kind == "top" else (SERIES if len(periods) > 1 else 3)]
@@ -423,7 +438,7 @@ def save_verified(entry: dict, index: Index) -> dict:
         part = path.with_suffix(f".{os.getpid()}.part")   # written whole, then put in place: a kill mid-write left half a file
         part.write_text(json.dumps(saved, indent=1))
         os.replace(part, path)
-        ANSWERS.clear()
+        clear_answers()
     index.load_verified()
     return {"saved": keep, "verified": len(index.verified)}
 
@@ -445,7 +460,7 @@ def learn(reading: dict, index: Index) -> None:
         os.replace(part, LEARNED)
     index.load_verified()
     with ANSWERS_LOCK:   # a kept quick answer to it, or to a close question, is out of date: the same wording showed it
-        ANSWERS.clear()  # again, then the check replaced it, every time (15 Nov 2026)
+        clear_answers()
 
 
 def read_with_model(plan: dict, reading: dict) -> dict:
@@ -462,6 +477,12 @@ def read_with_model(plan: dict, reading: dict) -> dict:
     return {**plan, "kind": kind, "when": when, "cuts": cuts, "grain": grain, "compare": plan["compare"] or len(when) > 1}
 
 
+def no_figure(message: str, plan: dict, suggestions=()) -> dict:
+    """Explain why a requested analysis has no sound figure."""
+    return {"answer": message, "chart": None, "table": None, "sources": [], "suggestions": list(suggestions),
+            "plan": plan, "mode": "none", "no_source": True}
+
+
 def answer(question: str, index: Index, visible: set[int], quick: bool = False, key: str | None = None) -> dict:
     """{answer, chart, table, sources, suggestions, plan, mode, check, tiles, takeaway, next}: mode "figures" when
     answered, "none" when nothing in the surveys matches (then suggestions lists the closest questions, if any). quick:
@@ -470,8 +491,32 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     key: a follow-up's survey question (follow_ups), answered from it when this person may see it; else ignored."""
     question = index.correct_spelling(" ".join(str(question).split())[:500])   # "walmrt shoppers" is Walmart's
     plan = ask_reader.read(question)
-    if key in index.docs:   # a follow-up keeps its survey question's country: "…over time" names none, so it read as US
-        plan["country"] = index.country.get(index.docs[key]["surveys"][-1], "US")
+    text = plan["question"]
+    if re.search(r"\b(?:census|survey|population)[ -]weighted\b|\b(?<!un[- ])(?<!not )weighted "
+                 r"(?:share|percentage|proportion|averages?|means?|medians?|rates?|estimates?|results?|figures?|counts?|data|by)\b|"
+                 r"\b(?<!not )(?<!don't )(?:use|apply) (?:survey |census |population )?(?:weights|weighting)\b", text):
+        return no_figure("Ask CIP uses unweighted survey results. Ask for the unweighted figure or check whether your survey view offers Census weighting.", plan)
+    if re.search(r"\b(?:who also (?:bought|purchased|used|shopped|selected|chose|answered)|"
+                 r"(?:bought|purchased|shopped) (?:from|at) both)\b", text):
+        return no_figure("This question needs a count of people who did both things. Try Audiences to check for overlap within a survey wave, or ask about each group separately.", plan)
+    if re.search(r"\b(?:causal effect|causal impact|did .{1,80} cause|what caused|how much did .{1,80} cause)\b", plan["question"]):
+        return no_figure("These survey results cannot establish what caused the change. Try asking what respondents reported or how their answers changed over time.", plan)
+    if len(plan["cuts"]) > 1:
+        return no_figure("Ask CIP can analyze one demographic dimension at a time. Try one group or use Cross-tabs for two dimensions.", plan)
+    if re.search(r"\b(?:median|average (?:price|amount|cost|spend(?:ing)?))\b", plan["question"]):
+        return no_figure("Ask CIP cannot calculate that spending or price statistic from its published response shares. Try a spending range or ask what share chose one.", plan)
+    # an acronym no survey uses ("OTT", "DTC", "HBO"): the surveys do not ask about it, so no nearby figure stands in for it
+    # ("How many people has subcription of OTT?" was answered from a meal-kit question, fresh set, 20 Nov 2026). Not when
+    # the whole question is in capitals
+    missing = [w for w in re.findall(r"\b[A-Z]{3,6}\b", question) if w.lower() not in STOP and not index.known(w.lower())
+               and not any(words.search(w.lower()) for words in ask_reader.COUNTRY_WORDS.values())]
+    if missing and key not in index.docs and sum(c.islower() for c in question) > sum(c.isupper() for c in question):
+        near = index.find(plan["about"] or plan["question"], plan, 4, visible)
+        return no_figure(f"The surveys do not ask about {missing[0]}. The closest survey questions are below.", plan,
+                         [{"qcode": h["qcode"], "text": h["text"][:200], "family": h["family"], "key": h["key"]} for h in near])
+    selected = next((sid for sid in reversed(index.docs[key]["surveys"]) if sid in visible), None) if key in index.docs else None
+    if selected is not None:   # a follow-up keeps the selected question's country
+        plan["country"] = index.country.get(selected, "US")
     topic = {w for w in stems(question) if len(w) >= 4}   # the question's own words: which answers and questions name it
     visible = {s for s in visible if index.country.get(s, "US") == plan["country"]}   # a US question never reads China's waves
     hits = []   # the topic words, and the whole question (a cut can be the subject: "What is your age group?"), best kept
@@ -482,11 +527,12 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
                 if h["score"] > best.get(h["key"], {"score": -1})["score"]:
                     best[h["key"]] = h
         hits = sorted(best.values(), key=lambda h: -h["score"])[:8]
+    by_words = {h["key"]: h["score"] for h in hits}   # the word search's own scores, kept after the reader reorders hits
     understood = "rules"
     margin = None   # how far the question found by meaning beats the next different one (etl/ask_quality.py calibrates the gate on it)
     reading = None
     named, sure = index.named(question, visible, plan)
-    if key in index.docs and not visible.isdisjoint(index.docs[key]["surveys"]):   # a follow-up the page offered (brief "next"):
+    if selected is not None:
         named, sure = key, True                                                   # its survey question, by key, the rules reading the rest
     shared = [] if sure or not named else [named] + [k for k in index.names.get(name_key(question), []) if k != named]
     if named and sure:   # the question uses a survey question's own analyst name (the stored patterns): that question, no
@@ -506,7 +552,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     # a stored name's question is matched against the verified ones too: an admin's check beats the AI's name ("Categories
     # purchased online in the latest survey" is the weekly q3, verified; its words are EC4's name, 8 waves; 14 Nov 2026)
     # local, ~3 ms each; one when the subject is the whole question (it was embedded twice, review of 15 Nov 2026)
-    made = ask_model.embed(list(dict.fromkeys([ask_model.as_query(subject), ask_model.as_query(question)]))) if unsure or named else None
+    made = ask_model.embed(list(dict.fromkeys([ask_model.as_query(subject), ask_model.as_query(question)]))) if selected is None and (unsure or named) else None
     asked = made[0] if made is not None else None
     found = [v for v in (index.verified_for(asked), index.verified_for(made[-1] if made is not None else None)) if v
              and not (named and v.get("learned"))]   # an AI's earlier pick never overrules a stored name
@@ -560,7 +606,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
               for i, c in enumerate(candidates)]   # names first: six are read ("movie theater" was 13th of 15, 13 Nov)
     # Ask's own reader picks from the lines the AI reads (~70 ms, no cost); the AI reads the question only when the
     # reader is unsure (or absent) and a key is set; rules keep any dates the question names
-    reader_pick = ask_model.read_pick(question, listed)   # (number or None, lead), None without the reader
+    reader_pick = ask_model.read_pick(question, listed) if listed else None
     reader_sure = reader_pick is not None and reader_pick[1] >= READER_SURE
     if learned and reader_sure:   # the AI's earlier pick only where the AI would be asked: staging reused gpt-4o-mini's pick
         verified = None           # for "Do GLP-1 users eat less?" on "Which foods…", over a reader sure at a lead of 7 (14 Nov 2026)
@@ -664,8 +710,15 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     # the pick, or when it was not asked in the period named the same question asked by another study, or the next match
     # naming the same retailer or brand that was ("Temu over the last year": the retailer lists; "online last month": the
     # weekly online categories, as the quarterly one stopped in September, 13 Nov 2026)
-    fallbacks = [h for h in hits[1:] if focus(question, h.get("labels", []), full_names) or index.alike(hits[0]["key"], h["key"])]
-    for hit in hits[:1] + fallbacks[:3]:
+    fallbacks = [] if selected is not None else [
+        h for h in hits[1:] if focus(question, h.get("labels", []), full_names) or index.alike(hits[0]["key"], h["key"])]
+    # then the next closest matches, for a question naming its periods: "online in October 2026 than September 2026"
+    # read the quarterly EC1 (September only); the weekly q3, second closest, holds both months (fresh set, 20 Nov 2026)
+    # Only a near-equal match: "ways to save money in October" must never borrow the retailer question (test_assistant)
+    top = by_words.get(hits[0]["key"], 0)
+    fallbacks += [h for h in hits[1:3] if h not in fallbacks and top and by_words.get(h["key"], 0) >= NEAR_EQUAL * top] \
+        if selected is None and asked_plan["when"] else []
+    for hit in hits[:1] + fallbacks[:5]:
         doc = index.docs[hit["key"]]
         plan = asked_plan
         if not plan["when"] and not plan["cuts"] and (plan["kind"] in ("share", "count", "change") or plan["grain"]) and doc["waves"] >= TREND_FROM:
@@ -674,7 +727,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         fig = ask_figures.compute(counts, plan, visible)
         if hit is hits[0]:
             first = (doc, plan, counts, fig)
-        if fig["periods"]:
+        if fig["periods"] and not (len(plan["when"]) > 1 and fig["missing"]):
             break
     else:
         doc, plan, counts, fig = first   # none was: say when the pick was asked
@@ -705,31 +758,69 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
             refig = ask_figures.compute(counts, replan, visible)
             if refig["periods"]:   # only when the re-read still finds waves
                 plan, fig = replan, refig
-    sentences, shown = write(plan, fig, doc, named)
-    glance = {**brief(plan, fig, doc, shown), "next": follow_ups(plan, fig, doc, named)}
-    last = fig["periods"][-1]
-    shown = list(dict.fromkeys(shown + [fig["answers"].index(c) for c in (chart(fig, shown) or {}).get("categories", [])
-                                        if c in fig["answers"]]))   # the table lists at least every charted answer
-    table = {"head": ["Answer"] + [f"{p['label']}" + (f" · {v}" if len(fig['columns']) > 1 else "")
-                                   for p in fig["periods"] for _, v in fig["columns"]],
-             "rows": [[fig["answers"][a]] + [None if math.isnan(fig["pct"][p, c, a]) else float(fig["pct"][p, c, a])
-                                             for p in range(len(fig["periods"])) for c in range(len(fig["columns"]))]
-                      for a in (shown if len(fig["answers"]) > 15 else range(len(fig["answers"])))
-                      if not np.all(np.isnan(fig["pct"][:, :, a]))],   # an answer these waves never offered is not a row
-             "bases": [int(fig["bases"][p, c].max()) for p in range(len(fig["periods"])) for c in range(len(fig["columns"]))]}
+    if len(plan["when"]) > 1 and fig["missing"]:
+        return no_figure("At least one requested period has no comparable survey data. Try a single period or choose two available periods in Trends.", plan, suggestions)
+    if plan["cuts"]:
+        dimension, groups = next(iter(plan["cuts"].items()))
+        available = {value for col, (cut, value) in enumerate(fig["columns"])
+                     if cut == dimension and not np.isnan(fig["pct"][:, col]).all()}
+        if not available or (groups != "all" and set(groups) - available):
+            return no_figure("At least one requested demographic group is unavailable for this survey question. Try a different group or ask for all respondents.", plan, suggestions)
+        if len(plan["when"]) > 1 and not fig["grain"] and groups != "all":
+            columns = [col for col, (cut, value) in enumerate(fig["columns"]) if cut == dimension and value in groups]
+            present = ~np.isnan(fig["pct"][:, columns])
+            if not (present[:, :, named].all() if named else present.any(axis=2).all()):
+                return no_figure("A requested group or answer has no reportable figures in one of the periods. Try a single period or ask for all respondents.", plan, suggestions)
+    if np.isnan(fig["pct"]).all():
+        return no_figure("The survey question matches, but there are no reportable figures for the requested period. Try another period.", plan, suggestions)
+    periods = [p for p in fig["periods"] if p["waves"]]
+    first, last = periods[0], periods[-1]
+    source_wave = last["waves"][-1]
+    source_code, source_text = counts["sources"][source_wave]
+    source_doc = {**doc, "qcode": source_code, "text": source_text}
+    sentences, shown = write(plan, fig, source_doc, named)
+    glance = {**brief(plan, fig, source_doc, shown), "next": follow_ups(plan, fig, doc, named)}
+    waves_used = len({wave for period in periods for wave in period["waves"]})
+    period = first["label"] if len(periods) == 1 else f"{first['label']} vs {last['label']}" if plan["compare"] and len(periods) == 2 \
+        else f"{ask_figures.label_date(first['from'])} – {ask_figures.label_date(last['to'])}"
+    drawn = chart(fig, shown)
+    listed = list(dict.fromkeys(shown + [fig["answers"].index(c) for c in (drawn or {}).get("categories", [])
+                                       if c in fig["answers"]]))
+    if listed != shown:
+        drawn = chart(fig, listed)
+    table = figure_table(fig, listed)
     notes = [x for x in sentences[1:] if x.startswith(NOTE_STARTS)]
     points = [x for x in sentences[1:] if not x.startswith(NOTE_STARTS)]
     headline = next((x for x in points if "%" in x), points[0] if points else "")   # the first sentence with a figure
     return {"answer": "\n".join(sentences), "headline": headline, "points": [x for x in points if x != headline], "notes": notes,
+            "scope": {"country": plan["country"], "period": period, "waves": waves_used},
             "source_line": sentences[0], "weighting": "unweighted", "understood": understood,
             "check": quick and understood in ("meaning", "reader") and not reader_sure and ask_model.ready(), "margin": margin,
             "verify": {"question": question, "key": doc["key"], "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],
                        "kind": plan["kind"], "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, "codes": doc.get("codes", [doc["qcode"]]),
-            "chart": chart(fig, shown), "table": table, "plan": plan, "mode": "figures", "no_source": False,
+            "chart": drawn, "table": table, "plan": plan, "mode": "figures", "no_source": False,
             "suggestions": suggestions, **glance,
-            "sources": [{"id": "S1", "key": doc["key"], "qcode": doc["qcode"], "question": doc["text"], "family": doc["family"],
-                         "survey_id": last["waves"][-1], "wave_date": last["to"], "waves": len(set(sum((p["waves"] for p in fig["periods"]), []))),
-                         "link": f"/w/{last['waves'][-1]}/{'trends' if len(fig['periods']) > 1 else 'questions'}/{doc['qcode']}"}]}
+            "sources": [{"id": "S1", "key": doc["key"], "qcode": source_code, "question": source_text, "family": doc["family"],
+                         "survey_id": source_wave, "wave_date": last["to"], "waves": waves_used,
+                         "link": f"/w/{source_wave}/{'trends' if len(fig['periods']) > 1 else 'questions'}/{source_code}"}]}
+
+
+def figure_table(fig: dict, shown: list[int]) -> dict:
+    """Serialize the displayed shares and their own bases. Suppressed cells carry neither."""
+    columns = fig["columns"]
+    head = ["Answer"] + [p["label"] + (f" · {v}" if len(columns) > 1 else "")
+                         for p in fig["periods"] for _, v in columns]
+    rows, cell_bases = [], []
+    for answer in shown if len(fig["answers"]) > 15 else range(len(fig["answers"])):
+        values = fig["pct"][:, :, answer].ravel()
+        if np.isnan(values).all():
+            continue
+        shares = [None if math.isnan(value) else float(value) for value in values]
+        rows.append([fig["answers"][answer], *shares])
+        cell_bases.append([None if share is None else int(base)
+                           for share, base in zip(shares, fig["bases"][:, :, answer].ravel())])
+    bases = [common_base(column) for column in zip(*cell_bases)] if cell_bases else [0] * (len(head) - 1)
+    return {"head": head, "rows": rows, "bases": bases, "cell_bases": cell_bases}
 
 
 def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool = False, key: str | None = None) -> dict:
@@ -737,8 +828,10 @@ def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool 
     the AI check settled is learned, so the same or a close question is answered at once next time, with no AI. An answer from
     keywords alone, before the search vectors are ready (the minutes after a deploy), is not kept: it stayed until the next
     publish (15 Nov 2026)."""
-    kept = (id(index), scope, quick, key, " ".join(question.lower().split()))
+    question = " ".join(question.split())[:500]
+    kept = (id(index), scope, quick, key, question.lower())
     with ANSWERS_LOCK:
+        cache = ANSWERS
         if kept in ANSWERS:
             ANSWERS.move_to_end(kept)
             return ANSWERS[kept]
@@ -746,14 +839,14 @@ def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool 
     # keeps its answers too, or every repeat was worked out again (second review, 15 Nov 2026)
     vectors_ready = index.vectors is not None or getattr(index, "settled", True)
     found = answer(question, index, visible, quick, key)
-    asked = " ".join(str(question).split())[:500]
-    if (fixed := index.correct_spelling(asked)) != asked:   # the page says so: "answered as …, the spelling put right"
+    if (fixed := index.correct_spelling(question)) != question:   # the page says so: "answered as …, the spelling put right"
         found = {**found, "corrected": fixed}
     if found.get("understood") == "model" and found.get("mode") == "figures":
         learn(found["verify"], index)
     if vectors_ready:
         with ANSWERS_LOCK:
-            ANSWERS[kept] = found
-            while len(ANSWERS) > KEEP_ANSWERS:
-                ANSWERS.popitem(last=False)
+            if cache is ANSWERS:
+                ANSWERS[kept] = found
+                while len(ANSWERS) > KEEP_ANSWERS:
+                    ANSWERS.popitem(last=False)
     return found

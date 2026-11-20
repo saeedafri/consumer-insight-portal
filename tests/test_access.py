@@ -914,3 +914,11 @@ def test_the_minute_loop_builds_asks_index_for_a_new_published_version(monkeypat
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(api._refresh_forever())
     assert built == [1]
+
+
+def test_staff_and_a_client_less_outsider_never_share_a_cache_scope():
+    # staff see commissioned studies an outsider does not; both had ":enterprise" (review of 20 Nov 2026)
+    features = [f for f in access.rules()["features"] if f != "export"]
+    staff = {"email": "a@coresight.com", "role": "analyst", "client": None, "tier": "enterprise", "study_types": "*", "features": features}
+    outsider = {**staff, "email": "b@elsewhere.com", "role": "client"}
+    assert access.scope(staff) != access.scope(outsider)

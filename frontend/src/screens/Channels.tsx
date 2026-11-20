@@ -142,6 +142,6 @@ export default function Channels() {
       </Card>
     </div>
     <p className="source-line">Source: Coresight Research US Consumer Survey, weekly tracker, about 400 US adults a week; questions q2 (in a store) and
-      q3 (online), asked as Q4 and Q5 until December 2023, past two weeks. Unweighted. Groups under 30 people are not shown.</p>
+      q3 (online), asked as Q4 and Q5 until December 2023, past two weeks. Unweighted. Every group is shown, however small: check its base.</p>
   </div>;
 }

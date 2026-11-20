@@ -550,6 +550,7 @@ class Index:
                 self.cache.move_to_end(("q", key))
                 return self.cache[("q", key)]
         waves, versions, answers, cuts, cells, seen = [], [], {}, {("total", "Total"): 0}, [], set()
+        sources = {}
         for number, part_key in enumerate(doc["parts"], start=1):
             part = self.parts[part_key]
             raw = self.file_counts(part["file"])
@@ -560,6 +561,7 @@ class Index:
                     seen.add(sid)
                     wave_at[i] = len(waves)
                     waves.append([sid, day, number])
+                    sources[sid] = part["qcode"], raw["versions"][version - 1]
             answer_at = np.array([answers.setdefault((item.lower(), label.lower()), (len(answers), [item, code, label]))[0]
                                   for item, code, label in raw["answers"]] or [0], np.int32)
             cut_at = np.array([cuts.setdefault((d, v), len(cuts)) for d, v in raw["cuts"]], np.int32)
@@ -568,7 +570,7 @@ class Index:
         order = sorted(range(len(waves)), key=lambda i: waves[i][1])   # oldest first, whichever code asked it
         rank = np.empty(len(waves), np.int32)
         rank[order] = np.arange(len(waves))
-        found = {"qcode": doc["qcode"], "waves": [waves[i] for i in order], "versions": versions,
+        found = {"qcode": doc["qcode"], "waves": [waves[i] for i in order], "versions": versions, "sources": sources,
                  "answers": [a[1] for a in sorted(answers.values())], "cuts": [list(c) for c in sorted(cuts, key=cuts.get)],
                  "w": rank[np.concatenate([c[0] for c in cells])], "c": np.concatenate([c[1] for c in cells]),
                  "a": np.concatenate([c[2] for c in cells]), "n": np.concatenate([c[3] for c in cells]),
@@ -579,9 +581,11 @@ class Index:
     def keep(self, key, found: dict) -> None:
         size = sum(found[k].nbytes for k in "wcanb")
         with self.lock:
+            if key in self.cache or size > COUNT_CACHE_MB * 2**20:
+                return
             self.cache[key] = found
             self.cached_bytes += size
-            while self.cached_bytes > COUNT_CACHE_MB * 2**20 and len(self.cache) > 1:
+            while self.cached_bytes > COUNT_CACHE_MB * 2**20:
                 _, old = self.cache.popitem(last=False)
                 self.cached_bytes -= sum(old[k].nbytes for k in "wcanb")
 

@@ -1,0 +1,56 @@
+{
+  "fix3_before_after": {
+    "head_312e769": {
+      "returncode": 0,
+      "stdout": "{\"all_waves_sids\": [412, 415, 418], \"ask_index_sids\": [412, 415, 418], \"ask_visible_sids\": [412, 415, 418]}",
+      "stderr": ""
+    },
+    "worktree": {
+      "returncode": 0,
+      "stdout": "{\"all_waves_sids\": [412, 415, 418], \"ask_index_sids\": [412, 415], \"ask_visible_sids\": [412, 415]}",
+      "stderr": ""
+    }
+  },
+  "probes": {
+    "cache_stampede_no_coalescing": {
+      "returncode": 0,
+      "stdout": "{\"concurrent_identical_requests\": 6, \"build_executions\": 6, \"cache_misses\": 6, \"cache_hits\": 0}",
+      "stderr": ""
+    },
+    "data01_swapped_answer_codes_pooling": {
+      "returncode": 0,
+      "stdout": "SIGNATURE: (survey_id: 'int', qcode: 'str', by: 'tuple', waves: 'list[dict]', parts: 'dict') -> 'dict'\nSRC_HEAD: def crosstab_from(survey_id: int, qcode: str, by: tuple, waves: list[dict], parts: dict) -> dict:\n    \"\"\"One question by two cuts, pooled across waves on the answer's label and code (ids differ per wave, as in\n    srv_result's comparisons), then bases, percentages and flags. parts is question_cuts' {survey_id: part}.\n    Respondents with no value for a cut are left out, as in srv_result. Cells nobody chose come back as n = 0.\"\"\"\n    first, second = (2 + CUTS.index(cut) for cut in by)\n    answers = [{**a, \"survey_id\": sid} for sid, part in parts.items() for a in part[\"answers\"]]\n    if answers and \"qtext\" in answers[0]:   # pool only waves that asked this wave's question, not a reused code",
+      "stderr": ""
+    },
+    "etl01_reconcile_and_publish_failure": {
+      "returncode": 0,
+      "stdout": "WEEKLY_FORSTA_RUN: def run(client=None) -> int:\n    if client is None:\n        fc = config.forsta\n        if not fc.is_configured:\n            log.error(\"Forsta is not configured (FORSTA_HOST, FORSTA_API_KEY)\")\n            tell(notify.failure, \"Forsta is not configured\", \"FORSTA_HOST or FORSTA_API_KEY is missing.\")\n            return 2\n        client = ForstaClient(fc.host, fc.api_key, fc.timeout, fc.max_retries)\n    for attempt in range(1, DB_ATTEMPTS + 1):\n        ok, status = healthcheck(\"etl\")\n        if ok:\n            break\n        log.warning(\"Database not reachable (attempt %d of %d): %s\", attempt, DB_ATTEMPTS, status)\n        if attempt < DB_ATTEMPTS:\n            time.sleep(DB_PAUSE_SECONDS)\n    else:\n        log.error(\"Database unreachable; nothing loaded \u2014 the next scheduled run tries again\")\n        tell(notify.failure, \"database unreachable\", f\"{DB_ATTEMPTS} tries, {DB_PAUSE_SECONDS} s apart: {status}\")\n        return 4\n    try:\n        client.whoami()\n    except ForstaAuthError as exc:\n        log.error(\"Forsta rejected the key: %s\", exc)\n        tell(notify.failure, \"Forsta rejected the API key\", str(exc))\n        return 2\n    missing = {\"cip_forsta_survey\", \"cip_search\", \"cip_tracker_line\"} - set(inspect(get_engine(\"etl\")).get_table_names())\n    if missing:                                        # never load into a schema older than the code\n        log.error(\"Schema is behind the code (missing %s): run scripts/init_db.py first\", sorted(missing))\n        tell(notify.failure, \"schema is behind the code\", f\"Missing tables: {sorted(missing)}. Run scripts/init_db.py.\")\n        return 2\n    log.info(\"Register: %s\", forsta_etl.discover(client))\n    result = forsta_etl.run_due(client)               # the register and the load log keep the detail\n    log.info(\"Loaded %d: %s\", len(",
+      "stderr": ""
+    },
+    "etl03_manifestless_restore_and_readyz": {
+      "returncode": 0,
+      "stdout": "{\"readyz_status_without_manifest\": 200, \"readyz_body\": {\"ready\": true, \"build\": \"unknown\"}}",
+      "stderr": ""
+    },
+    "sec02_multiwave_crosstab_and_book_leak": {
+      "returncode": 0,
+      "stdout": "CROSSTAB_ENDPOINT: @app.get(\"/api/v1/waves/{survey_id}/crosstab\")\nasync def crosstab(survey_id: int, request: Request, q: str, by: str, weeks: int = Query(1, ge=1, le=4),\n                   who: dict = Depends(user)) -> Response:\n    \"\"\"One question by two cuts, e.g. ?q=XM3&by=generation,gender&weeks=4 (this wave and the 3 before).\"\"\"\n    require_feature(who, \"crosstab\")\n    await visible(who, survey_id)\n    cuts = tuple(by.split(\",\"))\n    if len(cuts) != 2 or len(set(cuts)) != 2 or not set(cuts) <= set(CUTS):\n        raise HTTPException(422, f\"by takes two different cuts from: {', '.join(CUTS)}\")\n    return send_payload(request, await cached_payload((SERVING, \"crosstab\", survey_id, q, cuts, weeks),\n                                        crosstab_payload, survey_id, q, cuts, weeks))\n\nCROSSTAB_PAYLOAD: def crosstab_payload(survey_id: int, qcode: str, cuts: tuple, weeks: int) -> Payload:\n    \"\"\"Use versioned published cut files; query live only when they are absent or incomplete.\"\"\"\n    waves = all_waves()   # parsed once per version, not on every cross-tab (half of each one's time)\n    me = next((w for w in waves if w[\"survey_id\"] == survey_id), None)\n    pool = payloads.chain(\n        {w[\"survey_id\"]: w for w in waves if me and w[\"survey_family\"] == me[\"survey_family\"]},\n        survey_id,\n        weeks,\n    )\n    parts = {\n        w[\"survey_id\"]: json.loads(found.body)\n        for w in pool\n        if (found := published_file(\"waves\", str(w[\"survey_id\"]), \"cuts\", qcode))\n    }\n    if parts.get(survey_id, {}).get(\"counts\"):\n        return to_payload(payloads.crosstab_from(survey_id, qcode, cuts, pool, parts))\n    # a published wave's cuts folder lists every question it has (etl/publish.py): one missing from it (an \"other,\n    # please specify\" text) is not in the wave, so say so now instead of a 1\u20135 s database round trip to the same 404\n    folder = (READ_ROOT.get() or PUBLISHED) / \"api\" / \"v1\" / \"waves\" / str(survey_id) / \"cuts\"\n    if survey_id not in parts and folder.is_dir()",
+      "stderr": ""
+    },
+    "sec02_unknown_idp_and_client_visibility": {
+      "returncode": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 4, in <module>\n    print(\"UNKNOWN_EMAIL:\", access.user(\"stranger@external-partner.com\"))\n                            ^^^^^^^^^^^\nAttributeError: module 'shared.core.access' has no attribute 'user'"
+    },
+    "sec04_min_sample_floor": {
+      "returncode": 0,
+      "stdout": "{\"access_min_audience\": 1, \"payloads_HIDDEN_BASE\": 1, \"payloads_MIN_BASE\": null}",
+      "stderr": ""
+    },
+    "ask_rollback_and_pruned_root": {
+      "returncode": 0,
+      "stdout": "{\"outcome\": \"EXCEPTION\", \"type\": \"FileNotFoundError\", \"msg\": \"[Errno 2] No such file or directory: '/Users/mohdsaeedafri/.gemini/antigravity/brain/5acc63b1-a539-45a4-9d8d-a5036779e84f/scratch/tmp-work/tmp79ooa5u8/.build-1/api/v1/questions/CSI-US/tracker/XQ1.json.gz'\"}",
+      "stderr": ""
+    }
+  }
+}

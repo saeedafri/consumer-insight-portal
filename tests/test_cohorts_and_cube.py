@@ -429,3 +429,8 @@ def test_the_read_only_engine_costs_one_round_trip_per_query(monkeypatch):
     engine = database.get_engine("app")
     assert engine.pool._pre_ping is False
     assert engine.dialect._on_connect_isolation_level == "AUTOCOMMIT"
+
+
+def test_cohorts_reads_the_repository_config():
+    # parents[2] looked one folder above the repository (review of 15 Nov 2026)
+    assert cohorts.CONFIG.is_file()

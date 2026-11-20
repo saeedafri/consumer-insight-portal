@@ -7,6 +7,7 @@ import re
 from datetime import date, datetime, timedelta
 import logging
 
+import pytest
 import sqlalchemy as sa
 
 from shared.core import database
@@ -285,6 +286,7 @@ def test_waves_loaded_from_elsewhere_are_published_by_the_next_30_minute_check(t
     monkeypatch.setattr(weekly, "tell", lambda *a: None)
     monkeypatch.setattr(weekly.integrity, "run", lambda: [])
     monkeypatch.setattr(weekly.publish, "ROOT", tmp_path)
+    monkeypatch.setattr(weekly, "FULL_CHECKED", tmp_path / "etl-full-check.txt")   # on a Friday it wrote the real logs/ (20 Nov 2026)
     monkeypatch.setattr(weekly.publish, "publish", lambda: published.append(1))
     from etl import publications
     monkeypatch.setattr(publications, "drift_summary", lambda: pd.DataFrame())
@@ -319,3 +321,42 @@ def test_the_full_check_runs_once_a_friday_on_the_first_idle_check_that_gets_the
     except Exception:   # noqa: BLE001 — past the full check the stubs end; only whether it ran matters here
         pass
     assert checked == [1] and weekly.run(client) == 0 and checked == [1]   # the next one leaves it
+
+
+@pytest.mark.parametrize("problems, publish_fails, code", [([], False, 0), (["q1 differs"], False, 1), ([], True, 6)])
+def test_a_wave_that_fails_its_check_or_its_publish_is_not_announced(tmp_path, monkeypatch, problems, publish_fails, code):
+    """20 Nov 2026: a wave whose answers differed from Forsta still sent its metric alerts and the "loaded" email, and a
+    failed publish still sent the email for screens that were not live."""
+    import pandas as pd
+    from api import dashboards
+    from etl import publications
+    weekly = importlib.import_module("scripts.weekly_forsta")
+    told, alerted = [], []
+    (tmp_path / "current").mkdir()
+    client = type("Client", (), {"whoami": lambda self: {}})()
+    monkeypatch.setattr(weekly, "healthcheck", lambda role: (True, "ok"))
+    monkeypatch.setattr(weekly, "inspect", lambda engine: type("I", (), {"get_table_names": lambda self: ["cip_forsta_survey", "cip_search", "cip_tracker_line"]})())
+    monkeypatch.setattr(weekly, "get_engine", lambda role: None)
+    monkeypatch.setattr(weekly.forsta_etl, "discover", lambda c: {})
+    monkeypatch.setattr(weekly.forsta_etl, "run_due", lambda c: {"loaded": ["selfserve/58f/260907"], "failed": []})
+    monkeypatch.setattr(weekly.forsta_etl, "survey_id_of", lambda path: 7)
+    monkeypatch.setattr(weekly.forsta_etl, "reconcile_survey", lambda sid, c: (10, problems))
+    monkeypatch.setattr(weekly.fieldwork, "collect", lambda c, loaded: [])
+    monkeypatch.setattr(weekly.integrity, "run", lambda: [])
+    monkeypatch.setattr(weekly.open_ends, "code_wave", lambda sid: None)
+    monkeypatch.setattr(dashboards, "build_for", lambda ids: None)
+    monkeypatch.setattr(weekly.notify, "alerts", lambda ids: alerted.extend(ids))
+    monkeypatch.setattr(weekly, "tell", lambda send, *a: told.append(send.__name__))
+    monkeypatch.setattr(weekly.publish, "ROOT", tmp_path)
+    monkeypatch.setattr(weekly.publish, "behind", lambda version: False)
+    monkeypatch.setattr(weekly, "FULL_CHECKED", tmp_path / "etl-full-check.txt")
+
+    def publish():
+        if publish_fails:
+            raise OSError("No space left on device")
+    monkeypatch.setattr(weekly.publish, "publish", publish)
+    monkeypatch.setattr(publications, "drift_summary", lambda: pd.DataFrame())
+    assert weekly.run(client) == code
+    announced = code == 0
+    assert ("survey_loaded" in told) == announced and (alerted == [7]) == (not problems)
+    assert ("failure" in told) == (not announced)

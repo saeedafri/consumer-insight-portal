@@ -45,7 +45,7 @@ log = logging.getLogger("cip.sharepoint")
 GRAPH = "https://graph.microsoft.com/v1.0"
 ATTEMPTS = 3   # failed loads of one version of a pair before it waits for new files (forsta_etl.MAX_ATTEMPTS, same rule)
 UPLOAD_DIR = Path(os.environ.get("CIP_UPLOAD_DIR") or Path(__file__).resolve().parents[1] / "data/uploads")
-WEEK = re.compile(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})", re.I)   # "Survey of Oct 26"
+WEEK = re.compile(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})(?!\d)", re.I)   # "Survey of Oct 26"; never the 20 of "May 2026"
 
 
 def settings() -> Optional[dict]:

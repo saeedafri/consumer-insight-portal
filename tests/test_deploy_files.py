@@ -15,7 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_each_deploy_pushes_what_it_built_checks_it_first_and_waits_for_it_live():
     branches = yaml.safe_load((ROOT / "bitbucket-pipelines.yml").read_text())["pipelines"]["branches"]
     for branch, place in (("stg-deploy", "stg"), ("pro-deploy", "pro")):
-        build, deploy = (step["step"]["script"] for step in branches[branch])
+        (group, last) = branches[branch]
+        # the tests beside the build, fail-fast, and the deploy only after both (20 Nov 2026: nothing ran the tests)
+        tests, image = (s["step"] for s in group["parallel"]["steps"])
+        assert group["parallel"]["fail-fast"] and any("pytest" in line for line in tests["script"]), branch
+        build, deploy = image["script"], last["step"]["script"]
+        assert any(line.startswith("docker pull") and f":{place}-latest" in line for line in build), branch   # the cache to reuse
         built = re.findall(r'-t "([^"]+)"', next(line for line in build if line.startswith("docker build")))
         pushed = [line.split('"')[1] for line in build if line.startswith("docker push")]
         assert sorted(built) == sorted(pushed) and any(tag.endswith(f":{place}-latest") for tag in pushed), branch

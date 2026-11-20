@@ -1,0 +1,324 @@
+{
+  "timestamp_utc": "2026-11-19T21:12:17Z",
+  "disk": {
+    "current_gen_files": 13776,
+    "current_gen_logical_mib": 56.2,
+    "all_3_gens_files": 36971,
+    "all_3_gens_unique_inodes": 14484,
+    "all_3_gens_logical_mib": 155.56,
+    "all_3_gens_dedup_mib": 65.24,
+    "repo_logs_mib": 134.89,
+    "repo_models_mib": 251.77,
+    "frontend_out_mib": 4.22
+  },
+  "direct_python_ask": {
+    "timer_overhead_us": {
+      "n": 2000,
+      "min": 0.0,
+      "p50": 0.041,
+      "p95": 0.042,
+      "p99": 0.042,
+      "max": 0.166,
+      "mean": 0.0252
+    },
+    "index_scan_ms": 2637.07,
+    "vector_cache_load_ms": 62.75,
+    "cold_20_prompts": [
+      {
+        "name": "short_prime",
+        "mode": "figures",
+        "understood": "reader",
+        "ms": 262.189
+      },
+      {
+        "name": "compare_q3_key",
+        "mode": "figures",
+        "understood": "named",
+        "ms": 46.634
+      },
+      {
+        "name": "compare_unselected",
+        "mode": "none",
+        "understood": null,
+        "ms": 114.419
+      },
+      {
+        "name": "trend_gas",
+        "mode": "figures",
+        "understood": "reader",
+        "ms": 40.678
+      },
+      {
+        "name": "cut_holiday",
+        "mode": "figures",
+        "understood": "name",
+        "ms": 70.326
+      },
+      {
+        "name": "trend_4w",
+        "mode": "figures",
+        "understood": "reader",
+        "ms": 48.254
+      },
+      {
+        "name": "compare_first_last",
+        "mode": "figures",
+        "understood": "name",
+        "ms": 66.661
+      },
+      {
+        "name": "top_beauty",
+        "mode": "figures",
+        "understood": "reader",
+        "ms": 92.368
+      },
+      {
+        "name": "tariffs",
+        "mode": "figures",
+        "understood": "verified",
+        "ms": 9.539
+      },
+      {
+        "name": "top_food_8w",
+        "mode": "figures",
+        "understood": "named",
+        "ms": 9.883
+      },
+      {
+        "name": "glp1_trend",
+        "mode": "figures",
+        "understood": "reader",
+        "ms": 90.756
+      },
+      {
+        "name": "amazon_trend",
+        "mode": "figures",
+        "understood": "reader",
+        "ms": 72.562
+      },
+      {
+        "name": "temu_genz",
+        "mode": "figures",
+        "understood": "reader",
+        "ms": 41.044
+      },
+      {
+        "name": "walmart_cut",
+        "mode": "figures",
+        "understood": "reader",
+        "ms": 72.954
+      },
+      {
+        "name": "named_exact",
+        "mode": "figures",
+        "understood": "name",
+        "ms": 19.113
+      },
+      {
+        "name": "unsupported_causal",
+        "mode": "none",
+        "understood": null,
+        "ms": 0.1
+      },
+      {
+        "name": "unsupported_weighted",
+        "mode": "none",
+        "understood": null,
+        "ms": 0.103
+      },
+      {
+        "name": "unsupported_overlap",
+        "mode": "none",
+        "understood": null,
+        "ms": 0.083
+      },
+      {
+        "name": "unsupported_offtopic",
+        "mode": "none",
+        "understood": "meaning",
+        "ms": 11.41
+      },
+      {
+        "name": "unsupported_multicut",
+        "mode": "none",
+        "understood": null,
+        "ms": 0.105
+      }
+    ],
+    "cold_figures_ms": {
+      "n": 14,
+      "min": 9.539,
+      "p50": 48.2539,
+      "p95": 92.3676,
+      "p99": null,
+      "max": 262.1889,
+      "mean": 67.3543
+    },
+    "cold_non_figures_ms": {
+      "n": 6,
+      "min": 0.0827,
+      "p50": 0.1026,
+      "p95": 114.4195,
+      "p99": null,
+      "max": 114.4195,
+      "mean": 21.0366
+    },
+    "hot_ask_dict_lookup_us": {
+      "n": 2000,
+      "min": 0.5,
+      "p50": 0.583,
+      "p95": 0.625,
+      "p99": 0.75,
+      "max": 9.959,
+      "mean": 0.5909
+    },
+    "process_rss_after_ask_mib": 416.59
+  },
+  "http_loopback": {
+    "server_rss_start_mib": 293.25,
+    "server_rss_end_mib": 289.11,
+    "auth_me_status": 200,
+    "auth_me_ms": 1.13,
+    "target_survey_id": 533,
+    "crosstab_120_cold": {
+      "ok": 120,
+      "errors": 0,
+      "rps": 979.6,
+      "ms": {
+        "n": 120,
+        "min": 2.8285,
+        "p50": 10.9115,
+        "p95": 20.0163,
+        "p99": 20.962,
+        "max": 22.2435,
+        "mean": 11.9369
+      }
+    },
+    "crosstab_120_warm": {
+      "ok": 120,
+      "errors": 0,
+      "rps": 2276.6,
+      "ms": {
+        "n": 120,
+        "min": 3.3788,
+        "p50": 4.7109,
+        "p95": 9.8268,
+        "p99": 10.2973,
+        "max": 10.623,
+        "mean": 5.1977
+      }
+    },
+    "ask_http_cold": [
+      {
+        "q": "What share subscribe to Amazon Prime in the l",
+        "status": 200,
+        "ms": 141.92,
+        "bytes": 3738
+      },
+      {
+        "q": "Did more people buy online in October 2026 th",
+        "status": 200,
+        "ms": 47.89,
+        "bytes": 5255
+      },
+      {
+        "q": "Holiday shopping progress by generation",
+        "status": 200,
+        "ms": 74.01,
+        "bytes": 3662
+      },
+      {
+        "q": "Top food retailers, last 8 weeks",
+        "status": 200,
+        "ms": 11.68,
+        "bytes": 3616
+      },
+      {
+        "q": "How worried are people about tariffs?",
+        "status": 200,
+        "ms": 10.55,
+        "bytes": 4321
+      },
+      {
+        "q": "What is the Census-weighted share of Amazon P",
+        "status": 200,
+        "ms": 1.36,
+        "bytes": 454
+      }
+    ],
+    "ask_http_warm_200": {
+      "ok": 4,
+      "ms": {
+        "n": 4,
+        "min": 0.9268,
+        "p50": 0.9756,
+        "p95": 1.0384,
+        "p99": null,
+        "max": 1.0384,
+        "mean": 0.9674
+      }
+    },
+    "mixed_load_phases": {
+      "before_exports": {
+        "elapsed_s": 7.13,
+        "interactive_ok": 17281,
+        "interactive_errors": 0,
+        "interactive_rps": 2422.4,
+        "interactive_ms": {
+          "n": 17281,
+          "min": 0.544,
+          "p50": 1.5733,
+          "p95": 2.2657,
+          "p99": 4.7307,
+          "max": 11.643,
+          "mean": 1.6178
+        },
+        "export_ok": 0,
+        "export_errors": 0,
+        "export_ms": null,
+        "peak_rss_mib": 435.5,
+        "max_cpu_pct": 110.7
+      },
+      "during_exports": {
+        "elapsed_s": 7.17,
+        "interactive_ok": 4717,
+        "interactive_errors": 16619,
+        "interactive_rps": 658.1,
+        "interactive_ms": {
+          "n": 4717,
+          "min": 0.5902,
+          "p50": 1.6653,
+          "p95": 2.4319,
+          "p99": 5.2002,
+          "max": 36.4025,
+          "mean": 1.7288
+        },
+        "export_ok": 0,
+        "export_errors": 40,
+        "export_ms": null,
+        "peak_rss_mib": 291.5,
+        "max_cpu_pct": 111.4
+      },
+      "after_exports": {
+        "elapsed_s": 7.16,
+        "interactive_ok": 2,
+        "interactive_errors": 22143,
+        "interactive_rps": 0.3,
+        "interactive_ms": {
+          "n": 2,
+          "min": 9.9888,
+          "p50": 9.9888,
+          "p95": 32.01,
+          "p99": null,
+          "max": 32.01,
+          "mean": 20.9994
+        },
+        "export_ok": 0,
+        "export_errors": 0,
+        "export_ms": null,
+        "peak_rss_mib": 291.38,
+        "max_cpu_pct": 0.2
+      }
+    }
+  }
+}

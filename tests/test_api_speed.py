@@ -6,7 +6,9 @@ against a running server: time the URLs with a load tool (e.g. oha) on a test po
 import asyncio
 import gzip
 import json
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 
 import pytest
@@ -147,3 +149,194 @@ def test_a_wave_built_after_the_last_publish_is_listed_from_the_database(client,
     monkeypatch.setattr(api, "SERVING", (3, "2026-10-27"))
     monkeypatch.setattr(api.payloads, "waves", lambda boards: [newer, *published])
     assert {w["survey_id"] for w in api.all_waves()} == {418, 415, 412}
+
+
+@pytest.mark.parametrize("fill_new_before_old_finishes", [False, True])
+def test_a_slow_response_cannot_mix_generations_or_enter_the_next_cache(tmp_path, monkeypatch, fill_new_before_old_finishes):
+    """Swap between two reads of one cold fill and require a retry against the complete new snapshot."""
+    first, second = tmp_path / "first", tmp_path / "second"
+    current = tmp_path / "current"
+    for generation in (first, second):
+        for name in ("a", "b"):
+            put(generation, name, generation.name)
+    current.symlink_to(first)
+    monkeypatch.setattr(api, "PUBLISHED", current)
+    monkeypatch.setattr(api, "PUBLISHED_VERSION", "")
+    monkeypatch.setattr(api, "RESULTS", type(api.RESULTS)())
+    monkeypatch.setattr(api, "CACHED_BYTES", 0)
+    monkeypatch.setattr(api, "BUILD_SLOTS", asyncio.Semaphore(2))
+    started, finish = threading.Event(), threading.Event()
+    read = lambda name: json.loads(api.published_file(name).body)
+    observed = []
+
+    def build():
+        observed.append(read("a"))
+        started.set()
+        assert finish.wait(5)
+        observed.append(read("b"))
+        return api.to_payload(observed)
+
+    async def swap_while_building():
+        pending = asyncio.create_task(api.cached_payload(("slow",), build))
+        try:
+            assert await asyncio.to_thread(started.wait, 5)
+            replacement = tmp_path / "replacement"
+            replacement.symlink_to(second)
+            replacement.replace(current)
+            if fill_new_before_old_finishes:
+                await api.cached_payload(("other",), lambda: api.to_payload(read("a")))
+        finally:
+            finish.set()
+        with pytest.raises(api.HTTPException) as refused:
+            await pending
+        assert refused.value.status_code == 503 and "Retry-After" in refused.value.headers
+        assert ("slow",) not in api.RESULTS
+        fresh = await api.cached_payload(("slow",), lambda: api.to_payload([read("a"), read("b")]))
+        assert json.loads(fresh.body) == ["second", "second"]
+
+    asyncio.run(swap_while_building())
+    assert observed == ["first", "first"]
+
+
+def test_an_oversized_response_does_not_displace_the_small_cache(tmp_path, monkeypatch):
+    """A large one-off reply can be returned but must never exceed the byte budget."""
+    monkeypatch.setattr(api, "PUBLISHED", tmp_path)
+    monkeypatch.setattr(api, "RESULTS", type(api.RESULTS)())
+    monkeypatch.setattr(api, "CACHED_BYTES", 0)
+    monkeypatch.setattr(api, "CACHE_BYTES", 80)
+    monkeypatch.setattr(api, "BUILD_SLOTS", asyncio.Semaphore(2))
+    small, large = api.to_payload("yes"), api.to_payload("large" * 100)
+
+    async def fill():
+        await api.cached_payload(("small",), lambda: small)
+        assert await api.cached_payload(("large",), lambda: large) is large
+        assert list(api.RESULTS) == [("small",)]
+        assert api.CACHED_BYTES == len(small.body) + len(small.gz)
+
+    asyncio.run(fill())
+
+
+def test_ask_uses_the_same_generation_for_visibility_and_question_files(tmp_path, monkeypatch):
+    """A symlink swap during the wave read cannot combine older scopes with newer question files."""
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    current = tmp_path / "current"
+    current.symlink_to(first)
+    monkeypatch.setattr(api, "PUBLISHED", current)
+    wave = {"survey_id": 1}
+
+    def build_wave_list(*, published_only):
+        assert published_only
+        replacement = tmp_path / "replacement"
+        replacement.symlink_to(second)
+        replacement.replace(current)
+        return [wave]
+
+    sentinel = object()
+
+    def read_index(path, version, waves):
+        assert path == first.resolve() / "api/v1/questions"
+        assert version == str(first.resolve())
+        assert waves == [wave]
+        return sentinel
+
+    monkeypatch.setattr(api, "all_waves", build_wave_list)
+    monkeypatch.setattr(api.assistant, "index_for", read_index)
+    monkeypatch.setattr(api.access, "sees", lambda who, candidate: candidate is wave)
+    assert asyncio.run(api.ask_index({})) == (sentinel, {1})
+
+
+def test_ask_uses_only_published_waves_when_database_is_ahead(client, monkeypatch):
+    """The wave selector may list a warehouse-only wave. Ask must use its own published snapshot."""
+    extra = {"survey_id": 418, "survey_family": "CSI-US", "study_type": "tracker", "wave_date": "2026-10-26"}
+    published = json.loads(api.published_file("waves").body)
+    read_file = api.published_file
+    reads = []
+
+    def count_reads(*parts):
+        reads.append(parts)
+        return read_file(*parts)
+
+    monkeypatch.setattr(api, "published_file", count_reads)
+    monkeypatch.setattr(api, "SERVING", (3, "ahead"))
+    monkeypatch.setattr(api.payloads, "waves", lambda boards: [extra, *published])
+    monkeypatch.setattr(api.assistant, "index_for", lambda path, version, waves: [w["survey_id"] for w in waves])
+    monkeypatch.setattr(api.access, "sees", lambda who, wave: True)
+    assert {w["survey_id"] for w in api.all_waves()} == {412, 415, 418}
+    for _ in range(2):
+        index, visible = asyncio.run(api.ask_index({}))
+        assert visible == set(index) == {412, 415}
+    assert reads == [("waves",)]
+
+
+def test_ask_does_not_offer_a_no_data_answer_during_publication_restore(tmp_path, monkeypatch):
+    """Ask returns a retryable status until a published wave list exists."""
+    monkeypatch.setattr(api, "PUBLISHED", tmp_path / "restoring")
+    monkeypatch.setattr(api.payloads, "waves", lambda *_: pytest.fail("Ask reached the database"))
+    with pytest.raises(api.HTTPException) as waiting:
+        asyncio.run(api.ask_index({}))
+    assert waiting.value.status_code == 503 and "Retry-After" in waiting.value.headers
+
+
+def test_ask_queues_generation_selection_before_replacing_the_index(tmp_path, monkeypatch):
+    """A slow first wave read cannot overwrite a newer index installed by a concurrent Ask request."""
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    current = tmp_path / "current"
+    current.symlink_to(first)
+    monkeypatch.setattr(api, "PUBLISHED", current)
+    first_read, release, second_requested = threading.Event(), threading.Event(), threading.Event()
+    index_versions = []
+
+    def wave_list(*, published_only):
+        assert published_only
+        if api.READ_ROOT.get().name == "first":
+            first_read.set()
+            assert release.wait(5)
+        return [{"survey_id": 1}]
+
+    def build_index(_path, version, _waves):
+        index_versions.append(version)
+        return version
+
+    def next_request():
+        second_requested.set()
+        return api.read_ask_index()
+
+    monkeypatch.setattr(api, "all_waves", wave_list)
+    monkeypatch.setattr(api.assistant, "index_for", build_index)
+    with ThreadPoolExecutor(max_workers=2) as worker:
+        old = worker.submit(api.read_ask_index)
+        try:
+            assert first_read.wait(5)
+            replacement = tmp_path / "replacement"
+            replacement.symlink_to(second)
+            replacement.replace(current)
+            new = worker.submit(next_request)
+            assert second_requested.wait(5)
+            with pytest.raises(TimeoutError):
+                new.result(timeout=0.05)
+        finally:
+            release.set()
+        assert old.result(timeout=5)[0] == str(first.resolve())
+        assert new.result(timeout=5)[0] == str(second.resolve())
+    assert index_versions == [str(first.resolve()), str(second.resolve())]
+
+
+def test_a_second_export_waits_for_the_first_then_is_told_busy(monkeypatch):
+    # one Excel/PowerPoint build at a time on the one CPU (20 Nov 2026): a queued one gets 503 "busy", never a pile-up
+    import asyncio as aio
+    import api.main as api
+    monkeypatch.setattr(api, "EXPORT_SLOTS", aio.Semaphore(1))
+    monkeypatch.setattr(api, "EXPORT_WAIT", 0.05)
+
+    async def held():
+        await api.EXPORT_SLOTS.acquire()   # an export in progress
+        try:
+            await aio.wait_for(api.EXPORT_SLOTS.acquire(), api.EXPORT_WAIT)
+        except aio.TimeoutError:
+            return "busy"
+        return "ran"
+    assert aio.run(held()) == "busy"

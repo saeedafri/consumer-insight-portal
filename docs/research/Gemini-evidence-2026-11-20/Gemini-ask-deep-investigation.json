@@ -1,0 +1,990 @@
+{
+  "catalog": {
+    "waves_count": 374,
+    "question_files_parts": 4030,
+    "catalogued_question_groups_docs": 3076,
+    "countries": {
+      "US": 374
+    },
+    "families": {
+      "AMAZON_APPAREL_ANNUAL_TRACKER": 40,
+      "ANNUAL_APPAREL_SHOPPING": 22,
+      "APPAREL_AND_GENERAL_SHOPPING_SURVEY": 14,
+      "APPAREL_AND_GENERAL_SHOPPING_SURVEY_FEB_2020": 27,
+      "APPAREL_SHOPPING_SURVEY_FEB_2022": 15,
+      "APPAREL_SHOPPING_SURVEY_MAR_2021": 15,
+      "APTOS_CLOUD_POS": 31,
+      "ARC": 42,
+      "BACK_TO_SCHOOL": 51,
+      "BACK_TO_SCHOOL_SURVEY_2022": 14,
+      "BOARD": 26,
+      "CORESIGHT_CONNECT": 12,
+      "CORONAVIRUS_AND_SHOPPING_DEC_15": 14,
+      "CORONAVIRUS_AND_SHOPPING_DEC_21": 14,
+      "CORONAVIRUS_AND_SHOPPING_SEP_15": 12,
+      "CORONAVIRUS_AND_SHOPPING_SURVEY_JULY_1": 15,
+      "CORONAVIRUS_AND_SHOPPING_SURVEY_JULY_8": 15,
+      "CORONAVIRUS_AND_SHOPPING_SURVEY_JUNE_24": 15,
+      "CORONAVIRUS_AND_SPENDING_HABITS_NOV_17": 14,
+      "CORONAVIRUS_SHOPPING_AND_BUY_NOW_PAY_LATER_SEP_2": 13,
+      "CORONAVIRUS_SHOPPING_AND_COLLECTION_SERVICES": 12,
+      "CORONAVIRUS_SHOPPING_AND_ENVIRONMENTAL_SUSTAINABILITY_AUG_25": 15,
+      "CORONAVIRUS_SHOPPING_AND_HALLOWEEN": 14,
+      "CORONAVIRUS_SHOPPING_AND_SUSTAINABILITY": 15,
+      "CORONAVIRUS_SHOPPING_AND_THE_HOLIDAYS_AUG_12": 15,
+      "CORONAVIRUS_SHOPPING_AND_THE_HOLIDAYS_DEC_8": 15,
+      "CORONAVIRUS_SHOPPING_AND_THE_HOLIDAYS_JULY_15": 15,
+      "CORONAVIRUS_SHOPPING_AND_THE_HOLIDAYS_NOV_10": 15,
+      "CORONAVIRUS_SHOPPING_AND_THE_HOLIDAYS_OCT_13": 15,
+      "CORONAVIRUS_SHOPPING_AND_TRAVEL_JULY_22": 15,
+      "CORONAVIRUS_SHOPPING_PRIME_DAY_AND_OTHER_SHOPPING_FESTIVALS": 15,
+      "CORONAVIRUS_SHOPPING_THANKSGIVING_AND_BLACK_FRIDAY": 15,
+      "CORONAVIRUS_SURVEY_APRIL_1": 15,
+      "CORONAVIRUS_SURVEY_APRIL_15": 15,
+      "CORONAVIRUS_SURVEY_APRIL_22": 15,
+      "CORONAVIRUS_SURVEY_APRIL_29": 15,
+      "CORONAVIRUS_SURVEY_APRIL_8": 15,
+      "CORONAVIRUS_SURVEY_JUNE_10": 15,
+      "CORONAVIRUS_SURVEY_JUNE_17": 15,
+      "CORONAVIRUS_SURVEY_JUNE_3": 15,
+      "CORONAVIRUS_SURVEY_MARCH_25": 15,
+      "CORONAVIRUS_SURVEY_MAY_13": 15,
+      "CORONAVIRUS_SURVEY_MAY_20": 15,
+      "CORONAVIRUS_SURVEY_MAY_27": 15,
+      "CORONAVIRUS_SURVEY_MAY_6": 15,
+      "CSI-US": 1038,
+      "EUROMONITOR_INTERNAL_SURVEY": 4,
+      "GROCERY_SHOPPING_SURVEY_MARCH_2022": 15,
+      "GROCERY_SHOPPING_SURVEY_MARCH_APRIL_2021": 15,
+      "HOLIDAY_2021_SHOPPING_AND_SPENDING": 14,
+      "HOLIDAY_2023_SHOPPING_AND_SPENDING": 33,
+      "HOLIDAY_SHOPPING": 55,
+      "HOLIDAY_SHOPPING_AND_SPENDING": 48,
+      "HOLIDAY_SPENDING_SURVEY": 11,
+      "LUXURY": 9,
+      "MARIJUANA_CANNABIS_SURVEY": 18,
+      "METAVERSE_USERS": 22,
+      "NEW_SHOPPING_AND_CORONAVIRUS_SURVEY_JULY_29": 15,
+      "ONLINE_GROCERY": 89,
+      "ONLINE_GROCERY_2024": 32,
+      "ONLINE_GROCERY_2025": 67,
+      "ROKBOT": 32,
+      "SHOPPABLE_LIVESTREAM": 40,
+      "SHOPPABLE_LIVESTREAM_2023": 38,
+      "SHOPPER_SURVEY_INCLUDING_BEAUTY_SHOPPING_AND_AUTONOMOUS_DELI": 12,
+      "SHOPPER_SURVEY_INCLUDING_BEAUTY_SHOPPING_JUNE_13_2022": 11,
+      "SHOPPER_SURVEY_INCLUDING_HOME_FURNITURE_D_COR_SHOPPING_AND_P": 15,
+      "SHOPPING_AND_BLACK_FRIDAY": 15,
+      "SHOPPING_AND_LIVESTREAMING_LIVE_VIDEO_SHOPPING_2022": 17,
+      "SHOPPING_AND_SOCIAL_MEDIA": 30,
+      "SHOPPING_AND_SOCIAL_MEDIA_2021": 43,
+      "SHOPPING_AND_SOCIAL_MEDIA_2022": 20,
+      "SHOPPING_AND_SOCIAL_MEDIA_MARCH_2022": 17,
+      "SHOPPING_BEHAVIORS_AND_HOLIDAY_FULFILLMENT_SEP_6": 14,
+      "SHOPPING_BEHAVIORS_AND_RESALE_NOV_22": 15,
+      "SHOPPING_BEHAVIORS_LUXURY_SHOPPING_DEPARTMENT_STORES_MARCH_1": 15,
+      "SHOPPING_BEHAVIOR_AND_SPENDING_HABITS_OCT_4": 12,
+      "SHOPPING_BEHAVIOR_SURVEY": 29,
+      "SHOPPING_CONSUMER_BEHAVIOR_AND_CORONAVIRUS_SEP_9": 15,
+      "SHOPPING_CORONAVIRUS_AND_ONLINE_GROCERY_SURVEY_AUG_19": 15,
+      "SHOPPING_COVID_19_AND_FASHION_TRENDS": 13,
+      "SHOPPING_HABITS_AND_THE_HOLIDAY_SEASON_NOV_15": 15,
+      "SHOPPING_HABITS_AND_THE_HOLIDAY_SEASON_OCT_11": 15,
+      "SHOPPING_HABITS_SPENDING_AND_IMPORTANT_SHOPPING_FACTORS_MAY_": 15,
+      "SHOPPING_HABITS_SPENDING_AND_MEMORIAL_DAY_MAY_17": 14,
+      "SHOPPING_HABITS_SPENDING_AND_PRIME_DAY_MAY_24": 15,
+      "SHOPPING_HABITS_SPENDING_AND_TRAVEL_MAY_10": 14,
+      "SHOPPING_SURVEY": 15,
+      "SHOPPING_SURVEY_MARCH_2020_GROCERY_AND_CORONAVIRUS": 27,
+      "SIMBE_ROBOTICS": 34,
+      "SPENDING_AND_CORONAVIRUS_SURVEY_AUGUST_5": 15,
+      "SPENDING_BEHAVIOR_LUXURY_SHOPPING_AND_DEPARTMENT_STORES_JUNE": 15,
+      "TEST_TRAINING": 3,
+      "T_MOBILE": 29,
+      "T_MOBILE_AI_GOVERNANCE": 28,
+      "US_BACK_TO_SCHOOL_SURVEY_2021": 15,
+      "US_SOCIAL_COMMERCE_SURVEY_2023": 27,
+      "WOMEN_S_HEALTH_AND_BEAUTY": 34,
+      "ZEBRA_ELO": 27,
+      "ZEBRA_ELO_QSR": 24
+    },
+    "named_docs": 3076,
+    "vector_keys": 3076,
+    "verified_entries_loaded": 37
+  },
+  "q29_survey_26_retained_snapshot": {
+    "version_text": "What is your personal outlook for the overall economy over the next two years?",
+    "answers_labeled_in_question_file": [
+      [
+        "",
+        1,
+        "under $25,000"
+      ],
+      [
+        "",
+        2,
+        "18 - 29"
+      ],
+      [
+        "",
+        3,
+        "30 - 44"
+      ],
+      [
+        "",
+        4,
+        "45 - 60"
+      ],
+      [
+        "",
+        5,
+        "over 60"
+      ]
+    ]
+  },
+  "q3_raw_verification": {
+    "q3_waves_total": 196,
+    "sep_waves": [
+      [
+        260,
+        "2026-09-07",
+        2
+      ],
+      [
+        264,
+        "2026-09-14",
+        2
+      ],
+      [
+        265,
+        "2026-09-21",
+        2
+      ],
+      [
+        235,
+        "2026-09-28",
+        2
+      ]
+    ],
+    "oct_waves": [
+      [
+        266,
+        "2026-10-05",
+        2
+      ],
+      [
+        412,
+        "2026-10-12",
+        2
+      ],
+      [
+        415,
+        "2026-10-19",
+        2
+      ],
+      [
+        530,
+        "2026-10-26",
+        2
+      ]
+    ],
+    "categories": {
+      "Food or beverages (i.e., groceries)": {
+        "sep_n": 448,
+        "sep_b": 1612,
+        "sep_pct": 27.8,
+        "oct_n": 474,
+        "oct_b": 1609,
+        "oct_pct": 29.5,
+        "diff_pp": 1.7
+      },
+      "Sports/fitness products (excl. clothing/footwear)": {
+        "sep_n": 125,
+        "sep_b": 1612,
+        "sep_pct": 7.8,
+        "oct_n": 119,
+        "oct_b": 1609,
+        "oct_pct": 7.4,
+        "diff_pp": -0.4
+      },
+      "Health products (e.g., vitamins, medicines, health devices)": {
+        "sep_n": 330,
+        "sep_b": 1612,
+        "sep_pct": 20.5,
+        "oct_n": 344,
+        "oct_b": 1609,
+        "oct_pct": 21.4,
+        "diff_pp": 0.9
+      },
+      "Everyday household products (e.g., cleaning products, paper towels, laundry products)": {
+        "sep_n": 312,
+        "sep_b": 1612,
+        "sep_pct": 19.4,
+        "oct_n": 340,
+        "oct_b": 1609,
+        "oct_pct": 21.1,
+        "diff_pp": 1.7
+      },
+      "Pet products": {
+        "sep_n": 305,
+        "sep_b": 1612,
+        "sep_pct": 18.9,
+        "oct_n": 330,
+        "oct_b": 1609,
+        "oct_pct": 20.5,
+        "diff_pp": 1.6
+      }
+    }
+  },
+  "q3_ask_repro": {
+    "unselected_mode": "none",
+    "unselected_answer": "At least one requested period has no comparable survey data. Try a single period or choose two available periods in Trends.",
+    "unselected_suggestions": [
+      [
+        "q3",
+        "CSI-US/tracker/q3",
+        "Online purchases categories"
+      ],
+      [
+        "EC2",
+        "CSI-US/tracker/EC2",
+        "Retailers purchased from online"
+      ],
+      [
+        "Q58",
+        "ONLINE_GROCERY_2025/annual/Q58",
+        "Categories bought online"
+      ],
+      [
+        "G4",
+        "ONLINE_GROCERY/annual/G4",
+        "Retailers for online grocery purchases"
+      ]
+    ],
+    "selected_q3_mode": "figures",
+    "selected_q3_headline": "“Food or beverages (i.e., groceries)”: 27.8% over 7 Sep 2026 – 28 Sep 2026 (n=1,612) vs 29.5% over 5 Oct 2026 – 26 Oct 2026 (n=1,609), +1.7 pts, not a significant change.",
+    "selected_q3_takeaway": "29.5% chose “Food or beverages (i.e., groceries)” over 5 Oct 2026 – 26 Oct 2026, up 1.7 points since 7 Sep 2026 – 28 Sep 2026.",
+    "selected_q3_scope": {
+      "country": "US",
+      "period": "7 Sep 2026 – 28 Sep 2026 vs 5 Oct 2026 – 26 Oct 2026",
+      "waves": 8
+    },
+    "selected_q3_source": [
+      {
+        "id": "S1",
+        "key": "CSI-US/tracker/q3",
+        "qcode": "q3",
+        "question": "And which, if any, of these categories have you purchased ONLINE in the past two weeks?",
+        "family": "CSI-US",
+        "survey_id": 530,
+        "wave_date": "2026-10-26",
+        "waves": 8,
+        "link": "/w/530/trends/q3"
+      }
+    ],
+    "selected_q3_table_head": [
+      "Answer",
+      "7 Sep 2026 – 28 Sep 2026",
+      "5 Oct 2026 – 26 Oct 2026"
+    ],
+    "selected_q3_table_rows_top3": [
+      [
+        "Food or beverages (i.e., groceries)",
+        27.8,
+        29.5
+      ],
+      [
+        "Clothing, footwear or fashion accessories",
+        23.5,
+        22.4
+      ],
+      [
+        "Health products (e.g., vitamins, medicines, health devices)",
+        20.5,
+        21.4
+      ]
+    ],
+    "selected_q3_cell_bases_top3": [
+      [
+        1612,
+        1609
+      ],
+      [
+        1612,
+        1609
+      ],
+      [
+        1612,
+        1609
+      ]
+    ]
+  },
+  "colab_450_breakdown": {
+    "splits": {
+      "train": {
+        "total": 170,
+        "reached_reader": 170,
+        "not_reached_reader": 0,
+        "target_in_candidates": 170,
+        "reviewed": 0,
+        "generated": 170,
+        "no_answer": 0,
+        "distinct_groups": 40,
+        "kinds": {
+          "latest": 106,
+          "cut": 47,
+          "top": 3,
+          "trend": 10,
+          "compare": 4
+        }
+      },
+      "dev": {
+        "total": 203,
+        "reached_reader": 17,
+        "not_reached_reader": 186,
+        "target_in_candidates": 16,
+        "reviewed": 0,
+        "generated": 203,
+        "no_answer": 0,
+        "distinct_groups": 8,
+        "kinds": {
+          "latest": 77,
+          "cut": 86,
+          "top": 8,
+          "trend": 20,
+          "compare": 12
+        }
+      },
+      "test": {
+        "total": 77,
+        "reached_reader": 7,
+        "not_reached_reader": 70,
+        "target_in_candidates": 6,
+        "reviewed": 0,
+        "generated": 77,
+        "no_answer": 0,
+        "distinct_groups": 4,
+        "kinds": {
+          "latest": 33,
+          "cut": 40,
+          "top": 4
+        }
+      },
+      "future": {
+        "total": 0,
+        "reached_reader": 0,
+        "not_reached_reader": 0,
+        "target_in_candidates": 0,
+        "reviewed": 0,
+        "generated": 0,
+        "no_answer": 0,
+        "distinct_groups": 0,
+        "kinds": {}
+      }
+    },
+    "test_77_route_breakdown": {
+      "bypass_named_exact": 70,
+      "reached_reader": 7
+    },
+    "test_70_bypass_correctness": {
+      "bypass_named_exact|correct_doc": 68,
+      "bypass_named_exact|wrong_or_none(none)": 2
+    },
+    "test_7_reader_details": [
+      {
+        "question": "Are you making more online purchases due to the pandemic?",
+        "kind": "latest",
+        "num_candidates": 14,
+        "acceptable": [
+          1
+        ],
+        "shipped_pick": 1,
+        "shipped_lead": 2.677,
+        "shipped_sure": true,
+        "shipped_correct": true,
+        "rank1_retrieval_correct": true
+      },
+      {
+        "question": "What products have you increased buying online recently?",
+        "kind": "latest",
+        "num_candidates": 14,
+        "acceptable": [],
+        "shipped_pick": 1,
+        "shipped_lead": 4.8594,
+        "shipped_sure": true,
+        "shipped_correct": false,
+        "rank1_retrieval_correct": false
+      },
+      {
+        "question": "Prime Day purchases for specific needs for back-to-school 2025",
+        "kind": "latest",
+        "num_candidates": 14,
+        "acceptable": [
+          1
+        ],
+        "shipped_pick": 1,
+        "shipped_lead": 4.1484,
+        "shipped_sure": true,
+        "shipped_correct": true,
+        "rank1_retrieval_correct": true
+      },
+      {
+        "question": "What were your main motivations for shopping on Prime Day?",
+        "kind": "latest",
+        "num_candidates": 14,
+        "acceptable": [
+          2
+        ],
+        "shipped_pick": 0,
+        "shipped_lead": 0.1302,
+        "shipped_sure": false,
+        "shipped_correct": false,
+        "rank1_retrieval_correct": false
+      },
+      {
+        "question": "How did your Prime Day purchases reflect your shopping goals?",
+        "kind": "latest",
+        "num_candidates": 14,
+        "acceptable": [
+          2
+        ],
+        "shipped_pick": 2,
+        "shipped_lead": 1.5605,
+        "shipped_sure": false,
+        "shipped_correct": true,
+        "rank1_retrieval_correct": false
+      },
+      {
+        "question": "How do you feel about purchasing used apparel?",
+        "kind": "latest",
+        "num_candidates": 14,
+        "acceptable": [
+          1
+        ],
+        "shipped_pick": 2,
+        "shipped_lead": 2.1894,
+        "shipped_sure": true,
+        "shipped_correct": false,
+        "rank1_retrieval_correct": true
+      },
+      {
+        "question": "What factors affect your second-hand clothing purchases?",
+        "kind": "latest",
+        "num_candidates": 14,
+        "acceptable": [
+          3
+        ],
+        "shipped_pick": 2,
+        "shipped_lead": 0.2465,
+        "shipped_sure": false,
+        "shipped_correct": false,
+        "rank1_retrieval_correct": false
+      }
+    ],
+    "test_7_summary": {
+      "shipped_minilm_correct": 3,
+      "shipped_minilm_abstained": 1,
+      "shipped_minilm_wrong_answer": 3,
+      "simple_rank1_retrieval_correct": 3
+    },
+    "dev_17_summary": {
+      "total_reached": 17,
+      "target_present": 16,
+      "shipped_minilm_correct": 5,
+      "shipped_minilm_abstained": 0,
+      "shipped_minilm_wrong_answer": 12,
+      "simple_rank1_retrieval_correct": 8
+    }
+  },
+  "bank_unmapped_sample_2000": {
+    "counts": {
+      "mapped_unique_wording": 227,
+      "unmapped_wording_or_country_missing": 1773
+    },
+    "examples": [
+      [
+        "missing",
+        "US",
+        "AMAZON_APPAREL_ANNUAL_TRACKER/annual/q1",
+        "In the past 12 months, have you purchased any clothing or footwear, whether for "
+      ],
+      [
+        "missing",
+        "US",
+        "AMAZON_APPAREL_ANNUAL_TRACKER/annual/q1",
+        "In the past 12 months, have you purchased any clothing or footwear, whether for "
+      ],
+      [
+        "missing",
+        "US",
+        "AMAZON_APPAREL_ANNUAL_TRACKER/annual/q1",
+        "In the past 12 months, have you purchased any clothing or footwear, whether for "
+      ],
+      [
+        "missing",
+        "US",
+        "AMAZON_APPAREL_ANNUAL_TRACKER/annual/q1",
+        "In the past 12 months, have you purchased any clothing or footwear, whether for "
+      ],
+      [
+        "missing",
+        "US",
+        "AMAZON_APPAREL_ANNUAL_TRACKER/annual/q1",
+        "In the past 12 months, have you purchased any clothing or footwear, whether for "
+      ],
+      [
+        "missing",
+        "US",
+        "AMAZON_APPAREL_ANNUAL_TRACKER/annual/q1",
+        "In the past 12 months, have you purchased any clothing or footwear, whether for "
+      ],
+      [
+        "missing",
+        "US",
+        "AMAZON_APPAREL_ANNUAL_TRACKER/annual/q1",
+        "In the past 12 months, have you purchased any clothing or footwear, whether for "
+      ],
+      [
+        "missing",
+        "US",
+        "AMAZON_APPAREL_ANNUAL_TRACKER/annual/q1",
+        "In the past 12 months, have you purchased any clothing or footwear, whether for "
+      ],
+      [
+        "missing",
+        "US",
+        "AMAZON_APPAREL_ANNUAL_TRACKER/annual/q1",
+        "In the past 12 months, have you purchased any clothing or footwear, whether for "
+      ],
+      [
+        "missing",
+        "US",
+        "AMAZON_APPAREL_ANNUAL_TRACKER/annual/q1",
+        "In the past 12 months, have you purchased any clothing or footwear, whether for "
+      ]
+    ]
+  },
+  "adversarial_probes": [
+    {
+      "id": "weighted_bypass_1",
+      "q": "What is the weighted grocery share?",
+      "mode": "none",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": null,
+      "headline_or_answer": "None of the surveys asks this. The closest questions are below.",
+      "suggestions_count": 4
+    },
+    {
+      "id": "weighted_bypass_2",
+      "q": "Weighted Amazon Prime membership share in the latest wave",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [
+        {
+          "latest": 1
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": "EC6",
+      "headline_or_answer": "66.2% answered “I have an Amazon Prime membership myself” on 7 Sep 2026 (233 of 352 respondents).",
+      "suggestions_count": 1
+    },
+    {
+      "id": "weighted_bypass_3",
+      "q": "Compare weighted vs unweighted Amazon Prime membership",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [
+        {
+          "all": true
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": "EC6",
+      "headline_or_answer": "66.2% answered “I have an Amazon Prime membership myself” on 7 Sep 2026, the latest (233 of 352 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "weighted_guarded",
+      "q": "What is the Census-weighted share of Amazon Prime subscribers?",
+      "mode": "none",
+      "understood": null,
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": null,
+      "headline_or_answer": "Ask CIP uses unweighted survey results. Ask for the unweighted figure or check whether your survey view offers Census weighting.",
+      "suggestions_count": 0
+    },
+    {
+      "id": "union_1",
+      "q": "How many shopped at either Walmart or Target?",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": "q5",
+      "headline_or_answer": "22.5% answered “Target” on 9 Nov 2026 (91 of 404 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "overlap_bypass_1",
+      "q": "What is the overlap between Amazon and Walmart shoppers?",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": "q5",
+      "headline_or_answer": "41.3% answered “Amazon” on 9 Nov 2026 (167 of 404 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "overlap_bypass_2",
+      "q": "How many people bought both groceries and clothing online?",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [
+        {
+          "all": true
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": "q3",
+      "headline_or_answer": "28.6% answered “Food or beverages (i.e., groceries)” in Q4 2026, the latest (692 of 2,416 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "overlap_guarded",
+      "q": "How many people shopped at both Amazon and Walmart?",
+      "mode": "none",
+      "understood": null,
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": null,
+      "headline_or_answer": "This question needs a count of people who did both things. Try Audiences to check for overlap within a survey wave, or ask about each group separately.",
+      "suggestions_count": 0
+    },
+    {
+      "id": "causal_bypass_1",
+      "q": "Why did online grocery buying increase?",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": "G20",
+      "headline_or_answer": "“Items are delivered directly to home”: 54.0% on 19 Apr 2023 (n=1,177) vs 56.3% on 25 May 2026 (n=1,182), +2.3 pts, not a significant change.",
+      "suggestions_count": 4
+    },
+    {
+      "id": "causal_bypass_2",
+      "q": "Did tariffs make shoppers spend less on dining out?",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [
+        {
+          "all": true
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": "TF6",
+      "headline_or_answer": "45.5% answered “Spent/spend less on luxuries/non-essentials in anticipation of higher prices for necessities” on 28 Sep 2026, the latest (81 of 178 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "causal_bypass_3",
+      "q": "Is inflation driving consumers to cut back on spending?",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [
+        {
+          "all": true
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": "D14",
+      "headline_or_answer": "67.2% answered “Yes” in Nov 2026, the latest (542 of 807 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "causal_guarded",
+      "q": "Did tariffs cause shoppers to dine out less?",
+      "mode": "none",
+      "understood": null,
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": null,
+      "headline_or_answer": "These survey results cannot establish what caused the change. Try asking what respondents reported or how their answers changed over time.",
+      "suggestions_count": 0
+    },
+    {
+      "id": "multipart_1",
+      "q": "What share subscribe to Amazon Prime in the latest wave, and what share bought groceries online in October 2026?",
+      "mode": "none",
+      "understood": null,
+      "plan_cuts": {},
+      "plan_when": [
+        {
+          "latest": 1
+        },
+        {
+          "month": [
+            2026,
+            10
+          ]
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": null,
+      "headline_or_answer": "At least one requested period has no comparable survey data. Try a single period or choose two available periods in Trends.",
+      "suggestions_count": 4
+    },
+    {
+      "id": "multipart_2",
+      "q": "What share bought groceries online in October 2026, and did our campaign cause the change?",
+      "mode": "none",
+      "understood": null,
+      "plan_cuts": {},
+      "plan_when": [
+        {
+          "month": [
+            2026,
+            10
+          ]
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": null,
+      "headline_or_answer": "These survey results cannot establish what caused the change. Try asking what respondents reported or how their answers changed over time.",
+      "suggestions_count": 0
+    },
+    {
+      "id": "multipart_3",
+      "q": "What share subscribe to Amazon Prime, and what was the median turkey price?",
+      "mode": "none",
+      "understood": null,
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": null,
+      "headline_or_answer": "Ask CIP cannot calculate that spending or price statistic from its published response shares. Try a spending range or ask what share chose one.",
+      "suggestions_count": 0
+    },
+    {
+      "id": "multipart_4",
+      "q": "Compare online grocery buying in September 2026 vs October 2026, and show rural shoppers separately.",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {
+        "urbanicity": [
+          "Rural"
+        ]
+      },
+      "plan_when": [
+        {
+          "month": [
+            2026,
+            9
+          ]
+        },
+        {
+          "month": [
+            2026,
+            10
+          ]
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": "q3",
+      "headline_or_answer": "“Food or beverages (i.e., groceries)”: 23.9% over 7 Sep 2026 – 28 Sep 2026 (n=380) vs 29.3% over 5 Oct 2026 – 26 Oct 2026 (n=413), +5.4 pts, not a significant change.",
+      "suggestions_count": 4
+    },
+    {
+      "id": "calendar_1",
+      "q": "Amazon Prime membership this quarter",
+      "mode": "figures",
+      "understood": "named",
+      "plan_cuts": {},
+      "plan_when": [
+        {
+          "all": true
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": "BD5",
+      "headline_or_answer": "53.0% answered “I have an Amazon Prime membership myself” on 12 Oct 2026, the latest (214 of 404 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "calendar_2",
+      "q": "Online grocery buying this year",
+      "mode": "figures",
+      "understood": "name",
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": "Q3",
+      "headline_or_answer": "60.4% answered “Yes” on 19 Apr 2023 (1,180 of 1,953 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "calendar_3",
+      "q": "What changed yesterday in grocery shopping?",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [
+        {
+          "all": true
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": "IN2",
+      "headline_or_answer": "40.9% answered “Seek out promotions/discounts/coupons” on 26 Oct 2026, the latest (121 of 296 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "calendar_4",
+      "q": "Compare Q4 2026 with Q1 2027 online grocery buying",
+      "mode": "none",
+      "understood": null,
+      "plan_cuts": {},
+      "plan_when": [
+        {
+          "quarter": [
+            2026,
+            4
+          ]
+        },
+        {
+          "quarter": [
+            2027,
+            1
+          ]
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": null,
+      "headline_or_answer": "“Have you bought groceries online in the past 12 months?” (Q3) was not asked in the period you named: it was asked 10 Apr 2019 – 19 Apr 2023.",
+      "suggestions_count": 4
+    },
+    {
+      "id": "stat_bypass_1",
+      "q": "What is the mean amount spent on holiday gifts?",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": "SP12",
+      "headline_or_answer": "19.2% answered “$300-$499” on 7 Sep 2026 (392 of 2,042 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "stat_bypass_2",
+      "q": "How much on average did consumers spend on Thanksgiving turkey?",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {},
+      "plan_when": [
+        {
+          "all": true
+        }
+      ],
+      "plan_country": "US",
+      "source_qcode": "Q22",
+      "headline_or_answer": "100.0% answered “Things cost more this year” on 23 Sep 2024, the latest (258 of 258 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "stat_guarded",
+      "q": "What was the average price paid for a Thanksgiving turkey?",
+      "mode": "none",
+      "understood": null,
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": null,
+      "headline_or_answer": "Ask CIP cannot calculate that spending or price statistic from its published response shares. Try a spending range or ask what share chose one.",
+      "suggestions_count": 0
+    },
+    {
+      "id": "multicut_guarded",
+      "q": "What share of Gen Z women bought from Amazon?",
+      "mode": "none",
+      "understood": null,
+      "plan_cuts": {
+        "generation": [
+          "GenZ"
+        ],
+        "gender": [
+          "Female"
+        ]
+      },
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": null,
+      "headline_or_answer": "Ask CIP can analyze one demographic dimension at a time. Try one group or use Cross-tabs for two dimensions.",
+      "suggestions_count": 0
+    },
+    {
+      "id": "multicut_bypass_1",
+      "q": "High-income Gen Z shoppers at Amazon",
+      "mode": "figures",
+      "understood": "reader",
+      "plan_cuts": {
+        "generation": [
+          "GenZ"
+        ]
+      },
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": "q5",
+      "headline_or_answer": "39.3% among GenZ answered “Amazon” on 9 Nov 2026 (22 of 56 respondents).",
+      "suggestions_count": 4
+    },
+    {
+      "id": "multicut_bypass_2",
+      "q": "Suburban women shopping at Target",
+      "mode": "none",
+      "understood": null,
+      "plan_cuts": {
+        "gender": [
+          "Female"
+        ],
+        "urbanicity": [
+          "Suburban"
+        ]
+      },
+      "plan_when": [],
+      "plan_country": "US",
+      "source_qcode": null,
+      "headline_or_answer": "Ask CIP can analyze one demographic dimension at a time. Try one group or use Cross-tabs for two dimensions.",
+      "suggestions_count": 0
+    },
+    {
+      "id": "china_probe",
+      "q": "What share of consumers in China bought groceries online?",
+      "mode": "none",
+      "understood": null,
+      "plan_cuts": {},
+      "plan_when": [],
+      "plan_country": "CN",
+      "source_qcode": null,
+      "headline_or_answer": "No survey question in the portal matches this. Try other words, or browse Search questions.",
+      "suggestions_count": 0
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import calendar
 import re
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -78,15 +79,38 @@ def periods(text: str) -> tuple[list[dict], str]:
     for m in re.finditer(r"\bq([1-4])\s*(\d{4})\b|\b(\d{4})\s*q([1-4])\b", text):
         take(m, {"quarter": (int(m[2] or m[3]), int(m[1] or m[4]))})
         text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
+    # the calendar as the asker reads it today: "this quarter", "year to date", "October", "Q4". A question not asked then
+    # says so (api/assistant.py) instead of answering from history (Codex and Gemini reviews, 20 Nov 2026)
+    today = date.today()
+    quarter = (today.month + 2) // 3
+    for m in re.finditer(r"\b(?:this|the current|current)\s+(month|quarter|year)\b(?!'s)|\b(year to date|ytd|so far this year)\b", text):
+        take(m, {"month": {"month": (today.year, today.month)}, "quarter": {"quarter": (today.year, quarter)},
+                 "year": {"year": today.year}, None: {"from": f"{today.year}-01-01", "to": today.isoformat()}}[m[1]])
+        text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
+    for m in re.finditer(r"\b(?:last|previous|prior)\s+quarter\b", text):
+        take(m, {"quarter": (today.year, quarter - 1) if quarter > 1 else (today.year - 1, 4)})
+        text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
+    for m in re.finditer(r"\bq([1-4])\b", text):   # a quarter with no year: the latest one so far
+        q = int(m[1])
+        take(m, {"quarter": (today.year if q <= quarter else today.year - 1, q)})
+        text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
+    # a month with no year, after a word that makes it a date ("in October", "October vs September"): the latest one so
+    # far. Never on its own: "may" is a verb and "march" a word
+    bare = rf"({month_names})\b(?!\.?\s*\d)"
+    for m in re.finditer(rf"\b(?:in|during|for|of|from|to|vs\.?|versus|and|than|between|through|until|compared to)\s+{bare}"
+                         rf"|^(?:in\s+)?(?!may\b|march\b){bare}(?=\s+(?:vs\.?|versus|and|or|compared to)\s)", text):
+        month = MONTHS[m[1] or m[2]]
+        take(m, {"month": (today.year if month <= today.month else today.year - 1, month)})
+        text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
     for m in re.finditer(r"\bsince\s+(\d{4})\b", text):
         take(m, {"from": f"{m[1]}-01-01", "to": "9999-12-31"})
         text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
     # a year is a period after "in", "during", "since"…, or set against another year; "Valentine's Day 2025" is a topic
-    for m in re.finditer(r"\b(?:in|during|throughout|for|over|across|year|of)\s+(20[12]\d)\b(?!\s*(holiday|season|back|easter|"
+    for m in re.finditer(r"\b(?:in|during|throughout|for|over|across|year|of)\s+(20\d{2})\b(?!\s*(holiday|season|back|easter|"
                          r"valentine|christmas|black|cyber|prime|super|thanksgiving|halloween|mother|father|president|olympic|memorial|labor|"
                          r"independence|new year|singles|summer|spring|fall|winter|promotion|sale))", text):
         take(m, {"year": int(m[1])})
-    for m in re.finditer(r"\b(20[12]\d)\s+(?:vs\.?|versus|and|or|compared to|against)\s+(20[12]\d)\b", text):
+    for m in re.finditer(r"\b(20\d{2})\s+(?:vs\.?|versus|and|or|compared to|against)\s+(20\d{2})\b", text):
         take(m, {"year": int(m[1])})
         found.append((m.start(2), {"year": int(m[2])}))
     # "last 4 weeks", "previous 3 months", "past 8 weeks"; not "in the past two weeks"/"past 12 months", the survey's own
@@ -110,7 +134,8 @@ def periods(text: str) -> tuple[list[dict], str]:
         take(m, {"first": ORDINALS[m[1]]})
     for m in re.finditer(r"\b(previous|prior)\s+(wave|survey|week)\b|\bweek before\b", text):
         take(m, {"latest": 2})
-    for m in re.finditer(r"\b(latest|most recent|this week'?s?|current|newest|this wave|last wave|last survey)\b", text):
+    for m in re.finditer(r"\b(latest|most recent|this week'?s?|current|newest|this wave|last wave|last survey|right now|currently|"
+                         r"at the moment|these days|nowadays)\b", text):   # "right now" kept the economy question below a match (20 Nov 2026)
         take(m, {"latest": 1})
     for m in re.finditer(r"\b(all|every|each) (waves|surveys|weeks|time)\b|\ball wave\b|\ball[- ]time\b|\bover time\b|\bhistor(y|ically)\b", text):
         take(m, {"all": True})

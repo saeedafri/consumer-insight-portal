@@ -1,0 +1,101 @@
+{
+  "five_fixes_before_after": {
+    "fix1_stale_cache_across_pub_swap": {
+      "head_312e769": {
+        "returncode": 0,
+        "stdout": "{\"status\": \"RETURNED_STALE\", \"observed\": [\"first\", \"second\"], \"poisoned_cache\": true, \"cached_val\": [\"first\", \"second\"]}",
+        "stderr": ""
+      },
+      "worktree": {
+        "returncode": 0,
+        "stdout": "{\"status\": \"REJECTED_503\", \"observed\": [\"first\", \"first\"], \"poisoned_cache\": false}",
+        "stderr": ""
+      }
+    },
+    "fix2_oversized_cache_entry": {
+      "head_312e769": {
+        "returncode": 0,
+        "stdout": "{\"main_cache\": {\"results_keys\": [[\"large\"]], \"cached_bytes\": 533, \"budget\": 80}, \"ask_count_cache_len\": 1, \"ask_count_bytes\": 400}",
+        "stderr": "2026-11-20 02:38:23,394 INFO    cip.ask | Ask CIP index: 0 questions, 0 words, from /Users/mohdsaeedafri/.gemini/antigravity/brain/5acc63b1-a539-45a4-9d8d-a5036779e84f/scratch/tmp-work/tmpyl0ufo79"
+      },
+      "worktree": {
+        "returncode": 0,
+        "stdout": "{\"main_cache\": {\"results_keys\": [[\"small\"]], \"cached_bytes\": 30, \"budget\": 80}, \"ask_count_cache_len\": 0, \"ask_count_bytes\": 0}",
+        "stderr": "2026-11-20 02:38:24,496 INFO    cip.ask | Ask CIP index: 0 questions, 0 words, from /Users/mohdsaeedafri/.gemini/antigravity/brain/5acc63b1-a539-45a4-9d8d-a5036779e84f/scratch/tmp-work/tmpxa6fprhr"
+      }
+    },
+    "fix3_ask_unpublished_wave_metadata": {
+      "head_312e769": {
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 4, in <module>\n    from api import main as api, assistant, access\nImportError: cannot import name 'access' from 'api' (/Users/mohdsaeedafri/.gemini/antigravity/brain/5acc63b1-a539-45a4-9d8d-a5036779e84f/scratch/Gemini-snap-head/api/__init__.py)"
+      },
+      "worktree": {
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 4, in <module>\n    from api import main as api, assistant, access\nImportError: cannot import name 'access' from 'api' (/Users/mohdsaeedafri/.gemini/antigravity/brain/5acc63b1-a539-45a4-9d8d-a5036779e84f/scratch/Gemini-snap-worktree/api/__init__.py)"
+      }
+    },
+    "fix4_failed_fieldwork_write_removes_old_file": {
+      "head_312e769": {
+        "returncode": 0,
+        "stdout": "{\"target_exists\": true, \"target_intact\": false, \"dir_entries\": [\"fieldwork.json.gz\"]}",
+        "stderr": ""
+      },
+      "worktree": {
+        "returncode": 0,
+        "stdout": "{\"target_exists\": true, \"target_intact\": true, \"dir_entries\": [\"fieldwork.json.gz\"]}",
+        "stderr": ""
+      }
+    },
+    "fix5_historical_citation_wrong_code": {
+      "head_312e769": {
+        "returncode": 0,
+        "stdout": "{\"qcode\": \"NEW20\", \"survey_id\": 100, \"link\": \"/w/100/questions/NEW20\"}",
+        "stderr": ""
+      },
+      "worktree": {
+        "returncode": 0,
+        "stdout": "{\"qcode\": \"OLD10\", \"survey_id\": 100, \"link\": \"/w/100/questions/OLD10\"}",
+        "stderr": ""
+      }
+    }
+  },
+  "adjacent_probes": {
+    "cache_stampede_no_coalescing": {
+      "returncode": 1,
+      "stdout": "",
+      "stderr": "File \"<string>\", line 15\nSyntaxError: no binding for nonlocal 'calls' found"
+    },
+    "ask_learn_invalidates_own_cache_write": {
+      "returncode": 0,
+      "stdout": "{\"answers_cache_len_after_model_learn\": 0}",
+      "stderr": ""
+    },
+    "data01_swapped_answer_codes_pooling": {
+      "returncode": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 27, in <module>\n    qf = payloads.question_from(\"Q1\", rows_meta, rows_counts)\nTypeError: question_from() missing 1 required positional argument: 'order'"
+    },
+    "data02_china_us_weighting_targets": {
+      "returncode": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 8, in <module>\n    print(json.dumps({\"weighting_funcs\": [n for n in dir(weighting) if not n.startswith(\"_\")], \"baidu_mentions_weight\": calls_weight, \"weight_survey_has_country\": has_country_param, \"targets_keys\": list(getattr(weighting, \"TARGETS\", {}).keys()) if hasattr(weighting, \"TARGETS\") else None}))\n                                                                                                                                                                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'PosixPath' object has no attribute 'keys'"
+    },
+    "etl04_same_length_open_end_stale": {
+      "returncode": 0,
+      "stdout": "{\"uses_len_or_count_signature\": true, \"uses_hash\": true}",
+      "stderr": ""
+    },
+    "etl01_weekly_forsta_failure_sequencing": {
+      "returncode": 0,
+      "stdout": "{\"has_run\": true, \"has_main\": true}",
+      "stderr": ""
+    },
+    "code_slips_cohorts_and_survey_map": {
+      "returncode": 0,
+      "stdout": "{\"cohorts_parents_index\": 2, \"cohorts_resolved_exists\": false, \"survey_map_ethnicit_bug\": false}",
+      "stderr": ""
+    }
+  }
+}

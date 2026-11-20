@@ -33,7 +33,6 @@ import hashlib
 import json
 import logging
 import os
-import re
 import threading
 import time
 import urllib.error
@@ -87,16 +86,6 @@ SYSTEM = ("You map an analyst's question about Coresight's US consumer surveys t
           "top=which/most/best/rank, trend=over time, compare=versus, else share. c: a demographic named (Gen Z → "
           "generation, women → gender, by region → census_region), else none. p: named=dates or a span given, latest, "
           "previous=last week, first_vs_latest, else all. Never write numbers.")
-
-
-FILLER = set("a an the of to in on for do does did is are was were have has had people how many much what which who "
-              "share percentage percent please show me tell".split())
-
-
-def same_question(question: str) -> str:
-    """The words that make a question, sorted: "How many people have subscribed to Amazon Prime?" and "amazon prime,
-    how many subscribed" share one saved reading."""
-    return " ".join(sorted(set(re.findall(r"[a-z0-9]+", question.lower())) - FILLER))
 
 
 KEY_NAMES = ("OPENAPI_KEY", "OPENAI_API_KEY", "OPEN_API_KEY", "OPENAI_KEY")   # the setting under any of its usual names
@@ -367,14 +356,20 @@ def question_vectors(texts: dict[str, str], prune: bool = False) -> dict[str, np
     return {k: saved[digest[k]] for k in texts if digest[k] in saved}
 
 
+def reading_key(name: str, prompt: str) -> str:
+    """Identify the exact model input: question order, units and candidate evidence can change the plan."""
+    return hashlib.sha256(json.dumps([name, SYSTEM, SCHEMA, prompt], separators=(",", ":")).encode()).hexdigest()
+
+
 def plan(question: str, candidates: list[dict]) -> dict | None:
     """The model's reading of a question over numbered candidates ({number, text, family, waves, first, last, answers}),
     checked: pick is a candidate or None, focus only that candidate's own answer labels. None when it cannot run."""
     if not candidates:
         return None
-    # kept per model and prompt: an older model's reading was reused after a change, and turned the reader's right
-    # answer wrong ("Satisfaction with shopping in AI platforms": D34 → GA2, review of 15 Nov 2026)
-    memo = hashlib.sha1(json.dumps([model(), SYSTEM, same_question(question), [c["text"] for c in candidates]]).encode()).hexdigest()[:20]
+    listing = "\n".join(f"{c['number']}. {describe_candidate(c)}" for c in candidates)
+    prompt = f"{question}\n{listing}"
+    name = model()
+    memo = reading_key(name, prompt)
     kept = readings()
     if memo in kept:
         return {**kept[memo], "usd": 0.0, "seconds": 0.0}
@@ -382,14 +377,13 @@ def plan(question: str, candidates: list[dict]) -> dict | None:
         return None
     # every word sent is paid for: ~40 tokens a candidate (waves, years, wording to 90 letters, 6 answers to 32: 20 cut
     # "I have started but not finished" to "I have started but n", 13 Nov 2026)
-    listing = "\n".join(f"{c['number']}. {describe_candidate(c)}" for c in candidates)
     try:
         started = time.perf_counter()
         reply = call("chat/completions", {
-            "model": model(), "temperature": 0, "max_tokens": 160,   # 80 cut off a reply naming several answers (JSONDecodeError, 11 Nov)
-            "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": f"{question}\n{listing}"}],
+            "model": name, "temperature": 0, "max_tokens": 160,   # 80 cut off a reply naming several answers (JSONDecodeError, 11 Nov)
+            "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
             "response_format": {"type": "json_schema", "json_schema": {"name": "plan", "strict": True, "schema": SCHEMA}}})
-        usd = charge(model(), reply["usage"]["prompt_tokens"], reply["usage"]["completion_tokens"])
+        usd = charge(name, reply["usage"]["prompt_tokens"], reply["usage"]["completion_tokens"])
         log.info("Ask model: %d tokens in, %d out, $%.6f", reply["usage"]["prompt_tokens"], reply["usage"]["completion_tokens"], usd)
         found = json.loads(reply["choices"][0]["message"]["content"])
     except Exception as exc:   # noqa: BLE001 — network, timeout, refusal, bad JSON: the rules answer
@@ -427,7 +421,10 @@ def readings() -> dict:
         return {}
     if (READ["file"], READ["stamp"]) != (READINGS, stamp):
         try:
-            READ.update(file=READINGS, stamp=stamp, kept=json.loads(READINGS.read_text()))
+            kept = json.loads(READINGS.read_text())
+            if not isinstance(kept, dict):
+                return {}
+            READ.update(file=READINGS, stamp=stamp, kept=kept)
         except (OSError, ValueError):
             return {}
     return READ["kept"]
