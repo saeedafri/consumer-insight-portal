@@ -575,7 +575,9 @@ def question(family: str, study_type: str, qcode: str, wordings: dict | None = N
         borrowed, codes = same_wording_rows(conn, wordings, qcode, rows)
     country = next((code for code, c in countries().items() if c.get("family") == family), "US")
     data = question_from(qcode, waves, rows + borrowed, countries().get(country, {}).get("cuts", {}))
-    return {**data, "codes": codes} if codes else data
+    # the waves taken from other codes, by survey: Ask CIP joins a wording across codes itself and reads only a file's own
+    # (api/ask_index.py), or Q10_1 became the activities question it once was for four weeks (20 Nov 2026)
+    return {**data, "codes": codes, "borrowed": sorted({r["survey_id"] for r in borrowed})} if codes else data
 
 
 def question_from(qcode: str, waves: list[dict], rows: list[dict], order: dict) -> dict:

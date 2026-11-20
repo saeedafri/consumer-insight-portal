@@ -307,7 +307,7 @@ def read_vectors() -> dict[str, np.ndarray]:
     """The saved vectors by text hash ({} when there are none yet)."""
     try:
         with np.load(VECTORS) as kept:
-            return dict(zip(kept["hashes"], kept["vectors"].astype(np.float32)))
+            return dict(zip(kept["hashes"], kept["vectors"]))   # half precision as saved: callers make the float32 tables they keep (~13 MB less at start)
     except (OSError, ValueError, KeyError):
         return {}
 

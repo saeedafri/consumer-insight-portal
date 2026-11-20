@@ -477,6 +477,16 @@ def read_with_model(plan: dict, reading: dict) -> dict:
     return {**plan, "kind": kind, "when": when, "cuts": cuts, "grain": grain, "compare": plan["compare"] or len(when) > 1}
 
 
+def lacks_group(fig: dict, plan: dict) -> bool:
+    """A demographic group the question asks about has no figures in fig: answer() tries the next close match, then says so."""
+    if not plan["cuts"]:
+        return False
+    dimension, groups = next(iter(plan["cuts"].items()))
+    available = {value for col, (cut, value) in enumerate(fig["columns"])
+                 if cut == dimension and not np.isnan(fig["pct"][:, col]).all()}
+    return not available or (groups != "all" and bool(set(groups) - available))
+
+
 def no_figure(message: str, plan: dict, suggestions=()) -> dict:
     """Explain why a requested analysis has no sound figure."""
     return {"answer": message, "chart": None, "table": None, "sources": [], "suggestions": list(suggestions),
@@ -716,8 +726,10 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     # read the quarterly EC1 (September only); the weekly q3, second closest, holds both months (fresh set, 20 Nov 2026)
     # Only a near-equal match: "ways to save money in October" must never borrow the retailer question (test_assistant)
     top = by_words.get(hits[0]["key"], 0)
+    # A group asked about counts as a period does: "Gen Z buying clothing online" read the Amazon apparel study's one wave,
+    # which has no Gen Z figures; the weekly q3 has them (20 Nov 2026)
     fallbacks += [h for h in hits[1:3] if h not in fallbacks and top and by_words.get(h["key"], 0) >= NEAR_EQUAL * top] \
-        if selected is None and asked_plan["when"] else []
+        if selected is None and (asked_plan["when"] or asked_plan["cuts"]) else []
     for hit in hits[:1] + fallbacks[:5]:
         doc = index.docs[hit["key"]]
         plan = asked_plan
@@ -727,7 +739,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         fig = ask_figures.compute(counts, plan, visible)
         if hit is hits[0]:
             first = (doc, plan, counts, fig)
-        if fig["periods"] and not (len(plan["when"]) > 1 and fig["missing"]):
+        if fig["periods"] and not (len(plan["when"]) > 1 and fig["missing"]) and not lacks_group(fig, plan):
             break
     else:
         doc, plan, counts, fig = first   # none was: say when the pick was asked
@@ -762,9 +774,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         return no_figure("At least one requested period has no comparable survey data. Try a single period or choose two available periods in Trends.", plan, suggestions)
     if plan["cuts"]:
         dimension, groups = next(iter(plan["cuts"].items()))
-        available = {value for col, (cut, value) in enumerate(fig["columns"])
-                     if cut == dimension and not np.isnan(fig["pct"][:, col]).all()}
-        if not available or (groups != "all" and set(groups) - available):
+        if lacks_group(fig, plan):
             return no_figure("At least one requested demographic group is unavailable for this survey question. Try a different group or ask for all respondents.", plan, suggestions)
         if len(plan["when"]) > 1 and not fig["grain"] and groups != "all":
             columns = [col for col, (cut, value) in enumerate(fig["columns"]) if cut == dimension and value in groups]

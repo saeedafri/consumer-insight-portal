@@ -164,10 +164,21 @@ def in_period(spec: dict, dates: list[str]) -> bool:
     return any(lo <= d <= hi for d in dates)
 
 
+EVENT_WORDS = {"thanksgiving", "easter", "christmas", "valentine", "halloween", "mother", "father", "independence", "labor",
+               "memorial", "president", "presidents", "hanukkah", "kwanzaa", "diwali", "ramadan", "lunar", "prime", "black",
+               "cyber", "singles", "school", "super", "bowl", "graduation"}
+
+
 def wording_groups(versions: list[str]) -> list[list[int]]:
     """Version numbers (1-based, as the waves carry them) grouped by alike wording, in first-asked order."""
-    words = [set(re.findall(r"[a-z]+", text.lower())) for text in versions]
-    alike_words = lambda a, b: len(a & b) / max(len(a | b), 1) >= SAME_WORDING   # noqa: E731
+    # its meaningful words only: "Which, if any, of these ... in the past two weeks? Select all that apply" is the frame of
+    # many questions, and at half the words shared it joined the activities question to the food retailers one (Q10_1);
+    # once the 15 Nov cross-code join gave the activities wording 211 more waves, food retailers left the index (20 Nov 2026)
+    words = [set(re.findall(r"[a-z]{4,}", text.lower())) - STOP for text in versions]   # "and", "the", "you" made q3's online and activities wordings half alike
+    # and never two holidays or events: "How do you expect your Thanksgiving 2024 spending to compare…" and "…Easter 2025…"
+    # share all but one word, and Thanksgiving read Easter's figures (20 Nov 2026); years are not words here, so the
+    # same holiday's yearly question stays one series
+    alike_words = lambda a, b: len(a & b) / max(len(a | b), 1) >= SAME_WORDING and a & EVENT_WORDS == b & EVENT_WORDS   # noqa: E731
     groups: list[list[int]] = []
     for v, text in enumerate(versions, start=1):
         alike = next((g for g in groups if alike_words(words[g[-1] - 1], words[v - 1])), None)
@@ -201,12 +212,13 @@ class Index:
                 continue
             file = f"{family}/{study_type}/{qcode}"
             groups = wording_groups(data["versions"])
-            for g, versions in enumerate(groups):
-                asked = [known[w[0]] for w in data["waves"] if w[0] in known and w[2] in versions]
+            borrowed = set(data.get("borrowed", ()))   # waves of other codes (shared/data/payloads.py question): Ask joins
+            for g, versions in enumerate(groups):      # a wording across codes below, from each file's own waves
+                asked = [known[w[0]] for w in data["waves"] if w[0] in known and w[2] in versions and w[0] not in borrowed]
                 if not asked:
                     continue
                 key = file if len(groups) == 1 else f"{file}#{g + 1}"
-                waves_in = {i for i, w in enumerate(data["waves"]) if w[2] in versions}
+                waves_in = {i for i, w in enumerate(data["waves"]) if w[2] in versions and w[0] not in borrowed}
                 used = {a for w, a in zip(data["w"], data["a"]) if w in waves_in}
                 if all(data["answers"][a][2].strip() in UNIT_ONLY for a in used):
                     continue   # "How much, in dollars…" holds no amounts (28 such questions, 12 Nov 2026): never quote "$ 100%"
@@ -313,7 +325,28 @@ class Index:
             if len(first_second) == 2 and len(first_second[0]) >= 5:
                 self.two_word_names.setdefault(first_second[1], set()).add(first_second[0])
         self.newest = max((d["last"] for d in self.docs.values()), default="2000-01-01")
+        # each question's history (waves, 1 at a year of weeks), recency and tracker flag, the same for every ask: find
+        # computed them for every matching question of every ask (~9,600 logarithms a question, 20 Nov 2026)
+        newest = date.fromisoformat(self.newest)
+        self.standings = {k: (min(math.log1p(d["waves"]) / math.log1p(52), 1.0),
+                              math.exp(-(newest - date.fromisoformat(d["last"])).days / 120), d["study_type"] == "tracker")
+                          for k, d in self.docs.items()}
+        self.seen_by: dict[frozenset, set[str]] = {}   # allowed(): the questions each visible set may see
         log.info("Ask CIP index: %d questions, %d words, from %s", len(self.docs), len(self.postings), root)
+
+    def allowed(self, visible: set[int] | None) -> set[str] | None:
+        """The questions asked in any of these waves (None: every question), kept per visible set: one per access scope
+        and country, where find checked every matching question's waves on every ask."""
+        if visible is None:
+            return None
+        waves = frozenset(visible)
+        found = self.seen_by.get(waves)
+        if found is None:   # its own copy: another thread may clear the dict between storing and returning
+            found = {k for k, d in self.docs.items() if not waves.isdisjoint(d["surveys"])}
+            if len(self.seen_by) >= 32:   # scopes come and go: a bounded few
+                self.seen_by.clear()
+            self.seen_by[waves] = found
+        return found
 
     def add_vectors(self) -> None:
         """Meaning: one vector per question (api/ask_model.py), from its wording, answers and topic words, and one per
@@ -324,8 +357,12 @@ class Index:
                                             **{f"ask {a}": ask_model.as_query(a) for doc in self.docs.values() for a in doc.get("asks", [])}}, prune=True)
         keys = [k for k in self.docs if k in found]
         owners = [(i, f"ask {a}") for i, k in enumerate(keys) for a in self.docs[k].get("asks", []) if f"ask {a}" in found]
+        # one vector per distinct ask and an index per owner: 15,328 distinct of 24,608 rows (14 MB less, 20 Nov 2026)
+        distinct = list(dict.fromkeys(a for _, a in owners))
+        row = {a: r for r, a in enumerate(distinct)}
         self.ask_owner = np.array([i for i, _ in owners], np.int32)
-        self.ask_vectors = np.array([found[a] for _, a in owners], np.float32) if owners else None
+        self.ask_row = np.array([row[a] for _, a in owners], np.int32)
+        self.ask_vectors = np.array([found[a] for a in distinct], np.float32) if owners else None
         areas = ask_model.question_vectors({a: ask_model.as_survey_question(f"survey questions about {a}") for a in AREAS}) if keys else {}
         self.area_vectors = np.array([areas[a] for a in AREAS], np.float32) if len(areas) == len(AREAS) else None
         newest = date.fromisoformat(max((d["last"] for d in self.docs.values()), default="2000-01-01"))
@@ -403,23 +440,23 @@ class Index:
             for key, field in best.items():
                 scores[key] = scores.get(key, 0.0) + self.idf[s] * field
         weight = 3.0 * (sum(self.idf[s] for s in asked) + unknown * max(self.idf.values()))
-        newest = date.fromisoformat(self.newest)
+        seen = self.allowed(visible)
         when = plan.get("when") or []
         relative = not when or any(k in spec for spec in when for k in ("latest", "last", "all"))
         named = [spec for spec in when if not any(k in spec for k in ("latest", "last", "all", "first"))]
         series = plan.get("kind") in ("trend", "change") or bool(plan.get("grain")) or plan.get("compare") or len(when) > 1
         ranked = []
         for key, score in scores.items():
-            doc = self.docs[key]
-            if visible is not None and visible.isdisjoint(doc["surveys"]):
+            if seen is not None and key not in seen:
                 continue
-            boost = 0.05 * (doc["study_type"] == "tracker") + 0.1 * min(math.log1p(doc["waves"]) / math.log1p(52), 1.0)
+            history, recency, tracker = self.standings[key]
+            boost = 0.05 * tracker + 0.1 * history
             if relative:   # still asked: "latest" or "last N weeks" can be answered from it
-                boost += 0.25 * math.exp(-(newest - date.fromisoformat(doc["last"])).days / 120)
+                boost += 0.25 * recency
             if series:     # a year of waves or more makes a trend
-                boost += 0.25 * min(math.log1p(doc["waves"]) / math.log1p(52), 1.0)
+                boost += 0.25 * history
             if named:
-                boost += 0.3 * any(in_period(spec, doc["dates"]) for spec in named)
+                boost += 0.3 * any(in_period(spec, self.docs[key]["dates"]) for spec in named)
             ranked.append(((score / weight) * (1 + boost), key, score / weight))
         ranked.sort(reverse=True)
         said_words = set(re.findall(r"[a-z0-9]+", (plan.get("question") or words).lower()))
@@ -446,7 +483,7 @@ class Index:
         near = self.vectors @ asked
         if self.ask_vectors is not None:   # joined with its nearest analyst's ask
             nearest_ask = near.copy()
-            np.maximum.at(nearest_ask, self.ask_owner, self.ask_vectors @ asked)
+            np.maximum.at(nearest_ask, self.ask_owner, (self.ask_vectors @ asked)[self.ask_row])
             near = (1 - ASK_WEIGHT) * near + ASK_WEIGHT * nearest_ask
         near = near + self.standing   # plus a little for long-running and recent questions
         if self.area_vectors is not None:   # the question's business area (Uber's "workspaces"): its questions a little ahead
@@ -517,11 +554,22 @@ class Index:
             # a code alone is ambiguous (115 codes are reused by different studies' questions: q2, D14, Q10), so the AI's
             # and admins' entries carry the question's key; a learned entry without one resolved to the wrong study (13 Nov
             # 2026). A key a publish renumbered (a new survey reusing a code: EC6 becomes EC6#1) is found by its wording
-            if v.get("key") in self.docs:
-                return v["key"]
             family = v.get("family", "CSI-US")
             moved = by_text.get((family, str(v.get("text", "")).lower()))
-            return moved or (None if v.get("learned") else by_code.get((family, str(v.get("code", "")).lower())))
+            if moved:
+                return moved
+            # a key is a file's wording by position: a publish can give the number to another wording (Q19#53 read the
+            # back-to-school retailers once wordings were regrouped, 20 Nov 2026). The key stands while its wording is
+            # the file's best match for the question; else that best match; else, with a key, nothing (reported)
+            words = set(re.findall(r"[a-z]{4,}", str(v.get("question", "")).lower())) - STOP
+            shared = lambda k: len(words & set(re.findall(r"[a-z]{4,}", self.docs[k]["text"].lower())))   # noqa: E731
+            file = str(v.get("key") or "").split("#")[0]
+            near = max((k for k in self.docs if file and k.split("#")[0] == file), key=shared, default=None)
+            if v.get("key") in self.docs and (near is None or shared(v["key"]) >= shared(near)):
+                return v["key"]
+            if near and shared(near):
+                return near
+            return None if v.get("learned") or file else by_code.get((family, str(v.get("code", "")).lower()))
 
         resolved = [{**v, "key": resolve(v)} for v in listed]
         self.unresolved = [v["question"] for v in resolved if not v["key"] and not v.get("learned")]   # etl/ask_quality.py reports them

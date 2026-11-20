@@ -331,7 +331,7 @@ def test_an_analysts_ask_brings_its_question_nearer(index):
     keys = list(index.docs)[:2]
     index.vector_keys, index.area_vectors = keys, None
     index.vectors = np.array([[0.5, 0.866], [0.6, 0.8]], np.float32)       # closeness to (1, 0): 0.5 and 0.6
-    index.ask_vectors, index.ask_owner = np.array([[1.0, 0.0]], np.float32), np.array([0], np.int32)   # an ask of the first, 1.0
+    index.ask_vectors, index.ask_owner, index.ask_row = np.array([[1.0, 0.0]], np.float32), np.array([0], np.int32), np.array([0], np.int32)   # an ask of the first, 1.0
     index.standing = np.zeros(2, np.float32)
     found = index.retrieve("anything", {}, 2, None, np.array([1.0, 0.0], np.float32))
     assert [f["key"] for f in found[:2]] == keys and found[0]["near"] == pytest.approx(0.65, abs=1e-3)
@@ -829,3 +829,76 @@ def test_no_period_and_a_group_reads_the_newest_wave_that_has_the_group(tmp_path
     fig = ask_figures.compute(found.counts(next(iter(found.docs))), ask_reader.read("Gen Z buying clothing online"), EVERYONE)
     genz = next(i for i, (_, value) in enumerate(fig["columns"]) if value == "GenZ")
     assert fig["asked"][-1] == DATES[-2] and round(float(fig["pct"][0, genz, 0]), 1) == 30.0   # 19 Oct, Gen Z 30 of 100
+
+
+def test_a_renumbered_verified_key_finds_its_wording_in_the_same_file(index, tmp_path, monkeypatch):
+    # staging, 20 Nov 2026: "CSI-US/tracker/Q19#53" was renumbered when wordings joined its file, and the code alone gave
+    # AP14, a question once asked as Q19; the same file's wording sharing the question's words is the one meant
+    from api import ask_index, ask_model
+    listed = tmp_path / "verified.yml"
+    listed.write_text('- {question: "Which ways to save money do people use?", key: "CSI-US/tracker/Q14#9", code: Q14, kind: top, period: latest}\n'
+                      '- {question: "Favourite colour of cars", key: "CSI-US/tracker/Q14#7", code: Q14, kind: share, period: latest}\n')
+    monkeypatch.setattr(ask_index, "VERIFIED", listed)
+    monkeypatch.setattr(ask_model, "question_vectors", lambda texts, prune=False: {k: ask_index.np.ones(384, ask_index.np.float32) for k in texts})
+    index.load_verified()
+    assert [v["key"] for v in index.verified] == [k for k, d in index.docs.items() if "save money" in d["text"]]
+    assert index.unresolved == ["Favourite colour of cars"]   # no wording shares its words: reported, never a guess
+
+
+def test_a_group_the_pick_lacks_is_read_from_a_near_equal_question_that_has_it(tmp_path):
+    # 20 Nov 2026: "Gen Z buying clothing online" read a one-wave study without Gen Z figures and said the group was
+    # unavailable; the weekly question, a near-equal match, has them
+    root = tmp_path / "questions"
+    (root / "APPAREL_STUDY" / "annual").mkdir(parents=True)
+    (root / "CSI-US" / "tracker").mkdir(parents=True)
+    (root / "APPAREL_STUDY" / "annual" / "q3.json.gz").write_bytes(gzip.compress(json.dumps(question_file(
+        [[90, "2026-04-20", 1]], ["Have you been buying clothing online?"], [["", 1, "Yes"], ["", 2, "No"]],
+        [["total", "Total"], ["generation", "Millennial"]], [(0, 0, 0, 300, 400), (0, 0, 1, 100, 400), (0, 1, 0, 60, 100)])).encode()))
+    (root / "CSI-US" / "tracker" / "XQ3.json.gz").write_bytes(gzip.compress(json.dumps(question_file(
+        [[100 + i, d, 1] for i, d in enumerate(DATES)], ["Which categories have you bought online in the past two weeks?"],
+        [["", 1, "Clothing"], ["", 2, "Groceries"]], [["total", "Total"], ["generation", "GenZ"]],
+        [(i, c, a, 30 + a, 100) for i in range(8) for c in (0, 1) for a in (0, 1)])).encode()))
+    waves = [{"survey_id": 90, "wave_date": "2026-04-20", "title": "Apparel", "modules": [], "survey_family": "APPAREL_STUDY", "study_type": "annual"}] + \
+            [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping and Spending", "modules": []} for i, d in enumerate(DATES)]
+    found = assistant.answer("Share of Gen Z buying clothing online", Index(root, waves), {90} | EVERYONE)
+    assert found["mode"] == "figures" and found["sources"][0]["qcode"] == "XQ3"
+
+
+def test_a_verified_key_whose_number_now_names_another_wording_moves_to_its_own(index, tmp_path, monkeypatch):
+    # 20 Nov 2026: regrouping a file's wordings gave Q19#53 to the back-to-school retailers; the stored key exists but is
+    # not the reviewed question's wording any more
+    from api import ask_index, ask_model
+    keys = [k for k in index.docs if k.startswith("CSI-US/tracker/Q14")]
+    other = next(k for k in keys if "save money" not in index.docs[k]["text"])
+    listed = tmp_path / "verified.yml"
+    listed.write_text(f'- {{question: "Which ways to save money do people use?", key: "{other}", code: Q14, kind: top, period: latest}}\n')
+    monkeypatch.setattr(ask_index, "VERIFIED", listed)
+    monkeypatch.setattr(ask_model, "question_vectors", lambda texts, prune=False: {k: ask_index.np.ones(384, ask_index.np.float32) for k in texts})
+    index.load_verified()
+    assert [v["key"] for v in index.verified] == [k for k in keys if "save money" in index.docs[k]["text"]]
+
+
+def test_ask_reads_only_a_files_own_waves_of_a_wording(tmp_path):
+    # 20 Nov 2026: the cross-code join gave Q10_1's four-week activities wording 211 borrowed waves, and Ask took Q10_1
+    # for the activities question; the borrowed waves are the other file's, joined by Ask itself
+    root = tmp_path / "questions" / "CSI-US" / "tracker"
+    root.mkdir(parents=True)
+    data = question_file([[100 + i, d, 1] for i, d in enumerate(DATES)], ["Which of these have you done in the past two weeks?"],
+                         [["", 1, "Met friends"]], [["total", "Total"]], [(i, 0, 0, 100, 400) for i in range(8)])
+    (root / "XQ9.json.gz").write_bytes(gzip.compress(json.dumps({**data, "codes": ["XQ1"], "borrowed": [104, 105, 106, 107]}).encode()))
+    waves = [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping and Spending", "modules": []} for i, d in enumerate(DATES)]
+    doc = next(iter(Index(tmp_path / "questions", waves).docs.values()))
+    assert doc["surveys"] == [100, 101, 102, 103] and doc["last"] == DATES[3]
+
+
+def test_wordings_join_by_their_own_words_never_by_a_shared_frame_or_across_holidays():
+    # 20 Nov 2026: "Which, if any, of these … in the past two weeks?" joined the activities, food-retailer and online
+    # questions, and "Thanksgiving 2024" joined "Easter 2025"
+    from api.ask_index import wording_groups
+    assert wording_groups(["Which, if any, of these have you done in the past two weeks? Select all that apply or None of these.",
+                           "And which, if any, of these categories have you purchased ONLINE in the past two weeks?",
+                           "Which, if any, of these retailers have you bought any FOOD products from in the past two weeks?"]) == [[1], [2], [3]]
+    holiday = "How do you expect your {} spending to compare to last year? Think about all spending."
+    assert wording_groups([holiday.format("Thanksgiving 2024"), holiday.format("Easter 2025"), holiday.format("Thanksgiving 2025")]) == [[1, 3], [2]]
+    assert wording_groups(["Which categories have you purchased ONLINE in the past two weeks?",
+                           "Which categories have you purchased online in the past two weeks (i.e., groceries)?"]) == [[1, 2]]

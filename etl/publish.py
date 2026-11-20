@@ -115,7 +115,8 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
              "open_ends": 1,    # books chart coded open-ended questions (etl/open_ends.py, 24 Oct 2026)
              "cut_inventory": 1,  # each wave's complete cuts directory is the question discovery catalogue
              "answer_labels": 1,  # a reused code keeps each question's own answer labels (payloads.question_from, 12 Nov 2026)
-             "same_question_codes": 1}  # a question file holds its wording's waves under other codes (payloads.same_wording_rows, 15 Nov 2026)
+             "same_question_codes": 1,  # a question file holds its wording's waves under other codes (payloads.same_wording_rows, 15 Nov 2026)
+             "borrowed_waves": 1}       # and names them, for Ask CIP to leave out (payloads.question, 20 Nov 2026)
     rules_changed = last.get("rules", {"hidden_base": 30}) != rules   # a new small-cell rule: every file is rebuilt
     before = {} if rules_changed else last.get("built", {})
     start = time.perf_counter()

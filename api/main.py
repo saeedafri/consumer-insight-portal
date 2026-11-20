@@ -102,8 +102,11 @@ CACHED_BYTES = 0
 CACHE_COUNTS = {"hits": 0, "misses": 0}   # RESULTS answered from memory vs built, since this process started (Logs page)
 BUILD_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_BUILD_SLOTS", "8")))   # concurrent database builds per worker
 BUILD_WAIT = float(os.environ.get("CIP_BUILD_WAIT", "3"))
-ASK_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_ASK_SLOTS", "6")))   # Ask questions at once per worker: most of a new one
-ASK_WAIT = 8.0                                                              # is ~2 s waiting on the model (no CPU); seconds a question queues   # seconds a request may queue for a slot before "busy, retry"
+# Ask questions computed at once per worker. 20 Nov 2026, 100 simultaneous users: 6 at once held 819 MB and page reads
+# p95 417 ms; 2 at once 647 MB and 69 ms. On one vCPU more than two only wait for the core and each holds its own
+# model working memory. A queued question waits up to ASK_WAIT seconds, then "busy, retry"
+ASK_SLOTS = asyncio.Semaphore(int(os.environ.get("CIP_ASK_SLOTS", "2")))
+ASK_WAIT = 8.0
 # one Excel/PowerPoint build at a time per worker: on the one vCPU, parallel exports raised everyone's p95 about 7x
 # (Codex review, 20 Nov 2026); a second one queues briefly, then "busy, retry"
 EXPORT_SLOTS = asyncio.Semaphore(1)

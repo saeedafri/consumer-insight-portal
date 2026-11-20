@@ -266,6 +266,7 @@ def test_the_question_file_follows_its_wording_across_renumbered_codes(csi_db):
     assert data["waves"] == [[304, "2023-12-25", 1], [300, "2024-01-01", 2], [301, "2024-01-08", 2], [302, "2024-01-15", 2],
                              [306, "2024-02-05", 2]]
     assert data["versions"] == ["Are you currently avoiding public areas?", done] and data["codes"] == ["Q7", "Q8_2"]
+    assert data["borrowed"] == [300, 306]   # named, for Ask CIP to read only q1's own waves (20 Nov 2026)
     # Q7 numbered its answers the other way round: they join q1's Yes and No, not two more rows each half empty
     assert sorted(a[2] for a in data["answers"]) == ["No", "Yes"]
     yes = next(i for i, a in enumerate(data["answers"]) if a[2] == "Yes")
