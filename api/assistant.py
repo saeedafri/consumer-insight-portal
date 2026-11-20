@@ -352,8 +352,10 @@ def brief(plan: dict, fig: dict, doc: dict, shown: list[int]) -> dict:
             note = f"{plain(main)}, {periods[p]['label']}"
             tiles = [{"label": f"Highest: {top}", "value": fmt(high), "note": note}, {"label": f"Lowest: {bottom}", "value": fmt(low), "note": note},
                      {"label": "Gap", "value": f"{high - low:.1f} pts", "note": f"{top} vs {bottom}, {tested}"}]
+            left_out = sum(1 for c in range(len(columns)) if pct(p, c, main) is not None and fig["bases"][p, c, main] < SMALL_BASE)
             takeaway = (f"{subject} runs from {fmt(low)} among {bottom} to {fmt(high)} among {top} {say_period(periods[p]['label'])}, "
-                        f"a {high - low:.1f}-point gap.")
+                        f"a {high - low:.1f}-point gap" + (f" ({left_out} {'group' if left_out == 1 else 'groups'} under {SMALL_BASE} "
+                        "respondents left out)." if left_out else "."))   # the chart shows them: say why "highest" skips them
     elif len(periods) > 1:
         line = [(p, pct(p, 0, main)) for p in range(len(periods)) if pct(p, 0, main) is not None]
         if line:
@@ -801,16 +803,22 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     table = figure_table(fig, listed)
     notes = [x for x in sentences[1:] if x.startswith(NOTE_STARTS)]
     points = [x for x in sentences[1:] if not x.startswith(NOTE_STARTS)]
-    headline = next((x for x in points if "%" in x), points[0] if points else "")   # the first sentence with a figure
+    # the answer first, in one sentence (ChatGPT's and Tableau Agent's order, 21 Nov 2026): the finding when there is one,
+    # else the first sentence with a figure; the figure sentences follow as points ("Top 5: 1. … 2. …" read as a list)
+    # not for a count (it leads with people) or one named group (the takeaway does not say "among Gen Z": 13 Nov 2026)
+    everyone = len(fig["columns"]) > 1 or fig["columns"][0][0] == "total"
+    lead = glance["takeaway"] if plan["kind"] != "count" and everyone else ""
+    headline = lead or next((x for x in points if "%" in x), points[0] if points else "")
+    main_base = int(fig["bases"][0, 0, shown[0]]) if shown and len(fig["periods"]) == 1 and len(fig["columns"]) == 1 else 0
     return {"answer": "\n".join(sentences), "headline": headline, "points": [x for x in points if x != headline], "notes": notes,
-            "scope": {"country": plan["country"], "period": period, "waves": waves_used},
+            "scope": {"country": plan["country"], "period": period, "waves": waves_used, "base": main_base},
             "source_line": sentences[0], "weighting": "unweighted", "understood": understood,
             "check": quick and understood in ("meaning", "reader") and not reader_sure and ask_model.ready(), "margin": margin,
             "verify": {"question": question, "key": doc["key"], "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],
                        "kind": plan["kind"], "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, "codes": doc.get("codes", [doc["qcode"]]),
             "chart": drawn, "table": table, "plan": plan, "mode": "figures", "no_source": False,
             "suggestions": suggestions, **glance,
-            "sources": [{"id": "S1", "key": doc["key"], "qcode": source_code, "question": source_text, "family": doc["family"],
+            "sources": [{"id": "S1", "key": doc["key"], "qcode": source_code, "question": source_text, "name": doc.get("name", ""), "family": doc["family"],
                          "survey_id": source_wave, "wave_date": last["to"], "waves": waves_used,
                          "link": f"/w/{source_wave}/{'trends' if len(fig['periods']) > 1 else 'questions'}/{source_code}"}]}
 

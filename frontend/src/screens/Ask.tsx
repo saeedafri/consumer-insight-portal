@@ -1,8 +1,8 @@
 // Ask CIP (/app/ask): a question in plain words, answered from the portal's own published survey figures with
 // the chart that fits (api/assistant.py, no database). Quick results appear first. An optional AI check can refine
 // the selected question, period or cut. A conversation:
-// each answer appears right under the box, newest first. Client view leads with the figures that matter (stat tiles),
-// the chart the dataviz forms pick (a line, ranked bars, one segmented bar, 100% stacked bars, a heatmap, a dumbbell),
+// each answer appears right under the box, newest first. Both views lead with the answer in one sentence and the
+// figures that matter (stat tiles), then the chart the dataviz forms pick (a line, ranked bars, one segmented bar, 100% stacked bars, a heatmap, a dumbbell),
 // what the figures tell, and questions to continue with; Analyst view adds the exact sentences, notes, how the question
 // was understood and every figure with its base. A question it cannot place shows the closest survey questions.
 import { Fragment, useEffect, useRef, useState } from "react";
@@ -209,14 +209,15 @@ function Reply({ question, answer, audience, weighted, checking, onAsk }: { ques
         <p className="ask-headline"><Bold text={answer.headline || answer.takeaway || answer.answer.split("\n")[1] || ""} /></p>
         {source && <p className="small muted ask-source">
           {scope && <>{scope.country === "US" ? "United States" : scope.country === "CN" ? "China" : scope.country}
-            {" · "}{scope.period}{" · "}{scope.waves} {scope.waves === 1 ? "survey wave" : "survey waves"}{" · Unweighted · "}</>}
-          <Link to={source.link}>Source {source.qcode} →</Link>
+            {" · "}{scope.period}{" · "}{scope.waves} {scope.waves === 1 ? "survey wave" : "survey waves"}
+            {!!scope.base && <>{" · "}{scope.base.toLocaleString("en-US")} respondents</>}{" · Unweighted · "}</>}
+          <Link to={source.link} title={source.question}>Source {source.qcode}{source.name ? `: ${source.name}` : ""} →</Link>
         </p>}
         {(how || checking) && <p className="small muted ask-how">{checking ? "Checking the survey match…" : analyst ? how :
           answer.understood === "verified" ? "Verified survey match" : answer.understood === "named" ? "Matched survey question" : "Closest survey match"}
           {analyst && isAdmin && answer.verify && !checking && answer.understood !== "verified" && <>{" · "}
           {verified ? <span role="status">{verified}</span> : <button type="button" className="linklike" onClick={() => void saveVerified()}>Save as verified</button>}</>}</p>}
-        {analyst && tiles.length > 0 && <Tiles tiles={tiles} />}
+        {tiles.length > 0 && <Tiles tiles={tiles} />}
         {analyst && !!answer.points?.length && <ul className="ask-points">{answer.points.map((p, i) => <li key={i}><Bold text={p} /></li>)}</ul>}
         {chart && offered.length > 1 && <span className="seg ask-views" role="group" aria-label="Chart type">
           {offered.map(v => <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>{VIEW_NAMES[v]}</button>)}</span>}

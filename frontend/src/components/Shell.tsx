@@ -15,7 +15,7 @@ import type { Me, Wave } from "../api";
 import { fmtDate } from "../stats";
 import { isSaved, removeView, saveView } from "../saved";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
+import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, MessageSquare, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 // [path, label, icon]; FEATURE names the /me feature a screen needs (config/access.yml): unlisted screens always show
@@ -192,20 +192,24 @@ export default function Shell() {
            {...(mobileMenuOpen ? { role: "dialog", "aria-modal": true } : {})}>
       <RailGroup label="Explore">
         <NavLink to="/" end><Icon of={House} />Home</NavLink>
+        {allowed(me, "ask") && <NavLink to="/ask" title="Ask a question in your own words: the answer, its chart and the survey behind it">
+          <Icon of={MessageSquare} />Ask CIP</NavLink>}
         {allowed(me, "library") && <NavLink to="/library"><Icon of={LibraryBig} />Survey library</NavLink>}
         {allowed(me, "search") && <NavLink to="/search"><Icon of={Search} />Search questions</NavLink>}
         {allowed(me, "schedule") && <NavLink to="/schedule"><Icon of={CalendarDays} />Launch schedule</NavLink>}
         {allowed(me, "boards") && <NavLink to="/boards"><Icon of={Pin} />Boards</NavLink>}
       </RailGroup>
       <RailGroup label="Core research">
-        {latest && allowed(me, "us_tracker") && <NavLink to={`/w/${latest.survey_id}`} className={() => wave?.survey_id === latest.survey_id ? "active" : ""}>
-          <Icon of={LayoutDashboard} />Shopping & Spending</NavLink>}
-        {china && allowed(me, "china_tracker") && <NavLink to={`/w/${china.survey_id}`} className={() => wave?.survey_family === "CSI-CN" ? "active" : ""}>
+        {latest && allowed(me, "us_tracker") && <NavLink to={`/w/${latest.survey_id}`} className={() => wave?.survey_id === latest.survey_id ? "active" : ""}
+          title="The Shopping & Spending survey: about 400 US adults every week since 2020">
+          <Icon of={LayoutDashboard} />US weekly tracker</NavLink>}
+        {china && allowed(me, "china_tracker") && <NavLink to={`/w/${china.survey_id}`} className={() => wave?.survey_family === "CSI-CN" ? "active" : ""}
+          title="The weekly China consumer survey and its weekly report">
           <Icon of={Globe} />China weekly tracker</NavLink>}
-        {allowed(me, "channels") && <NavLink to="/channels"><Icon of={Layers} />In store vs online</NavLink>}
-        {allowed(me, "retailers") && <NavLink to="/retailers"><Icon of={Store} />Retailer databank</NavLink>}
-        {allowed(me, "sectors") && <NavLink to="/sectors"><Icon of={Database} />Sector databank</NavLink>}
-        {allowed(me, "expectations") && <NavLink to="/expectations"><Icon of={ChartColumn} />Expected vs actual</NavLink>}
+        {allowed(me, "channels") && <NavLink to="/channels" title="Food and nonfood bought in store and online, week by week"><Icon of={Layers} />In store vs online</NavLink>}
+        {allowed(me, "retailers") && <NavLink to="/retailers" title="Each retailer: who shops there, how many bought and how positive they feel"><Icon of={Store} />Retailer databank</NavLink>}
+        {allowed(me, "sectors") && <NavLink to="/sectors" title="Each retail sector: reach, shoppers and spending intentions"><Icon of={Database} />Sector databank</NavLink>}
+        {allowed(me, "expectations") && <NavLink to="/expectations" title="What people planned to buy for an event against what they bought"><Icon of={ChartColumn} />Expected vs actual</NavLink>}
       </RailGroup>
       {TRACKERS.some(([code]) => allowed(me, `tracker_${code}`)) && <RailGroup label="Trackers" closed={!location.pathname.startsWith("/trackers")}>
         {TRACKERS.filter(([code]) => allowed(me, `tracker_${code}`)).map(([code, label]) =>

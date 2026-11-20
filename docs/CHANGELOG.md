@@ -4,6 +4,16 @@ Every feature, enhancement and update, newest first: the same entries as the por
 (`frontend/src/screens/WhatsNew.tsx`). Add each change to both; `tests/test_docs.py` fails if they differ.
 The API and the MCP connector are documented in [API.md](API.md).
 
+## 21 November 2026
+
+### Left menu: Ask CIP at the top, the US tracker named like China's, a line of help on hover
+
+Ask CIP is back in the left menu, second under Explore after Home, so the question box is one click away from any screen. Shopping & Spending is now called US weekly tracker, next to China weekly tracker, so the two weekly surveys read alike. Rest the pointer on Ask CIP, a tracker or a databank in Core research to read in one line what it answers. The Access page lists Ask CIP under Explore too.
+
+### Ask answers in one sentence first, then the key figures
+
+Ask CIP now opens each answer with the finding in one sentence, for example “Walmart” leads at 51.7%, 10.4 points ahead of “Amazon” (41.3%), instead of a long list of every figure. Under it: the country, date, number of survey waves, how many people answered, and the survey question by name; then the key figures as tiles, in Client view too; then the chart. A question with “which … most” is answered as a ranking. When a highest or lowest group leaves out groups of fewer than 50 people, the sentence says how many were left out.
+
 ## 20 November 2026
 
 ### Ask finds the weekly food, online and activities questions again

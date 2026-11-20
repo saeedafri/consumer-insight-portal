@@ -61,7 +61,7 @@ def test_the_latest_wave_is_people_over_base(index):
     assert found["mode"] == "figures" and found["sources"][0]["qcode"] == "XQ1"
     assert figure(found, "Amazon") == [42.5]                                    # 170 of 400
     assert found["table"]["cell_bases"] == [[400], [400]]
-    assert found["scope"] == {"country": "US", "period": "26 Oct 2026", "waves": 1}
+    assert found["scope"] == {"country": "US", "period": "26 Oct 2026", "waves": 1, "base": 400}
     assert "170 of 400" in found["answer"] and found["chart"]["type"] in ("bar", "donut")
 
 
@@ -693,7 +693,7 @@ def test_the_glance_never_names_a_small_group_and_says_a_lead_or_a_most_common_a
     assert glance["tiles"][0]["note"] == "Gas prices reducing spending: yes, 9 Nov 2026"         # a yes says what to
     assert glance["tiles"][2] == {"label": "Gap", "value": "30.0 pts", "note": "GenZ vs Boomer, significant"}
     assert glance["takeaway"] == ("“Yes” to “Did gas prices make you spend less?” runs from 30.0% among Boomer to 60.0% "
-                                  "among GenZ on 9 Nov 2026, a 30.0-point gap.")
+                                  "among GenZ on 9 Nov 2026, a 30.0-point gap (1 group under 50 respondents left out).")
     total = [("total", "Total")]
     split = fig([[[50, 30, 20]]], [[[400] * 3]], ["A", "B", "C"], total)
     assert assistant.brief({"kind": "share"}, split, doc, [0, 1])["takeaway"] == "“A” is the most common answer at 50.0%, 20.0 points ahead of “B” (30.0%)."
@@ -902,3 +902,15 @@ def test_wordings_join_by_their_own_words_never_by_a_shared_frame_or_across_holi
     assert wording_groups([holiday.format("Thanksgiving 2024"), holiday.format("Easter 2025"), holiday.format("Thanksgiving 2025")]) == [[1, 3], [2]]
     assert wording_groups(["Which categories have you purchased ONLINE in the past two weeks?",
                            "Which categories have you purchased online in the past two weeks (i.e., groceries)?"]) == [[1, 2]]
+
+
+def test_which_with_most_ranks_and_most_people_does_not():
+    assert ask_reader.read("Which retailers do people shop at most?")["kind"] == "top"
+    assert ask_reader.read("What do most people think about tariffs?")["kind"] == "share"
+
+
+def test_the_answer_leads_with_its_finding_but_a_named_group_keeps_its_name(index):
+    everyone = assistant.answer("Amazon retailers bought in the latest wave", index, EVERYONE)
+    assert everyone["headline"] == everyone["takeaway"]
+    group = assistant.answer("Top retailers among Gen Z in the latest wave", index, EVERYONE)
+    assert "among" in group["headline"] and group["headline"] != group["takeaway"]

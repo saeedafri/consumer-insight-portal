@@ -4,6 +4,16 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "21 November 2026",
+  entries: [
+    { title: "Left menu: Ask CIP at the top, the US tracker named like China's, a line of help on hover",
+      body: "Ask CIP is back in the left menu, second under Explore after Home, so the question box is one click away from any screen. Shopping & Spending is now called US weekly tracker, next to China weekly tracker, so the two weekly surveys read alike. Rest the pointer on Ask CIP, a tracker or a databank in Core research to read in one line what it answers. The Access page lists Ask CIP under Explore too.",
+      link: ["/ask", "Open Ask CIP"] },
+    { title: "Ask answers in one sentence first, then the key figures",
+      body: "Ask CIP now opens each answer with the finding in one sentence, for example “Walmart” leads at 51.7%, 10.4 points ahead of “Amazon” (41.3%), instead of a long list of every figure. Under it: the country, date, number of survey waves, how many people answered, and the survey question by name; then the key figures as tiles, in Client view too; then the chart. A question with “which … most” is answered as a ranking. When a highest or lowest group leaves out groups of fewer than 50 people, the sentence says how many were left out.",
+      link: ["/ask", "Open Ask CIP"] },
+  ],
+}, {
   date: "20 November 2026",
   entries: [
     { title: "Ask finds the weekly food, online and activities questions again",

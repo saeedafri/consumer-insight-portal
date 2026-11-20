@@ -66,6 +66,23 @@
         "3000"
       ],
       "port": 3000
+    },
+    {
+      "name": "cip-review",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "APP_ENV=LOCAL",
+        "CIP_DEMO_LOGIN=1",
+        "CIP_SESSION_SECRET=local-dev-only-not-a-real-secret",
+        "CIP_WEB_DIR=frontend/out",
+        ".venv/bin/python",
+        "-m",
+        "uvicorn",
+        "api.main:app",
+        "--port",
+        "8001"
+      ],
+      "port": 8001
     }
   ]
 }

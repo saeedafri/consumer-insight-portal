@@ -41,7 +41,7 @@ CUT_DIMS = [(r"\bby (generation|generations|gen)\b|\bacross generations\b|\bwhic
             (r"\bby age( group| band)?s?\b|\bage (group|band)s?\b|\bwhich age( group)?s?\b", "age_band"), (r"\bby (household )?income\b|\bincome (group|band|level)s?\b", "income_band"),
             (r"\bby region\b|\bregions?\b|\b(the )?south (vs|versus|and|or) (the )?west\b", "census_region"), (r"\burbanicity\b|\burban,? suburban\b", "urbanicity")]
 KINDS = [(r"\bhow many (people|respondents|users|consumers|shoppers|adults|americans)\b|\bnumber of (people|respondents)\b", "count"),
-         (r"\b(top|winner|won|most popular|leading|leader|highest|best|biggest|largest|most common|rank|ranking|favou?rite)\b", "top"),
+         (r"\b(top|winner|won|most popular|leading|leader|highest|best|biggest|largest|most common|rank|ranking|favou?rite)\b|\bwhich\b[^?]*\bmost\b", "top"),   # "which retailers do people shop at most?" ranks
          (r"\b(trend|over time|history|historically|evolution|track(ed)?|rising or falling|going up or down|up or down)\b", "trend"),
          (r"\b(change|changed|increase|increased|decrease|decreased|grow|grew|growth|rise|rose|fall|fell|drop|dropped|shift)\b", "change")]
 FILLER = re.compile(r"\b(what|which|who|how|many|much|percent(age)?|share|proportion|of|the|in|on|for|did|do|does|is|are|was|"

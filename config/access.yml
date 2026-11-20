@@ -56,7 +56,7 @@ family_menus: {CSI-US: us_tracker, CSI-CN: china_tracker}
 # tests/test_access.py checks every feature is here once): a key, or {label, always} (on for everyone), {label, admin}
 # (the super admin's alone), {label, children} (a menu with pages of its own)
 menu:
-  - {group: Explore, items: [{label: Home, always: true}, library, search, schedule, boards]}
+  - {group: Explore, items: [{label: Home, always: true}, ask, library, search, schedule, boards]}
   - {group: Core research, items: [us_tracker, china_tracker, channels, retailers, sectors, expectations,
       {label: "A survey wave's screens (its tabs)", children: [{label: Overview, always: true}, dashboards, explorer, crosstab,
                                                             trends, compare, audiences, changes, report, survey]}]}
@@ -66,10 +66,10 @@ menu:
   - {group: Research operations, items: [fieldwork, forsta_reports, forsta_check, forsta_crosstab, forsta_samples,
       forsta_warnings, forsta_files, forsta_deletion, forsta_account]}
   - {group: Administration, items: [ingest, logs, {label: Access, admin: true}]}
-  - {group: On every screen, items: [ask, export, alerts, saved_views, weighted, api]}
+  - {group: On every screen, items: [export, alerts, saved_views, weighted, api]}
 feature_labels:   # the names the Access screen shows
   library: Survey library
-  us_tracker: Shopping & Spending (the weekly US tracker's waves)
+  us_tracker: US weekly tracker (the Shopping & Spending survey's waves)
   china_tracker: China weekly tracker (its waves)
   channels: In store vs online
   tracker_tariffs_inflation: Tariffs & inflation
