@@ -65,7 +65,7 @@ curl -H "Authorization: Bearer cip_…" "https://<portal>/api/v1/waves/532/resul
 | `DELETE /api/v1/keys/{shown}` | Revoke one of your keys | — (portal sign-in) |
 
 **Your team's items.** The same boards, saved views, alerts and audiences as on the screens; you can remove only
-what you made.
+what you made. Saving a view, an alert or an audience also needs `"by"`: your name, shown to the team as whose it is (a 422 says so when it is missing). An audience's groups are matched without spaces or case ("Gen Z" is the data's GenZ); a group a wave lacks is listed in `skipped`.
 
 | Method and address | What it does | Needs on your menu |
 |---|---|---|

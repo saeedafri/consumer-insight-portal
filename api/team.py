@@ -406,10 +406,15 @@ def _everyone(wave: dict) -> int:
 
 
 def _group(wave: dict, definition: dict) -> tuple[int, list]:
-    """The audience as a bitset (-1 = everyone) and the answer conditions this wave could not apply."""
+    """The audience as a bitset (-1 = everyone) and the conditions this wave could not apply. A group is matched
+    without spaces or case, so "Gen Z" (as the screens write it) is the wave's "GenZ"; one the wave lacks is named in
+    skipped rather than silently counting nobody (found in the 21 Nov 2026 API test)."""
     group, skipped = -1, []   # -1 has every bit set: no condition yet means everyone
+    plain = lambda value: value.replace(" ", "").lower()
     for dim, values in definition["cuts"].items():
-        group &= sum(set(wave["cuts"].get(dim, {}).get(v, 0) for v in values))   # values of one cut never share a person
+        known = {plain(v): bits for v, bits in wave["cuts"].get(dim, {}).items()}
+        skipped += [f"{dim}: {v}" for v in values if plain(v) not in known]
+        group &= sum(set(known.get(plain(v), 0) for v in values))   # values of one cut never share a person
     for a in definition["answers"]:
         other = wave["questions"].get(a["qcode"])
         hit = next((r for r in other["rows"] if r[2] == a["item_label"] and r[3] == a["option_code"]), None) if other else None

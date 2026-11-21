@@ -6,6 +6,9 @@ type Entry = { title: string; body: string; shot?: string; alt?: string; link?: 
 const RELEASES: { date: string; entries: Entry[] }[] = [{
   date: "21 November 2026",
   entries: [
+    { title: "API fixes: audiences read “Gen Z”, plain clients get plain JSON, saving needs your name",
+      body: "Three things found in the end-to-end API test of staging. An audience sent through the API as “Gen Z” (as every screen writes it) counted nobody, because the data spells it GenZ: groups are now matched without spaces or case, and a group a wave lacks is listed under skipped instead of quietly giving zero. A program that does not accept compressed answers (Python's urllib, some tools) was sent gzip bytes it could not read from the published files: it now gets plain JSON from the API, and browsers still get the compressed file. The API guide now says that saving a view, an alert or an audience needs “by”, your name.",
+      link: ["/api-guide", "Read the API guide"] },
     { title: "Every box on the Logs page opens and closes",
       body: "On the Logs page (Administration, admins only) each box, from Ask CIP survey by survey and At a glance to Raw logs and Older logs, now opens and closes from its title, so you keep only what you need in view; Expand all and Collapse all next to the time range do the whole page at once. A closed box stays closed while the page refreshes itself every minute. Every box starts open, as before.",
       link: ["/logs", "Open Logs"] },

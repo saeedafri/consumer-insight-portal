@@ -1,7 +1,9 @@
 """The site's files as the API serves them (api/main.py SinglePageApp), on servers without nginx in front (this Mac's
 live link): a file the build also gzipped goes out gzipped to a browser that accepts it, plain to one that does not,
-and a repeat visit with the same ETag gets a 304. Also the build step that announces the portal's code in its page."""
+and a repeat visit with the same ETag gets a 304. Also the build step that announces the portal's code in its page,
+and nginx's own rule for the published payloads (deploy/nginx.conf $gz)."""
 import gzip
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -71,3 +73,12 @@ def test_a_missing_file_is_a_404_and_is_not_cached_for_a_year(tmp_path, monkeypa
     assert hit.status_code == 200 and "immutable" in hit.headers["cache-control"]
     miss = client.get("/_next/static/nope.js")
     assert miss.status_code == 404 and "immutable" not in miss.headers.get("cache-control", "")
+
+
+def test_nginx_sends_a_stored_gzip_payload_only_to_a_client_that_accepts_gzip():
+    """A plain client (Python's urllib, some tools) was sent gzip bytes it could not read (21 Nov 2026 API test):
+    every pre-gzipped payload is picked by $gz, which names no file unless the request accepts gzip."""
+    deploy = Path(__file__).resolve().parents[1] / "deploy"
+    assert re.search(r"map \$http_accept_encoding \$gz \{ ~\*gzip \.gz; default \.plain; \}", (deploy / "nginx.conf").read_text())
+    locations = (deploy / "cip_locations.conf").read_text()
+    assert ".json.gz @api" not in locations and locations.count(".json$gz @api") == locations.count("add_header Content-Encoding gzip") == 6

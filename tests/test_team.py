@@ -194,3 +194,12 @@ def test_team_views_need_a_name_a_screen_and_only_their_owner_removes_them(csi_d
     assert refused.value.status_code == 403
     team.drop_view(view["view_id"], Asked("ana@x"))
     assert team.views() == []
+
+
+def test_an_audience_group_matches_as_the_screens_write_it_and_names_one_the_wave_lacks():
+    """"Gen Z" is the wave's "GenZ"; an unknown group is listed in skipped, never silently nobody (21 Nov 2026)."""
+    wave = {"cuts": {"generation": {"GenZ": 0b0011, "Boomer": 0b0100}}, "questions": {}}
+    group, skipped = team._group(wave, {"cuts": {"generation": ["Gen Z"]}, "answers": []})
+    assert group == 0b0011 and skipped == []
+    group, skipped = team._group(wave, {"cuts": {"generation": ["boomer", "Gen Q"]}, "answers": []})
+    assert group == 0b0100 and skipped == ["generation: Gen Q"]

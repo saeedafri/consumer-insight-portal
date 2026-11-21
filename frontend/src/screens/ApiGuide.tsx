@@ -102,7 +102,7 @@ curl -H "Authorization: Bearer cip_…" "${portal}/api/v1/search?q=holiday%20sho
 curl -H "Authorization: Bearer cip_…" "${portal}/api/v1/waves/532/results?q=q4&dim=total,generation"`}</pre>
       <Table head={["Method and address", "What it returns", "Needs on your menu"]} rows={ROUTES} code />
       <h3 className="details-head">Your team's items</h3>
-      <p className="small">The same boards, saved views, alerts and audiences as on the screens; you can remove only what you made.</p>
+      <p className="small">The same boards, saved views, alerts and audiences as on the screens; you can remove only what you made. Saving a view, an alert or an audience also needs <code>"by"</code>: your name, shown to the team as whose it is (a 422 says so when it is missing). An audience's groups are matched without spaces or case ("Gen Z" is the data's GenZ); a group a wave lacks is listed in <code>skipped</code>.</p>
       <Table head={["Method and address", "What it does", "Needs on your menu"]} rows={TEAM} code />
       <p className="muted small">Question codes may be written in any case (XM3 or xm3). Answers are JSON. Errors are {"{\"detail\": \"…\", \"status\": n}"}: 401 no or revoked key, 403 not on your menu or a survey you may not see, 404 not found, 429 too many requests, 503 busy or, for a few seconds after a restart, being published (retry after Retry-After seconds).</p>
     </Card>
