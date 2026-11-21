@@ -32,7 +32,7 @@ from datetime import date, timedelta
 import numpy as np
 
 from api import ask_figures, ask_model, ask_reader
-from api.ask_index import LEARNED, STOP, Index, name_key, read_json, stems
+from api.ask_index import FRAME_WORDS, LEARNED, STOP, Index, name_key, read_json, stems
 
 log = logging.getLogger("cip.assistant")
 # the reader's lead (logits) from which its pick is final and the AI is not asked: at 2, half the golden set's questions
@@ -489,6 +489,50 @@ def lacks_group(fig: dict, plan: dict) -> bool:
     return not available or (groups != "all" and bool(set(groups) - available))
 
 
+def add_net(question: str, fig: dict, counts: dict, nets: list[tuple[str, list[int]]]) -> int | None:
+    """The answer a dashboard tile's name in the question stands for, and its place in fig; None when none fits. The
+    most specific name wins ("not started" is Not yet started, not Started). A tile counting several answers is added
+    to fig as one more answer, its people summed, on a single-choice question only (its people add up). "What share
+    started holiday shopping?" led with Still shopping alone; Started is Still shopping plus Finished shopping, as the
+    Holiday dashboard shows it (21 Nov 2026)."""
+    words = set(stems(question)) | ({"not"} if re.search(r"n't\b|\bnever\b", question.lower()) else set())
+    for label, codes in sorted(nets, key=lambda net: -len(stems(net[0]))):
+        parts = [i for i, (_, code, _) in enumerate(counts["answers"]) if code in codes]
+        if not parts or not set(stems(label)) <= words:
+            continue
+        if len(parts) == 1:
+            return parts[0]
+        if not single_choice(fig):
+            continue
+        people = fig["people"][:, :, parts].sum(axis=2)
+        bases = fig["bases"][:, :, parts].max(axis=2)   # one base a column: a single choice
+        hidden = np.isnan(fig["pct"][:, :, parts]).any(axis=2)
+        pct = np.array([np.nan if off else round(100 * n / b, 1) for n, b, off in zip(people.ravel(), bases.ravel(), hidden.ravel())]).reshape(people.shape)
+        fig["people"], fig["bases"], fig["pct"] = (np.concatenate([fig[k], new[:, :, None]], axis=2)
+                                                   for k, new in (("people", people), ("bases", bases), ("pct", pct)))
+        fig["answers"] = fig["answers"] + [f"{label} ({' + '.join(fig['answers'][i] for i in parts)})"]
+        return len(fig["answers"]) - 1
+    return None
+
+
+def unasked(plan: dict, key: str, index: Index) -> list[str]:
+    """The question's subject words that the chosen survey question never uses (its wording, name, aliases, topic or
+    answers, or a synonym of the word), when they show it asks about something else: three or more, or two with one that
+    no survey uses at all. "Fed rate cuts" was answered from the gas-prices question; right answers in the golden set
+    miss at most two such words and none unknown (21 Nov 2026), so an empty list means the pick stands."""
+    lacking, unknown = [], False
+    for word in dict.fromkeys(w for w in re.findall(r"[a-z0-9]+", plan["about"].replace("'", "")) if w not in FRAME_WORDS and stems(w)):   # as the index splits ("glp-1")
+        # a misspelt word counts as the word it is close to, a synonym list's word as its list ("glp1" is GLP-1)
+        stem = index.known(word) or next((s for s in stems(word) if s in index.synonyms), None)
+        if stem is None:
+            unknown = True
+            lacking.append(word)
+        elif not any(key in index.postings.get(s, ()) for s in index.synonyms.get(stem, set()) | {stem}):
+            lacking.append(word)
+    # ponytail: counts words, not meaning; the reranker in the Colab plan can replace it once it beats the golden set
+    return lacking if len(lacking) >= 3 or (unknown and len(lacking) >= 2) else []
+
+
 def no_figure(message: str, plan: dict, suggestions=()) -> dict:
     """Explain why a requested analysis has no sound figure."""
     return {"answer": message, "chart": None, "table": None, "sources": [], "suggestions": list(suggestions),
@@ -618,7 +662,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
               for i, c in enumerate(candidates)]   # names first: six are read ("movie theater" was 13th of 15, 13 Nov)
     # Ask's own reader picks from the lines the AI reads (~70 ms, no cost); the AI reads the question only when the
     # reader is unsure (or absent) and a key is set; rules keep any dates the question names
-    reader_pick = ask_model.read_pick(question, listed) if listed else None
+    reader_pick = ask_model.read_pick(ask_reader.by_cut(question), listed) if listed else None
     reader_sure = reader_pick is not None and reader_pick[1] >= READER_SURE
     if learned and reader_sure:   # the AI's earlier pick only where the AI would be asked: staging reused gpt-4o-mini's pick
         verified = None           # for "Do GLP-1 users eat less?" on "Which foods…", over a reader sure at a lead of 7 (14 Nov 2026)
@@ -694,6 +738,12 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
             return {"answer": "This could be more than one survey question. Which did you mean?", "chart": None, "table": None,
                     "sources": [], "plan": plan, "mode": "choose", "no_source": True, "understood": understood, "margin": margin,
                     "suggestions": shown, "check": quick and ask_model.ready()}
+        if missing := unasked(plan, chosen["key"], index):   # the nearest question, but about something else
+            rare = sorted(missing, key=lambda w: -index.idf.get(index.known(w) or "", 99))[:3]   # unknown, then rarest
+            return {**no_figure(f"None of the surveys asks this: no survey question covers {' and '.join(f'“{w}”' for w in rare)}. "
+                                "The closest questions are below.", plan,
+                                [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]),
+                    "understood": understood}
         hits = [chosen] + ([alternative] if alternative else []) + [c for c in candidates if c["key"] not in (chosen["key"], (alternative or {}).get("key"))]
         plan = read_with_model(plan, reading) if reading else plan
     if shared:   # a name questions share ("Economic outlook"): the search's pick if it is one of them, else the longest-running
@@ -772,6 +822,9 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
             refig = ask_figures.compute(counts, replan, visible)
             if refig["periods"]:   # only when the re-read still finds waves
                 plan, fig = replan, refig
+    nets = index.nets.get(doc["qcode"].upper(), []) if doc["family"] == "CSI-US" else []
+    if (net := add_net(question, fig, counts, nets)) is not None:
+        named = [net]
     if len(plan["when"]) > 1 and fig["missing"]:
         return no_figure("At least one requested period has no comparable survey data. Try a single period or choose two available periods in Trends.", plan, suggestions)
     if plan["cuts"]:

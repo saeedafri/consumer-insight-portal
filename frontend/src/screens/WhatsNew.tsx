@@ -6,6 +6,9 @@ type Entry = { title: string; body: string; shot?: string; alt?: string; link?: 
 const RELEASES: { date: string; entries: Entry[] }[] = [{
   date: "21 November 2026",
   entries: [
+    { title: "Ask says when the surveys do not ask it, compares named groups, and reads “started” as the dashboards do",
+      body: "Ask CIP no longer answers a question with the nearest survey question when that question is about something else: “Fed rate cuts” was answered from the gas-prices question, and “cutting back on dining out because of tariffs” from a tariff question that never mentions dining. Now it says no survey question covers those words and lists the closest questions. A question that names two groups, such as “Do Gen Z shop on Amazon more than boomers?”, is answered by generation instead of finding nothing. “What share started holiday shopping?” is answered with Started, Still shopping plus Finished shopping (52.2% on 9 Nov 2026), the same figure as the Holiday dashboard, and “have not started” with Not yet started. Ask's test set scores 152 of 161, one more than before, and its fresh set is unchanged at 48 of 50.",
+      link: ["/ask", "Open Ask CIP"] },
     { title: "Left menu: Ask CIP at the top, the US tracker named like China's, a line of help on hover",
       body: "Ask CIP is back in the left menu, second under Explore after Home, so the question box is one click away from any screen. Shopping & Spending is now called US weekly tracker, next to China weekly tracker, so the two weekly surveys read alike. Rest the pointer on Ask CIP, a tracker or a databank in Core research to read in one line what it answers. The Access page lists Ask CIP under Explore too.",
       link: ["/ask", "Open Ask CIP"] },

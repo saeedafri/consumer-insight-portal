@@ -104,6 +104,20 @@ def stems(text: str) -> list[str]:
     return [w[:5] for w in re.findall(r"[a-z0-9]+", text.lower().replace("'", "")) if (len(w) >= 3 or w.isdigit()) and w not in STOP]
 
 
+
+def dashboard_nets() -> dict[str, list[tuple[str, list[int]]]]:
+    """Weekly tracker question code → the dashboards' tile names and the answers they count ("Not started": XM3's code 1;
+    "Started": its Still shopping and Finished shopping, config/dashboards.yml), which Ask answers when a question names
+    one (api/assistant.py add_net)."""
+    nets: dict[str, list[tuple[str, list[int]]]] = {}
+    for board in (yaml.safe_load((CONFIG / "dashboards.yml").read_text()) or {}).values():
+        if isinstance(board, dict):
+            for tile in board.get("tiles") or []:
+                if tile.get("codes"):
+                    nets.setdefault(str(tile["qcode"]).upper(), []).append((tile["label"], tile["codes"]))
+    return nets
+
+
 def topic_words() -> dict[str, list[str]]:
     """question code → the dashboard titles and sector names (with their table names) that show it."""
     words: dict[str, list[str]] = {}
@@ -198,6 +212,7 @@ class Index:
         self.cache: OrderedDict[str, dict] = OrderedDict()
         self.cached_bytes = 0
         self.synonyms = synonym_groups()
+        self.nets = dashboard_nets()
         known = {w["survey_id"]: {**w, "wave_date": str(w["wave_date"])[:10]} for w in waves}   # the API's list has dates
         self.country = {sid: w.get("country") or "US" for sid, w in known.items()}   # api/assistant.py answer: one country a question
         topics = topic_words()

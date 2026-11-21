@@ -52,6 +52,18 @@ FILLER = re.compile(r"\b(what|which|who|how|many|much|percent(age)?|share|propor
                     r"than|any|it|they|their|them|we|our|us|about|there|at|or)\b", re.I)
 
 
+
+def by_cut(text: str) -> str:
+    """The question with the groups it names said as their cut ("Amazon Gen Z vs Boomers" → "Amazon vs by generation"),
+    for Ask's reader (api/ask_model.py read_pick): it read named groups as no survey question at all, and "by generation"
+    rightly (21 Nov 2026). The groups themselves stay the rules' reading (read: cuts)."""
+    dims = []
+    for pattern, dim, _ in CUT_VALUES:
+        text, found = re.subn(pattern, " ", text, flags=re.I)
+        if found:
+            dims.append(dim)
+    return " ".join(text.split()) + "".join(f" by {d.replace('census_', '').replace('_band', '')}" for d in dict.fromkeys(dims))
+
 def number(word: str) -> int:
     return int(word) if word.isdigit() else NUMBERS.get(word, 1)
 

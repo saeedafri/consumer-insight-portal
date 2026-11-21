@@ -914,3 +914,30 @@ def test_the_answer_leads_with_its_finding_but_a_named_group_keeps_its_name(inde
     assert everyone["headline"] == everyone["takeaway"]
     group = assistant.answer("Top retailers among Gen Z in the latest wave", index, EVERYONE)
     assert "among" in group["headline"] and group["headline"] != group["takeaway"]
+
+
+def test_a_pick_that_misses_the_subject_is_not_an_answer(index):
+    key = "CSI-US/tracker/XQ1"   # the retailers question: "Fed rate cuts" picked the gas-prices question this way
+    assert assistant.unasked({"about": "fed rate cuts"}, key, index) == ["fed", "rate", "cuts"]
+    assert assistant.unasked({"about": "amazon walmart"}, key, index) == []
+    assert assistant.unasked({"about": "amazon fed"}, key, index) == []   # one unknown word alone: a typo or a synonym
+
+
+def test_a_dashboard_name_answers_its_answers_summed():
+    counts = {"answers": [["", 1, "Not yet started"], ["", 2, "Still shopping"], ["", 3, "Finished shopping"], ["", 4, "Do not make holiday purchases"]]}
+    nets = [("Not started", [1]), ("Started", [2, 3]), ("Finished", [3])]
+    fresh = lambda: {"pct": np.array([[[41.0, 44.0, 8.0, 7.0]]]), "people": np.array([[[164, 176, 32, 28]]]),   # noqa: E731
+                     "bases": np.full((1, 1, 4), 400), "answers": [a[2] for a in counts["answers"]]}
+    fig = fresh()
+    started = assistant.add_net("What share started holiday shopping?", fig, counts, nets)
+    assert fig["answers"][started] == "Started (Still shopping + Finished shopping)"
+    assert fig["pct"][0, 0, started] == 52.0 and fig["people"][0, 0, started] == 208   # people summed, not shares
+    assert assistant.add_net("How many have not started?", fresh(), counts, nets) == 0          # the most specific name
+    assert assistant.add_net("Who hasn't started yet?", fresh(), counts, nets) == 0
+    assert assistant.add_net("Holiday retailers", fresh(), counts, nets) is None
+
+
+def test_the_reader_reads_named_groups_as_their_cut():
+    assert ask_reader.by_cut("Do Gen Z shop on Amazon more than boomers?") == "Do shop on Amazon more than ? by generation"
+    assert ask_reader.by_cut("Amazon in the South") == "Amazon in by region"
+    assert ask_reader.by_cut("Amazon by generation") == "Amazon by generation"

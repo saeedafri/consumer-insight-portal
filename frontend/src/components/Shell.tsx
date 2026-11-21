@@ -206,10 +206,10 @@ export default function Shell() {
         {china && allowed(me, "china_tracker") && <NavLink to={`/w/${china.survey_id}`} className={() => wave?.survey_family === "CSI-CN" ? "active" : ""}
           title="The weekly China consumer survey and its weekly report">
           <Icon of={Globe} />China weekly tracker</NavLink>}
-        {allowed(me, "channels") && <NavLink to="/channels" title="Food and nonfood bought in store and online, week by week"><Icon of={Layers} />In store vs online</NavLink>}
+        {allowed(me, "channels") && <NavLink to="/channels" title="Which categories people bought in a store and which online, week by week"><Icon of={Layers} />In store vs online</NavLink>}
         {allowed(me, "retailers") && <NavLink to="/retailers" title="Each retailer: who shops there, how many bought and how positive they feel"><Icon of={Store} />Retailer databank</NavLink>}
-        {allowed(me, "sectors") && <NavLink to="/sectors" title="Each retail sector: reach, shoppers and spending intentions"><Icon of={Database} />Sector databank</NavLink>}
-        {allowed(me, "expectations") && <NavLink to="/expectations" title="What people planned to buy for an event against what they bought"><Icon of={ChartColumn} />Expected vs actual</NavLink>}
+        {allowed(me, "sectors") && <NavLink to="/sectors" title="Each retail sector: who bought in it, and its retailers, brands and categories"><Icon of={Database} />Sector databank</NavLink>}
+        {allowed(me, "expectations") && <NavLink to="/expectations" title="For a retail event (Halloween, Black Friday…): what people planned against what they did"><Icon of={ChartColumn} />Expected vs actual</NavLink>}
       </RailGroup>
       {TRACKERS.some(([code]) => allowed(me, `tracker_${code}`)) && <RailGroup label="Trackers" closed={!location.pathname.startsWith("/trackers")}>
         {TRACKERS.filter(([code]) => allowed(me, `tracker_${code}`)).map(([code, label]) =>
