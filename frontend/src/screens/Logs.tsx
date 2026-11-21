@@ -1,4 +1,5 @@
-// The Logs page (/app/logs), admins only: a monitoring dashboard on top, the raw logs below.
+// The Logs page (/app/logs), admins only: a monitoring dashboard on top, the raw logs below. Every box opens and closes
+// from its head (bits.tsx Card fold), and Expand all / Collapse all do the whole page.
 //
 // Where the numbers come from (all from GET /api/v1/admin/metrics, api/metrics.py; once a minute while "Live" is on, the
 // tab is in view and the range ends now; per minute for the last day, per hour beyond it):
@@ -10,7 +11,8 @@
 // viewer's own zone (bits.tsx local).
 // While sign-in is the demo, the server also asks for the admin token: the box shows only when the server asks for it.
 // "Download everything" saves the range as one Excel file (GET /api/v1/admin/metrics/download).
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useMe } from "../api";
 import { save } from "../csv";
@@ -138,9 +140,12 @@ export default function Logs() {
   // trimmed: a token pasted with a space or line break around it would otherwise never match
   const keepToken = (value: string) => { const clean = value.trim(); setToken(clean); try { if (clean) localStorage.setItem(TOKEN, clean); else localStorage.removeItem(TOKEN); } catch { /* private window */ } };
   const me = useMe().data;
+  // every box on the page folds (Card fold); these open or close them all at once
+  const page = useRef<HTMLDivElement>(null);
+  const foldAll = (open: boolean) => page.current?.querySelectorAll<HTMLDetailsElement>("details.fold").forEach(box => { box.open = open; });
 
   return (
-    <div className="stack">
+    <div className="stack" ref={page}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "end", justifyContent: "space-between" }}>
         <div>
           <p className="eyebrow">Admin</p>
@@ -158,6 +163,8 @@ export default function Logs() {
             <button className="btn" type="submit" disabled={!custom.start || !custom.end}>Show these dates</button>
           </form>
           {moving && <button className="btn" onClick={() => setLive(!live)}>{live ? "Pause" : "Resume"} auto-refresh</button>}
+          <button className="btn" onClick={() => foldAll(true)}>Expand all</button>
+          <button className="btn" onClick={() => foldAll(false)}>Collapse all</button>
           <button className="btn primary" onClick={downloadAll} disabled={saving}>{saving ? "Preparing…" : "Download everything (Excel)"}</button>
           {/* only a demo sign-in is asked for the token: a sign-in through the identity provider opens this page as it is */}
           {denied && denied !== "notAdmin" && <label>Admin token<br /><input type="password" value={token}
@@ -255,6 +262,8 @@ function Dashboard({ m, headers }: { m: Metrics; headers: Record<string, string>
 
   return <>
     {/* ---- the six numbers that matter most ---- */}
+    <details className="fold" open>
+    <summary className="card-head"><h2 className="eyebrow" style={{ margin: 0 }}>At a glance</h2><ChevronDown className="fold-mark" size={18} aria-hidden="true" /></summary>
     <div style={grid(170)}>
       <Tile label="Requests" value={num(t.requests)} note={`${rate(t.requests / (minutes * 60))} per second on average`}
             style={{ background: LIGHT.blue, borderColor: LIGHT.blue, color: "#FFFFFF" }} />
@@ -268,41 +277,42 @@ function Dashboard({ m, headers }: { m: Metrics; headers: Record<string, string>
               <span style={{ opacity: .85 }}>The machine has {num(last.machine_total_mb)} MB; {num(last.machine_used_mb)} MB in use by everything on it, Azure's own agents included</span></> : "no samples yet"} />
       <Tile label="Data sent" value={bytes(t.bytes)} note={last ? `in this range · now ${num(last.net_out_kbs, 1)} KB/s out, ${num(last.net_in_kbs, 1)} KB/s in` : "in this range"} style={pale} />
     </div>
+    </details>
 
     {/* ---- over time ---- */}
     <div style={grid(440)}>
-      <Card title={`Requests per ${per}`} sub="By answer type. Server errors (5xx) are the ones to worry about.">
+      <Card fold title={`Requests per ${per}`} sub="By answer type. Server errors (5xx) are the ones to worry about.">
         {m.traffic.length ? <EChart option={charts.requests} height={260} label={`Requests per ${per} by answer type`} /> : <p className="muted">No requests in this range.</p>}
       </Card>
-      <Card title={`Server time per ${per}`} sub="Time inside our server, from the request arriving to the answer leaving: the internet's travel time is not included. Log scale.">
+      <Card fold title={`Server time per ${per}`} sub="Time inside our server, from the request arriving to the answer leaving: the internet's travel time is not included. Log scale.">
         {m.traffic.length ? <EChart option={charts.times} height={260} label={`Server time percentiles per ${per} in milliseconds`} /> : <p className="muted">No requests in this range.</p>}
       </Card>
-      <Card title="CPU" sub={`Share of the 2 CPUs the container may use (100 % = both fully busy)${per === "hour" ? "; each point is an hour's average" : ""}.`}>
+      <Card fold title="CPU" sub={`Share of the 2 CPUs the container may use (100 % = both fully busy)${per === "hour" ? "; each point is an hour's average" : ""}.`}>
         {m.machine.length ? <EChart option={charts.cpu} height={240} label="CPU percent over time" /> : <p className="muted">{NO_SAMPLES}</p>}
       </Card>
-      <Card title="Memory" sub="Our container as Azure's memory metric counts it, and the part that is our processes' own (the rest is file cache).">
+      <Card fold title="Memory" sub="Our container as Azure's memory metric counts it, and the part that is our processes' own (the rest is file cache).">
         {m.machine.length ? <EChart option={charts.memory} height={240} label="Memory in megabytes over time" /> : <p className="muted">{NO_SAMPLES}</p>}
       </Card>
-      <Card title="Bandwidth" sub="Network received and sent by the container, KB per second.">
+      <Card fold title="Bandwidth" sub="Network received and sent by the container, KB per second.">
         {m.machine.length ? <EChart option={charts.network} height={240} label="Network bandwidth over time" /> : <p className="muted">{NO_SAMPLES}</p>}
       </Card>
-      <Card title="Response times" sub="How many requests took how long (server time); over 1 s in red.">
+      <Card fold title="Response times" sub="How many requests took how long (server time); over 1 s in red.">
         <EChart option={charts.histogram} height={300} label="Response time histogram" />
       </Card>
     </div>
 
     {/* ---- caches and storage ---- */}
     <div style={grid(300)}>
-      <Card title="How requests were answered" sub="nginx cache and published files never reach Python, the costly path.">
+      <Card fold title="How requests were answered" sub="nginx cache and published files never reach Python, the costly path.">
         {t.requests ? <EChart option={charts.answered} height={200} label="How requests were answered: nginx cache, published file or API" /> : <p className="muted">No requests in this range.</p>}
       </Card>
-      <Card title="Memory per process" sub={last ? `Our processes, latest sample at ${ist(last.time, false)}` : undefined}>
+      <Card fold title="Memory per process" sub={last ? `Our processes, latest sample at ${ist(last.time, false)}` : undefined}>
         {!last ? <p className="muted">{NO_SAMPLES}</p>
           : processes.length ? <EChart option={charts.processes} height={Math.max(120, processes.length * 32 + 20)} label="Memory per process in megabytes" />
           : <p className="muted">The latest sample lists no processes (deploy/machine-log.sh reads them from /proc every 15 s).</p>}
       </Card>
     </div>
-    <Card title="Caches" sub="Every layer that answers before the slow path, what it holds and how often it answered in this range.">
+    <Card fold title="Caches" sub="Every layer that answers before the slow path, what it holds and how often it answered in this range.">
       <div className="table-wrap"><table className="data">
         <thead><tr><th>Cache</th><th>Where</th><th>What it does</th><th className="num">Answered</th><th className="num">Share</th><th className="num">Size</th></tr></thead>
         <tbody>{m.caches.map(c => <tr key={c.name}>
@@ -314,7 +324,7 @@ function Dashboard({ m, headers }: { m: Metrics; headers: Record<string, string>
         </tr>)}</tbody>
       </table></div>
     </Card>
-    <Card title="Storage" sub={`Which disk is which, what each folder holds and its size${m.storage.measured ? `; measured ${ist(m.storage.measured, false)} (every 5 minutes)` : ""}.`}>
+    <Card fold title="Storage" sub={`Which disk is which, what each folder holds and its size${m.storage.measured ? `; measured ${ist(m.storage.measured, false)} (every 5 minutes)` : ""}.`}>
       <div className="table-wrap"><table className="data">
         <thead><tr><th>Disk</th><th>What lives there</th><th className="num">CIP's files</th><th className="num">Used (all)</th><th className="num">Size</th><th className="num">Full</th></tr></thead>
         <tbody>{m.storage.disks.map(d => <tr key={d.name}>
@@ -347,7 +357,7 @@ function Dashboard({ m, headers }: { m: Metrics; headers: Record<string, string>
     </Card>
 
     {/* ---- who and what ---- */}
-    <Card title="Busiest pages" sub="This dashboard's own requests are left out. Average and slowest are server time.">
+    <Card fold title="Busiest pages" sub="This dashboard's own requests are left out. Average and slowest are server time.">
       <div className="table-wrap"><table className="data">
         <thead><tr><th>Page</th><th className="num">Requests</th><th className="num">Share</th><th className="num">Average</th><th className="num">Slowest</th><th className="num">Without Python</th></tr></thead>
         <tbody>{m.pages.map(p => <tr key={p.page}>
@@ -358,7 +368,7 @@ function Dashboard({ m, headers }: { m: Metrics; headers: Record<string, string>
       </table></div>
       {!m.pages.length && <p className="muted">No requests in this range.</p>}
     </Card>
-    <Card title="Top visitors" sub="Signed-in person (from their session), approximate place of their internet address, and how many requests. The server's own checks are left out. Choose an address to see what it asked for and whether it is a person or a program.">
+    <Card fold title="Top visitors" sub="Signed-in person (from their session), approximate place of their internet address, and how many requests. The server's own checks are left out. Choose an address to see what it asked for and whether it is a person or a program.">
       <div className="table-wrap"><table className="data">
         <thead><tr><th>Who</th><th>Where (approximate)</th><th>Address</th><th className="num">Requests</th></tr></thead>
         <tbody>{m.clients.map(c => <tr key={c.client} aria-selected={address === c.client}>
@@ -374,7 +384,7 @@ function Dashboard({ m, headers }: { m: Metrics; headers: Record<string, string>
       <p className="muted" style={{ fontSize: 11, marginTop: 8 }}>Places are city-level guesses from the address (an office or a phone network's location, not a person's). <a href="https://db-ip.com" target="_blank" rel="noreferrer">IP Geolocation by DB-IP</a>.</p>
     </Card>
 
-    <Card title="Sign-ins" sub="Who signed in, when (India time, IST), how, and from which address and approximate place. Newest first.">
+    <Card fold title="Sign-ins" sub="Who signed in, when (India time, IST), how, and from which address and approximate place. Newest first.">
       {m.sign_ins?.length ? <div className="table-wrap"><table className="data">
         <thead><tr><th>When (IST)</th><th>Who</th><th>Role</th><th>How</th><th>Where (approximate)</th><th>Address</th></tr></thead>
         <tbody>{m.sign_ins.map((x, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{ist(x.time)}</td><th scope="row">{x.email}</th>
@@ -384,7 +394,7 @@ function Dashboard({ m, headers }: { m: Metrics; headers: Record<string, string>
     </Card>
 
     {/* ---- what went wrong ---- */}
-    <Card title="Problems in this range" sub="Error and warning lines from the API, nginx and the ETL, each with what it means."
+    <Card fold title="Problems in this range" sub="Error and warning lines from the API, nginx and the ETL, each with what it means."
           aside={<span className={`chip ${m.problems.length ? "sig" : "flat"}`}>{m.problems.length} problems</span>}>
       {m.problems.length ? <div className="table-wrap"><table className="data">
         <thead><tr><th>When (IST)</th><th>From</th><th>What it means</th><th>The line</th></tr></thead>
@@ -396,14 +406,14 @@ function Dashboard({ m, headers }: { m: Metrics; headers: Record<string, string>
       </table></div> : <p className="muted">No errors logged in this range.</p>}
     </Card>
     <div style={grid(420)}>
-      <Card title="Restarts" sub="Each time the container started (a deploy, or Azure restarting it), newest first.">
+      <Card fold title="Restarts" sub="Each time the container started (a deploy, or Azure restarting it), newest first.">
         {m.restarts.length ? <div className="table-wrap"><table className="data">
           <thead><tr><th>When (IST)</th><th>What happened</th><th>Build</th></tr></thead>
           <tbody>{m.restarts.map((r, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{ist(r.time)}</td>
             <td>{r.what}</td><td style={{ ...mono, whiteSpace: "nowrap" }}>{r.build || "–"}</td></tr>)}</tbody>
         </table></div> : <p className="muted">No restarts in this range.</p>}
       </Card>
-      <Card title="ETL (data loads)" sub="What the scheduled loads did, newest first. Warnings are things to look at, not outages.">
+      <Card fold title="ETL (data loads)" sub="What the scheduled loads did, newest first. Warnings are things to look at, not outages.">
         {m.etl.length ? <div className="table-wrap"><table className="data">
           <thead><tr><th>When (IST)</th><th>Level</th><th>What happened</th></tr></thead>
           <tbody>{m.etl.map((e, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{ist(e.time)}</td>
@@ -506,7 +516,7 @@ function RawLogs({ headers, token }: { headers: Record<string, string>; token: s
     <button className="btn" disabled={!answer.more} onClick={() => setPage(p => p + 1)}>Older ›</button>
   </div>;
 
-  return <Card title="Raw logs" sub={`Newest first, ${PER_PAGE} lines a page, the whole current file page by page, times in India time (the files themselves keep the servers' UTC); the newest page refreshes every minute while this tab is in view. Older files: Older logs, below.`}>
+  return <Card fold title="Raw logs" sub={`Newest first, ${PER_PAGE} lines a page, the whole current file page by page, times in India time (the files themselves keep the servers' UTC); the newest page refreshes every minute while this tab is in view. Older files: Older logs, below.`}>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end" }}>
       <label>Log<br />
         <select value={source} onChange={e => setSource(e.target.value)}>
@@ -537,7 +547,7 @@ function AskQuality({ headers, token }: { headers: Record<string, string>; token
     fetch("/api/v1/admin/ask/quality", { credentials: "same-origin", headers }).then(r => r.ok ? r.json() : []).then(setList).catch(() => setList([]));
   }, [token]);
   const shown = list?.find(c => c.survey_id === open);
-  return <Card title="Ask CIP, survey by survey" sub="After each publish, every question people may ask about a new survey's questions (latest figure, trend, each cut its data holds, periods compared, top answers, one answer) is asked and scored. Verified answers come from a question's stored name and must be right 99% of the time; the rest are labelled best match.">
+  return <Card fold title="Ask CIP, survey by survey" sub="After each publish, every question people may ask about a new survey's questions (latest figure, trend, each cut its data holds, periods compared, top answers, one answer) is asked and scored. Verified answers come from a question's stored name and must be right 99% of the time; the rest are labelled best match.">
     {list?.length ? <div className="table-wrap"><table className="data">
       <thead><tr><th>Survey</th><th>Week</th><th className="num">Questions</th><th className="num">Named</th><th className="num">Asked</th>
         <th className="num">Right</th><th className="num">Verified answers right</th><th>Checked (IST)</th><th /></tr></thead>
@@ -564,7 +574,7 @@ function Archives({ headers, token }: { headers: Record<string, string>; token: 
     .then(r => r.ok ? r.blob() : Promise.reject(new Error(`${r.status}`)))
     .then(blob => save(blob, name))
     .catch(() => { /* the list is refreshed on the next visit */ });
-  return <Card title="Older logs (packed)" sub="Every log that reached 20 MB, packed as a .zip and kept for good, newest first. Any laptop or phone opens a .zip.">
+  return <Card fold title="Older logs (packed)" sub="Every log that reached 20 MB, packed as a .zip and kept for good, newest first. Any laptop or phone opens a .zip.">
     {list?.length ? <div className="table-wrap"><table className="data">
       <thead><tr><th>File</th><th>Packed (IST)</th><th className="num">Size</th><th /></tr></thead>
       <tbody>{list.map(a => <tr key={a.name}><th scope="row" style={mono}>{a.name}</th><td>{ist(a.time)}</td>

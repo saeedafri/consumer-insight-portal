@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 21 November 2026
 
+### Every box on the Logs page opens and closes
+
+On the Logs page (Administration, admins only) each box, from Ask CIP survey by survey and At a glance to Raw logs and Older logs, now opens and closes from its title, so you keep only what you need in view; Expand all and Collapse all next to the time range do the whole page at once. A closed box stays closed while the page refreshes itself every minute. Every box starts open, as before.
+
 ### Ask answers with a verdict first, and how a topic is doing from its dashboard
 
 Ask CIP now leads every answer with its verdict in plain words, worked out from the figures and never written by an AI: “How good is GLP-1 performing?” answers “GLP-1: Using a GLP-1 drug is holding steady. 15.8% of US adults are using a GLP-1 drug like Ozempic on 16 Nov 2026, down 1.9 points since 28 Jul 2025 (not a significant change). Also, 78.1% of users take it for weight loss; 60.9% of users eat less than before”, with the dashboard's other figures as lines, each linked to its survey question, and the trend as the chart; the same for every topic dashboard (tariffs, GenAI, financial health, gas prices, holiday, apparel, beauty and the others). Other answers say “Walmart leads clearly”, “Highest among GenZ, about twice the Boomer figure”, “Little real difference by income”, “Rising:”, “Falling:” or “Steady:” (tested at 95%), and an outlook scale as its net (“More negative than positive: net -6.4”). A yes/no question by group leads with yes. Ask's test sets: 158 of 161 and 48 of 50, unchanged.

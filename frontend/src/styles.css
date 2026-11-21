@@ -1091,3 +1091,11 @@ code.key { display: block; padding: 8px 10px; margin-bottom: 8px; background: va
 /* Cards carry a soft red outline (the 10 Nov design), deeper when pointed at */
 .card { border-color: color-mix(in srgb, var(--red) 16%, var(--line)); }
 .card:hover { border-color: color-mix(in srgb, var(--red) 34%, var(--line)); }
+
+/* ── a box that opens and closes from its head (bits.tsx Card fold; every box on the Logs page) ── */
+details.fold > summary { list-style: none; cursor: pointer; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary .fold-mark { flex: none; color: var(--ink-3); transition: transform var(--dur-1) var(--ease); }
+details.fold:not([open]) > summary .fold-mark { transform: rotate(-90deg); }
+details.fold:not([open]) > summary.card-head { margin-bottom: 0; }
+details.fold > summary:hover .fold-mark { color: var(--ink); }

@@ -8,7 +8,7 @@ import type { Format } from "../csv";
 import type { Move } from "../moves";
 import { direction, fmtDate, pts, SMALL_BASE } from "../stats";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { Inbox } from "lucide-react";
+import { ChevronDown, Inbox } from "lucide-react";
 
 /** A question as people read it: "Q3", its place in the survey. The survey's own code (BD1, LX5RA8OE), which the data
  *  team matches against Forsta, shows on hover. Used wherever a screen names a question. */
@@ -68,11 +68,18 @@ export function Change({ now, before, label, routing, move }:
   );
 }
 
-export function Card({ title, sub, aside, children, className = "", as = "h2" }:
-  { title?: ReactNode; sub?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string; as?: "h1" | "h2" | "h3" }) {
+/** A titled box. `fold`: its head opens and closes it (native <details>, starts open), as every box on the Logs page does
+ *  so an admin keeps only what they need in view (21 Nov 2026). */
+export function Card({ title, sub, aside, children, className = "", as = "h2", fold = false }:
+  { title?: ReactNode; sub?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string; as?: "h1" | "h2" | "h3"; fold?: boolean }) {
   const Heading = as;
+  const head = <div><Heading>{title}</Heading>{sub && <p className="sub">{sub}</p>}</div>;
+  if (fold) return <details className={`card fold ${className}`} open>
+    <summary className="card-head">{head}<span className="head-actions">{aside}<ChevronDown className="fold-mark" size={18} aria-hidden="true" /></span></summary>
+    {children}
+  </details>;
   return <section className={`card ${className}`}>
-    {(title || aside) && <header className="card-head"><div><Heading>{title}</Heading>{sub && <p className="sub">{sub}</p>}</div>{aside}</header>}
+    {(title || aside) && <header className="card-head">{head}{aside}</header>}
     {children}
   </section>;
 }
