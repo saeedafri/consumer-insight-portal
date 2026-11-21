@@ -25,6 +25,7 @@ import difflib
 import gzip
 import hashlib
 import json
+import os
 import logging
 import math
 import re
@@ -67,7 +68,9 @@ DIRECTION_WORDS = frozenset("more less fewer increase increased decrease decreas
 FRAME_WORDS = frozenset("""should we act say said says chose choose chosen answers answer among over indexes index grown grow rising
 falling going up down trend top numbers number base figures latest about consumers people think feel different differ likely
 tell change changed over-indexes over-index""".split())
-SEMANTIC = CONFIG / "ask_semantic.json"   # etl/ask_semantic.py: a business name, aliases and topic per question wording
+# etl/ask_semantic.py: a business name, aliases and topic per question wording; CIP_ASK_SEMANTIC another file (the Colab
+# replay compares two: scripts/colab/ask_cip_v2.py)
+SEMANTIC = Path(os.environ.get("CIP_ASK_SEMANTIC") or CONFIG / "ask_semantic.json")
 SEMANTIC_ADDED = ask_model.LOGS / "ask-semantic.json"   # the same, for wordings named after a publish (etl/ask_quality.py)
 STOP = set("""about above after again against also among answer answers been before being below between both could
     during each from further have having here into itself just more most other over same should some such than that their

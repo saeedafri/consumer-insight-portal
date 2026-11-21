@@ -302,9 +302,10 @@ def onnx_reader(folder):
     model = onnxruntime.InferenceSession(str(folder / "model_optimized.onnx"), opts, providers=["CPUExecutionProvider"])
     inputs = {i.name for i in model.get_inputs()}
 
-    def predict(question, candidates):
+    def score(question, candidates):
+        """The reader's logits for "none of these" (always 0) then each candidate: the teacher's targets (ask_cip_v2.py teach)."""
         if not candidates:
-            return 0, 0.0
+            return np.zeros(1)
         pairs = tokens.encode_batch([(question, line) for line in candidates])
         values = {"input_ids": "ids", "attention_mask": "attention_mask", "token_type_ids": "type_ids"}
         feed = {name: np.asarray([getattr(pair, field) for pair in pairs], dtype=np.int64)
@@ -312,10 +313,16 @@ def onnx_reader(folder):
         scores = model.run(None, feed)[0].reshape(-1)
         if len(scores) != len(candidates) or not np.isfinite(scores).all():
             raise ValueError("Reader must return one finite score per candidate")
-        logits = np.concatenate([[0.0], scores])
+        return np.concatenate([[0.0], scores])
+
+    def predict(question, candidates):
+        if not candidates:
+            return 0, 0.0
+        logits = score(question, candidates)
         best, second = np.argsort(-logits)[:2]
         return int(best), float(logits[best] - logits[second])
 
+    predict.score = score
     return predict, float(settings["sure"])
 
 
@@ -542,7 +549,7 @@ def train(args):
     revision = args.revision or (BASE_REVISION if args.base_model == BASE_MODEL else None)
     tok = AutoTokenizer.from_pretrained(args.base_model, revision=revision)
     model = AutoModelForSequenceClassification.from_pretrained(args.base_model, revision=revision, num_labels=1).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     def make_batch(batch):
         query = [row["question"] for row in batch for _ in row["candidates"]]
@@ -572,7 +579,13 @@ def train(args):
             for row, logits in zip(batch, scores.split([len(item["candidates"]) for item in batch])):
                 logits = torch.cat((scores.new_zeros(1), logits)).float()
                 truths = logits[row["acceptable"]]
-                losses.append(torch.logsumexp(logits, 0) - torch.logsumexp(truths, 0))
+                loss = torch.logsumexp(logits, 0) - torch.logsumexp(truths, 0)
+                if args.teacher_weight and len(row.get("teacher") or []) == len(logits):
+                    # the shipped reader as teacher (ask_cip_v2.py teach): its spread over none and the candidates kept,
+                    # so what it learnt from Qwen3-32B (v6) is not thrown away for a few thousand new labels (21 Nov 2026)
+                    target = torch.softmax(torch.tensor(row["teacher"], device=logits.device, dtype=torch.float32), 0)
+                    loss = loss + args.teacher_weight * torch.sum(target * (torch.log(target + 1e-9) - torch.log_softmax(logits, 0)))
+                losses.append(loss)
             loss = torch.stack(losses).mean()
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -586,19 +599,26 @@ def train(args):
 
     model.cpu().eval()
     tok.save_pretrained(args.output)
-    sample = tok(["What share shopped?"], ["Where did consumers shop?"], return_tensors="pt")
+    sample = tok(["What share of people shopped at Amazon in the latest wave?"] * 2, ["Which retailers have you bought from?", "x"],
+                 padding=True, return_tensors="pt")
     names = list(sample.keys())
-    # Matching dynamic dimensions allow Ask to run a variable number and length of candidates.
+    # torch.export (dynamo) with dynamic shapes: the old TorchScript exporter fixed the positions to the sample's length,
+    # and every exported reader scored as if guessing (base model 72 of 120 in PyTorch, 1 of 120 exported; the 21 Nov
+    # Colab candidate 5 of 120). Variable numbers and lengths of candidates both stay dynamic.
+    items, tokens = torch.export.Dim("items"), torch.export.Dim("tokens", max=512)
     with tempfile.TemporaryDirectory(prefix="cip-onnx-") as folder:
         plain = Path(folder) / "reader.onnx"
         torch.onnx.export(model, (), str(plain), kwargs=dict(sample), input_names=names, output_names=["logits"],
-                          dynamic_axes={**{n: {0: "items", 1: "tokens"} for n in names}, "logits": {0: "items"}},
-                          opset_version=17, dynamo=False)
+                          dynamic_shapes={n: {0: items, 1: tokens} for n in names}, opset_version=18, dynamo=True,
+                          external_data=False)
         quantize_dynamic(plain, args.output / "model_optimized.onnx", weight_type=QuantType.QInt8)
 
     calibration = {"length": MAX_TOKENS, "sure": 1_000_000.0, "pad_token": tok.pad_token,
                    "made": Path(args.base_model).name, "revision": revision or model.config._commit_hash, "epochs": args.epochs}
     write_json(args.output / "calibration.json", calibration)
+    check = exported_agrees(model, tok, args.output)
+    if check > 0.05:   # the file Ask runs must score as the trained model does, or it is not shipped
+        raise SystemExit(f"The exported reader disagrees with the trained one (largest gap {check:.3f}): not written as a candidate.")
     # Unreviewed practice cases must not make the candidate seem safe to bypass a model check.
     fitted, reviewed_cases = calibrate(onnx_reader(args.output)[0], args.cases)
     write_json(args.output / "calibration.json", {**calibration, "sure": fitted, "reviewed_dev_cases": reviewed_cases})
@@ -610,6 +630,21 @@ def train(args):
         "baseline_sha256": evidence["baseline_artifacts"]["model_optimized.onnx"]["sha256"], "mode": evidence["mode"],
         "scope": "Fixed candidate lists and CPU ONNX timing; run full Ask replay before any promotion."})
     print(json.dumps({k: v for k, v in report.items() if "/" not in k}, indent=2))
+
+
+def exported_agrees(model, tok, folder) -> float:
+    """The largest gap, in probability, between the trained model and its exported 8-bit file on a few questions with
+    candidates of different lengths: a broken export (positions fixed at the sample's length) shows as a large one."""
+    import torch
+    pairs = [("How many people shop at Amazon?", "q4 Recent food purchases from retailers: Which, if any, of these retailers have you bought any FOOD products from in the past two weeks? | Walmart; Amazon; Target; Costco; Kroger"),
+             ("GLP-1 use by generation", "GP1 Current use of GLP-1 drugs: Are you currently using a GLP-1 drug like Ozempic? | Yes; No"),
+             ("economy outlook", "CS2 Economic outlook for the next year | Much worse; Somewhat worse; About the same; Somewhat better; Much better")]
+    with torch.no_grad():
+        trained = model(**tok([q for q, _ in pairs], [c for _, c in pairs], truncation=True, max_length=MAX_TOKENS,
+                              padding=True, return_tensors="pt")).logits.flatten()
+    score = onnx_reader(folder)[0].score
+    exported = [float(score(q, [c])[1]) for q, c in pairs]
+    return max(abs(float(torch.sigmoid(a)) - float(torch.sigmoid(torch.tensor(b)))) for a, b in zip(trained, exported))
 
 
 def digest_file(path):
@@ -641,6 +676,8 @@ def main():
     fit.add_argument("--base-model", default=BASE_MODEL)
     fit.add_argument("--revision")
     fit.add_argument("--cpu", action="store_true")
+    fit.add_argument("--lr", type=float, default=3e-5)
+    fit.add_argument("--teacher-weight", type=float, default=0.0, help="weight of the shipped reader's scores (cases' teacher)")
     args = parser.parse_args()
     if args.step == "prepare":
         if args.limit < 0:
