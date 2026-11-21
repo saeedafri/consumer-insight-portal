@@ -11,7 +11,7 @@ import { send, suggestAsk, useAskHistory, useMe } from "../api";
 import type { Answer, AskChart, AskOffer, AskTile } from "../api";
 import EChart, { downloadPng } from "../components/EChart";
 import type { Chart } from "../components/EChart";
-import { ExportButtons } from "../components/bits";
+import { ExportButtons, Menu } from "../components/bits";
 import { downloadTable } from "../csv";
 import { blues, C, heatStep, labelOn, scaleColours, useTheme } from "../theme";
 import { useWeighted } from "../weight";
@@ -132,6 +132,30 @@ function Dumbbell({ chart }: { chart: AskChart }) {
   </figure>;
 }
 
+/** An answer as text to paste: an email (the finding, the key figures, the source) or a slide (a title, three bullets,
+ *  a source line), written from the answer's own sentences and figures, no AI model (21 Nov 2026). */
+function writeUp(question: string, answer: Answer, form: "email" | "slide"): string {
+  const figures = answer.overview?.length ? answer.overview.map(o => `${o.name}: ${o.text}`)
+    : (answer.tiles ?? []).map(t => `${t.label}: ${t.value}${t.note ? ` (${t.note})` : ""}`);
+  const scope = answer.scope ? `${answer.scope.period}, ${answer.scope.waves} survey ${answer.scope.waves === 1 ? "wave" : "waves"}` +
+    `${answer.scope.base ? `, ${answer.scope.base.toLocaleString("en-US")} respondents` : ""}` : "";
+  const source = `Source: Coresight Research consumer survey${answer.sources[0] ? `, question ${answer.sources[0].qcode} “${answer.sources[0].question}”` : ""}` +
+    `${scope ? `; ${scope}` : ""}; ${answer.weighting === "weighted" ? "Census-weighted" : "unweighted"}.`
+  const notes = (answer.notes ?? []).filter(n => !n.startsWith("Asked under"));
+  const lead = answer.headline || answer.takeaway || "";
+  return form === "slide"
+    ? [lead, "", ...figures.slice(0, 3).map(f => `• ${f}`), ...(answer.takeaway && answer.takeaway !== lead ? [`• ${answer.takeaway}`] : []), "", source].join("\n")
+    : [`On “${question}”: ${lead}`, "", ...(figures.length ? ["Key figures:", ...figures.map(f => `- ${f}`), ""] : []),
+       ...(answer.takeaway && answer.takeaway !== lead ? [answer.takeaway, ""] : []), ...notes.map(n => `Note: ${n}`), source].join("\n");
+}
+
+async function copyText(button: HTMLButtonElement, text: string) {
+  const original = button.textContent;
+  try { await navigator.clipboard.writeText(text); button.textContent = "Copied"; }
+  catch { button.textContent = "The browser blocked copying"; }
+  setTimeout(() => { button.textContent = original; }, 1800);
+}
+
 /** The figures that matter, as stat tiles: the main one first (api/assistant.py brief). */
 const Tiles = ({ tiles }: { tiles: AskTile[] }) =>
   <div className="grid g3 ask-tiles">{tiles.map((t, i) => <div key={t.label} className={`kpi ask-tile${i ? "" : " lead"}`}>
@@ -202,6 +226,10 @@ function Reply({ question, answer, audience, checking, onAsk }: { question: stri
       <p className="ask-q"><MessageSquare size={15} strokeWidth={1.8} aria-hidden="true" /> {question}
         {answer.corrected && <span className="small muted ask-corrected"> · answered as “{answer.corrected}”, the spelling put right</span>}
         {answer.asked_as && <span className="small muted ask-corrected"> · read with your last question: “{answer.asked_as}”</span>}</p>
+      {!answer.no_source && !checking && <Menu label="Copy" name="Copy the answer as text" keep>
+        <button type="button" onClick={e => void copyText(e.currentTarget, writeUp(question, answer, "email"))}>For an email</button>
+        <button type="button" onClick={e => void copyText(e.currentTarget, writeUp(question, answer, "slide"))}>For a slide</button>
+      </Menu>}
       {table && !checking && <ExportButtons pin={false} onExport={exportFigures}
         png={chart && !drawnByHand ? () => drawn.current && downloadPng(drawn.current, answer.headline || question, answer.source_line ?? "", file) : undefined} />}
     </div>

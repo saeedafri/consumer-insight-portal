@@ -35,7 +35,10 @@ CUT_VALUES = [(r"\bgen ?z\b|\bzoomers?\b", "generation", "GenZ"), (r"\bmillennia
               (r"\b(women|female|females|woman)\b", "gender", "Female"), (r"\b(men|male|males|man)\b", "gender", "Male"),
               (r"\bnortheast\b", "census_region", "Northeast"), (r"\bmidwest\b", "census_region", "Midwest"),
               (r"\b(the )?south\b(?! korea)", "census_region", "South"), (r"\b(the )?west\b", "census_region", "West"),
-              (r"\burban\b", "urbanicity", "Urban"), (r"\bsuburban\b", "urbanicity", "Suburban"), (r"\brural\b", "urbanicity", "Rural")]
+              (r"\burban\b", "urbanicity", "Urban"), (r"\bsuburban\b", "urbanicity", "Suburban"), (r"\brural\b", "urbanicity", "Rural"),
+              # "young people" is the survey's youngest age band, "older people" its oldest (config/weighting.yml age_band)
+              (r"\b(young|younger) (people|adults|consumers|shoppers|americans)\b", "age_band", "18-29"),
+              (r"\b(old|older|elderly) (people|adults|consumers|shoppers|americans)\b|\bseniors\b", "age_band", "Over 60")]
 CUT_DIMS = [(r"\b(?:by|and) (generation|generations|gen)\b|\bacross generations\b|\bwhich generations?\b", "generation"),
             (r"\b(?:by|and) (gender|sex)\b|\bmen (and|vs|versus|or) women\b|\bwomen (and|vs|versus|or) men\b", "gender"),
             (r"\b(?:by|and) age( group| band)?s?\b|\bage (group|band)s?\b|\bwhich age( group)?s?\b", "age_band"), (r"\b(?:by|and) (household )?income\b|\bincome (group|band|level)s?\b", "income_band"),

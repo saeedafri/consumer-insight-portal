@@ -367,7 +367,8 @@ def people(conn, survey_id: int) -> dict:
     and every answer row is a bitset (hex) and an audience is ANDs plus bit counts, no database. A 2,300-person wave
     is ~250 KB raw. Respondent-level: published next to the book but never served (nginx and the API expose no route).
     {"cuts": {dim: {value: hex}}, "questions": {qcode: {"text": normalised wording, "rows": [[item_id, option_id,
-    item_label, option_code, option_label], ...] in sort order, "bits": {"item_id,option_id": hex}}}}"""
+    item_label, option_code, option_label], ...] in sort order, "bits": {"item_id,option_id": hex}}},
+    "weights": [each respondent's Census weight, bit order]}: Ask CIP's weighted figures for any group (21 Nov 2026)."""
     rows = conn.execute(text(
         f"SELECT respondent_id, qcode, item_id, option_id, {', '.join(CUTS)} FROM srv_answer"
         " WHERE survey_id = :s").execution_options(stream_results=True, max_row_buffer=1000), {"s": survey_id})
@@ -406,7 +407,9 @@ def people(conn, survey_id: int) -> dict:
     for (qcode, item, option), b in bits.items():
         if qcode in questions:
             questions[qcode]["bits"][f"{item},{option}"] = format(b, "x")
-    return {"cuts": {dim: {v: format(b, "x") for v, b in values.items()} for dim, values in cuts.items()}, "questions": questions}
+    weights = weighting.wave_weights(conn, survey_id)
+    return {"cuts": {dim: {v: format(b, "x") for v, b in values.items()} for dim, values in cuts.items()}, "questions": questions,
+            "weights": [round(weights.get(rid, 0.0), 4) for rid in sorted(respondents)]}
 
 
 def question_cuts(conn, ids: list[int], qcode: str | None = None) -> dict:

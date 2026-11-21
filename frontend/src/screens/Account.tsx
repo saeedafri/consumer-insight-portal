@@ -1,7 +1,7 @@
 // My account (/app/account), opened from the account icon at the top right (components/Shell.tsx AccountMenu): who is
-// signed in, what their access includes, their saved items, and the theme. A first, simple draft.
+// signed in, what their access includes, their saved items, the questions they asked Ask CIP, and the theme.
 import { Link } from "react-router";
-import { allowed, useAlerts, useMe, useTeamViews } from "../api";
+import { allowed, useAlerts, useAskHistory, useMe, useTeamViews } from "../api";
 import ApiKeys from "../components/ApiKeys";
 import { Card } from "../components/bits";
 import { savedViews } from "../saved";
@@ -49,6 +49,8 @@ export default function Account() {
       {row("Boards", <Link to="/boards">Open your boards</Link>)}
     </Card>
 
+    {allowed(me, "ask") && <AskHistory />}
+
     {allowed(me, "api") && <ApiKeys />}
 
     <Card title="Preferences">
@@ -58,4 +60,15 @@ export default function Account() {
 
     <p><a className="btn" href="/auth/logout" style={{ color: "var(--red-text)", borderColor: "var(--red)" }}>Sign out</a></p>
   </div>;
+}
+
+/** The questions this person asked Ask CIP, newest first (GET /api/v1/ask/history): each opens Ask with it again. */
+function AskHistory() {
+  const questions = useAskHistory().data?.questions ?? [];
+  return <Card title="Your Ask CIP questions">
+    {questions.length ? <ol className="stack" style={{ gap: 6, margin: 0, paddingLeft: 20 }}>
+      {questions.map(q => <li key={q.question}><Link to={`/ask?q=${encodeURIComponent(q.question)}`}>{q.question}</Link>
+        <span className="small muted"> · {new Date(q.asked_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span></li>)}
+    </ol> : <p className="muted">Questions you ask in <Link to="/ask">Ask CIP</Link> are listed here.</p>}
+  </Card>;
 }

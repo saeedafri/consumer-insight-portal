@@ -35,6 +35,7 @@ import yaml
 
 from api import ask_figures, ask_model, ask_reader
 from api.ask_index import FRAME_WORDS, LEARNED, STOP, Index, name_key, read_json, stems
+from etl import weighting
 from shared.data import payloads
 
 log = logging.getLogger("cip.assistant")
@@ -88,7 +89,7 @@ INDEX: dict = {"version": None, "index": None}
 INDEX_LOCK = threading.Lock()
 ANSWERS: OrderedDict = OrderedDict()
 ANSWERS_LOCK = threading.Lock()
-FAMILY = {"CSI-US": "Weekly US consumer tracker"}
+FAMILY = {"CSI-US": "Weekly US consumer tracker", "CSI-CN": "Weekly China consumer tracker"}
 
 
 def index_for(root: Path, version: str, waves: list[dict]) -> Index:
@@ -663,52 +664,95 @@ def overview(question: str, plan: dict, index: Index, visible: set[int], quick: 
             "next": [{"question": f"{p['name']} over time", "key": p["source"]["key"]} for p in parts[:3]]}
 
 
-BOOK_COLUMNS = {"GenZ": "Gen Z", "GenX": "Gen X"}   # a wave book's column names (etl/publish.py) for the cube's values
+def bit_mask(hexed: str | None, size: int) -> np.ndarray:
+    """A people.json bitset (hex, respondent i = bit i) as booleans in seat order."""
+    value = int(hexed or "0", 16)
+    return np.unpackbits(np.frombuffer(value.to_bytes((size + 7) // 8, "little"), np.uint8), bitorder="little")[:size].astype(bool)
 
 
-@functools.lru_cache(maxsize=512)
-def weighted_rows(path: Path) -> dict:
-    """{qcode: {answer: (Census-weighted % by column, respondents by column)}} from one wave's book (etl/weighting.py
-    weights, published as each row's "w"): a few KB a wave, kept. Empty when the wave has no book."""
+@functools.lru_cache(maxsize=2048)
+def weights_of(path: Path) -> np.ndarray | None:
+    """One wave's Census weight per respondent, in people.json's seat order: the ETL's (shared/data/payloads.py
+    people, from 21 Nov 2026), or for a publication before them raked here from the same file's gender, age and
+    region, as etl/weighting.py does. None when the wave has no people file."""
     try:
-        book = json.loads(gzip.decompress(path.read_bytes()))
+        people = json.loads(gzip.decompress(path.read_bytes()))
     except OSError:
-        return {}
-    return {q["id"]: {(f"{g['label']}: {r['label']}" if g["label"] and g["label"] != r["label"] else r["label"]): (r["w"], g.get("bases", {}))
-                      for g in q.get("groups", []) for r in g.get("rows", []) if "w" in r} for q in book["questions"]}
+        return None
+    if "weights" in people:
+        return np.array(people["weights"], float)
+    size = max((int(h, 16).bit_length() for h in [*(h for values in people["cuts"].values() for h in values.values()),
+                                                   *(h for q in people["questions"].values() for h in q["bits"].values())]), default=0)
+    config = weighting.targets()
+    seats: dict[int, dict] = {i: {} for i in range(size)}
+    for margin in config["margins"]:
+        for value, hexed in people["cuts"].get(margin, {}).items():
+            for i in np.flatnonzero(bit_mask(hexed, size)):
+                seats[int(i)][margin] = value
+    raked = weighting.rake(seats, config["margins"], (config["trim_low"], config["trim_high"]))
+    return np.array([raked[i] for i in range(size)], float)
+
+
+def weighted_counts(people: dict, weights: np.ndarray, qcode: str, answers: list[str], groups: list[np.ndarray | None]):
+    """Weighted people and bases (answers × groups) of one wave's question, a group a respondent mask (None: everyone);
+    an answer the wave does not have stays NaN. A single choice's base is those who answered its row, a select-all's
+    those who answered the question (bit 0,0), as srv_result counts them."""
+    size, question = len(weights), people["questions"].get(qcode)
+    n, b = np.full((len(answers), len(groups)), np.nan), np.full((len(answers), len(groups)), np.nan)
+    if not question:
+        return n, b
+    rows, items = {}, {}
+    for item_id, option_id, item_label, _, option_label in question["rows"]:
+        chosen = bit_mask(question["bits"].get(f"{item_id},{option_id}"), size)
+        name = f"{item_label}: {option_label}" if item_label and option_label and item_label != option_label else option_label or item_label
+        rows[name] = (item_id, option_id, chosen)
+        rows.setdefault(option_label or item_label, (item_id, option_id, chosen))   # the cross-tab files' label
+        if option_id:
+            items[item_id] = items.get(item_id, np.zeros(size, bool)) | chosen
+    answered = bit_mask(question["bits"].get("0,0"), size) if "0,0" in question["bits"] else None
+    for a, name in enumerate(answers):
+        if name not in rows:
+            continue
+        item_id, option_id, chosen = rows[name]
+        base = items[item_id] if option_id else answered
+        if base is None:
+            continue
+        for g, group in enumerate(groups):
+            inside = np.ones(size, bool) if group is None else group
+            n[a, g], b[a, g] = weights[chosen & inside].sum(), weights[base & inside].sum()
+    return n, b
 
 
 def weigh(fig: dict, counts: dict, index: Index):
-    """fig's shares Census-weighted (gender, age, region), each period's the average of its waves' weighted shares
-    counted by their respondents; a period with a wave never weighted is all NaN (answer() leaves it out). None when a
-    cut has no weighted figures (only gender and generation do): the answer stays unweighted and says so. 21 Nov 2026."""
-    columns = ["Total" if dim == "total" else BOOK_COLUMNS.get(value, value) if dim in ("gender", "generation") else None
-               for dim, value in fig["columns"]]
-    if None in columns:
-        return None
-    out = np.full(fig["pct"].shape, np.nan)
+    """fig's shares Census-weighted (gender, age, region) for any group, from each wave's respondents and weights
+    (people.json): a pooled period sums its waves' weighted people and bases. A period where a shown figure has no
+    weighted twin (a wave with no people file) is all NaN, and answer() leaves it out: never half and half. 21 Nov 2026."""
+    folder, out = index.root.parent / "waves", np.full(fig["pct"].shape, np.nan)
     for p, period in enumerate(fig["periods"]):
-        books = [weighted_rows(index.root.parent / "waves" / str(sid) / "book.json.gz").get(counts["sources"][sid][0], {})
-                 for sid in period["waves"] if sid in counts["sources"]]
-        for c, column in enumerate(columns):
-            for a, name in enumerate(fig["answers"]):
-                if np.isnan(fig["pct"][p, c, a]):
-                    continue
-                hits = [rows[name] for rows in books if name in rows]
-                if not hits or any(column not in w or not b.get(column) for w, b in hits):
-                    out[p] = np.nan   # never half and half within a period
-                    break
-                out[p, c, a] = round(sum(w[column] * b[column] for w, b in hits) / sum(b[column] for _, b in hits), 1)
-            else:
-                continue
-            break
+        people_n = np.zeros(out.shape[1:][::-1])
+        people_b = np.zeros(out.shape[1:][::-1])
+        for sid in period["waves"]:
+            path = folder / str(sid) / "people.json.gz"
+            weights = weights_of(path)
+            if weights is None or sid not in counts["sources"]:
+                people_b[:] = np.nan
+                break
+            people = json.loads(gzip.decompress(path.read_bytes()))
+            groups = [None if dim == "total" else bit_mask(people["cuts"].get(dim, {}).get(value), len(weights)) for dim, value in fig["columns"]]
+            n, b = weighted_counts(people, weights, counts["sources"][sid][0], fig["answers"], groups)
+            people_n, people_b = people_n + np.nan_to_num(n), people_b + np.nan_to_num(b)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out[p] = np.where(people_b.T > 0, np.round(100 * people_n.T / people_b.T, 1), np.nan)
+    out[(~np.isnan(fig["pct"]) & np.isnan(out)).any(axis=(1, 2))] = np.nan
+    out[np.isnan(fig["pct"])] = np.nan
     return out
 
 
 POOL_WEEKS = 4   # two groups at once ("Gen Z women") are few in one wave of ~400: the Cross-tab screen's 4-week pool
 
 
-def two_groups(question: str, plan: dict, index: Index, visible: set[int], quick: bool, key: str | None = None) -> dict | None:
+def two_groups(question: str, plan: dict, index: Index, visible: set[int], quick: bool, key: str | None = None,
+               weighted: bool = False) -> dict | None:
     """A question naming two kinds of group at once ("Gen Z women", "Amazon by generation and gender"): the survey
     question found as for any question, then its figures by both cuts from each wave's published cut file (the
     Cross-tab screen's, shared/data/payloads.py crosstab_from), the latest POOL_WEEKS waves pooled. None when the
@@ -740,6 +784,26 @@ def two_groups(question: str, plan: dict, index: Index, visible: set[int], quick
     label = lambda r: r[4] or r[2]   # noqa: E731  a single choice's option, a select-all's item
     combos = list(dict.fromkeys(f"{r[0]} · {r[1]}" for r in rows))
     cell = {(label(r), f"{r[0]} · {r[1]}"): r for r in rows}
+    weighting = "unweighted"
+    if weighted:   # each wave's respondents in both groups, Census-weighted (weigh), pooled as the counts are
+        pairs = [tuple(c.split(" · ")) for c in combos]
+        names = list(dict.fromkeys(label(r) for r in rows))
+        n, b = np.zeros((len(names), len(pairs))), np.zeros((len(names), len(pairs)))
+        for sid in parts:
+            path = folder / str(sid) / "people.json.gz"
+            weights = weights_of(path)
+            if weights is None:
+                b[:] = np.nan
+                break
+            people = json.loads(gzip.decompress(path.read_bytes()))
+            groups = [bit_mask(people["cuts"].get(first, {}).get(v1), len(weights)) & bit_mask(people["cuts"].get(second, {}).get(v2), len(weights))
+                      for v1, v2 in pairs]
+            wn, wb = weighted_counts(people, weights, qcode, names, groups)
+            n, b = n + np.nan_to_num(wn), b + np.nan_to_num(wb)
+        if not np.isnan(b).any() and all(b[names.index(label(r)), combos.index(f"{r[0]} · {r[1]}")] > 0 for r in rows):
+            weighting = "weighted"
+            cell = {(a, c): [*cell[a, c][:5], round(n[i, j] * cell[a, c][6] / b[i, j]), cell[a, c][6], 100 * n[i, j] / b[i, j], *cell[a, c][8:]]
+                    for (a, c) in cell for i, j in [(names.index(a), combos.index(c))]}
     answers = list(dict.fromkeys(label(r) for r in rows))
     pooled = lambda a: sum(r[5] for r in rows if label(r) == a) / max(1, sum(r[6] for r in rows if label(r) == a))   # noqa: E731
     named = [a for a in inner.get("verify", {}).get("focus", []) if a in answers]
@@ -772,6 +836,8 @@ def two_groups(question: str, plan: dict, index: Index, visible: set[int], quick
     small = [c for c, b in bases.items() if b < SMALL_BASE]
     notes = [f"Figures by {first.replace('_', ' ')} and {second.replace('_', ' ')} at once, from the latest {len(dates)} "
              f"{'wave' if len(dates) == 1 else 'waves'} of this question pooled so each group has more respondents."] + \
+            ([("Census-weighted figures (gender, age, region): counts of people are weighted estimates." if weighting == "weighted"
+               else "Unweighted figures: these waves have no respondent file to weight.")] if weighted else []) + \
             ([f"Note: small base, under {SMALL_BASE} respondents in {', '.join(small)}: read with caution."] if small else [])
     return {**inner, "answer": "\n".join([inner.get("source_line", ""), headline] + notes), "headline": headline, "takeaway": "",
             "points": [], "notes": notes, "tiles": [{"label": c, "value": f"{v:.1f}%", "note": f"{main}, {r[6]:,} respondents"}
@@ -781,7 +847,7 @@ def two_groups(question: str, plan: dict, index: Index, visible: set[int], quick
                       "bases": [bases[c] for c in combos], "cell_bases": [[cell[a, c][6] if (a, c) in cell else None for c in combos] for a in listed]},
             "scope": {**inner["scope"], "period": span, "waves": len(dates), "base": bases[combos[0]] if len(combos) == 1 else 0},
             "sources": [{**source, "waves": len(dates), "link": f"/w/{survey_id}/crosstab/{qcode}?mode=two&a={first}&b={second}&weeks={POOL_WEEKS}"}],
-            "next": [], "check": False, "plan": plan}
+            "next": [], "check": False, "plan": plan, "weighting": weighting}
 
 
 def no_figure(message: str, plan: dict, suggestions=()) -> dict:
@@ -814,7 +880,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         return no_figure("These survey results cannot establish what caused the change. Try asking what respondents reported or how their answers changed over time.", plan)
     if key is None and OVERVIEW.search(text) and (summed := overview(question, plan, index, visible, quick)):
         return summed
-    if len(plan["cuts"]) == 2 and (both := two_groups(question, plan, index, visible, quick, key)):
+    if len(plan["cuts"]) == 2 and (both := two_groups(question, plan, index, visible, quick, key, weighted)):
         return both
     if len(plan["cuts"]) > 1:
         return no_figure("Ask CIP can show at most two kinds of group at once (for example Gen Z women). Try fewer groups, or Cross-tabs.", plan)
@@ -1157,7 +1223,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     notes = [x for x in sentences[1:] if x.startswith(NOTE_STARTS)]
     if weighted:
         notes.append("Census-weighted figures (gender, age, region): counts of people are weighted estimates, and changes are tested on the unweighted figures." if weighting == "weighted" else
-                     "Unweighted figures: weighted ones exist only for all respondents, gender and generation.")
+                     "Unweighted figures: these waves have no respondent file to weight.")
         if weighting == "weighted" and (dropped := len(ask_figures.compute(counts, plan, visible)["periods"]) - len(fig["periods"])):
             notes.append(f"{dropped} {'period' if dropped == 1 else 'periods'} left out: their waves have no weighted figures.")
     points = [x for x in sentences[1:] if not x.startswith(NOTE_STARTS)]

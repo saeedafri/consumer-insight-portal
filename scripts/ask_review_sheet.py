@@ -1,11 +1,14 @@
 """The research team's review sheet for retraining Ask CIP's reader, and its reading back.
 
-    python scripts/ask_review_sheet.py build --out reports/ask-review-sheet.xlsx [--asks] [--generated 140]
+    python scripts/ask_review_sheet.py build --out reports/ask-review-sheet.xlsx [--asks] [--generated 140] [--written-on 2026-11-09]
     python scripts/ask_review_sheet.py read reports/ask-review-sheet.xlsx --out reports/ask-reviewed.jsonl
 
 build: one row a question: the real asks typed in a browser (cip_access_log, --asks: a read of the database), the
-researched set (scripts/ask_researched.yml), the misses' wordings (scripts/ask_review_questions.yml) and generated
-questions Ask gets wrong (scripts/ask_bench.py's, seed 11; the bench scores seed 7). Each row shows Ask's answer and
+researched set (scripts/ask_researched.yml), the misses' wordings (scripts/ask_review_questions.yml), questions no
+survey asks (scripts/ask_review_none.yml) and generated questions Ask gets wrong (scripts/ask_bench.py's, seed 11; the
+bench scores seed 7). --written-on dates the generated and no-answer rows, which are not asks: the training
+publication's newest wave, so the trainer splits them into train, dev and test; the real asks, the researched set and
+the reworded misses keep the day they were asked or written, after it, so they test the "future" split. Each row shows Ask's answer and
 the five candidates its reader chose between; a reviewer marks the right one, "None" or another code. The golden and
 fresh sets' questions are always left out: they are the release exam.
 read: the marked sheet as the `--expert` file of scripts/colab/ask_cip_train.py prepare, one JSON object a line.
@@ -77,6 +80,7 @@ def build(args) -> None:
         asked += [(q, "Analyst ask on staging", day) for q, day in real_asks()]
     asked += [(i["q"], "Researched set", "2026-11-20") for i in yaml.safe_load((ROOT / "scripts/ask_researched.yml").read_text())]
     asked += [(q, "A miss, reworded", today) for q in yaml.safe_load((ROOT / "scripts/ask_review_questions.yml").read_text())]
+    asked += [(q, "No survey asks this (written)", args.written_on) for q in yaml.safe_load((ROOT / "scripts/ask_review_none.yml").read_text())]
 
     def read(question: str) -> tuple[dict, list[str]]:
         seen: list[dict] = []
@@ -112,7 +116,7 @@ def build(args) -> None:
             keys = [k for k in keys if k][:CHOICES]
             if case["key"] not in keys:   # the generator's answer always among the choices, last
                 keys = keys[:CHOICES - 1] + [case["key"]]
-            rows.append((case["text"], f"Generated (its answer: {index.docs[case['key']]['qcode']})", today, found, keys))
+            rows.append((case["text"], f"Generated (its answer: {index.docs[case['key']]['qcode']})", args.written_on, found, keys))
             misses += 1
 
     book = Workbook()
@@ -227,6 +231,7 @@ def main() -> None:
     made.add_argument("--out", type=Path, required=True)
     made.add_argument("--asks", action="store_true", help="add the questions typed on staging (reads cip_access_log)")
     made.add_argument("--generated", type=int, default=140, help="generated questions Ask gets wrong")
+    made.add_argument("--written-on", default=str(date.today()), help="the date of the generated and no-answer rows")
     marked = commands.add_parser("read")
     marked.add_argument("sheet", type=Path)
     marked.add_argument("--out", type=Path, required=True)

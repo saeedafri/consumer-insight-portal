@@ -1003,16 +1003,27 @@ def test_a_summary_question_is_a_line_from_each_overview_question(index, monkeyp
     assert "overview" not in assistant.answer("Summarize Amazon retailers", index, EVERYONE)   # a subject: asked as any question
 
 
-def test_a_weighted_question_uses_each_waves_weighted_figures(index, tmp_path):
-    book = {"questions": [{"id": "XQ1", "groups": [{"label": "", "bases": {"Total": 400}, "rows": [
-        {"label": "Amazon", "w": {"Total": 40.0}}, {"label": "Walmart", "w": {"Total": 52.0}}]}]}]}
+def test_a_weighted_question_weighs_each_respondent_for_any_group(index, tmp_path):
+    # wave 107: four respondents (bits 0-3), Amazon chosen by 0 and 1, the first two Gen Z; weights 3, 1, 1, 1
+    people = {"cuts": {"generation": {"GenZ": "3", "Millennial": "c"}},
+              "questions": {"XQ1": {"rows": [[1, 0, "Amazon", None, None], [2, 0, "Walmart", None, None]],
+                                    "bits": {"0,0": "f", "1,0": "3", "2,0": "c"}}}, "weights": [3.0, 1.0, 1.0, 1.0]}
     (tmp_path / "waves" / "107").mkdir(parents=True)
-    (tmp_path / "waves" / "107" / "book.json.gz").write_bytes(gzip.compress(json.dumps(book).encode()))
+    (tmp_path / "waves" / "107" / "people.json.gz").write_bytes(gzip.compress(json.dumps(people).encode()))
     found = assistant.answer("What is the Census-weighted share who bought from Amazon in the latest wave?", index, EVERYONE)
-    assert found["weighting"] == "weighted" and figure(found, "Amazon") == [40.0]   # 42.5% unweighted
+    assert found["weighting"] == "weighted" and figure(found, "Amazon") == [66.7]   # (3 + 1) of 6; 42.5% unweighted
     assert found["notes"][-1].startswith("Census-weighted")
-    by_income = assistant.answer("Amazon in the latest wave by generation", index, EVERYONE, weighted=True)
-    assert by_income["weighting"] == "unweighted" and "Unweighted figures" in by_income["notes"][-1]   # no weighted generation figures here
+    by_generation = assistant.answer("Amazon in the latest wave by generation", index, EVERYONE, weighted=True)
+    assert figure(by_generation, "Amazon") == [100.0, 0.0]   # every weighted Gen Z chose it, no Millennial
+    earlier = assistant.answer("Amazon in the first wave", index, EVERYONE, weighted=True)
+    assert earlier["weighting"] == "unweighted" and "no respondent file" in earlier["notes"][-1]
+
+
+def test_weights_are_raked_from_a_respondent_file_published_before_them(tmp_path):
+    people = {"cuts": {"gender": {"Male": "1", "Female": "e"}}, "questions": {}}   # 1 man, 3 women; Census 49 / 51
+    (tmp_path / "people.json.gz").write_bytes(gzip.compress(json.dumps(people).encode()))
+    weights = assistant.weights_of(tmp_path / "people.json.gz")
+    assert len(weights) == 4 and round(weights[0] / weights[1], 2) == round(49 / 1 / (51 / 3), 2)
 
 
 def test_one_wave_says_how_it_moved_since_the_wave_before(index):

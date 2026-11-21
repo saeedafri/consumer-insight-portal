@@ -1,0 +1,64 @@
+# Questions an analyst might ask that no survey answers, for the review sheet (scripts/ask_review_sheet.py build): the
+# reader must learn "none of these" for them, not the nearest question. Written by Claude on 21 Nov 2026 and dated at the
+# training cutoff (build --written-on), like the generated rows; a row whose choices hold a real answer is marked so
+# instead. Never the golden or fresh sets' own questions.
+- Do people expect the Fed to cut interest rates?
+- How many consumers own cryptocurrency?
+- Share of people investing in the stock market
+- Are home prices too high to buy a house?
+- How many people plan to buy a new car this year?
+- What do consumers think about the presidential election?
+- Share of people who bet on sports online
+- How do consumers feel about immigration?
+- Are people worried about climate change?
+- How many people have health insurance?
+- Share of renters who struggle to pay rent
+- How many people have student loan debt?
+- Do consumers buy gold as an investment?
+- How many people work from home full time?
+- Share of people who own an electric vehicle
+- Which airline do people prefer?
+- How many people booked a cruise this year?
+- Do consumers trust banks?
+- How many people use Venmo or Zelle?
+- What percentage of people own a smartwatch?
+- How many people have a gym membership?
+- Do consumers prefer iPhone or Android?
+- Share of people who smoke cigarettes
+- How much do people spend on rent each month?
+- What is the average credit score of shoppers?
+- How many consumers plan to retire early?
+- Do people support a four-day work week?
+- How many people volunteer for charity?
+- Share of people who rent their car
+- Do consumers worry about a housing crash?
+- How many people own a second home?
+- What do shoppers think of Elon Musk?
+- How many people watch the Super Bowl halftime show for the music?
+- Share of households with solar panels
+- How many people adopted a pet this year?
+- Do consumers trust online reviews written by AI?
+- How many people moved house this year?
+- What share of people have a will?
+- How many people plan to take a vacation abroad?
+- Do consumers want a universal basic income?
+- How many people use a dating app?
+- Share of people who drink alcohol daily
+- How many consumers have life insurance?
+- Do people think college is worth the cost?
+- How many people own a gun?
+- Share of consumers who own a boat
+- What do people think about nuclear energy?
+- How many households have a landline phone?
+- Do consumers prefer cash over cards at gas stations?
+- How many people play video games every day?
+- Share of people learning a new language
+- How many consumers have a side hustle?
+- Do people expect a recession in Europe?
+- How many people use a robot vacuum?
+- Share of consumers who own a 3D printer
+- What percentage of people meditate?
+- How many people have been to a music festival?
+- Do consumers want to live on Mars?
+- How many people grow their own vegetables?
+- Share of people who use public transport daily
