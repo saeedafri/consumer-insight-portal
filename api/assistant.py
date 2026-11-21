@@ -18,6 +18,7 @@ questions, never with a guess. Answers are kept per published version, person's 
 from __future__ import annotations
 
 import functools
+import gzip
 import json
 import logging
 import math
@@ -34,6 +35,7 @@ import yaml
 
 from api import ask_figures, ask_model, ask_reader
 from api.ask_index import FRAME_WORDS, LEARNED, STOP, Index, name_key, read_json, stems
+from shared.data import payloads
 
 log = logging.getLogger("cip.assistant")
 # the reader's lead (logits) from which its pick is final and the AI is not asked: at 2, half the golden set's questions
@@ -661,13 +663,134 @@ def overview(question: str, plan: dict, index: Index, visible: set[int], quick: 
             "next": [{"question": f"{p['name']} over time", "key": p["source"]["key"]} for p in parts[:3]]}
 
 
+BOOK_COLUMNS = {"GenZ": "Gen Z", "GenX": "Gen X"}   # a wave book's column names (etl/publish.py) for the cube's values
+
+
+@functools.lru_cache(maxsize=512)
+def weighted_rows(path: Path) -> dict:
+    """{qcode: {answer: (Census-weighted % by column, respondents by column)}} from one wave's book (etl/weighting.py
+    weights, published as each row's "w"): a few KB a wave, kept. Empty when the wave has no book."""
+    try:
+        book = json.loads(gzip.decompress(path.read_bytes()))
+    except OSError:
+        return {}
+    return {q["id"]: {(f"{g['label']}: {r['label']}" if g["label"] and g["label"] != r["label"] else r["label"]): (r["w"], g.get("bases", {}))
+                      for g in q.get("groups", []) for r in g.get("rows", []) if "w" in r} for q in book["questions"]}
+
+
+def weigh(fig: dict, counts: dict, index: Index):
+    """fig's shares Census-weighted (gender, age, region), each period's the average of its waves' weighted shares
+    counted by their respondents; a period with a wave never weighted is all NaN (answer() leaves it out). None when a
+    cut has no weighted figures (only gender and generation do): the answer stays unweighted and says so. 21 Nov 2026."""
+    columns = ["Total" if dim == "total" else BOOK_COLUMNS.get(value, value) if dim in ("gender", "generation") else None
+               for dim, value in fig["columns"]]
+    if None in columns:
+        return None
+    out = np.full(fig["pct"].shape, np.nan)
+    for p, period in enumerate(fig["periods"]):
+        books = [weighted_rows(index.root.parent / "waves" / str(sid) / "book.json.gz").get(counts["sources"][sid][0], {})
+                 for sid in period["waves"] if sid in counts["sources"]]
+        for c, column in enumerate(columns):
+            for a, name in enumerate(fig["answers"]):
+                if np.isnan(fig["pct"][p, c, a]):
+                    continue
+                hits = [rows[name] for rows in books if name in rows]
+                if not hits or any(column not in w or not b.get(column) for w, b in hits):
+                    out[p] = np.nan   # never half and half within a period
+                    break
+                out[p, c, a] = round(sum(w[column] * b[column] for w, b in hits) / sum(b[column] for _, b in hits), 1)
+            else:
+                continue
+            break
+    return out
+
+
+POOL_WEEKS = 4   # two groups at once ("Gen Z women") are few in one wave of ~400: the Cross-tab screen's 4-week pool
+
+
+def two_groups(question: str, plan: dict, index: Index, visible: set[int], quick: bool, key: str | None = None) -> dict | None:
+    """A question naming two kinds of group at once ("Gen Z women", "Amazon by generation and gender"): the survey
+    question found as for any question, then its figures by both cuts from each wave's published cut file (the
+    Cross-tab screen's, shared/data/payloads.py crosstab_from), the latest POOL_WEEKS waves pooled. None when the
+    question without its groups is not about anything. 21 Nov 2026."""
+    text = " " + plan["question"] + " "
+    for pattern, *_ in ask_reader.CUT_DIMS + ask_reader.CUT_VALUES:
+        text = re.sub(rf"(?:\b(?:among|for|by)\s+)?(?:{pattern})", " ", text)
+    text = re.sub(r"\s(?:and|vs\.?|versus|or)\s+(?=(?:and|vs\.?|versus|or|among|in|over)\b|\W*$)", " ", text)
+    if not ask_reader.read(text)["about"]:
+        return None
+    inner = answer(text, index, visible, quick, key)
+    if inner["mode"] != "figures":
+        return inner
+    source = inner["sources"][0]
+    survey_id, qcode = source["survey_id"], source["qcode"]
+    folder = index.root.parent / "waves"
+    if not (folder / str(survey_id) / "cuts" / f"{qcode}.json.gz").exists():
+        return no_figure("Figures by two groups at once are not published for this survey question. Try one group, or open Cross-tabs.", plan, inner["suggestions"])
+    family = {sid: {**w, "prior_survey_id": w.get("prior_survey_id")} for sid, w in index.waves.items()
+              if sid in visible and w.get("survey_family") == index.waves[survey_id].get("survey_family")}
+    parts = {w["survey_id"]: json.loads(gzip.decompress(path.read_bytes())) for w in payloads.chain(family, survey_id, POOL_WEEKS)
+             if (path := folder / str(w["survey_id"]) / "cuts" / f"{qcode}.json.gz").exists()}
+    pool = [family[sid] for sid in parts]
+    (first, wanted1), (second, wanted2) = plan["cuts"].items()
+    rows = payloads.crosstab_from(survey_id, qcode, (first, second), pool, parts)["rows"]
+    rows = [r for r in rows if (wanted1 == "all" or r[0] in wanted1) and (wanted2 == "all" or r[1] in wanted2) and r[7] is not None]
+    if not rows:
+        return no_figure("At least one requested demographic group is unavailable for this survey question. Try a different group or ask for all respondents.", plan, inner["suggestions"])
+    label = lambda r: r[4] or r[2]   # noqa: E731  a single choice's option, a select-all's item
+    combos = list(dict.fromkeys(f"{r[0]} · {r[1]}" for r in rows))
+    cell = {(label(r), f"{r[0]} · {r[1]}"): r for r in rows}
+    answers = list(dict.fromkeys(label(r) for r in rows))
+    pooled = lambda a: sum(r[5] for r in rows if label(r) == a) / max(1, sum(r[6] for r in rows if label(r) == a))   # noqa: E731
+    named = [a for a in inner.get("verify", {}).get("focus", []) if a in answers]
+    shown = named or sorted(answers, key=pooled, reverse=True)[:1 if len(combos) > 1 else 8]
+    main = shown[0]
+    dates = sorted(index.waves[sid]["wave_date"] for sid in parts)
+    span = ask_figures.label_date(dates[0]) + (f" – {ask_figures.label_date(dates[-1])}" if len(dates) > 1 else "")
+    period = f"on {span}" if len(dates) == 1 else f"over {span} ({len(dates)} waves pooled)"
+    figure = lambda a, c: round(cell[a, c][7], 1) if (a, c) in cell else None   # noqa: E731
+    sure = [(round(cell[main, c][7], 1), c, cell[main, c]) for c in combos if (main, c) in cell and cell[main, c][6] >= SMALL_BASE]
+    group = combos[0].replace(" · ", " ")
+    if len(combos) == 1 and plan["kind"] == "top":
+        headline = f"Top {min(len(shown), plan['top'] or TOP)} among {group} {period}: " + "; ".join(
+            f"{i + 1}. {a} {figure(a, combos[0]):.1f}%" for i, a in enumerate(shown[:plan["top"] or TOP])) + "."
+    elif len(combos) == 1:
+        r = cell.get((main, combos[0]))
+        headline = f"{round(r[7], 1):.1f}% of {group} respondents chose “{main}” {period} ({r[5]:,} of {r[6]:,})." if r else ""
+    elif len(sure) >= 2:
+        (high, top, _), (low, bottom, _) = max(sure), min(sure)
+        left_out = len([c for c in combos if (main, c) in cell]) - len(sure)
+        headline = (f"“{main}” runs from {low:.1f}% among {bottom} to {high:.1f}% among {top} {period}, a {high - low:.1f}-point gap"
+                    + (f" ({left_out} {'group' if left_out == 1 else 'groups'} under {SMALL_BASE} respondents left out)." if left_out else "."))
+    else:
+        headline = f"Every group but one has under {SMALL_BASE} respondents for “{main}” {period}: read the figures below with caution."
+    listed = shown if len(combos) == 1 else list(dict.fromkeys(shown + sorted(answers, key=pooled, reverse=True)[:5]))
+    chart_type = "bar" if len(combos) == 1 else "heatmap" if len(combos) >= HEATMAP_MIN else "grouped"
+    series = ([{"name": period, "data": [figure(a, combos[0]) for a in listed]}] if len(combos) == 1 else
+              [{"name": c, "data": [figure(a, c) for a in listed]} for c in combos])
+    bases = {c: max(r[6] for r in rows if f"{r[0]} · {r[1]}" == c) for c in combos}
+    small = [c for c, b in bases.items() if b < SMALL_BASE]
+    notes = [f"Figures by {first.replace('_', ' ')} and {second.replace('_', ' ')} at once, from the latest {len(dates)} "
+             f"{'wave' if len(dates) == 1 else 'waves'} of this question pooled so each group has more respondents."] + \
+            ([f"Note: small base, under {SMALL_BASE} respondents in {', '.join(small)}: read with caution."] if small else [])
+    return {**inner, "answer": "\n".join([inner.get("source_line", ""), headline] + notes), "headline": headline, "takeaway": "",
+            "points": [], "notes": notes, "tiles": [{"label": c, "value": f"{v:.1f}%", "note": f"{main}, {r[6]:,} respondents"}
+                                                     for v, c, r in sorted(sure, reverse=True)[:3]],
+            "chart": {"type": chart_type, "categories": listed, "series": series, "bases": bases, "unit": "%"},
+            "table": {"head": ["Answer", *combos], "rows": [[a, *(figure(a, c) for c in combos)] for a in listed],
+                      "bases": [bases[c] for c in combos], "cell_bases": [[cell[a, c][6] if (a, c) in cell else None for c in combos] for a in listed]},
+            "scope": {**inner["scope"], "period": span, "waves": len(dates), "base": bases[combos[0]] if len(combos) == 1 else 0},
+            "sources": [{**source, "waves": len(dates), "link": f"/w/{survey_id}/crosstab/{qcode}?mode=two&a={first}&b={second}&weeks={POOL_WEEKS}"}],
+            "next": [], "check": False, "plan": plan}
+
+
 def no_figure(message: str, plan: dict, suggestions=()) -> dict:
     """Explain why a requested analysis has no sound figure."""
     return {"answer": message, "chart": None, "table": None, "sources": [], "suggestions": list(suggestions),
             "plan": plan, "mode": "none", "no_source": True}
 
 
-def answer(question: str, index: Index, visible: set[int], quick: bool = False, key: str | None = None) -> dict:
+def answer(question: str, index: Index, visible: set[int], quick: bool = False, key: str | None = None, weighted: bool = False) -> dict:
     """{answer, chart, table, sources, suggestions, plan, mode, check, tiles, takeaway, next}: mode "figures" when
     answered, "none" when nothing in the surveys matches (then suggestions lists the closest questions, if any). quick:
     the nearest survey question by meaning and the rules, no model (~100 ms); check is then true when the model's reading
@@ -679,7 +802,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     if re.search(r"\b(?:census|survey|population)[ -]weighted\b|\b(?<!un[- ])(?<!not )weighted "
                  r"(?:share|percentage|proportion|averages?|means?|medians?|rates?|estimates?|results?|figures?|counts?|data|by)\b|"
                  r"\b(?<!not )(?<!don't )(?:use|apply) (?:survey |census |population )?(?:weights|weighting)\b", text):
-        return no_figure("Ask CIP uses unweighted survey results. Ask for the unweighted figure or check whether your survey view offers Census weighting.", plan)
+        weighted = True   # "the Census-weighted share": the weighted figures (weigh), the subject without the weighting words
+        question = re.sub(r"\b(?:census|survey|population)[ -]weighted\b|\bweighted\b|\b(?:use|apply|with) (?:survey |census |population )?"
+                          r"(?:weights|weighting)\b|\b(?:census|survey) weights\b", " ", question, flags=re.I)
+        plan = ask_reader.read(question)
+        text = plan["question"]
     if re.search(r"\b(?:who also (?:bought|purchased|used|shopped|selected|chose|answered)|"
                  r"(?:bought|purchased|shopped) (?:from|at) both)\b", text):
         return no_figure("This question needs a count of people who did both things. Try Audiences to check for overlap within a survey wave, or ask about each group separately.", plan)
@@ -687,8 +814,10 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         return no_figure("These survey results cannot establish what caused the change. Try asking what respondents reported or how their answers changed over time.", plan)
     if key is None and OVERVIEW.search(text) and (summed := overview(question, plan, index, visible, quick)):
         return summed
+    if len(plan["cuts"]) == 2 and (both := two_groups(question, plan, index, visible, quick, key)):
+        return both
     if len(plan["cuts"]) > 1:
-        return no_figure("Ask CIP can analyze one demographic dimension at a time. Try one group or use Cross-tabs for two dimensions.", plan)
+        return no_figure("Ask CIP can show at most two kinds of group at once (for example Gen Z women). Try fewer groups, or Cross-tabs.", plan)
     if re.search(r"\b(?:median|average (?:price|amount|cost|spend(?:ing)?))\b", plan["question"]):
         return no_figure("Ask CIP cannot calculate that spending or price statistic from its published response shares. Try a spending range or ask what share chose one.", plan)
     # an acronym no survey uses ("OTT", "DTC", "HBO"): the surveys do not ask about it, so no nearby figure stands in for it
@@ -983,6 +1112,14 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
                 return no_figure("A requested group or answer has no reportable figures in one of the periods. Try a single period or ask for all respondents.", plan, suggestions)
     if np.isnan(fig["pct"]).all():
         return no_figure("The survey question matches, but there are no reportable figures for the requested period. Try another period.", plan, suggestions)
+    weighting = "unweighted"
+    shares = weigh(fig, counts, index) if weighted else None
+    kept = [p for p in range(len(fig["periods"])) if shares is not None and not np.isnan(shares[p]).all()]
+    if kept:   # the periods with weighted figures; the people said are the weighted share of each base, and
+        # significance stays on the unweighted figures (etl/weighting.py)
+        fig = {**fig, "periods": [fig["periods"][p] for p in kept], "tested": fig["pct"][kept], "pct": shares[kept],
+               "bases": fig["bases"][kept], "people": np.round(shares[kept] * fig["bases"][kept] / 100)}
+        weighting = "weighted"
     periods = [p for p in fig["periods"] if p["waves"]]
     first, last = periods[0], periods[-1]
     source_wave = last["waves"][-1]
@@ -990,6 +1127,24 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     source_doc = {**doc, "qcode": source_code, "text": source_text}
     sentences, shown = write(plan, fig, source_doc, named)
     glance = {**brief(plan, fig, source_doc, shown, len(named) >= 2), "next": follow_ups(plan, fig, doc, named)}
+    # one wave alone says nothing of direction: the change since the wave before, tested, as a chat would add (21 Nov 2026)
+    if len(fig["periods"]) == 1 and len(fig["periods"][0]["waves"]) == 1 and len(fig["columns"]) == 1 and shown and glance["takeaway"] \
+            and (before := [d for d in fig["asked"] if d < fig["periods"][0]["from"]]):
+        pair = ask_figures.compute(counts, {**plan, "kind": "share", "grain": None, "when": [
+            {"from": before[-1], "to": before[-1]}, {"from": fig["periods"][0]["from"], "to": fig["periods"][0]["to"]}]}, visible)
+        if weighting == "weighted":
+            shares = weigh(pair, counts, index)
+            pair = {**pair, "tested": pair["pct"], "pct": shares} if shares is not None else {**pair, "periods": []}
+        change = ask_figures.moved(pair, shown[0]) if len(pair["periods"]) == 2 and shown[0] < pair["pct"].shape[2] else None
+        if change:
+            since = ask_figures.label_date(before[-1])
+            said = f"“{fig['answers'][shown[0]]}”"
+            glance["takeaway"] += (f" {said} is unchanged from {since}." if not change[0] else
+                                   f" {said} is {'up' if change[0] > 0 else 'down'} {abs(change[0]):.1f} points from {since}"
+                                   f" ({'a significant change' if change[1] else 'not a significant change'}).")
+            if len(glance["tiles"]) < 3:
+                glance["tiles"].append({"label": f"Change since {since}", "value": f"{change[0]:+.1f} pts",
+                                        "note": "significant" if change[1] else "not significant"})
     waves_used = len({wave for period in periods for wave in period["waves"]})
     period = first["label"] if len(periods) == 1 else f"{first['label']} vs {last['label']}" if plan["compare"] and len(periods) == 2 \
         else f"{ask_figures.label_date(first['from'])} – {ask_figures.label_date(last['to'])}"
@@ -1000,6 +1155,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         drawn = chart(fig, listed, len(named) >= 2)
     table = figure_table(fig, listed)
     notes = [x for x in sentences[1:] if x.startswith(NOTE_STARTS)]
+    if weighted:
+        notes.append("Census-weighted figures (gender, age, region): counts of people are weighted estimates, and changes are tested on the unweighted figures." if weighting == "weighted" else
+                     "Unweighted figures: weighted ones exist only for all respondents, gender and generation.")
+        if weighting == "weighted" and (dropped := len(ask_figures.compute(counts, plan, visible)["periods"]) - len(fig["periods"])):
+            notes.append(f"{dropped} {'period' if dropped == 1 else 'periods'} left out: their waves have no weighted figures.")
     points = [x for x in sentences[1:] if not x.startswith(NOTE_STARTS)]
     # the answer first, in one sentence (ChatGPT's and Tableau Agent's order, 21 Nov 2026): the finding when there is one,
     # else the first sentence with a figure; the figure sentences follow as points ("Top 5: 1. … 2. …" read as a list)
@@ -1012,7 +1172,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     main_base = int(fig["bases"][0, 0, shown[0]]) if shown and len(fig["periods"]) == 1 and len(fig["columns"]) == 1 else 0
     return {"answer": "\n".join(sentences), "headline": headline, "points": [x for x in points if x != headline], "notes": notes,
             "scope": {"country": plan["country"], "period": period, "waves": waves_used, "base": main_base},
-            "source_line": sentences[0], "weighting": "unweighted", "understood": understood,
+            "source_line": sentences[0], "weighting": weighting, "understood": understood,
             "check": quick and understood in ("meaning", "reader") and not reader_sure and ask_model.ready(), "margin": margin,
             "verify": {"question": question, "key": doc["key"], "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],
                        "kind": plan["kind"], "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, "codes": doc.get("codes", [doc["qcode"]]),
@@ -1042,7 +1202,7 @@ def figure_table(fig: dict, shown: list[int]) -> dict:
 
 
 def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool = False, key: str | None = None,
-        previous: str | None = None, previous_key: str | None = None) -> dict:
+        previous: str | None = None, previous_key: str | None = None, weighted: bool = False) -> dict:
     """answer(), kept per published version (the index), access scope, quick or not, follow-up key and question wording; a question
     the AI check settled is learned, so the same or a close question is answered at once next time, with no AI. An answer from
     keywords alone, before the search vectors are ready (the minutes after a deploy), is not kept: it stayed until the next
@@ -1054,7 +1214,7 @@ def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool 
         merged, follow_key = follow_on(question, " ".join(previous.split())[:500], previous_key, index)
         if follow_key:
             question, key, asked_as = merged, follow_key, merged
-    kept = (id(index), scope, quick, key, question.lower())
+    kept = (id(index), scope, quick, key, weighted, question.lower())
     with ANSWERS_LOCK:
         cache = ANSWERS
         if kept in ANSWERS:
@@ -1063,7 +1223,7 @@ def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool 
     # read before answering, as they can arrive while it runs; an index whose build ended with no vectors (no search model)
     # keeps its answers too, or every repeat was worked out again (second review, 15 Nov 2026)
     vectors_ready = index.vectors is not None or getattr(index, "settled", True)
-    found = answer(question, index, visible, quick, key)
+    found = answer(question, index, visible, quick, key, weighted)
     if (fixed := index.correct_spelling(question)) != question:   # the page says so: "answered as …, the spelling put right"
         found = {**found, "corrected": fixed}
     if asked_as:

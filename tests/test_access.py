@@ -922,3 +922,16 @@ def test_staff_and_a_client_less_outsider_never_share_a_cache_scope():
     staff = {"email": "a@coresight.com", "role": "analyst", "client": None, "tier": "enterprise", "study_types": "*", "features": features}
     outsider = {**staff, "email": "b@elsewhere.com", "role": "client"}
     assert access.scope(staff) != access.scope(outsider)
+
+
+def test_ask_history_is_the_persons_own_questions_newest_first_each_once(portal):
+    with api.get_engine("app").begin() as conn:
+        for email, target, detail in [("boss@coresight.com", "How many shop at Amazon?", '{"mode": "figures"}'),
+                                      ("boss@coresight.com", "What about Gen Z?", '{"mode": "figures", "asked_as": "how many shop at amazon among gen z"}'),
+                                      ("pat@acme.com", "A client's question", None),
+                                      ("boss@coresight.com", "how many shop at amazon?", None)]:   # asked again: listed once, newest
+            conn.execute(sa.text("INSERT INTO cip_access_log (email, role, action, target, detail) VALUES (:e, 'x', 'ask', :t, :d)"),
+                         {"e": email, "t": target, "d": detail})
+    status, _, body = call("/api/v1/ask/history", signed("boss@coresight.com"))
+    assert status == 200 and [q["question"] for q in json.loads(body)["questions"]] == \
+        ["how many shop at amazon?", "how many shop at amazon among gen z"]

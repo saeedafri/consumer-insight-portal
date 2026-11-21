@@ -215,6 +215,7 @@ class Index:
         self.nets = dashboard_nets()
         known = {w["survey_id"]: {**w, "wave_date": str(w["wave_date"])[:10]} for w in waves}   # the API's list has dates
         self.country = {sid: w.get("country") or "US" for sid, w in known.items()}   # api/assistant.py answer: one country a question
+        self.waves = known   # api/assistant.py two_groups: a wave's family and the week before it
         topics = topic_words()
         parts: dict[str, dict] = {}                        # one per file and wording: where the counts are
         part_words: dict[str, dict[str, str]] = {}         # its searchable fields

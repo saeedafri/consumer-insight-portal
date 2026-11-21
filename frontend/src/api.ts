@@ -266,8 +266,10 @@ export interface Answer { answer: string; no_source: boolean; mode: "figures" | 
                           understood?: string; check?: boolean; changed?: string; verify?: { question: string; key: string; code: string; family: string; focus: string[]; kind: string; cut: string; period: string };
                           tiles?: AskTile[]; takeaway?: string; next?: { question: string; key: string }[];
                           corrected?: string;   // the question as answered, its spelling put right (api/assistant.py ask)
-                          asked_as?: string;
+                          asked_as?: string; weighting?: string;   // "weighted" when Census-weighted figures answered
                           overview?: { name: string; text: string; qcode: string; link: string }[] }   // "Summarize this week": a line per question (assistant.py overview)   // a typed follow-up read with the question before it (assistant.py follow_on)
+/** This person's own recent Ask questions, newest first (GET /api/v1/ask/history, read from the access log). */
+export const useAskHistory = () => useQuery({ queryKey: ["ask-history"], queryFn: () => get<{ questions: { question: string; asked_at: string }[] }>("/api/v1/ask/history"), retry: false });
 /** What the Ask box offers while someone types (GET /api/v1/ask/suggest): the words put right, and questions by name. */
 export interface AskOffer { corrected: string | null;
   suggestions: { text: string; key: string; qcode: string; family: string; waves: number }[] }

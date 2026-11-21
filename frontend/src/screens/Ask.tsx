@@ -7,7 +7,7 @@
 // was understood and every figure with its base. A question it cannot place shows the closest survey questions.
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { send, suggestAsk, useMe } from "../api";
+import { send, suggestAsk, useAskHistory, useMe } from "../api";
 import type { Answer, AskChart, AskOffer, AskTile } from "../api";
 import EChart, { downloadPng } from "../components/EChart";
 import type { Chart } from "../components/EChart";
@@ -156,7 +156,7 @@ function Figures({ table }: { table: NonNullable<Answer["table"]> }) {
   </table>;
 }
 
-function Reply({ question, answer, audience, weighted, checking, onAsk }: { question: string; answer: Answer; audience: Audience; weighted: boolean;
+function Reply({ question, answer, audience, checking, onAsk }: { question: string; answer: Answer; audience: Audience;
                                                                                     checking: boolean; onAsk: (q: string, key?: string) => void }) {
   const chart = answer.chart;
   const offered = chart ? views(chart) : [];
@@ -183,7 +183,8 @@ function Reply({ question, answer, audience, weighted, checking, onAsk }: { ques
                 rules: "Best match by words: check the question below" }[answer.understood ?? ""];
   const drawn = useRef<Chart | null>(null);
   const file = `ask-${(source?.qcode ?? "answer").toLowerCase()}`;
-  const notes = [question, answer.source_line ?? "", "Unweighted figures, from Coresight's surveys (Ask CIP)."];
+  const weightedAnswer = answer.weighting === "weighted";
+  const notes = [question, answer.source_line ?? "", `${weightedAnswer ? "Census-weighted" : "Unweighted"} figures, from Coresight's surveys (Ask CIP).`];
   if (scope) notes.splice(1, 0, `Data used: ${scope.period} · ${scope.waves} ${scope.waves === 1 ? "wave" : "waves"} · ${scope.country}`);
   const tiles = answer.tiles ?? [];
   const table = answer.table;
@@ -211,7 +212,7 @@ function Reply({ question, answer, audience, weighted, checking, onAsk }: { ques
         {source && <p className="small muted ask-source">
           {scope && <>{scope.country === "US" ? "United States" : scope.country === "CN" ? "China" : scope.country}
             {" · "}{scope.period}{" · "}{scope.waves} {scope.waves === 1 ? "survey wave" : "survey waves"}
-            {!!scope.base && <>{" · "}{scope.base.toLocaleString("en-US")} respondents</>}{" · Unweighted · "}</>}
+            {!!scope.base && <>{" · "}{scope.base.toLocaleString("en-US")} respondents</>}{weightedAnswer ? " · Census-weighted · " : " · Unweighted · "}</>}
           <Link to={source.link} title={source.question}>Source {source.qcode}{source.name ? `: ${source.name}` : ""} →</Link>
         </p>}
         {(how || checking) && <p className="small muted ask-how">{checking ? "Checking the survey match…" : analyst ? how :
@@ -228,9 +229,8 @@ function Reply({ question, answer, audience, weighted, checking, onAsk }: { ques
         {chart && !drawnByHand && <EChart key={view} option={option(chart, view)} height={height} label={answer.headline || question} onReady={c => { drawn.current = c; }} />}
         {chart && view === "table" && answer.table && <div className="table-wrap"><Figures table={answer.table} /></div>}
         {answer.takeaway && answer.takeaway !== answer.headline && <div className="ask-takeaway"><b>What this tells us</b><p><Bold text={answer.takeaway} /></p></div>}
-        {(!!answer.notes?.length || weighted) && <ul className="ask-notes small muted">
+        {!!answer.notes?.length && <ul className="ask-notes small muted">
           {answer.notes?.map((n, i) => <li key={i}>{n}</li>)}
-          {weighted && <li>Your Weighted switch is on, but Ask CIP answers with unweighted figures (as Forsta shows them).</li>}
         </ul>}
         {table && view !== "table" && <details className="ask-figures" open={analyst}><summary>Figures and sample sizes</summary>
           {source && <p className="small muted">{answer.source_line}</p>}
@@ -262,6 +262,10 @@ export default function Ask() {
   const panel = useRef<HTMLElement>(null);   // the box: a new answer is prepended above the replies, so scroll back up to it
   const [audience, setAudience] = useState<Audience>(savedAudience);
   const weighted = useWeighted();
+  const history = useAskHistory().data?.questions ?? [];
+  // this visit's questions first (the access log is written a moment later), then earlier ones, each once
+  const recent = [...new Map([...replies.map(r => r.answer.asked_as ?? r.question), ...history.map(h => h.question)]
+    .map(q => [q.toLowerCase(), q])).values()].slice(0, 30);
   const choose = (a: Audience) => { setAudience(a); try { localStorage.setItem(AUDIENCE, a); } catch { /* private window */ } };
   /** Keep one active question so a late reply cannot overwrite a newer one or reappear after clearing. */
   const ask = async (question: string, key?: string) => {
@@ -279,7 +283,7 @@ export default function Ask() {
     setBusy(true); setError(""); setOffer(null);
     // a typed question goes with the latest answered one, so "What about Gen Z?" is read with it (api/assistant.py follow_on)
     const last = key ? undefined : replies.find(r => r.answer.mode === "figures" && r.answer.sources.length);
-    const body = { question, ...(key ? { key } : {}),
+    const body = { question, ...(key ? { key } : {}), ...(weighted ? { weighted: true } : {}),
                    ...(last ? { previous: last.answer.asked_as ?? last.answer.corrected ?? last.question, previous_key: last.answer.sources[0].key } : {}) };
     try {
       const answer = await send<Answer>("POST", "/api/v1/ask", { ...body, quick: true }, signal);
@@ -360,8 +364,10 @@ export default function Ask() {
         {!replies.length && <div className="tagrow ask-examples" aria-label="Example questions">
           {EXAMPLES.map(q => <button key={q} type="button" className="tag" onClick={() => void ask(q)}>{q}</button>)}
         </div>}
+        {recent.length > 0 && <details className="ask-history"><summary className="small muted">Your recent questions ({recent.length})</summary>
+          <div className="tagrow">{recent.map(q => <button key={q} type="button" className="tag" onClick={() => void ask(q)}>{q}</button>)}</div></details>}
       </section>
-      {replies.map(r => <Reply key={r.id} question={r.question} answer={r.answer} audience={audience} weighted={weighted}
+      {replies.map(r => <Reply key={r.id} question={r.question} answer={r.answer} audience={audience}
                                     checking={r.checking} onAsk={(q, key) => void ask(q, key)} />)}
     </div>
   </>;

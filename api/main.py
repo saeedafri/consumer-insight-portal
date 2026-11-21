@@ -732,7 +732,7 @@ async def ask_index(who: dict):
 
 
 async def ask_answer(who: dict, question: str, quick: bool = False, check: bool = False, key: str | None = None,
-                     previous: str | None = None, previous_key: str | None = None) -> dict:
+                     previous: str | None = None, previous_key: str | None = None, weighted: bool = False) -> dict:
     """Ask CIP for the page (POST /api/v1/ask) and the MCP connector's ask tool alike: Ask on the person's menu, their
     per-minute limit (config/access.yml limits.ask), and at most ASK_SLOTS questions computed at once per worker, so a
     burst queues briefly, then "busy", never slows the site. check: the page's second pass at a question it asked
@@ -748,7 +748,7 @@ async def ask_answer(who: dict, question: str, quick: bool = False, check: bool 
         raise HTTPException(503, "Ask CIP is busy: try again in a few seconds", headers={"Retry-After": "5"})
     try:
         index, shown = await ask_index(who)
-        return await run_in_threadpool(assistant.ask, question, index, shown, access.scope(who), quick, key, previous, previous_key)
+        return await run_in_threadpool(assistant.ask, question, index, shown, access.scope(who), quick, key, previous, previous_key, weighted)
     finally:
         ASK_SLOTS.release()
 
@@ -763,6 +763,29 @@ async def ask_suggest(q: str = Query(..., min_length=2, max_length=200), who: di
         raise HTTPException(429, "Too many suggestions: wait a minute", headers={"Retry-After": "60"})
     index, shown = await ask_index(who)
     return await run_in_threadpool(assistant.suggest, q, index, shown)
+
+
+HISTORY_KEPT = 30   # questions the Ask page lists under "Your recent questions"
+
+
+@app.get("/api/v1/ask/history")
+async def ask_history(who: dict = Depends(user)) -> dict:
+    """This person's own recent Ask CIP questions, newest first, each once, as they were read (a follow-up as its full
+    question): {questions: [{question, asked_at}]}. Read from the access log every ask already writes (cip_access_log,
+    indexed on email and time), so no second store; never anyone else's. The Ask page lists them to ask again."""
+    require_feature(who, "ask")
+
+    def read() -> list:
+        with get_engine("app").connect() as conn:
+            return conn.execute(text("SELECT ts, target, detail FROM cip_access_log WHERE email = :e AND action = 'ask'"
+                                     " ORDER BY ts DESC, log_id DESC LIMIT 300"), {"e": who["email"]}).all()
+    seen, questions = set(), []
+    for ts, target, detail in await run_in_threadpool(read):
+        question = (json.loads(detail).get("asked_as") if detail else None) or target or ""
+        if question and question.lower() not in seen and len(questions) < HISTORY_KEPT:
+            seen.add(question.lower())
+            questions.append({"question": question, "asked_at": ts.isoformat() if hasattr(ts, "isoformat") else str(ts)})
+    return {"questions": questions}
 
 
 @app.post("/api/v1/admin/ask/verified")
@@ -789,8 +812,9 @@ async def ask(request: Request, who: dict = Depends(user)) -> dict:
     question = str(body.get("question") or "")
     text = lambda name: body.get(name) if isinstance(body.get(name), str) else None   # noqa: E731
     answer = await ask_answer(who, question, quick=body.get("quick") is True, check=body.get("check") is True, key=text("key"),
-                              previous=text("previous"), previous_key=text("previous_key"))
-    audit.record(request, "ask", target=question[:300], detail={"mode": answer["mode"], "sources": [s["link"] for s in answer["sources"]]})
+                              previous=text("previous"), previous_key=text("previous_key"), weighted=body.get("weighted") is True)
+    audit.record(request, "ask", target=question[:300], detail={"mode": answer["mode"], "sources": [s["link"] for s in answer["sources"]],
+                                                               **({"asked_as": answer["asked_as"][:300]} if answer.get("asked_as") else {})})
     return answer
 
 

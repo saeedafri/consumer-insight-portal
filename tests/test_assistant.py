@@ -130,11 +130,10 @@ def test_a_month_pools_its_waves_exactly(index):
 
 
 @pytest.mark.parametrize(("question", "reason"), [
-    ("What share of Gen Z women bought from Amazon?", "one demographic dimension"),
+    ("What share of Gen Z women by income bought from Amazon?", "at most two kinds of group"),
+    ("What share of Gen Z women bought from Amazon?", "not published for this survey question"),   # no cut files here
     ("What was the median amount spent at Amazon?", "cannot calculate"),
     ("Did tariffs cause shoppers to dine out less?", "cannot establish what caused"),
-    ("What is the Census-weighted share of Amazon Prime subscribers?", "unweighted survey results"),
-    ("Use survey weights to show how many bought from Amazon", "unweighted survey results"),
     ("Do you know how many people bought groceries online who also bought them in-store?", "people who did both things"),
     ("How many people shopped at both Amazon and Walmart?", "people who did both things"),
     ("Compare retailers bought in Q4 2026 vs Q1 2027", "one requested period"),
@@ -1002,3 +1001,35 @@ def test_a_summary_question_is_a_line_from_each_overview_question(index, monkeyp
     assert found["overview"][1]["text"] == "net better +50.0 (75.0% better, 25.0% worse)"   # 300 and 100 of 400
     assert [s["id"] for s in found["sources"]] == ["S1", "S2"]
     assert "overview" not in assistant.answer("Summarize Amazon retailers", index, EVERYONE)   # a subject: asked as any question
+
+
+def test_a_weighted_question_uses_each_waves_weighted_figures(index, tmp_path):
+    book = {"questions": [{"id": "XQ1", "groups": [{"label": "", "bases": {"Total": 400}, "rows": [
+        {"label": "Amazon", "w": {"Total": 40.0}}, {"label": "Walmart", "w": {"Total": 52.0}}]}]}]}
+    (tmp_path / "waves" / "107").mkdir(parents=True)
+    (tmp_path / "waves" / "107" / "book.json.gz").write_bytes(gzip.compress(json.dumps(book).encode()))
+    found = assistant.answer("What is the Census-weighted share who bought from Amazon in the latest wave?", index, EVERYONE)
+    assert found["weighting"] == "weighted" and figure(found, "Amazon") == [40.0]   # 42.5% unweighted
+    assert found["notes"][-1].startswith("Census-weighted")
+    by_income = assistant.answer("Amazon in the latest wave by generation", index, EVERYONE, weighted=True)
+    assert by_income["weighting"] == "unweighted" and "Unweighted figures" in by_income["notes"][-1]   # no weighted generation figures here
+
+
+def test_one_wave_says_how_it_moved_since_the_wave_before(index):
+    found = assistant.answer("What share bought from Amazon in the latest wave?", index, EVERYONE)
+    # 170 of 400 against 160 of 400 the week before: +2.5 points, not significant at 95%
+    assert found["takeaway"].endswith("“Amazon” is up 2.5 points from 19 Oct 2026 (not a significant change).")
+    assert found["tiles"][-1] == {"label": "Change since 19 Oct 2026", "value": "+2.5 pts", "note": "not significant"}
+
+
+def test_two_kinds_of_group_are_read_from_the_cross_tab_files(index, tmp_path):
+    answers = [{"item_id": 1, "option_id": 0, "item_label": "Amazon", "option_code": None, "option_label": None, "sort_order": 1, "flags": ""}]
+    # item 0 option 0: answered the question; one row a respondent group: gender, age, generation, income, region, urbanicity, count
+    counts = [[0, 0, "Female", "18-29", "GenZ", "", "West", "Urban", 60], [1, 0, "Female", "18-29", "GenZ", "", "West", "Urban", 45],
+              [0, 0, "Male", "18-29", "GenZ", "", "West", "Urban", 40], [1, 0, "Male", "18-29", "GenZ", "", "West", "Urban", 10]]
+    (tmp_path / "waves" / "107" / "cuts").mkdir(parents=True)
+    (tmp_path / "waves" / "107" / "cuts" / "XQ1.json.gz").write_bytes(gzip.compress(json.dumps({"answers": answers, "counts": counts}).encode()))
+    found = assistant.answer("What share of Gen Z women bought from Amazon?", index, EVERYONE)
+    assert found["headline"] == "75.0% of GenZ Female respondents chose “Amazon” on 26 Oct 2026 (45 of 60)."
+    both = assistant.answer("Amazon by generation and gender", index, EVERYONE)
+    assert both["table"]["head"] == ["Answer", "GenZ · Female", "GenZ · Male"] and both["table"]["rows"] == [["Amazon", 75.0, 25.0]]

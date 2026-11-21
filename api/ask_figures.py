@@ -214,4 +214,5 @@ def moved(fig: dict, answer: int, column: int = 0) -> tuple[float, bool] | None:
     n1, n2 = int(fig["bases"][-2, column, answer]), int(fig["bases"][-1, column, answer])
     if np.isnan(p1) or np.isnan(p2):
         return None
-    return round(float(p2 - p1), 1), significant(float(p2), n2, float(p1), n1)
+    tested = fig.get("tested", fig["pct"])   # weighted figures are tested on their unweighted shares (etl/weighting.py)
+    return round(float(p2 - p1), 1), significant(float(tested[-1, column, answer]), n2, float(tested[-2, column, answer]), n1)
