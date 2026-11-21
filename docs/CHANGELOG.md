@@ -12,7 +12,7 @@ Ask CIP now leads every answer with its verdict in plain words, worked out from 
 
 ### China survey history from February 2023
 
-The China weekly tracker now starts on 6 Feb 2023 instead of 23 Oct 2023: 31 more weeks from the analysts' SharePoint folder, 180 weeks in all, each checked against its own topline (123 of 123 figures equal) before loading. The China upload now reads 2023 files whose submit times are Excel day numbers and early-2023 answers worded with a verb (“去健身房/体育中心”). Weeks whose topline is weighted or in English (Dec 2022, Jan and 6 Mar 2023) or whose raw file lacks Baidu's first columns (31 Jul 2023) are not loaded: their counts cannot be checked.
+The China weekly tracker now starts on 6 Feb 2023 instead of 23 Oct 2023: 31 more weeks from the analysts' SharePoint folder, 180 weeks in all, each checked against its own topline (123 of 123 figures equal) before loading; and the Singles Day survey of 17 Nov 2026 as the week of 9 Nov, the newest China week. The China upload now reads 2023 files whose submit times are Excel day numbers and early-2023 answers worded with a verb (“去健身房/体育中心”). Weeks whose topline is weighted or in English (Dec 2022, Jan and 6 Mar 2023) or whose raw file lacks Baidu's first columns (31 Jul 2023) are not loaded: their counts cannot be checked.
 
 ### Weighted figures for every group, copy an answer for an email or a slide, and your questions on My account
 
