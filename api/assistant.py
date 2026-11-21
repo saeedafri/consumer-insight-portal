@@ -59,6 +59,9 @@ NEAR_FLOOR = float(ask_model.calibration().get("near_floor", 0.64))
 # where it is on, so only unsure questions cost a call
 GATE = float(ask_model.calibration().get("gate", 0.04))
 EVERY_WORD = 1.0                     # keyword match share at which every word of the question was found
+# ponytail: a rarity cut, measured on the golden, fresh and researched sets (21 Nov 2026): words missed by right picks
+# were common (bought 2.1, used 2.9, why 3.2), by wrong ones specific (subscription 3.4, progress 3.5, inflation 4.7)
+RARE_WORD = 3.3                      # api/ask_index.py idf: a word at least this specific is a subject, not a verb
 NEAR_EQUAL = 0.8                     # rules only: a match scoring this share of the best counts as near-equal
 EVENT = re.compile(r"\b(prime day|big deal|deal days|black friday|cyber monday|holidays?|valentine'?s?|easter|halloween|thanksgiving|"
                    r"back.to.school|mother'?s day|father'?s day|labor day|memorial day|super bowl|presidents?'?s? day|fourth of july|"
@@ -515,22 +518,30 @@ def add_net(question: str, fig: dict, counts: dict, nets: list[tuple[str, list[i
     return None
 
 
-def unasked(plan: dict, key: str, index: Index) -> list[str]:
-    """The question's subject words that the chosen survey question never uses (its wording, name, aliases, topic or
-    answers, or a synonym of the word), when they show it asks about something else: three or more, or two with one that
-    no survey uses at all. "Fed rate cuts" was answered from the gas-prices question; right answers in the golden set
-    miss at most two such words and none unknown (21 Nov 2026), so an empty list means the pick stands."""
-    lacking, unknown = [], False
+def lacking(plan: dict, key: str, index: Index) -> tuple[list[str], int, bool]:
+    """The question's subject words that a survey question never uses (its wording, name, aliases, topic or answers, or
+    a synonym of the word), how many subject words there are, and whether one of them no survey uses at all."""
+    lacking, unknown, words = [], False, 0
     for word in dict.fromkeys(w for w in re.findall(r"[a-z0-9]+", plan["about"].replace("'", "")) if w not in FRAME_WORDS and stems(w)):   # as the index splits ("glp-1")
         # a misspelt word counts as the word it is close to, a synonym list's word as its list ("glp1" is GLP-1)
         stem = index.known(word) or next((s for s in stems(word) if s in index.synonyms), None)
+        words += 1
         if stem is None:
             unknown = True
             lacking.append(word)
         elif not any(key in index.postings.get(s, ()) for s in index.synonyms.get(stem, set()) | {stem}):
             lacking.append(word)
+    return lacking, words, unknown
+
+
+def unasked(plan: dict, key: str, index: Index) -> list[str]:
+    """The subject words the chosen survey question lacks, when they show it asks about something else: all of two or
+    more, three or more, or two with one no survey uses at all. "Fed rate cuts" and "saving more money" were answered
+    from the gas-prices question; right answers in the golden, fresh and researched sets miss at most two such words, never
+    every one and none unknown (21 Nov 2026), so an empty list means the pick stands."""
+    missing, words, unknown = lacking(plan, key, index)
     # ponytail: counts words, not meaning; the reranker in the Colab plan can replace it once it beats the golden set
-    return lacking if len(lacking) >= 3 or (unknown and len(lacking) >= 2) else []
+    return missing if len(missing) >= 3 or (unknown and len(missing) >= 2) or (words >= 2 and len(missing) == words) else []
 
 
 def no_figure(message: str, plan: dict, suggestions=()) -> dict:
@@ -697,13 +708,22 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         # a reading's pick with the name in its wording stands only when the question asks more than the name and a time:
         # "Amazon in 2025 vs 2026" is the retailer lists, though the AI picked Prime membership (14 Nov 2026)
         asks_more = bool({s for s in stems(plan["about"]) if len(s) >= 4} - named_stems)
-        own_name = any(n.lower() in chosen["text"].lower() for n in names) and (bool(reading) and asks_more or bool(rest & set(stems(chosen["text"]))))
+        # Ask's own reader counts as a reading too, and "buy" as asking more: "What do people buy on TikTok?" is the
+        # TikTok purchases question it picked, not the beauty retailers list with TikTok among its answers (21 Nov 2026)
+        asks_more = asks_more or by_reader and bool(set(stems(plan["about"])) - named_stems)
+        own_name = any(n.lower() in chosen["text"].lower() for n in names) and ((bool(reading) or by_reader) and asks_more or bool(rest & set(stems(chosen["text"]))))
         # the pick shares more of the question's other words than the list: it asks what the question asks ("How do people
         # feel about Target?" is the feelings question, not the purchases list that has Target among its answers, 13 Nov)
         asks_else = longest is not None and len(rest & set(stems(chosen["text"]))) > len(rest & set(stems(longest["text"])))
         if longest and not own_name and not asks_else and not EVENT.search(question.lower()) and (   # "Amazon Prime" questions keep their own
                 not focus(question, chosen.get("labels", []), full_names) or chosen["waves"] * 3 < longest["waves"]):   # q5 (195 waves) over EC2 (22)
             chosen = longest
+        # an unsure reader's pick asked only years ago, with no period named: the nearest question still asked, with
+        # history, among the three nearest by meaning ("Personal finances outlook" took a 2022 one-off over CS1, 71 waves;
+        # applied to sure picks too it broke three right answers, 21 Nov 2026)
+        current = str(date.fromisoformat(index.newest) - timedelta(days=CURRENT_DAYS))
+        if by_reader and not reader_sure and not plan["when"] and chosen["last"] < current:
+            chosen = next((c for c in by_meaning[:3] if c["waves"] >= TREND_FROM and c["last"] >= current), chosen)
         if chosen["waves"] <= 2:   # the same question asked over more waves is the better source: most of its own,
             own = {a.lower() for a in chosen.get("labels", []) if not GENERIC.match(a)}   # specific answers alike
             # a short list such as a 5-point scale (much better … much worse) is shared by different questions: then the
@@ -721,6 +741,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
             said = {c["key"]: set(stems(c["text"] + " " + " ".join(c.get("labels", [])))) for c in history}
             wanted = topic | {s for w in topic - set().union(*said.values()) for s in index.synonyms.get(w, ())}
             chosen = max(history, key=lambda c: (len(wanted & said[c["key"]]), c["waves"]), default=chosen)
+        if by_reader and not reader_sure and any(index.idf.get(index.known(w) or "", 99) >= RARE_WORD for w in lacking(plan, chosen["key"], index)[0]):
+            # an unsure reader's pick missing a specific word of the subject: the first candidate that uses every one
+            # ("Holiday progress" took the recent purchases question over the shopping status one). Sure picks keep
+            # theirs: for them it broke 14 right answers that miss only a common word ("plans", "bought", 21 Nov 2026)
+            chosen = next((c for c in candidates if not lacking(plan, c["key"], index)[0]), chosen)
         alternative = alternative if alternative and alternative["key"] != chosen["key"] else None
         # the next question that asks something else: a near-twin from another study (alike wording) is a right answer too
         others = [c["near"] for c in candidates if "near" in c and c["key"] != chosen["key"] and not index.alike(chosen["key"], c["key"])]
@@ -862,6 +887,8 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     everyone = len(fig["columns"]) > 1 or fig["columns"][0][0] == "total"
     lead = glance["takeaway"] if plan["kind"] != "count" and everyone else ""
     headline = lead or next((x for x in points if "%" in x), points[0] if points else "")
+    if last["to"] < str(date.fromisoformat(index.newest) - timedelta(days=CURRENT_DAYS)):   # an old question: said up front
+        headline += f" Last asked {ask_figures.label_date(last['to'])}."   # ("worried about losing their job": 2020)
     main_base = int(fig["bases"][0, 0, shown[0]]) if shown and len(fig["periods"]) == 1 and len(fig["columns"]) == 1 else 0
     return {"answer": "\n".join(sentences), "headline": headline, "points": [x for x in points if x != headline], "notes": notes,
             "scope": {"country": plan["country"], "period": period, "waves": waves_used, "base": main_base},

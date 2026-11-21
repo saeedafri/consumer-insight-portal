@@ -149,7 +149,9 @@ def prepare(args):
             return item["key"]
         return allowed[0] if len(allowed) == 1 else None
 
-    def record(index, question, country, correct_key, none, split):
+    def record(index, question, country, correct_key, none, split, also=()):
+        """The question as Ask's reader sees it, its candidate lines, and which of them are right: the reviewed key and
+        any the reviewer marked also right (the same question another year), so a twin is never taught as wrong."""
         candidates = []
 
         def capture(text, listed):
@@ -167,13 +169,13 @@ def prepare(args):
         except Recorded:
             pass
         relevant, lines = ([0] if none else []), []
+        targets = [index.docs[k] for k in (correct_key, *also) if k in index.docs]
         for candidate in candidates:
             group = country + "|" + normalize(candidate["text"])
             if split == "train" and (bucket(group) != "train" or group in reserved):
                 continue
             lines.append(ask_model.describe_candidate(candidate))
-            target = index.docs.get(correct_key)
-            if target and all(candidate[f] == target[f] for f in ("text", "waves", "first", "last", "name")):
+            if any(all(candidate[f] == target[f] for f in ("text", "waves", "first", "last", "name")) for target in targets):
                 relevant.append(len(lines))
         return question, lines, relevant
 
@@ -257,7 +259,8 @@ def prepare(args):
                     if index_key and normalize(index.docs[index_key]["text"]) != group.split("|", 1)[1]:
                         stats["changed_wording"] += 1
                         continue
-                    question, candidates, answers = record(index, item["q"], country, index_key, none, split)
+                    question, candidates, answers = record(index, item["q"], country, index_key, none, split,
+                                                           () if none else item.get("also", ()))
                     if not candidates:
                         stats["reader_not_reached"] += 1
                     if split == "train" and (not candidates or not answers):

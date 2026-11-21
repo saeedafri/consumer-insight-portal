@@ -1,0 +1,177 @@
+# Ask CIP's researched set: 58 questions analysts are likely to type, from Coresight's public survey headlines and retail
+# topics (docs/research/Claude-Ask-researched-questions-2026-11-20.md; the two China ones are left out: no China waves in
+# the local copy). Scored like the golden set: python scripts/ask_golden.py --quick --questions scripts/ask_researched.yml
+# want: phrases the right survey question's wording contains, or none when no survey asks it. The verdicts are Claude's,
+# not reviewed by the research team (21 Nov 2026): a draft to correct, not a target to tune on alone.
+- q: How do consumers feel about the economy right now?
+  want:
+  - and thinking about the econo
+- q: Has consumer sentiment improved among lower-income consumers?
+  want:
+  - and thinking about the econo
+- q: Economic outlook by income level in the latest wave
+  want:
+  - and thinking about the econo
+- q: Are people more optimistic about their personal finances?
+  want:
+  - considering your discretiona
+- q: How has financial optimism changed this year?
+  want:
+  - discretionary income
+- q: What share of consumers think inflation is getting worse?
+  want:
+  - how, if at all, do you expec
+- q: How do consumers perceive the pace of price increases?
+  want:
+  - how, if at all, do you expec
+- q: Are consumers worried about tariffs?
+  want:
+  - which, if any, of the follow
+- q: How has tariff pessimism changed since January 2026?
+  want:
+  - 'what impact, if any, do you '
+- q: Do consumers expect tariffs to raise prices?
+  want:
+  - which, if any, of the follow
+- q: What share have changed their shopping behavior because of tariffs?
+  want:
+  - have you changed your shoppi
+- q: Are consumers trading down to cheaper brands?
+  want:
+  - and how (if at all) have you
+- q: What categories are consumers cutting back on?
+  want:
+  - changed, or how do you expect to change
+  - cut back
+- q: Are people eating out less?
+  want:
+  - how have you changed, or exp
+- q: Share of consumers cutting back on dining out by generation
+  want:
+  - how have you changed, or expect to
+- q: Are high gas prices affecting spending?
+  want:
+  - 'have higher gasoline prices '
+- q: What share plan to spend less on entertainment?
+  want: none
+- q: What share of consumers have started holiday shopping?
+  want:
+  - what is the current status o
+- q: How does holiday shopping progress compare with last year?
+  want:
+  - status of your holiday shopping
+- q: Do consumers expect to spend more on the holidays than
+  want:
+  - looking ahead, please provid
+- q: What is the average holiday budget?
+  want:
+  - what is your estimated total
+- q: Which retailers will people shop at for the holidays?
+  want:
+  - and which, if any, of the fo
+- q: Will consumers shop on Black Friday this year?
+  want:
+  - do you plan to do any shoppi
+- q: How many people plan to shop on Cyber Monday?
+  want:
+  - which, if any, shopping acti
+- q: Did people buy anything during Prime Day?
+  want:
+  - did you browse or purchase a
+- q: Prime Big Deal Days participation in October
+  want:
+  - did you purchase anything on
+- q: How many consumers use buy now pay later?
+  want:
+  - have you used a buy now, pay
+- q: BNPL usage by age group
+  want:
+  - have you used a buy now, pay
+- q: Do people buy products through social media?
+  want:
+  - 'have you purchased products '
+- q: Have consumers bought anything on TikTok Shop?
+  want:
+  - tiktok shop
+  - buying on tiktok
+- q: Are shoppers using AI tools like ChatGPT to shop?
+  want:
+  - do you use ai tools like cha
+- q: What do people use generative AI for when shopping?
+  want:
+  - which of the following state
+- q: What share of consumers shopped at Walmart in the past
+  want:
+  - which, if any, of these reta
+- q: Amazon vs Walmart vs Target shoppers
+  want:
+  - which, if any, of these reta
+- q: How many people bought from Temu or Shein?
+  want:
+  - which, if any, of these reta
+- q: Share of Gen Z buying clothing online
+  want:
+  - categories have you purchased online
+- q: What share bought groceries online last week?
+  want:
+  - categories have you purchased online
+  - bought groceries online
+- q: Online vs in-store grocery shopping trend
+  want:
+  - 'and which, if any, of these '
+- q: Which categories did people buy online this quarter?
+  want:
+  - 'and which, if any, of these '
+- q: Department store shopping in Q3 2026
+  want:
+  - have you purchased any produ
+- q: How many people are taking GLP-1 drugs?
+  want:
+  - are you currently using a gl
+- q: Do GLP-1 users spend less on food?
+  want:
+  - for each of the following fo
+- q: Are consumers saving more money?
+  want: none
+- q: Are people worried about losing their job?
+  want:
+  - which of the following statements do you most agree
+- q: Do consumers expect the Fed to cut rates?
+  want: none
+- q: How did the Supreme Court tariff decision affect sentiment?
+  want:
+  - what is your reaction to the
+- q: Which retailers do millennials prefer?
+  want:
+  - retailers have you bought
+- q: Back to school spending plans
+  want:
+  - approximately how much do yo
+- q: Valentine's Day spending
+  want:
+  - valentine
+- q: How many people bought a Thanksgiving turkey?
+  want: none
+- q: Share of shoppers using store pickup or curbside
+  want:
+  - now thinking about delivery/
+- q: How many consumers subscribe to Walmart+?
+  want:
+  - do you have membership to wa
+- q: Are consumers switching to private label?
+  want:
+  - and how (if at all) have you
+- q: Holiday spending by region
+  want:
+  - looking back, how did your s
+- q: Which age group is most pessimistic about the economy?
+  want:
+  - and thinking about the econo
+- q: What was the median holiday spend?
+  want: none
+- q: Did the tariffs cause people to spend less?
+  want: none
+- q: How much will Gen Z spend on gifts?
+  want:
+  - estimated total budget
+  - spend on holiday

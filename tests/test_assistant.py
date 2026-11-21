@@ -506,6 +506,7 @@ def test_a_saved_answer_whose_key_a_publish_renumbered_is_found_again_by_its_wor
 def test_a_learned_answer_gives_way_to_a_sure_reader_and_stands_for_an_unsure_one(index, monkeypatch):
     if index.vectors is None:
         pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    monkeypatch.setattr(assistant, "lacking", lambda *a: ([], 0, False))   # the forced pick is off-subject on purpose: the flow is tested
     question = "What share bought from Amazon in the latest wave?"
     monkeypatch.setattr(assistant.ask_model, "ready", lambda: True)
     monkeypatch.setattr(assistant.ask_model, "plan", lambda q, c: {
@@ -525,6 +526,7 @@ def test_a_learned_answer_gives_way_to_a_sure_reader_and_stands_for_an_unsure_on
 def test_the_reader_picks_and_the_ai_is_asked_only_when_the_reader_is_unsure(index, monkeypatch):
     if index.vectors is None:
         pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    monkeypatch.setattr(assistant, "lacking", lambda *a: ([], 0, False))   # the forced pick is off-subject on purpose: the flow is tested
     question = "What share bought from Amazon in the latest wave?"
     calls, lead = [], {"now": 3.0}
     monkeypatch.setattr(assistant.ask_model, "ready", lambda: True)
@@ -941,3 +943,17 @@ def test_the_reader_reads_named_groups_as_their_cut():
     assert ask_reader.by_cut("Do Gen Z shop on Amazon more than boomers?") == "Do shop on Amazon more than ? by generation"
     assert ask_reader.by_cut("Amazon in the South") == "Amazon in by region"
     assert ask_reader.by_cut("Amazon by generation") == "Amazon by generation"
+
+
+def test_a_pick_using_none_of_the_subject_is_not_an_answer(index):
+    key = "CSI-US/tracker/XQ1"   # "saving more money" was answered from the gas-prices question this way
+    assert assistant.unasked({"about": "generative tools"}, key, index) == ["generative", "tools"]   # words of another question
+    assert assistant.unasked({"about": "amazon tools"}, key, index) == []                           # one of two: it stands
+
+
+def test_an_old_question_says_when_it_was_last_asked(index, monkeypatch):
+    found = assistant.answer("What share bought from Amazon in the latest wave?", index, EVERYONE)
+    assert "Last asked" not in found["headline"]
+    monkeypatch.setattr(index, "newest", "2028-01-03")
+    found = assistant.answer("What share bought from Amazon in the latest wave?", index, EVERYONE)
+    assert found["headline"].endswith(" Last asked 26 Oct 2026.")

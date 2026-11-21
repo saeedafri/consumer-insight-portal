@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 21 November 2026
 
+### Ask picks the right survey question more often, and says when a question was last asked
+
+Ask CIP now answers “Holiday progress” from the holiday shopping status question, “Inflation expectations for the holidays” from the price-increase question, “Retail subscription programs” from the subscription question, “Personal finances outlook” from the discretionary income question asked every week, and “What do people buy on TikTok?” from the TikTok purchases question instead of the beauty retailers list. “Are consumers saving more money?” now says no survey asks it, instead of answering from the gas-prices question. An answer from a question last asked more than a year ago says so in its first sentence, for example “Last asked 27 May 2020.” On Ask's test sets: 158 of 161 right (152 before), the fresh set unchanged at 48 of 50, the researched set 48 of 58 (47 before), and 44.8% of 2,000 generated test questions found the right survey question (41.9% before).
+
 ### Ask says when the surveys do not ask it, compares named groups, and reads “started” as the dashboards do
 
 Ask CIP no longer answers a question with the nearest survey question when that question is about something else: “Fed rate cuts” was answered from the gas-prices question, and “cutting back on dining out because of tariffs” from a tariff question that never mentions dining. Now it says no survey question covers those words and lists the closest questions. A question that names two groups, such as “Do Gen Z shop on Amazon more than boomers?”, is answered by generation instead of finding nothing. “What share started holiday shopping?” is answered with Started, Still shopping plus Finished shopping (52.2% on 9 Nov 2026), the same figure as the Holiday dashboard, and “have not started” with Not yet started. Ask's test set scores 152 of 161, one more than before, and its fresh set is unchanged at 48 of 50.
