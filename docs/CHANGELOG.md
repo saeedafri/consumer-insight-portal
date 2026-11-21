@@ -6,6 +6,14 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 21 November 2026
 
+### Ask answers follow-ups, compares two answers by group, and summarizes the week
+
+Ask CIP now reads a typed follow-up with the question before it, as a chat does: after “How many people shop at Amazon?”, “What about Gen Z?” answers for Gen Z, “and by income?” by income, “how about in 2025?” for 2025, and “what about Target?” for Target, each from the same survey question; the answer shows how it was read. “Compare Walmart and Target shoppers by income” now shows both stores in every income group, with a sentence on which leads where (“Walmart” is ahead of “Target” in all 4 income groups on 9 Nov 2026, by 24.2 to 37.8 points); Walmart was missing because the store list also has Walmart+. Income bands no longer used in the period asked are no longer empty columns. “Summarize how consumers feel this week” answers with one line from each weekly tracker question the weekly report reads: the economy and personal finances outlooks as net better, then the leading food and nonfood retailers, online categories and activities, each linked to its source. Ask's test sets are unchanged: 158 of 161, 48 of 50 and 48 of 58.
+
+### Ask reads “since last year” as last year against now
+
+“How has consumer sentiment changed since last year?” compared 2024 with 2025. Ask CIP now compares last year with the latest wave, and does the same for “since last month” and “than last month”. “Spending last year” still means last year alone. Ask's test sets are unchanged: 158 of 161, 48 of 50 and 48 of 58.
+
 ### Ask picks the right survey question more often, and says when a question was last asked
 
 Ask CIP now answers “Holiday progress” from the holiday shopping status question, “Inflation expectations for the holidays” from the price-increase question, “Retail subscription programs” from the subscription question, “Personal finances outlook” from the discretionary income question asked every week, and “What do people buy on TikTok?” from the TikTok purchases question instead of the beauty retailers list. “Are consumers saving more money?” now says no survey asks it, instead of answering from the gas-prices question. An answer from a question last asked more than a year ago says so in its first sentence, for example “Last asked 27 May 2020.” On Ask's test sets: 158 of 161 right (152 before), the fresh set unchanged at 48 of 50, the researched set 48 of 58 (47 before), and 44.8% of 2,000 generated test questions found the right survey question (41.9% before).

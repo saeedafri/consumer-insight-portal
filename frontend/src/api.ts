@@ -265,7 +265,9 @@ export interface Answer { answer: string; no_source: boolean; mode: "figures" | 
                           suggestions: { qcode: string; text: string; family: string; key: string; alt?: boolean }[];
                           understood?: string; check?: boolean; changed?: string; verify?: { question: string; key: string; code: string; family: string; focus: string[]; kind: string; cut: string; period: string };
                           tiles?: AskTile[]; takeaway?: string; next?: { question: string; key: string }[];
-                          corrected?: string }   // the question as answered, its spelling put right (api/assistant.py ask)
+                          corrected?: string;   // the question as answered, its spelling put right (api/assistant.py ask)
+                          asked_as?: string;
+                          overview?: { name: string; text: string; qcode: string; link: string }[] }   // "Summarize this week": a line per question (assistant.py overview)   // a typed follow-up read with the question before it (assistant.py follow_on)
 /** What the Ask box offers while someone types (GET /api/v1/ask/suggest): the words put right, and questions by name. */
 export interface AskOffer { corrected: string | null;
   suggestions: { text: string; key: string; qcode: string; family: string; waves: number }[] }

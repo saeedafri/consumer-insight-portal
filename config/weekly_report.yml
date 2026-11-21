@@ -55,3 +55,13 @@ leave_out_answers: ["none of", "other", "don't know", "prefer not", "gone to a m
 profile_questions:
   q4: Food shoppers
   q5: Nonfood shoppers
+
+# Ask CIP's answer to "Summarize this week" / "How do consumers feel?" (api/assistant.py overview): one line from each
+# of these weekly tracker questions, in this order. A sentiment question (net: true) is said as its net better score.
+ask_overview:
+  - {question: CS2, name: Economy outlook, net: true}
+  - {question: CS1, name: Personal finances outlook, net: true}
+  - {question: q4, name: Food retailers}
+  - {question: q5, name: Nonfood retailers}
+  - {question: q3, name: Bought online}
+  - {question: q1, name: Activities}

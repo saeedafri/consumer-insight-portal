@@ -68,7 +68,7 @@ and the group.
 Checks: the Ask golden set scores 151 of 161 before and after the change, median 0.08 s. The full test suite passes
 (662), plus two new tests. The frontend type-check passes.
 
-### Still open in Ask (not fixed today)
+### Still open in Ask (later on 21 Nov: Fed rate cuts now refused, Gen Z vs boomers answered by generation, “started” summed as the dashboard does)
 
 | Question | What happens | Why it matters |
 |---|---|---|
@@ -114,7 +114,7 @@ misses above show:
    only if it beats today's golden score of 151/161 and refuses better. The notebook scripts/colab/ask_cip_train.ipynb
    is the place for it.
 
-## 6. Menus: proposals (not changed today, they need your decision)
+## 6. Menus: proposals (all three applied later on 21 Nov, the Access page too)
 
 The left menu is grouped and readable (Explore, Core research, Trackers, Reference, Research operations,
 Administration). Three things would make it clearer for a first-time client:

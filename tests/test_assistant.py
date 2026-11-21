@@ -391,6 +391,9 @@ def test_a_question_using_a_stored_name_is_answered_from_it_with_its_own_cut(ind
 def test_since_a_month_and_household_income_are_read():
     assert ask_reader.read("Has Yes grown since Aug 2025?")["when"] == [{"from": "2025-08-01", "to": "9999-12-31"}]
     assert ask_reader.read("Spending by household income")["cuts"] == {"income_band": "all"}
+    last_year = {"last": 1, "unit": "year", "previous": True}
+    assert ask_reader.read("How has sentiment changed since last year?")["when"] == [last_year, {"latest": 1}]   # not 2024 vs 2025
+    assert ask_reader.read("Spending last year")["when"] == [last_year]
 
 
 def test_a_question_too_close_to_call_asks_which_was_meant(index, monkeypatch):
@@ -957,3 +960,45 @@ def test_an_old_question_says_when_it_was_last_asked(index, monkeypatch):
     monkeypatch.setattr(index, "newest", "2028-01-03")
     found = assistant.answer("What share bought from Amazon in the latest wave?", index, EVERYONE)
     assert found["headline"].endswith(" Last asked 26 Oct 2026.")
+
+
+def test_a_typed_follow_up_is_read_with_the_question_before_it(index):
+    key, before = "CSI-US/tracker/XQ1", "Amazon retailers bought in the latest wave"
+    assert assistant.follow_on("What about Gen Z?", before, key, index) == ("amazon retailers bought in the latest wave among gen z", key)
+    assert assistant.follow_on("what about Walmart?", "Amazon retailers bought among gen z", key, index)[0] == "Walmart retailers bought among gen z"
+    assert assistant.follow_on("and by generation?", "Amazon retailers bought among gen z", key, index)[0] == "amazon retailers bought by generation"
+    assert assistant.follow_on("and millennials?", "Amazon retailers bought among gen z", key, index)[0] == "amazon retailers bought among gen z among millennials"
+    assert assistant.follow_on("Which ways to save money do people use?", before, key, index) == ("Which ways to save money do people use?", None)
+    found = assistant.ask("What about Gen Z?", index, EVERYONE, "all", previous=before, previous_key=key)
+    assert found["asked_as"].endswith("among gen z") and figure(found, "Amazon") == [85.0]   # 170 // 2 of 100
+
+
+def test_two_named_answers_by_a_cut_are_compared_group_by_group(index):
+    found = assistant.answer("Amazon and Walmart by generation in the latest wave", index, EVERYONE)
+    assert found["chart"]["categories"] == ["Walmart", "Amazon"]
+    # GenZ: Amazon 85%, Walmart 50%; Millennial: Walmart 60%, Amazon 40%
+    assert found["takeaway"] == ("“Walmart” is ahead of “Amazon” in 1 of 2 generation groups on 26 Oct 2026; "
+                                 "the widest gap is 35.0 points among GenZ, where “Amazon” leads.")
+
+
+def test_a_group_with_no_figures_in_the_period_is_not_a_column(tmp_path):
+    root = tmp_path / "questions" / "CSI-US" / "tracker"
+    root.mkdir(parents=True)
+    cells = [(0, 0, 0, 40, 100), (0, 1, 0, 10, 50), (1, 0, 0, 50, 100), (1, 2, 0, 30, 60)]   # the old band: first wave only
+    (root / "XQ2.json.gz").write_bytes(gzip.compress(json.dumps(question_file(
+        [[100, DATES[0], 1], [101, DATES[1], 1]], ["Which retailers have you bought from?"], [["", 1, "Amazon"]],
+        [["total", "Total"], ["income_band", "$0-$9,999"], ["income_band", "under $25,000"]], cells)).encode()))
+    waves = [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping", "modules": []} for i, d in enumerate(DATES[:2])]
+    fig = ask_figures.compute(Index(tmp_path / "questions", waves).counts("CSI-US/tracker/XQ2"),
+                              ask_reader.read("Amazon by income in the latest wave"), {100, 101})
+    assert fig["columns"] == [["income_band", "under $25,000"]] and fig["pct"][0, 0, 0] == 50.0
+
+
+def test_a_summary_question_is_a_line_from_each_overview_question(index, monkeypatch):
+    monkeypatch.setattr(assistant, "REPORT", {"family": "CSI-US", "net_words": {"positive": ["coupons"], "negative": ["store brands"]},
+                                              "ask_overview": [{"question": "XQ1", "name": "Retailers"}, {"question": "Q14", "name": "Saving", "net": True}]})
+    found = assistant.answer("Summarize this week", index, EVERYONE)
+    assert [o["name"] for o in found["overview"]] == ["Retailers", "Saving"]
+    assert found["overview"][1]["text"] == "net better +50.0 (75.0% better, 25.0% worse)"   # 300 and 100 of 400
+    assert [s["id"] for s in found["sources"]] == ["S1", "S2"]
+    assert "overview" not in assistant.answer("Summarize Amazon retailers", index, EVERYONE)   # a subject: asked as any question

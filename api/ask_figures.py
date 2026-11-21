@@ -196,6 +196,10 @@ def compute(counts: dict, plan: dict, visible: set[int], versions: list[int] | N
         # Python's round on each figure, as every screen rounds (shared/data/payloads.py): numpy's differs on halves
         pct = np.array([round(100 * x / y, 1) if ok else np.nan for x, y, ok in zip(n.ravel(), b.ravel(), shown.ravel())]
                        ).reshape(n.shape) if periods else np.zeros((0, 0, 0))
+    if len(columns) > 1 and pct.size:   # a group these periods never had (the income bands before 2023): no empty column
+        kept = ~np.isnan(pct).all(axis=(0, 2))
+        if kept.any():
+            columns, n, b, pct = [c for c, k in zip(columns, kept) if k], n[:, kept], b[:, kept], pct[:, kept]
     answers = [f"{item}: {label}" if item and item != label else label for item, _, label in counts["answers"]]
     return {"periods": periods, "grain": grain, "columns": [counts["cuts"][c] for c in columns], "answers": answers,
             "people": n, "bases": b, "pct": pct, "asked": [w[1] for w in waves],

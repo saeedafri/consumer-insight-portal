@@ -199,7 +199,8 @@ function Reply({ question, answer, audience, weighted, checking, onAsk }: { ques
   return <article className="card ask-reply">
     <div className="ask-head">
       <p className="ask-q"><MessageSquare size={15} strokeWidth={1.8} aria-hidden="true" /> {question}
-        {answer.corrected && <span className="small muted ask-corrected"> · answered as “{answer.corrected}”, the spelling put right</span>}</p>
+        {answer.corrected && <span className="small muted ask-corrected"> · answered as “{answer.corrected}”, the spelling put right</span>}
+        {answer.asked_as && <span className="small muted ask-corrected"> · read with your last question: “{answer.asked_as}”</span>}</p>
       {table && !checking && <ExportButtons pin={false} onExport={exportFigures}
         png={chart && !drawnByHand ? () => drawn.current && downloadPng(drawn.current, answer.headline || question, answer.source_line ?? "", file) : undefined} />}
     </div>
@@ -218,6 +219,7 @@ function Reply({ question, answer, audience, weighted, checking, onAsk }: { ques
           {analyst && isAdmin && answer.verify && !checking && answer.understood !== "verified" && <>{" · "}
           {verified ? <span role="status">{verified}</span> : <button type="button" className="linklike" onClick={() => void saveVerified()}>Save as verified</button>}</>}</p>}
         {tiles.length > 0 && <Tiles tiles={tiles} />}
+        {!!answer.overview?.length && <ul className="ask-points">{answer.overview.map(o => <li key={o.qcode}><b>{o.name}</b>: <Bold text={o.text} /> <Link to={o.link} className="small">{o.qcode} →</Link></li>)}</ul>}
         {analyst && !!answer.points?.length && <ul className="ask-points">{answer.points.map((p, i) => <li key={i}><Bold text={p} /></li>)}</ul>}
         {chart && offered.length > 1 && <span className="seg ask-views" role="group" aria-label="Chart type">
           {offered.map(v => <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>{VIEW_NAMES[v]}</button>)}</span>}
@@ -275,10 +277,14 @@ export default function Ask() {
     setParams(key ? { q: question, key } : { q: question }, { replace: true });
     setReplies(replies => replies.map(reply => reply.checking ? { ...reply, checking: false } : reply));
     setBusy(true); setError(""); setOffer(null);
-    const body = { question, ...(key ? { key } : {}) };
+    // a typed question goes with the latest answered one, so "What about Gen Z?" is read with it (api/assistant.py follow_on)
+    const last = key ? undefined : replies.find(r => r.answer.mode === "figures" && r.answer.sources.length);
+    const body = { question, ...(key ? { key } : {}),
+                   ...(last ? { previous: last.answer.asked_as ?? last.answer.corrected ?? last.question, previous_key: last.answer.sources[0].key } : {}) };
     try {
       const answer = await send<Answer>("POST", "/api/v1/ask", { ...body, quick: true }, signal);
       if (signal.aborted) return;
+      if (answer.asked_as) setParams({ q: answer.asked_as }, { replace: true });   // a shared link answers the follow-up as read
       setReplies(replies => [{ id, question, answer, checking: !!answer.check }, ...replies].slice(0, 20));
       requestAnimationFrame(() => {
         if (!signal.aborted) panel.current?.scrollIntoView({

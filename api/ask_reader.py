@@ -133,8 +133,10 @@ def periods(text: str) -> tuple[list[dict], str]:
         take(m, {"last": number(m[1] or m[3]), "unit": unit})
     # "last month" is a period; "(in the) past month" is how surveys word what a question covers ("used marijuana in the
     # past month"), read as a period it answered "not asked then" (question bank, 12 Nov 2026)
-    for m in re.finditer(r"\b(?:last|previous)\s+(week|month|year)\b", text):
-        take(m, {"latest": 2} if m[1] == "week" else {"last": 1, "unit": m[1], "previous": True})
+    for m in re.finditer(r"\b(since|than|vs\.?|versus|compared (?:to|with)|from)?\s*(?:last|previous)\s+(week|month|year)\b", text):
+        take(m, {"latest": 2} if m[2] == "week" else {"last": 1, "unit": m[2], "previous": True})
+        if m[1] and m[2] != "week":   # "changed since last year": that year against now, not last year against the one before
+            found.append((m.end(), {"latest": 1}))
     for m in re.finditer(r"\b(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th)\s+(?:latest|most recent|last)\s+(wave|survey|week)\b", text):
         take(m, {"latest": ORDINALS[m[1]]})
         text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
