@@ -1,0 +1,105 @@
+# Claude's draft marks for the review sheet (scripts/ask_review_sheet.py mark), 21 Nov 2026: the right survey question
+# for each question that is not generated, by its code (and its short name when one code means two questions), "Pick"
+# when Ask's own answer is right, or "None" when no survey asks it; also: other codes that answer it as well. A question
+# left out here stays unmarked (too unclear to teach). Generated questions are marked from the question they came
+# from. A person checks a sample before training: these are an AI's judgements, not the research team's.
+"What share bought from Amazon in the all waves?": {right: q5, also: [q4]}
+"How are higher gasoline prices affecting consumer spending?": {right: D14, also: [D15]}
+"Holiday shopping progress in the latest wave": {right: XM3}
+"Top beauty retailers by income": {right: BT13, also: [B10]}
+"Top beauty retailers in all Waves": {right: BT13, also: [B10, Q8_1]}
+"how worried are people about inflation": {right: HX4, also: [Q25]}
+"What share bought groceries online in September vs October 2026?": {right: q3}
+"Share of Gen Z who bought groceries online in October 2026": {right: q3}
+"Which retailers do people shop at most?": {right: q5, also: [q4]}
+"Fed rate cuts": {right: None}
+"Are people worried about losing their job?": {right: Pick}
+"How many people shop at Amazon?": {right: q4, also: [q5]}
+"Compare Walmart and Target shoppers by income": {right: q5, also: [q4]}
+"Do Gen Z women shop at Amazon?": {right: q4, also: [q5]}
+"How do consumers feel about the economy right now?": {right: CS2}
+"Has consumer sentiment improved among lower-income consumers?": {right: CS2, also: [CS1]}
+"Economic outlook by income level in the latest wave": {right: CS2}
+"Are people more optimistic about their personal finances?": {right: CS1}
+"How has financial optimism changed this year?": {right: CS1}
+"What share of consumers think inflation is getting worse?": {right: HX4, also: [Q25]}
+"How do consumers perceive the pace of price increases?": {right: HX4}
+"Are consumers worried about tariffs?": {right: TF3}
+"How has tariff pessimism changed since January 2026?": {right: Pick}
+"Do consumers expect tariffs to raise prices?": {right: Pick}
+"What share have changed their shopping behavior because of tariffs?": {right: TF5}
+"Are consumers trading down to cheaper brands?": {right: IN3, also: [IN2]}
+"What categories are consumers cutting back on?": {right: TF8}
+"Are people eating out less?": {right: EAT7, also: [Q14]}
+"Share of consumers cutting back on dining out by generation": {right: EAT7, also: [Q14]}
+"Are high gas prices affecting spending?": {right: D14, also: [D15]}
+"What share plan to spend less on entertainment?": {right: None}
+"What share of consumers have started holiday shopping?": {right: XM3}
+"How does holiday shopping progress compare with last year?": {right: XM3}
+"Do consumers expect to spend more on the holidays than": {right: HX2}
+"What is the average holiday budget?": {right: SP12}
+"Will consumers shop on Black Friday this year?": {right: BF1}
+"How many people plan to shop on Cyber Monday?": {right: Pick}
+"Prime Big Deal Days participation in October": {right: BD1}
+"How many consumers use buy now pay later?": {right: BN1, also: [Q11_2]}
+"BNPL usage by age group": {right: Pick}
+"Do people buy products through social media?": {right: SC3, also: [SC4]}
+"Have consumers bought anything on TikTok Shop?": {right: SC5}
+"Are shoppers using AI tools like ChatGPT to shop?": {right: D32, also: [GA2]}
+"What do people use generative AI for when shopping?": {right: Pick}
+"What share of consumers shopped at Walmart in the past": {right: q5, also: [q4]}
+"Amazon vs Walmart vs Target shoppers": {right: q5, also: [q4]}
+"How many people bought from Temu or Shein?": {right: Pick}
+"Share of Gen Z buying clothing online": {right: q3/Online purchases categories, also: [q3/Online clothing purchase behavior]}
+"What share bought groceries online last week?": {right: q3/Online purchases categories}
+"Online vs in-store grocery shopping trend": {right: q3/Online purchases categories}
+"Which categories did people buy online this quarter?": {right: q3/Online purchases categories}
+"How many people are taking GLP-1 drugs?": {right: GP1}
+"Do GLP-1 users spend less on food?": {right: GP6, also: [GP3]}
+"Are consumers saving more money?": {right: None}
+"Do consumers expect the Fed to cut rates?": {right: None}
+"How did the Supreme Court tariff decision affect sentiment?": {right: SCT2}
+"Which retailers do millennials prefer?": {right: q5, also: [q4]}
+"Back to school spending plans": {right: Pick}
+"How many people bought a Thanksgiving turkey?": {right: None}
+"Are consumers switching to private label?": {right: IN2, also: [IN3, CPG2]}
+"Holiday spending by region": {right: Pick}
+"Which age group is most pessimistic about the economy?": {right: CS2}
+"How much will Gen Z spend on gifts?": {right: SP12}
+"Share of people who bought on TikTok Shop": {right: SC5}
+"How many consumers purchase through TikTok?": {right: SC5}
+"Do Gen Z buy clothes online?": {right: q3/Online purchases categories, also: [q3/Online clothing purchase behavior]}
+"Share buying groceries online in the latest wave": {right: q3/Online purchases categories}
+"How many people bought food online recently?": {right: q3/Online purchases categories}
+"Online grocery shopping by month this year": {right: q3}
+"Monthly trend of buying groceries online": {right: q3}
+"Where do millennials shop most?": {right: q5, also: [q4]}
+"Top retailers among millennials": {right: q5, also: [q4]}
+"Gen Z holiday budget": {right: SP12}
+"How much do young people plan to spend on holiday gifts?": {right: SP12}
+"Are people buying groceries for the holidays?": {right: XM1A}
+"Is worry about tariffs rising or falling?": {right: TF3}
+"Do people expect their finances to improve?": {right: CS1}
+"Personal finance outlook trend": {right: CS1}
+"Has optimism about personal finances changed this year?": {right: CS1}
+"Are people eating out less because of prices?": {right: EAT7}
+"Restaurant spending cutbacks by generation": {right: EAT7, also: [EAT8]}
+"Which AI shopping assistants do people use?": {right: D32, also: [D28]}
+"Use of AI tools to help with shopping": {right: D32}
+"Spending less on entertainment": {right: None}
+"Are consumers cutting entertainment spending?": {right: None}
+"Thanksgiving turkey purchases": {right: None}
+"Did people buy turkey for Thanksgiving?": {right: None}
+"Why are consumers cutting back on spending?": {right: None}
+"Reasons people are spending less": {right: None}
+"Amazon by region": {right: q4, also: [q5]}
+"Walmart by urbanicity": {right: q5, also: [q4]}
+"How many people work from home full time?": {right: Q19}
+# the written no-answer questions (scripts/ask_review_none.yml) are None unless listed here; Skip leaves a row
+# unmarked: a survey may hold part of the answer
+"How many people plan to buy a new car this year?": {right: Skip}
+"How many people have student loan debt?": {right: Skip}
+"What percentage of people own a smartwatch?": {right: Skip}
+"How many people have a gym membership?": {right: Skip}
+"How many people plan to take a vacation abroad?": {right: Skip}
+"How many people play video games every day?": {right: Skip}

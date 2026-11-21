@@ -176,7 +176,7 @@ def raws_for(key: str, index: Index) -> dict:
     answers, cuts, seen = {}, {}, set()
     for part_key in index.docs[key]["parts"]:
         part = index.parts[part_key]
-        raw = json.loads(gzip.decompress((ROOT / "questions" / f"{part['file']}.json.gz").read_bytes()))
+        raw = json.loads(gzip.decompress((index.root / f"{part['file']}.json.gz").read_bytes()))   # the index's own publication
         wave_at = {}
         for i, (sid, day, version) in enumerate(raw["waves"]):
             if version in part["versions"] and sid in part["keep"] and sid not in seen:   # the index's choice of waves

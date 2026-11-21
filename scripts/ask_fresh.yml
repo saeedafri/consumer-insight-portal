@@ -46,7 +46,8 @@
 - {q: "Which apparel retailers do Gen Z shop at?", want: ["purchased clothing or apparel accessories from", "bought clothing or footwear from"], check: cut}
 - {q: "How many people use amazon prime ?", want: ["prime membership", "membership to amazon prime"]}
 - {q: "What share started holiday shopping? for all Waves", want: ["status of your holiday shopping"], check: trend}
-- {q: "How good is GLP1 is performing", want: ["since taking glp-1", "compared to before taking glp-1"]}
+# a verdict question: the GLP-1 dashboard's use trend first, users' changes as its evidence (the user, 21 Nov 2026)
+- {q: "How good is GLP1 is performing", want: ["since taking glp-1", "compared to before taking glp-1", "currently using a glp-1"]}
 - {q: "How has the share of consumers worried about tariffs changed over the last 6 months?", want: ["concerns about tariffs", "tariffs have on you personally"], check: trend}
 - {q: "What is the average price consumers paid for a Thanksgiving turkey?", want: none}
 - {q: "What share of Gen Z shopped at Temu in the latest wave compared with Boomers?", want: ["nonfood products from", "purchased from online", "footwear from temu"], check: cut}

@@ -136,14 +136,24 @@ def seconds_taken(value) -> Optional[int]:
     return int(found[1] or 0) * 60 + int(found[2] or 0)
 
 
+def excel_day(value) -> Optional[datetime]:
+    """An Excel day number ("45027.5856", days since 30 Dec 1899) as a date and time: 2023 files saved as .xls hold
+    the submit time so (Apr-Jun 2023 weeks, 21 Nov 2026). Only numbers in Excel's 1990-2100 range."""
+    try:
+        days = float(value)
+    except (TypeError, ValueError):
+        return None
+    return datetime(1899, 12, 30) + timedelta(days=days) if 32874 <= days <= 73415 else None
+
+
 def submit_time_reader(values: list):
     """How to read this file's submit times. Baidu writes month first without zeros ("3/9/26 14:16"); a file an analyst
     re-saved in a UK-set Excel (2024-2025) holds day first, zero-padded ("26/05/25 20:06", "03/11/24 09:12"). One day
-    over 12 or one zero-padded part marks the whole file day-first."""
+    over 12 or one zero-padded part marks the whole file day-first. An Excel day number is read as one (excel_day)."""
     parts = [found for v in values if isinstance(v, str) and (found := re.match(r"\s*(\d+)/(\d+)/\d+ ", v))]
     if any(int(found[1]) > 12 or found[1].startswith("0") or found[2].startswith("0") for found in parts):
         return lambda v: datetime.strptime(v.strip(), "%d/%m/%y %H:%M") if isinstance(v, str) else parse_datetime(v)
-    return parse_datetime
+    return lambda v: excel_day(v) or parse_datetime(v)
 
 
 def tracker_columns(rows: list[list], codebook: dict) -> dict[str, str]:

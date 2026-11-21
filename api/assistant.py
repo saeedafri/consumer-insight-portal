@@ -229,7 +229,8 @@ def ranked(fig: dict, period: int = -1) -> list[int]:
     shown = ~np.isnan(fig["pct"][period])
     values = np.where(shown.any(axis=0), np.nansum(fig["pct"][period], axis=0) / np.maximum(shown.sum(axis=0), 1), np.nan)
     order = [i for i in np.argsort(-np.nan_to_num(values, nan=-1)) if not math.isnan(values[i]) and not SKIP.match(fig["answers"][i])]
-    return order
+    # a yes/no question is about its yes: "Are people using GLP-1 by generation?" led with No 75.9-91.6% (21 Nov 2026)
+    return sorted(order, key=lambda i: fig["answers"][i].lower() != "yes")
 
 
 def say_period(label: str) -> str:
@@ -388,6 +389,13 @@ def brief(plan: dict, fig: dict, doc: dict, shown: list[int], named: bool = Fals
     plain = lambda a: f"{name}: {answers[a].lower()}" if answers[a].lower() in ("yes", "no") else answers[a]   # noqa: E731
     yes_no = answers[main].lower() in ("yes", "no")
     subject, chose = (f"“{answers[main]}” to “{doc['text'].strip()}”", "answered") if yes_no else (f"“{answers[main]}”", "chose")
+    # a better/worse scale (config/weekly_report.yml net_words): said as its net, better minus worse, as the weekly report does
+    sides = {side: [a for a in range(len(answers)) if any(w in answers[a].lower() for w in REPORT["net_words"][side])
+                    and pct(len(periods) - 1, 0, a) is not None]   # answers the latest waves offer: a reused code's others are not this scale
+             for side in ("positive", "negative")}
+    scale = len(columns) == 1 and not named and all(sides.values()) and single_choice(fig)
+    net = lambda p, side: sum(pct(p, 0, a) or 0 for a in sides[side])   # noqa: E731
+    say_net = lambda value: "More positive than negative" if value >= 5 else "More negative than positive" if value <= -5 else "Mixed"   # noqa: E731
     if len(columns) > 1 and named and len(shown) >= 2:   # "Walmart and Target by income": the two, group by group
         p, other = len(periods) - 1, shown[1]
         gaps = [(pct(p, c, main) - pct(p, c, other), v) for c, (_, v) in enumerate(columns)
@@ -422,7 +430,12 @@ def brief(plan: dict, fig: dict, doc: dict, shown: list[int], named: bool = Fals
             tiles = [{"label": f"Highest: {top}", "value": fmt(high), "note": note}, {"label": f"Lowest: {bottom}", "value": fmt(low), "note": note},
                      {"label": "Gap", "value": f"{high - low:.1f} pts", "note": f"{top} vs {bottom}, {tested}"}]
             left_out = sum(1 for c in range(len(columns)) if pct(p, c, main) is not None and fig["bases"][p, c, main] < SMALL_BASE)
-            takeaway = (f"{subject} runs from {fmt(low)} among {bottom} to {fmt(high)} among {top} {say_period(periods[p]['label'])}, "
+            times = high / low if low else 0
+            kind = {"income_band": "income", "age_band": "age", "census_region": "region", "urbanicity": "area"}.get(columns[0][0], columns[0][0])
+            verdict = (f"Little real difference by {kind}. " if tested == "not significant" else
+                       f"Highest among {top}, about {'twice' if times < 2.5 else 'three times' if times < 3.5 else f'{times:.0f} times'} "
+                       f"the {bottom} figure. " if times >= 1.8 else f"Highest among {top}. ")
+            takeaway = verdict + (f"{subject} runs from {fmt(low)} among {bottom} to {fmt(high)} among {top} {say_period(periods[p]['label'])}, "
                         f"a {high - low:.1f}-point gap" + (f" ({left_out} {'group' if left_out == 1 else 'groups'} under {SMALL_BASE} "
                         "respondents left out)." if left_out else "."))   # the chart shows them: say why "highest" skips them
     elif len(periods) > 1:
@@ -438,18 +451,40 @@ def brief(plan: dict, fig: dict, doc: dict, shown: list[int], named: bool = Fals
             values = [v for _, v in line]
             record = "" if len(line) < 3 else ", the highest in this series" if now == max(values) else ", the lowest in this series" if now == min(values) else ""
             since = f", {'up' if now > was else 'down'} {abs(now - was):.1f} points since {periods[first]['label']}" if round(now - was, 1) else ""
-            takeaway = f"{say_share(now)} {chose} {subject} {say_period(periods[latest]['label'])}{since}{record}."
+            tested = fig.get("tested", fig["pct"])
+            moved_far = len(line) > 1 and ask_figures.significant(float(tested[latest, 0, main]), int(fig["bases"][latest, 0, main]),
+                                                                  float(tested[first, 0, main]), int(fig["bases"][first, 0, main]))
+            verdict = "" if len(line) < 2 else "Rising: " if moved_far and now > was else "Falling: " if moved_far else "Steady: "
+            takeaway = f"{verdict}{say_share(now)} {chose} {subject} {say_period(periods[latest]['label'])}{since}{record}."
+            if scale and len(line) > 1:
+                now_net, was_net = net(latest, "positive") - net(latest, "negative"), net(first, "positive") - net(first, "negative")
+                takeaway = (f"{say_net(now_net)}: net {now_net:+.1f} {say_period(periods[latest]['label'])} ({net(latest, 'positive'):.1f}% "
+                            f"{' or '.join(answers[a] for a in sides['positive']).lower()}, {net(latest, 'negative'):.1f}% "
+                            f"{' or '.join(answers[a] for a in sides['negative']).lower()}), against {was_net:+.1f} {say_period(periods[first]['label'])}.")
     else:
         rows = sorted(((pct(0, 0, a), a) for a in shown if pct(0, 0, a) is not None), reverse=True)
         tiles = [{"label": plain(a), "value": f"{int(fig['people'][0, 0, a]):,}" if plan["kind"] == "count" else fmt(share),
                   "note": respondents(0, 0, a)} for share, a in rows[:3]]
-        if len(rows) >= 2 and not yes_no:
+        if not yes_no and scale:   # a better/worse scale: its net (no "About the same is up" after it)
+            better, worse = net(0, "positive"), net(0, "negative")
+            tiles.append({"label": "Net (better minus worse)", "value": f"{better - worse:+.1f}", "note": periods[0]["label"]})
+            return {"tiles": tiles[-3:], "net": True, "takeaway": (f"{say_net(better - worse)}: {better:.1f}% chose {' or '.join(f'“{answers[a]}”' for a in sides['positive'])} and {worse:.1f}% "
+                        f"{' or '.join(f'“{answers[a]}”' for a in sides['negative'])} {say_period(periods[0]['label'])} (net {better - worse:+.1f}).")}
+        elif len(rows) >= 2 and not yes_no:
             (top_share, top), (next_share, runner_up) = rows[0], rows[1]
             # "most common" and "leads" only for the first of all the answers, not of the few named (Better and Worse of three)
-            lead = ("is the most common answer at" if single_choice(fig) else "leads at") if ranked(fig)[:1] == [top] else "is at"
-            takeaway = f"“{answers[top]}” {lead} {fmt(top_share)}, {top_share - next_share:.1f} points ahead of “{answers[runner_up]}” ({fmt(next_share)})."
+            first = ranked(fig)[:1] == [top]
+            close = not ask_figures.significant(top_share, int(fig["bases"][0, 0, top]), next_share, int(fig["bases"][0, 0, runner_up]))
+            lead = ("is the most common answer at" if single_choice(fig) else "leads clearly at" if top_share - next_share >= 10 else "leads at") \
+                if first else "is at"
+            takeaway = (f"“{answers[top]}” and “{answers[runner_up]}” are close: {fmt(top_share)} and {fmt(next_share)} (not a significant difference)."
+                        if first and close else
+                        f"“{answers[top]}” {lead} {fmt(top_share)}, {top_share - next_share:.1f} points ahead of “{answers[runner_up]}” ({fmt(next_share)}).")
         elif pct(0, 0, main) is not None:
-            takeaway = f"{say_share(pct(0, 0, main))} {chose} {subject} {say_period(periods[0]['label'])}."
+            share = pct(0, 0, main)
+            verdict = ("" if not yes_no or answers[main].lower() != "yes" else
+                       "Yes, most do: " if share >= 55 else "About half do: " if share >= 45 else "Most don't: ")
+            takeaway = f"{verdict}{say_share(share)} {chose} {subject} {say_period(periods[0]['label'])}."
     return {"tiles": tiles, "takeaway": takeaway}
 
 
@@ -615,6 +650,108 @@ OVERVIEW = re.compile(r"\b(summar(?:y|ise|ize)|overview|snapshot|big picture|key
                       r"state of the (?:us |american )?consumers?|consumer (?:mood|pulse)|"
                       r"how (?:do|are) (?:us |american )?(?:consumers|people|shoppers|americans) (?:feel(?:ing)?|doing)|"
                       r"(?:this|latest) week'?s? (?:survey|results|findings|picture))\b")
+
+
+DASHBOARDS = {code: board for code, board in (yaml.safe_load((Path(__file__).resolve().parents[1] / "config" / "dashboards.yml").read_text()) or {}).items()
+              if isinstance(board, dict) and board.get("ask")}
+# "how is it doing?": the words of a question that ask for a verdict on a topic, not for one measure of it
+VERDICT_WORDS = {"how", "good", "well", "bad", "badly", "perform", "performs", "performing", "performance", "doing", "going",
+                 "faring", "trend", "trends", "trending", "growing", "declining", "shrinking", "rising", "falling", "popular",
+                 "popularity", "state", "overview", "summary", "summarize", "summarise", "outlook", "overall", "really", "is",
+                 "are", "the", "of", "use", "usage", "adoption", "lately", "now", "currently", "today", "market", "category",
+                 "sector", "consumer", "consumers", "people", "americans", "shoppers", "us", "a", "an", "and", "what", "about", "tell", "me"}
+
+
+ASKS_VERDICT = {"good", "well", "bad", "badly", "perform", "performs", "performing", "performance", "doing", "going", "faring",
+                "trend", "trends", "trending", "growing", "declining", "shrinking", "rising", "falling", "popular", "popularity",
+                "state", "overview", "summary", "summarize", "summarise", "outlook", "overall"}
+
+
+def topic_of(text: str) -> tuple[str, str] | None:
+    """The dashboard topic a question is only about (config/dashboards.yml ask words) and the words naming it, when the
+    rest of the question asks how it is doing: "How good is GLP1 performing?", "How are tariffs affecting people?" is
+    not (its own subject: "affecting"). None otherwise. The longest naming words win ("holiday outlook" over "holiday")."""
+    for code, words in sorted(((c, w) for c, b in DASHBOARDS.items() for w in b["ask"]), key=lambda cw: -len(cw[1])):
+        if re.search(rf"(?<![a-z0-9]){re.escape(words)}(?![a-z0-9])", text):
+            rest = text
+            for name in sorted(DASHBOARDS[code]["ask"], key=len, reverse=True):   # "tariffs and inflation": one topic
+                rest = re.sub(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])", " ", rest)
+            said = set(re.findall(r"[a-z0-9]+", rest))
+            if not said - VERDICT_WORDS and said & ASKS_VERDICT:   # "tariffs" alone is a search, not "how is it doing?"
+                return code, words
+    return None
+
+
+def topic_verdict(code: str, plan: dict, index: Index, visible: set[int]) -> dict | None:
+    """A verdict on a tracked topic in plain words, then its evidence: "How good is GLP-1 performing?" → "GLP-1 use is
+    rising: 15.8% of US adults are using a GLP-1 drug (16 Nov 2026), up 4.6 points since Jul 2025 (significant)", the
+    dashboard's other figures as lines, its headline figure's trend as the chart, each line linked to its survey
+    question. From the topic dashboard's published payloads (api/v1/dashboards/<code>/<wave>.json.gz, built by the
+    ETL), so no figure is computed here and none is invented. The verdict word is the headline figure's change since
+    the dashboard's first wave, rising or falling only when significant (ask_figures.significant). 21 Nov 2026."""
+    board, folder = DASHBOARDS[code], index.root.parent / "dashboards" / code
+    payloads = {}
+    for path in folder.glob("*.json.gz"):
+        if path.name[:-8].isdigit() and int(path.name[:-8]) in visible:
+            payloads[int(path.name[:-8])] = json.loads(gzip.decompress(path.read_bytes()))
+    if not payloads:
+        return None
+    latest = max(payloads.values(), key=lambda d: d["wave"]["week_of"] or "")
+    figure = lambda payload, tile: ((payload.get("tiles") or {}).get(tile) or {})   # noqa: E731  a wave may hold an empty tile
+    tiles = [(t, figure(latest, t["code"])) for t in board.get("tiles", []) if figure(latest, t["code"]).get("pct") is not None]
+    if not tiles:
+        return None
+    head_tile, head = tiles[0]
+    series = sorted(((d["wave"]["week_of"], figure(d, head_tile["code"])) for d in payloads.values()
+                     if figure(d, head_tile["code"]).get("pct") is not None), key=lambda x: x[0])
+    (first_day, first), (last_day, last) = series[0], series[-1]
+    change = round(last["pct"] - first["pct"], 1)
+    sure = len(series) > 1 and ask_figures.significant(last["pct"], last["base"], first["pct"], first["base"])
+    word = "rising" if sure and change > 0 else "falling" if sure and change < 0 else "holding steady"
+    name = re.sub(r"\s*(Tracker|Databank|Survey Databank)$", "", board["title"]).strip()
+    when, since = ask_figures.label_date(last_day), ask_figures.label_date(first_day)
+    moved = (f"up {change:.1f} points since {since}" if change > 0 else f"down {abs(change):.1f} points since {since}" if change < 0
+             else f"the same as on {since}") + (" (a significant change)" if sure else " (not a significant change)" if len(series) > 1 else "")
+    also = "; ".join(f"{fig['pct']:.1f}% {tile['say']}" for tile, fig in tiles[1:3])
+    headline = (f"{name}: “{head_tile['label']}” is {word}. {head['pct']:.1f}% {head_tile['say']} on {when} "
+                f"({head['n']:,} of {head['base']:,} respondents), {moved}." + (f" Also, {also}." if also else ""))
+    docs = {d["qcode"].upper(): (k, d) for k, d in sorted(index.docs.items(), key=lambda kd: kd[1]["last"])
+            if d["family"] == "CSI-US" and not visible.isdisjoint(d["surveys"])}
+    link = lambda qcode: f"/w/{latest['wave']['survey_id']}/questions/{qcode}"   # noqa: E731
+    prior_day = ask_figures.label_date(latest["prior"]["week_of"]) if latest.get("prior") else None
+    lines = []
+    for tile, fig in tiles:
+        vs = f" ({fig['vs_prior']:+.1f} points since {prior_day})" if fig.get("vs_prior") is not None and prior_day else ""
+        lines.append({"name": tile["label"], "text": f"{fig['pct']:.1f}% {tile['say']}{vs}", "qcode": tile["qcode"], "link": link(tile["qcode"])})
+    for spec in board.get("lists", []):
+        items = [i for i in latest.get("lists", {}).get(spec["code"], []) if i.get("pct") is not None][:3]
+        if items:
+            lines.append({"name": spec["head"], "text": "; ".join(f"“{i['label']}” {i['pct']:.1f}%" for i in items) + f" ({spec['say']})",
+                          "qcode": spec["qcode"], "link": link(spec["qcode"])})
+    sources = [{"id": f"S{n + 1}", "key": docs[q][0], "qcode": q, "question": docs[q][1]["text"], "name": docs[q][1].get("name", ""),
+                "family": "CSI-US", "survey_id": latest["wave"]["survey_id"], "wave_date": last_day, "waves": len(series), "link": link(q)}
+               for n, q in enumerate(dict.fromkeys(line["qcode"].upper() for line in lines)) if q in docs]
+    if not sources:
+        return None
+    sources[0]["link"] = f"/trackers/{code}"   # the topic's own dashboard, where every figure above is shown
+    labels = [ask_figures.label_date(day) for day, _ in series]
+    small = [line["name"] for (tile, fig), line in zip(tiles, lines) if fig["base"] < SMALL_BASE]
+    return {"answer": "\n".join([headline] + [f"{line['name']}: {line['text']}" for line in lines]), "headline": headline, "takeaway": "",
+            "points": [], "overview": lines, "mode": "figures", "understood": "topic", "check": False, "plan": plan,
+            "tiles": [{"label": f"{head_tile['label']}, {when}", "value": f"{head['pct']:.1f}%", "note": f"{head['n']:,} of {head['base']:,} respondents"},
+                      {"label": f"Change since {since}", "value": f"{change:+.1f} pts", "note": "significant" if sure else "not significant"},
+                      *([{"label": f"Since {prior_day}", "value": f"{head['vs_prior']:+.1f} pts", "note": "the wave before"}]
+                        if head.get("vs_prior") is not None and prior_day else [])],
+            "chart": {"type": "line", "categories": labels, "series": [{"name": head_tile["label"], "data": [fig["pct"] for _, fig in series]}], "unit": "%"},
+            "table": {"head": ["Week", head_tile["label"]], "rows": [[label, fig["pct"]] for label, (_, fig) in zip(labels, series)],
+                      "bases": [fig["base"] for _, fig in series], "cell_bases": [[fig["base"]] for _, fig in series]},
+            "scope": {"country": "US", "period": f"{since} – {when}", "waves": len(series), "base": head["base"]},
+            "source_line": f"From the {board['title']} dashboard: {len(series)} waves, {since} – {when}.",
+            "notes": [f"The verdict is the change in “{head_tile['label']}” since the first wave, tested at 95%."] +
+                     ([f"Note: small base, under {SMALL_BASE} respondents, for {', '.join(small)}: read with caution."] if small else []),
+            "sources": sources, "suggestions": [], "weighting": "unweighted",
+            "next": [{"question": f"{docs[head_tile['qcode'].upper()][1].get('name') or head_tile['label']} by {words}", "key": docs[head_tile["qcode"].upper()][0]}
+                     for _, words in FOLLOW_CUTS if head_tile["qcode"].upper() in docs]}
 
 
 def overview(question: str, plan: dict, index: Index, visible: set[int], quick: bool) -> dict | None:
@@ -878,6 +1015,9 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         return no_figure("This question needs a count of people who did both things. Try Audiences to check for overlap within a survey wave, or ask about each group separately.", plan)
     if re.search(r"\b(?:causal effect|causal impact|did .{1,80} cause|what caused|how much did .{1,80} cause)\b", plan["question"]):
         return no_figure("These survey results cannot establish what caused the change. Try asking what respondents reported or how their answers changed over time.", plan)
+    if key is None and not plan["cuts"] and not plan["when"] and (topic := topic_of(text)) and \
+            (verdict := topic_verdict(topic[0], plan, index, visible)):
+        return verdict
     if key is None and OVERVIEW.search(text) and (summed := overview(question, plan, index, visible, quick)):
         return summed
     if len(plan["cuts"]) == 2 and (both := two_groups(question, plan, index, visible, quick, key, weighted)):
@@ -1192,9 +1332,10 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     source_code, source_text = counts["sources"][source_wave]
     source_doc = {**doc, "qcode": source_code, "text": source_text}
     sentences, shown = write(plan, fig, source_doc, named)
-    glance = {**brief(plan, fig, source_doc, shown, len(named) >= 2), "next": follow_ups(plan, fig, doc, named)}
+    glance = {**brief(plan, fig, source_doc, shown, bool(named)), "next": follow_ups(plan, fig, doc, named)}
     # one wave alone says nothing of direction: the change since the wave before, tested, as a chat would add (21 Nov 2026)
     if len(fig["periods"]) == 1 and len(fig["periods"][0]["waves"]) == 1 and len(fig["columns"]) == 1 and shown and glance["takeaway"] \
+            and not glance.pop("net", False) \
             and (before := [d for d in fig["asked"] if d < fig["periods"][0]["from"]]):
         pair = ask_figures.compute(counts, {**plan, "kind": "share", "grain": None, "when": [
             {"from": before[-1], "to": before[-1]}, {"from": fig["periods"][0]["from"], "to": fig["periods"][0]["to"]}]}, visible)

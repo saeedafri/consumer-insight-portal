@@ -119,6 +119,15 @@ def test_submit_times_re_saved_day_first_are_read_day_first():
     resaved = baidu_qss_export.submit_time_reader(["03/11/24 09:12", "04/11/24 10:00"])   # no day over 12: zeros tell
     assert resaved("03/11/24 09:12").date().isoformat() == "2024-11-03"
     assert baidu_qss_export.submit_time_reader(["26/05/25 20:06"])("26/05/25 20:06").date().isoformat() == "2025-05-26"
+    # a 2023 file saved as .xls holds an Excel day number (days since 30 Dec 1899): 45027.5856 is 11 Apr 2023 14:03, the week of 10 April
+    assert baidu_qss_export.submit_time_reader([45027.5856])(45027.5856).strftime("%Y-%m-%d %H:%M") == "2023-04-11 14:03"
+    assert baidu_qss_export.excel_day("5,001-10,000 元") is None and baidu_qss_export.excel_day(12.5) is None
+
+
+def test_early_2023_place_answers_with_a_verb_count_as_todays():
+    codebook = baidu_qss_export.load_codebook()
+    assert baidu_qss_export.today_wording(codebook, "Q4", "去健身房/体育中心") == "健身房/体育中心"
+    assert baidu_qss_export.today_wording(codebook, "Q4", "进行自我提升") in codebook["questions"]["Q4"]["answers"]
 
 
 def test_a_months_extra_questions_and_older_wordings_count_into_todays_answers(tmp_path):

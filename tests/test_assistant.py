@@ -696,15 +696,18 @@ def test_the_glance_never_names_a_small_group_and_says_a_lead_or_a_most_common_a
     assert [t["label"] for t in glance["tiles"]] == ["Highest: GenZ", "Lowest: Boomer", "Gap"]   # Silent: 30 people
     assert glance["tiles"][0]["note"] == "Gas prices reducing spending: yes, 9 Nov 2026"         # a yes says what to
     assert glance["tiles"][2] == {"label": "Gap", "value": "30.0 pts", "note": "GenZ vs Boomer, significant"}
-    assert glance["takeaway"] == ("“Yes” to “Did gas prices make you spend less?” runs from 30.0% among Boomer to 60.0% "
+    assert glance["takeaway"] == ("Highest among GenZ, about twice the Boomer figure. "   # the verdict first, then its figures
+                                  "“Yes” to “Did gas prices make you spend less?” runs from 30.0% among Boomer to 60.0% "
                                   "among GenZ on 9 Nov 2026, a 30.0-point gap (1 group under 50 respondents left out).")
     total = [("total", "Total")]
     split = fig([[[50, 30, 20]]], [[[400] * 3]], ["A", "B", "C"], total)
     assert assistant.brief({"kind": "share"}, split, doc, [0, 1])["takeaway"] == "“A” is the most common answer at 50.0%, 20.0 points ahead of “B” (30.0%)."
     listed = assistant.brief({"kind": "share"}, fig([[[50, 30, 45]]], [[[400] * 3]], ["A", "B", "C"], total), doc, [0, 1])
-    assert listed["takeaway"] == "“A” leads at 50.0%, 20.0 points ahead of “B” (30.0%)."    # several each: a lead
+    assert listed["takeaway"] == "“A” leads clearly at 50.0%, 20.0 points ahead of “B” (30.0%)."    # several each: a lead of 10+ points
     named = fig([[[20, 30, 50]]], [[[400] * 3]], ["Better", "Worse", "Same"], total)       # two named, “Same” first of all
-    assert assistant.brief({"kind": "share"}, named, doc, [0, 1])["takeaway"] == "“Worse” is at 30.0%, 10.0 points ahead of “Better” (20.0%)."
+    assert assistant.brief({"kind": "share"}, named, doc, [0, 1], True)["takeaway"] == "“Worse” is at 30.0%, 10.0 points ahead of “Better” (20.0%)."
+    scale = assistant.brief({"kind": "share"}, named, doc, [2])   # nothing named: a better/worse scale said as its net
+    assert scale["takeaway"] == "More negative than positive: 20.0% chose “Better” and 30.0% “Worse” on 9 Nov 2026 (net -10.0)."
     plain = fig([[[50, 50]]], [[[400] * 2]], ["Yes", "No"], total)
     doc = {"text": "How much did you spend on Prime Day?", "name": "Previous year's Prime Day spending", "key": "K",
            "cuts": {"generation": []}, "waves": 5}
@@ -1044,3 +1047,19 @@ def test_two_kinds_of_group_are_read_from_the_cross_tab_files(index, tmp_path):
     assert found["headline"] == "75.0% of GenZ Female respondents chose “Amazon” on 26 Oct 2026 (45 of 60)."
     both = assistant.answer("Amazon by generation and gender", index, EVERYONE)
     assert both["table"]["head"] == ["Answer", "GenZ · Female", "GenZ · Male"] and both["table"]["rows"] == [["Amazon", 75.0, 25.0]]
+
+
+def test_nvidia_is_the_ai_check_only_when_chosen_and_never_capped_by_openai_spend(monkeypatch, tmp_path):
+    from api import ask_model
+    for name in ask_model.KEY_NAMES + ask_model.NVIDIA_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NVIDIA-API", "nvapi-test")   # the user's .env spells it so
+    monkeypatch.delenv("CIP_ASK_MODEL", raising=False)
+    monkeypatch.delenv("CIP_ASK_PROVIDER", raising=False)
+    assert not ask_model.ready()   # never on by itself: it answered worse than no AI (21 Nov 2026)
+    monkeypatch.setenv("CIP_ASK_PROVIDER", "nvidia")
+    monkeypatch.setattr(ask_model, "SPEND", tmp_path / "spend.json")
+    (tmp_path / "spend.json").write_text(json.dumps({"month": __import__("time").strftime("%Y-%m"), "usd": 9.0, "calls": 1}))
+    assert ask_model.nvidia() and ask_model.model() == ask_model.NVIDIA_MODEL and ask_model.ready()
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")   # an OpenAI key wins, and its cap counts
+    assert not ask_model.nvidia() and ask_model.model() == "gpt-4o-mini" and not ask_model.ready()

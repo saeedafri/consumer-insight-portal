@@ -1,7 +1,8 @@
 """The research team's review sheet for retraining Ask CIP's reader, and its reading back.
 
     python scripts/ask_review_sheet.py build --out reports/ask-review-sheet.xlsx [--asks] [--generated 140] [--written-on 2026-11-09]
-    python scripts/ask_review_sheet.py read reports/ask-review-sheet.xlsx --out reports/ask-reviewed.jsonl
+    python scripts/ask_review_sheet.py mark reports/ask-review-sheet.xlsx --out reports/ask-review-sheet-marked.xlsx
+    python scripts/ask_review_sheet.py read reports/ask-review-sheet-marked.xlsx --out reports/ask-reviewed.jsonl
 
 build: one row a question: the real asks typed in a browser (cip_access_log, --asks: a read of the database), the
 researched set (scripts/ask_researched.yml), the misses' wordings (scripts/ask_review_questions.yml), questions no
@@ -41,7 +42,7 @@ ANSWERS = [str(n) for n in range(1, CHOICES + 1)] + ["Pick", "None", "Other"]
 # visible columns, then the hidden ones the read step needs
 HEAD = ["No.", "Question", "Where it came from", "Ask answered from", *[f"Choice {n}" for n in range(1, CHOICES + 1)],
         "Right answer", "Other question code", "Also right (choice numbers)", "Note",
-        "country", "kind", "observed_at", "pick key", *[f"key {n}" for n in range(1, CHOICES + 1)]]
+        "country", "kind", "observed_at", "pick key", *[f"key {n}" for n in range(1, CHOICES + 1)], "generated from"]
 FILL = PatternFill("solid", start_color="FFF2CC")   # the cells a reviewer fills
 FONT = Font(name="Arial", size=10)
 
@@ -97,11 +98,13 @@ def build(args) -> None:
         found, keys = read(question)
         if not any(keys):   # matched by a stored name or a verified answer: the reader never chose, nothing to teach it
             continue
-        rows.append((question, origin, day, found, [k for k in keys if k][:CHOICES]))
-    if args.generated:   # generated wordings Ask gets wrong, its target shown so the reviewer can confirm or correct it
+        rows.append((question, origin, day, found, [k for k in keys if k][:CHOICES], None))
+    if args.generated:   # generated wordings Ask gets wrong with the right question among the reader's choices: the
+        # mistakes retraining can fix. Only the weekly trackers', the families the trainer reads (ask_cip_train --families):
+        # a 21 Nov rehearsal kept 5 of 26 dev rows when targets came from any study or were added after the reader's choices
         import ask_bench
         ask_bench.index_waves.update(visible)
-        rng, docs, misses = random.Random(11), list(index.docs.values()), 0
+        rng, docs, misses = random.Random(11), [d for d in index.docs.values() if d["family"] in ("CSI-US", "CSI-CN")], 0
         while misses < args.generated:
             doc = rng.choice(docs)
             case = ask_bench.make(doc, ask_bench.raws_for(doc["key"], index), index, rng)
@@ -114,21 +117,21 @@ def build(args) -> None:
                 continue
             done.add(plain(case["text"]))
             keys = [k for k in keys if k][:CHOICES]
-            if case["key"] not in keys:   # the generator's answer always among the choices, last
-                keys = keys[:CHOICES - 1] + [case["key"]]
-            rows.append((case["text"], f"Generated (its answer: {index.docs[case['key']]['qcode']})", args.written_on, found, keys))
+            if case["key"] not in keys:
+                continue
+            rows.append((case["text"], f"Generated (its answer: {index.docs[case['key']]['qcode']})", args.written_on, found, keys, case["key"]))
             misses += 1
 
     book = Workbook()
     sheet = book.active
     sheet.title = "Review"
     sheet.append(HEAD)
-    for number, (question, origin, day, found, keys) in enumerate(rows, start=1):
+    for number, (question, origin, day, found, keys, source) in enumerate(rows, start=1):
         pick = found["sources"][0]["key"] if found.get("mode") == "figures" and found.get("sources") else None
         reading = ask_reader.read(question)
         sheet.append([number, question, origin, describe({**index.docs[pick], "key": pick}) if pick else "No answer: " + found.get("answer", "")[:120],
                       *[describe(index.docs[k]) for k in keys] + [""] * (CHOICES - len(keys)), None, None, None, None,
-                      reading["country"], reading["kind"], day, pick, *keys + [None] * (CHOICES - len(keys))])
+                      reading["country"], reading["kind"], day, pick, *keys + [None] * (CHOICES - len(keys)), source])
     style(sheet, len(rows))
     guide(book.create_sheet("How to fill", 0))
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -176,6 +179,53 @@ def guide(sheet) -> None:
         cell.alignment = Alignment(wrap_text=True)
 
 
+def mark(args) -> None:
+    """Fill the sheet's answer columns with draft marks: a generated row from the question it came from, a written
+    no-answer row None, the rest from --marks (scripts/ask_review_marks.yml); the same wording in another wave
+    marked also right. Each filled row's Note says "Claude draft", for a person to check before training."""
+    from api.ask_index import Index
+    waves = json.loads(gzip.decompress((args.published / "waves.json.gz").read_bytes()))
+    docs = Index(args.published / "questions", waves).docs
+    marks = {plain(q): m for q, m in yaml.safe_load(args.marks.read_text()).items()}
+    unworded = lambda key: re.sub(r"\d+", "", plain(docs[key]["text"])) if key in docs else None   # noqa: E731
+    book = load_workbook(args.sheet)
+    sheet = book["Review"]
+    head = [c.value for c in sheet[1]]
+    col = {h: i for i, h in enumerate(head)}
+    filled = 0
+    for cells in sheet.iter_rows(min_row=2):
+        row = {h: cells[i].value for h, i in col.items()}
+        keys = [row[f"key {n}"] for n in range(1, CHOICES + 1)]
+        choices = [str(row[f"Choice {n}"] or "") for n in range(1, CHOICES + 1)]
+        said = marks.get(plain(row["Question"]), {})
+        right, also_codes = str(said.get("right", "")), said.get("also", [])
+        if row["generated from"]:
+            right = str(keys.index(row["generated from"]) + 1)
+            target = unworded(row["generated from"])
+            also = [str(n + 1) for n, k in enumerate(keys) if k and k != row["generated from"] and unworded(k) == target]
+            other = None
+        elif not right and row["Where it came from"] == "No survey asks this (written)":
+            right, also, other = "None", [], None
+        elif not right or right == "Skip":
+            continue
+        else:
+            def choice(code: str) -> int | None:
+                qcode, _, name = code.partition("/")
+                return next((n + 1 for n, c in enumerate(choices) if c.startswith(f"{qcode} ·") and name in c), None)
+            other = None
+            if right not in ("Pick", "None"):
+                found = choice(right)
+                right, other = (str(found), None) if found else ("Other", right.partition("/")[0])
+            also = [str(n) for n in (choice(str(c)) for c in also_codes) if n]
+        cells[col["Right answer"]].value = right
+        cells[col["Other question code"]].value = other
+        cells[col["Also right (choice numbers)"]].value = ", ".join(also) or None
+        cells[col["Note"]].value = "Claude draft"
+        filled += 1
+    book.save(args.out)
+    print(f"{filled} rows marked → {args.out}")
+
+
 def read(args) -> None:
     """The marked rows as reviewed labels: {q, key, also, country, kind, observed_at, group}; key null for None."""
     from api.ask_index import Index
@@ -201,9 +251,10 @@ def read(args) -> None:
                 waves = json.loads(gzip.decompress((args.published / "waves.json.gz").read_bytes()))
                 index = Index(args.published / "questions", waves)
                 for k, d in sorted(index.docs.items(), key=lambda kv: kv[1]["waves"]):   # the longest-running last: it wins
-                    codes[(d["family"], d["qcode"].lower())] = k
+                    codes[(d["family"], d["qcode"].lower())] = codes[(None, d["qcode"].lower())] = k
             family = "CSI-CN" if row["country"] == "CN" else "CSI-US"
-            key = codes.get((family, str(row["Other question code"] or "").strip().lower()))
+            code = str(row["Other question code"] or "").strip().lower()   # the weekly survey's first, else any study's
+            key = codes.get((family, code)) or codes.get((None, code))
             if not key:
                 problems.append(f"row {row['No.']}: Other needs a question code the published data has, got “{row['Other question code']}”")
                 continue
@@ -232,13 +283,17 @@ def main() -> None:
     made.add_argument("--asks", action="store_true", help="add the questions typed on staging (reads cip_access_log)")
     made.add_argument("--generated", type=int, default=140, help="generated questions Ask gets wrong")
     made.add_argument("--written-on", default=str(date.today()), help="the date of the generated and no-answer rows")
+    drafted = commands.add_parser("mark")
+    drafted.add_argument("sheet", type=Path)
+    drafted.add_argument("--marks", type=Path, default=ROOT / "scripts" / "ask_review_marks.yml")
+    drafted.add_argument("--out", type=Path, required=True)
     marked = commands.add_parser("read")
     marked.add_argument("sheet", type=Path)
     marked.add_argument("--out", type=Path, required=True)
-    for command in (made, marked):
+    for command in (made, drafted, marked):
         command.add_argument("--published", type=Path, default=PUBLISHED)
     args = ap.parse_args()
-    (build if args.command == "build" else read)(args)
+    {"build": build, "mark": mark, "read": read}[args.command](args)
 
 
 if __name__ == "__main__":

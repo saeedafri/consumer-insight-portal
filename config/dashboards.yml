@@ -18,6 +18,7 @@
 
 holiday_tracker:
   title: Holiday Survey Databank
+  ask: ["holiday shopping", "holiday season", "christmas shopping"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: HOLIDAY_TRACKER
   small_base: 50                      # flag any percentage on fewer respondents than this
   ly_rule: same_wave_number           # "vs LY" = the same wave number last season (Databank definition)
@@ -37,6 +38,7 @@ holiday_tracker:
 
 tariffs_inflation:
   title: Tariffs and Inflation Tracker
+  ask: ["tariffs", "tariff", "inflation", "price rises", "rising prices"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: TARIFFS_INFLATION
   small_base: 50
   ly_rule: nearest_year_ago
@@ -55,6 +57,7 @@ tariffs_inflation:
 
 mideast_gas:
   title: Middle East Conflict and Gas Prices
+  ask: ["gas prices", "gasoline", "fuel prices", "middle east conflict", "iran"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: MIDEAST_GAS
   small_base: 50
   ly_rule: nearest_year_ago
@@ -71,6 +74,7 @@ mideast_gas:
 
 genai:
   title: GenAI Tracker
+  ask: ["genai", "generative ai", "ai shopping", "ai tools", "chatgpt", "artificial intelligence"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: GENAI
   small_base: 50
   ly_rule: nearest_year_ago
@@ -89,6 +93,7 @@ genai:
 
 financial_health:
   title: Consumer Financial Health
+  ask: ["financial health", "consumer finances", "household finances", "savings", "debt"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: FINANCIAL_HEALTH
   small_base: 50
   ly_rule: nearest_year_ago
@@ -104,6 +109,7 @@ financial_health:
 
 glp1:
   title: GLP-1 Tracker
+  ask: ["glp-1", "glp1", "glp 1", "ozempic", "wegovy", "mounjaro", "zepbound", "weight loss drugs", "weight-loss drugs"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: GLP1
   small_base: 50
   ly_rule: nearest_year_ago
@@ -121,6 +127,7 @@ glp1:
 
 holiday_outlook:
   title: Holiday Outlook
+  ask: ["holiday outlook", "holiday spending outlook"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: HOLIDAY
   small_base: 50
   ly_rule: nearest_year_ago
@@ -138,6 +145,7 @@ holiday_outlook:
 
 drugstore:
   title: Drugstore / Pharmacy
+  ask: ["drugstores", "drugstore", "pharmacy", "pharmacies"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: DRUGSTORE
   small_base: 50
   ly_rule: nearest_year_ago
@@ -152,6 +160,7 @@ drugstore:
 
 home_improvement:
   title: Home Improvement / DIY
+  ask: ["home improvement", "diy"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: HOME_IMPROVEMENT
   small_base: 50
   ly_rule: nearest_year_ago
@@ -166,6 +175,7 @@ home_improvement:
 
 off_price:
   title: Off-Price / Dollar Stores
+  ask: ["off-price", "off price", "dollar stores"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: OFF_PRICE
   small_base: 50
   ly_rule: nearest_year_ago
@@ -180,6 +190,7 @@ off_price:
 
 apparel:
   title: Apparel
+  ask: ["apparel", "clothing"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: APPAREL
   small_base: 50
   ly_rule: nearest_year_ago
@@ -194,6 +205,7 @@ apparel:
 
 footwear:
   title: Footwear
+  ask: ["footwear", "shoes"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: FOOTWEAR
   small_base: 50
   ly_rule: nearest_year_ago
@@ -208,6 +220,7 @@ footwear:
 
 ecommerce:
   title: eCommerce
+  ask: ["ecommerce", "e-commerce", "online shopping"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: ECOMMERCE
   small_base: 50
   ly_rule: nearest_year_ago
@@ -222,6 +235,7 @@ ecommerce:
 
 luxury:
   title: Luxury
+  ask: ["luxury"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: LUXURY
   small_base: 50
   ly_rule: nearest_year_ago
@@ -236,6 +250,7 @@ luxury:
 
 dept_stores:
   title: Department Stores
+  ask: ["department stores"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: DEPT_STORES
   small_base: 50
   ly_rule: nearest_year_ago
@@ -250,6 +265,7 @@ dept_stores:
 
 beauty:
   title: Beauty
+  ask: ["beauty"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: BEAUTY
   small_base: 50
   ly_rule: nearest_year_ago
@@ -264,6 +280,7 @@ beauty:
 
 home_furnishings:
   title: Home Furnishings
+  ask: ["home furnishings", "furniture"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: HOME_FURNISHINGS
   small_base: 50
   ly_rule: nearest_year_ago
@@ -288,6 +305,7 @@ mass_warehouse:
 
 social_commerce:
   title: Social Commerce
+  ask: ["social commerce", "social media shopping", "tiktok shop"]   # Ask CIP answers "how is it doing?" from this dashboard
   module: SOCIAL_COMMERCE
   small_base: 50
   ly_rule: nearest_year_ago

@@ -204,7 +204,8 @@ function Reply({ question, answer, audience, checking, onAsk }: { question: stri
                 name: "Best match by name: other survey questions share this name (below)",
                 model: "Best match, understood by AI: check the question below", reader: "Best match, read by Ask's own model: check the question below",
                 meaning: "Best match by meaning: check the question below",
-                rules: "Best match by words: check the question below" }[answer.understood ?? ""];
+                rules: "Best match by words: check the question below",
+                topic: "From the topic's dashboard: its headline figure's trend, then its key figures" }[answer.understood ?? ""];
   const drawn = useRef<Chart | null>(null);
   const file = `ask-${(source?.qcode ?? "answer").toLowerCase()}`;
   const weightedAnswer = answer.weighting === "weighted";
@@ -244,7 +245,8 @@ function Reply({ question, answer, audience, checking, onAsk }: { question: stri
           <Link to={source.link} title={source.question}>Source {source.qcode}{source.name ? `: ${source.name}` : ""} →</Link>
         </p>}
         {(how || checking) && <p className="small muted ask-how">{checking ? "Checking the survey match…" : analyst ? how :
-          answer.understood === "verified" ? "Verified survey match" : answer.understood === "named" ? "Matched survey question" : "Closest survey match"}
+          answer.understood === "verified" ? "Verified survey match" : answer.understood === "named" ? "Matched survey question" :
+          answer.understood === "topic" ? "From the topic's dashboard" : "Closest survey match"}
           {analyst && isAdmin && answer.verify && !checking && answer.understood !== "verified" && <>{" · "}
           {verified ? <span role="status">{verified}</span> : <button type="button" className="linklike" onClick={() => void saveVerified()}>Save as verified</button>}</>}</p>}
         {tiles.length > 0 && <Tiles tiles={tiles} />}
