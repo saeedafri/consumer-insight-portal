@@ -925,9 +925,10 @@ def test_the_answer_leads_with_its_finding_but_a_named_group_keeps_its_name(inde
 
 def test_a_pick_that_misses_the_subject_is_not_an_answer(index):
     key = "CSI-US/tracker/XQ1"   # the retailers question: "Fed rate cuts" picked the gas-prices question this way
-    assert assistant.unasked({"about": "fed rate cuts"}, key, index) == ["fed", "cuts"]   # "rate" is how an analyst asks
+    assert assistant.unasked({"about": "fed rate cuts"}, key, index) == ["fed", "rate", "cuts"]
     assert assistant.unasked({"about": "amazon walmart"}, key, index) == []
     assert assistant.unasked({"about": "amazon fed"}, key, index) == []   # one unknown word alone: a typo or a synonym
+    assert assistant.unasked({"about": "immigration"}, key, index) == ["immigration"]   # but not as the whole subject
 
 
 def test_a_dashboard_name_answers_its_answers_summed():
@@ -1066,8 +1067,8 @@ def test_nvidia_is_the_ai_check_only_when_chosen_and_never_capped_by_openai_spen
 
 
 def test_how_an_analyst_asks_is_not_the_subject(index):
-    key = "CSI-US/tracker/XQ1"   # "most commonly used retailers" was refused for lacking "commonly" and "used" (Colab replay)
-    assert assistant.unasked({"about": "retailers commonly used"}, key, index) == []
+    key = "CSI-US/tracker/XQ1"   # "holiday shopping retailers list" lost the reader's right pick for lacking "list"
+    assert assistant.lacking({"about": "retailers list"}, key, index)[0] == []
 
 
 def test_high_and_low_income_are_income_groups():

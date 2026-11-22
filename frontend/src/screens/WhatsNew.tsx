@@ -4,6 +4,12 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "22 November 2026",
+  entries: [
+    { title: "Ask answers more of the loosely worded questions, and refuses what no survey asks",
+      body: "Ask CIP was tested on 2.7 lakh answers in Colab: 91,311 loosely worded analyst questions through the whole of Ask, three ways. Neither the newly trained reader nor six times more example phrasings beat today's Ask, so neither is used. What the test found is fixed instead. Words that say how an analyst asks (“list”, “trend”, “rate”, “doing”, “commonly used”) no longer push aside the question Ask's reader picked. “High income”, “middle income” and “low income” now read as income groups ($100,000 and up, $50,000–$99,999, under $50,000). A question about “last month” on a survey question not asked then shows its latest figures, saying so, instead of no answer. A question whose only subject is a word no survey uses (“immigration”) is told no survey asks it, not answered from an unrelated question. Of 31,753 questions Ask had missed, 702 are now right; on the older 38,604-question bank 57 more are right, and 84.4% of the answers given are right (84.5% before). The test sets are unchanged: 158 of 161, 48 of 50, 48 of 58." },
+  ],
+}, {
   date: "21 November 2026",
   entries: [
     { title: "API fixes: audiences read “Gen Z”, plain clients get plain JSON, saving needs your name",

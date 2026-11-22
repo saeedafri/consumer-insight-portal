@@ -619,21 +619,21 @@ def add_net(question: str, fig: dict, counts: dict, nets: list[tuple[str, list[i
     return None
 
 
-# how an analyst asks, not what about: "what online grocery retailers are most commonly used" was refused for lacking
-# "commonly" and "used", and "holiday shopping retailers list" lost the reader's right pick for lacking "list" (a third
-# of the 6,575 unanswered and 211 of 3,000 wrong picks in the 52,707-question Colab replay, 22 Nov 2026)
+# how an analyst asks, not what about: "holiday shopping retailers list" lost the unsure reader's right pick for lacking
+# "list" (211 of 3,000 wrong picks in the 52,707-question Colab replay, 22 Nov 2026). The not-asked refusal (unasked)
+# still counts them: skipped there, 1,598 refused questions were answered, 601 right but 997 from another question
 ANALYST_WORDS = frozenset("""doing going faring performing performance perform growing declining shrinking trend trends
 trending evolving evolved evolution changing changes vary varies varied often frequently commonly common main key seeing
 used use usage ranked ranking level levels status behavior behaviour segment segments overall popular popularity rate rates
 list lists individuals stats statistics breakdown insights""".split())
 
 
-def lacking(plan: dict, key: str, index: Index) -> tuple[list[str], int, bool]:
+def lacking(plan: dict, key: str, index: Index, skip: frozenset = ANALYST_WORDS) -> tuple[list[str], int, bool]:
     """The question's subject words that a survey question never uses (its wording, name, aliases, topic or answers, or
     a synonym of the word), how many subject words there are, and whether one of them no survey uses at all."""
     lacking, unknown, words = [], False, 0
     for word in dict.fromkeys(w for w in re.findall(r"[a-z0-9]+", plan["about"].replace("'", ""))
-                              if w not in FRAME_WORDS and w not in ANALYST_WORDS and stems(w)):   # as the index splits ("glp-1")
+                              if w not in FRAME_WORDS and w not in skip and stems(w)):   # as the index splits ("glp-1")
         # a misspelt word counts as the word it is close to, a synonym list's word as its list ("glp1" is GLP-1)
         stem = index.known(word) or next((s for s in stems(word) if s in index.synonyms), None)
         words += 1
@@ -650,9 +650,11 @@ def unasked(plan: dict, key: str, index: Index) -> list[str]:
     more, three or more, or two with one no survey uses at all. "Fed rate cuts" and "saving more money" were answered
     from the gas-prices question; right answers in the golden, fresh and researched sets miss at most two such words, never
     every one and none unknown (21 Nov 2026), so an empty list means the pick stands."""
-    missing, words, unknown = lacking(plan, key, index)
+    missing, words, unknown = lacking(plan, key, index, frozenset())
     # ponytail: counts words, not meaning; the reranker in the Colab plan can replace it once it beats the golden set
-    return missing if len(missing) >= 3 or (unknown and len(missing) >= 2) or (words >= 2 and len(missing) == words) else []
+    # a whole subject of one word no survey uses ("immigration", after typos are corrected by Index.known) answered from
+    # the state-of-residence question (22 Nov 2026)
+    return missing if len(missing) >= 3 or (unknown and len(missing) >= 2) or (len(missing) == words and (words >= 2 or unknown)) else []
 
 
 REPORT = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" / "weekly_report.yml").read_text())
@@ -1228,7 +1230,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
                     "sources": [], "plan": plan, "mode": "choose", "no_source": True, "understood": understood, "margin": margin,
                     "suggestions": shown, "check": quick and ask_model.ready()}
         if missing := unasked(plan, chosen["key"], index):   # the nearest question, but about something else
-            rare = sorted(missing, key=lambda w: -index.idf.get(index.known(w) or "", 99))[:3]   # unknown, then rarest
+            rare = sorted(missing, key=lambda w: (w in ANALYST_WORDS, -index.idf.get(index.known(w) or "", 99)))[:3]   # unknown, then rarest; “used” last
             return {**no_figure(f"None of the surveys asks this: no survey question covers {' and '.join(f'“{w}”' for w in rare)}. "
                                 "The closest questions are below.", plan,
                                 [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]),
