@@ -1581,8 +1581,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     # meaning: "Amazon in 2025 vs 2026" is the weekly retailer lists, not one of the Amazon studies (golden set, 11 Nov 2026)
     candidates = [c for c in candidates if not best_of_pairs(c)] or candidates
     seen = {c["key"] for c in candidates}
-    candidates += [d for k, d in index.docs.items() if candidates and k not in seen and d["waves"] >= TREND_FROM * 5
-                   and not visible.isdisjoint(d["surveys"]) and focus(question, d.get("labels", []), full_names)][:3]
+    # the three longest-running: in file order the footwear and apparel lists came first once they ran 15 weeks and
+    # pushed out the weekly retailer lists (266 weeks; "amazon", golden and fresh sets, 22 Nov 2026)
+    candidates += sorted((d for k, d in index.docs.items() if candidates and k not in seen and d["waves"] >= TREND_FROM * 5
+                          and not visible.isdisjoint(d["surveys"]) and focus(question, d.get("labels", []), full_names)),
+                         key=lambda d: -d["waves"])[:3]
     if not EVENT.search(question.lower()):   # "Walmart shoppers" is not the holiday retailers question
         candidates = [c for c in candidates if not EVENT.search(c["text"].lower())] or candidates
     # the same wording asked by several studies is one choice, the longest-running standing for it: four of fourteen
