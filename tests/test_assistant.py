@@ -1082,3 +1082,71 @@ def test_last_month_on_a_question_not_asked_then_shows_its_latest_figures_said_s
     found = assistant.answer("ways to save money last month", index, EVERYONE)   # Q14 asked only in September
     assert found["mode"] == "figures" and found["notes"][0] == "Not asked in the last month: these are its latest figures."
     assert figure(found, "Coupons") == [75.0]   # its latest wave: 300 of 400
+
+
+def test_a_best_match_is_flagged_unsure_and_a_chosen_question_is_not(index):
+    assert assistant.answer("ways to save money", index, EVERYONE)["unsure"]   # by meaning: the page offers others up front
+    assert not assistant.answer("Amazon shoppers", index, EVERYONE, key="CSI-US/tracker/XQ1")["unsure"]   # the one chosen
+
+
+def test_a_day_is_its_survey_week_and_a_range_keeps_every_month_between():
+    assert ask_reader.read("In the 16 Nov 2026 survey, what share are currently using a GLP-1 drug?")["when"] == \
+        [{"from": "2026-11-10", "to": "2026-11-16"}]   # not all of November, and "currently" adds no second period
+    assert ask_reader.read("GLP-1 use from 14 Sep 2026 to 16 Nov 2026")["when"] == [{"from": "2026-09-08", "to": "2026-11-16"}]
+    assert ask_reader.read("July 4th celebration activities by generation")["when"] == []   # the holiday, not 4 July
+    assert ask_reader.read("Who chose “Target Circle Week (July 9-15, 2023)”?")["when"] == []   # an answer's own name
+    assert ask_reader.read("Amazon in Nov 2026")["when"] == [{"month": (2026, 11)}]
+
+
+def test_named_income_groups_are_merged_and_survey_counts_are_periods():
+    plan = ask_reader.read("Walmart food shoppers in each income group (low, $50,000-$99,999, high)")
+    assert list(plan["merge"]) == ["Low income (under $50,000)", "Middle income ($50,000-$99,999)", "High income ($100,000 or more)"]
+    assert plan["about"] == "walmart food"
+    assert ask_reader.read("Walmart in each of the 10 surveys, oldest first")["when"] == [{"last": 10, "unit": "wave"}]
+    assert ask_reader.read("Amazon in the last 4 surveys pooled")["kind"] == "share"
+
+
+def test_merged_groups_sum_their_people(index):
+    plan = {**ask_reader.read("Amazon in the latest wave"), "cuts": {"generation": ["GenZ", "Millennial"]},
+            "merge": {"Under 45": ["GenZ", "Millennial"]}}
+    fig = ask_figures.compute(index.counts("CSI-US/tracker/XQ1"), plan, EVERYONE)
+    assert fig["columns"] == [["generation", "Under 45"]] and fig["pct"][-1, 0, 0] == 62.5   # (85 + 40) of 200
+
+
+def test_any_answer_and_the_sides_of_a_scale_are_totals():
+    fig = {"answers": ["Food", "Toys", "None of these"], "pct": np.array([[[30.0, 20.0, 20.0]]]),
+           "people": np.array([[[120, 80, 80]]]), "bases": np.full((1, 1, 3), 400)}
+    added = assistant.any_answer("bought anything online", fig)
+    assert fig["answers"][added].startswith("Any")
+    assert fig["pct"][0, 0, -1] == 80.0   # everyone but None of these
+    scale = {"answers": ["Much worse", "Somewhat worse", "About the same", "Somewhat better", "Much better"],
+             "pct": np.array([[[14.0, 28.0, 30.0, 19.0, 9.0]]]), "people": np.array([[[56, 112, 120, 76, 36]]]),
+             "bases": np.full((1, 1, 5), 400)}
+    better, worse = assistant.side_answers("better or worse?", scale)
+    assert (scale["pct"][0, 0, better], scale["pct"][0, 0, worse]) == (28.0, 42.0)
+
+
+def test_among_counts_a_question_only_among_another_answer(index, tmp_path):
+    waves = tmp_path / "waves" / "107"
+    waves.mkdir(parents=True)   # four people: Amazon and Walmart; Walmart; Amazon; neither answered
+    people = {"cuts": {}, "weights": [1, 1, 1, 1], "questions": {"XQ1": {"text": "", "rows": [[1, 1, "", "1", "Amazon"], [1, 2, "", "2", "Walmart"]],
+                                                                         "bits": {"1,1": format(0b101, "x"), "1,2": format(0b011, "x")}}}}
+    (waves / "people.json.gz").write_bytes(gzip.compress(json.dumps(people).encode()))
+    counts = index.counts("CSI-US/tracker/XQ1")
+    counts["sources"] = {107: ("XQ1", "")}
+    fig = ask_figures.compute(counts, ask_reader.read("Amazon in the latest wave"), EVERYONE)
+    out = assistant.among_figures(fig, counts, {"text": "Walmart shoppers", "key": "CSI-US/tracker/XQ1", "labels": ["Walmart"]}, index)
+    assert out["columns"] == [["total", "Among Walmart shoppers"]] and out["pct"][0, 0, 0] == 50.0   # 1 of the 2 Walmart shoppers
+
+
+def test_a_significance_question_gets_yes_or_no_with_the_test():
+    fig = {"answers": ["Yes"], "periods": [{"label": "16 Nov 2026"}], "columns": [["gender", "Male"], ["gender", "Female"]],
+           "pct": np.array([[[19.0], [12.5]]]), "people": np.array([[[38], [25]]]), "bases": np.array([[[200], [200]]])}
+    assert assistant.tested(fig, 0).startswith("No clear difference between men and women")   # p = 0.074, as the raw rows give
+
+
+def test_the_lead_repeats_what_the_analyst_asked_with_the_figure():
+    assert assistant.subject_of("In the 16 Nov survey, what share bought anything ONLINE in the past two weeks?") == \
+        "bought anything online in the past two weeks"
+    assert assistant.subject_of("Do people have Amazon Prime?") == "have Amazon Prime"
+    assert assistant.subject_of("Walmart vs Target") is None   # no "who did what": the brief's lead stays

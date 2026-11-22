@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import calendar
 import re
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import yaml
@@ -25,7 +25,7 @@ ORDINALS = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3, "
 NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "eight": 8, "ten": 10, "twelve": 12}
 GRAINS = [(r"\b(bi-?weekly|fortnight(ly)?|every (2|two) weeks|two-week)\b", "biweek"),
           (r"\b(4-?weekly|four-?weekly|every (4|four) weeks|4-week|four-week|rolling 4)\b", "4week"),
-          (r"\b(weekly|week by week|each week|every week|by week|per week|wave by wave|each wave|every wave)\b", "wave"),
+          (r"\b(weekly|week by week|each week|every week|by week|per week|wave by wave|each wave|every wave|each survey|every survey|survey by survey|oldest first|newest first)\b", "wave"),
           (r"\b(monthly|month by month|by month|per month|each month|every month)\b", "month"),
           (r"\b(quarterly|by quarter|per quarter|each quarter)\b", "quarter"),
           (r"\b(yearly|annually|by year|per year|each year|year by year|year over year|yoy)\b", "year")]
@@ -39,16 +39,17 @@ CUT_VALUES = [(r"\bgen ?z\b|\bzoomers?\b", "generation", "GenZ"), (r"\bmillennia
               # "young people" is the survey's youngest age band, "older people" its oldest (config/weighting.yml age_band)
               (r"\b(young|younger) (people|adults|consumers|shoppers|americans)\b", "age_band", "18-29"),
               (r"\b(old|older|elderly) (people|adults|consumers|shoppers|americans)\b|\bseniors\b", "age_band", "Over 60")]
-# "high income" is the bands from $100,000, "low income" those under $50,000 (the weekly survey's bands since 2022): read
-# as a subject they refused 1 in 25 unanswered bank questions ("Thanksgiving spending for high income", 22 Nov 2026)
-INCOME_GROUPS = {r"\b(high|higher|upper)[- ](income|earners?|earning)\b|\baffluent\b|\bwealthy\b":
-                     ["$100,000 - $149,999", "$150,000 - $199,999", "$200,000 or greater"],
-                 r"\b(middle|mid)[- ](income|earners?|earning)\b|\bmiddle class\b": ["$50,000 - $99,999"],
-                 r"\b(low|lower)[- ](income|earners?|earning)\b": ["under $25,000", "$25,000 - $49,999"]}
-CUT_VALUES += [(pattern, "income_band", band) for pattern, bands in INCOME_GROUPS.items() for band in bands]
-CUT_DIMS = [(r"\b(?:by|and) (generation|generations|gen)\b|\bacross generations\b|\bwhich generations?\b", "generation"),
+# "high income" is the bands from $100,000, "low income" those under $50,000 (the weekly survey's bands since 2022), each
+# shown as one figure (ask_figures.compute merge): read as a subject they refused 1 in 25 unanswered bank questions
+# ("Thanksgiving spending for high income"), and as bands they gave 3 to 7 columns for one asked group (22 Nov 2026)
+INCOME_GROUPS = {"Low income (under $50,000)": (r"\b(low|lower)[- ](income|earners?|earning)\b", ["under $25,000", "$25,000 - $49,999"]),
+                 "Middle income ($50,000-$99,999)": (r"\b(middle|mid)[- ](income|earners?|earning)\b|\bmiddle class\b", ["$50,000 - $99,999"]),
+                 "High income ($100,000 or more)": (r"\b(high|higher|upper)[- ](income|earners?|earning)\b|\baffluent\b|\bwealthy\b",
+                                                    ["$100,000 - $149,999", "$150,000 - $199,999", "$200,000 or greater"])}
+CUT_VALUES += [(pattern, "income_band", band) for pattern, bands in INCOME_GROUPS.values() for band in bands]
+CUT_DIMS = [(r"\b(?:by|and) (generation|generations|gen)\b|\b(?:across|each|every|all) generations?\b|\bwhich generations?\b", "generation"),
             (r"\b(?:by|and) (gender|sex)\b|\bmen (and|vs|versus|or) women\b|\bwomen (and|vs|versus|or) men\b", "gender"),
-            (r"\b(?:by|and) age( group| band)?s?\b|\bage (group|band)s?\b|\bwhich age( group)?s?\b", "age_band"), (r"\b(?:by|and) (household )?income\b|\bincome (group|band|level)s?\b", "income_band"),
+            (r"\b(?:by|and) age( group| band)?s?\b|\bage (group|band)s?\b(?:\s*\([^)]*\))?|\bwhich age( group)?s?\b(?:\s*\([^)]*\))?", "age_band"), (r"\b(?:by|and) (household )?income\b|\bincome (group|band|level)s?\b(?:\s*\([^)]*\))?", "income_band"),
             (r"\bby region\b|\bregions?\b|\b(the )?south (vs|versus|and|or) (the )?west\b", "census_region"), (r"\burbanicity\b|\burban,? suburban\b", "urbanicity")]
 KINDS = [(r"\bhow many (people|respondents|users|consumers|shoppers|adults|americans)\b|\bnumber of (people|respondents)\b", "count"),
          (r"\b(top|winner|won|most popular|leading|leader|highest|best|biggest|largest|most common|rank|ranking|favou?rite)\b|\bwhich\b[^?]*\bmost\b", "top"),   # "which retailers do people shop at most?" ranks
@@ -59,7 +60,7 @@ FILLER = re.compile(r"\b(what|which|who|how|many|much|percent(age)?|share|propor
                     r"please|can|you|across|between|and|vs|versus|compare|compared|comparison|to|from|with|wave|waves|"
                     r"survey|surveys|latest|recent|week|weeks|month|months|year|years|quarter|last|past|this|that|"
                     r"chart|graph|data|figure|figures|number|a|an|by|per|each|every|all|time|since|until|through|more|less|fewer|"
-                    r"than|any|it|they|their|them|we|our|us|about|there|at|or)\b", re.I)
+                    r"than|any|it|they|their|them|we|our|us|about|there|at|or|pooled|combined)\b", re.I)
 
 
 
@@ -68,7 +69,7 @@ def by_cut(text: str) -> str:
     for Ask's reader (api/ask_model.py read_pick): it read named groups as no survey question at all, and "by generation"
     rightly (21 Nov 2026). The groups themselves stay the rules' reading (read: cuts)."""
     dims = []
-    for pattern, dim, _ in CUT_VALUES:
+    for pattern, dim, *_ in CUT_VALUES + CUT_DIMS:   # "which age group (18-29, …)" too: the reader took D2, "What is your age group?"
         text, found = re.subn(pattern, " ", text, flags=re.I)
         if found:
             dims.append(dim)
@@ -87,6 +88,31 @@ def periods(text: str) -> tuple[list[dict], str]:
         found.append((m.start(), spec))
         spans.append(m.span())
     month_names = "|".join(sorted(MONTHS, key=len, reverse=True))
+    # a day ("16 Nov 2026", "Nov 16, 2026", "2026-11-16", "16 Nov"): the survey of that week, its wave dated that day or
+    # up to 6 days before; read as the whole month it gave "16 Nov 2026" three waves pooled (Gemini's benchmark, 22 Nov 2026)
+    day = (rf"(\d{{1,2}})\s+({month_names})\.?,?(?:\s+(\d{{4}}))?(?!\s*\d)|({month_names})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?"
+           rf"(?:\s+(\d{{4}}))?(?!\s*\d)|(\d{{4}})-(\d\d)-(\d\d)")
+    def on(g) -> date:
+        if g[6]:
+            return date(int(g[6]), int(g[7]), int(g[8]))
+        dd, mm, yy = (g[0], g[1], g[2]) if g[0] else (g[4], g[3], g[5])
+        year = int(yy) if yy else today.year if (MONTHS[mm], int(dd)) <= (today.month, today.day) else today.year - 1
+        return date(year, MONTHS[mm], int(dd))
+    today = date.today()
+    quoted = [q.span() for q in re.finditer(r"[“\"][^”\"]*[”\"]", text)]   # an answer's own name: “Target Circle Week (July 9-15, 2023)”
+    inside = lambda m: any(a <= m.start() < b for a, b in quoted)   # noqa: E731
+    for m in re.finditer(rf"\b(?:(?:from|between)\s+)?(?:{day})\s+(?:to|and|until|through|-)\s+(?:{day})", text):
+        if inside(m):
+            continue
+        g = m.groups()
+        take(m, {"from": str(on(g[:9]) - timedelta(days=6)), "to": str(on(g[9:]))})
+        text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
+    for m in re.finditer(rf"\b(?:{day})", text):
+        if (m[1] or m[4] or m[7]) and not inside(m) and not re.fullmatch(r"(?:4(?:th)?\s+jul(?:y)?|jul(?:y)?\.?\s+4(?:th)?)", m[0].strip()):
+            # a month with no day stays a month (below); "July 4th" is the holiday (45 bank questions read it as 4 July)
+            when = on(m.groups())
+            take(m, {"from": str(when - timedelta(days=6)), "to": str(when)})
+            text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
     for m in re.finditer(rf"\b(from|between)\s+({month_names})?\s*(\d{{4}})\s+(to|and|until|through|-)\s+({month_names})?\s*(\d{{4}})\b", text):
         start = f"{m[3]}-{MONTHS.get(m[2], 1):02d}-01"
         end_month = MONTHS.get(m[5], 12)
@@ -103,7 +129,6 @@ def periods(text: str) -> tuple[list[dict], str]:
         text = text[:m.start()] + " " * len(m[0]) + text[m.end():]
     # the calendar as the asker reads it today: "this quarter", "year to date", "October", "Q4". A question not asked then
     # says so (api/assistant.py) instead of answering from history (Codex and Gemini reviews, 20 Nov 2026)
-    today = date.today()
     quarter = (today.month + 2) // 3
     for m in re.finditer(r"\b(?:this|the current|current)\s+(month|quarter|year)\b(?!'s)|\b(year to date|ytd|so far this year)\b", text):
         take(m, {"month": {"month": (today.year, today.month)}, "quarter": {"quarter": (today.year, quarter)},
@@ -137,7 +162,7 @@ def periods(text: str) -> tuple[list[dict], str]:
         found.append((m.start(2), {"year": int(m[2])}))
     # "last 4 weeks", "previous 3 months", "past 8 weeks"; not "in the past two weeks"/"past 12 months", the survey's own
     # wording of what a question covers
-    for m in re.finditer(r"\b(?:last|previous|recent)\s+(\d+|one|two|three|four|five|six|eight|ten|twelve)\s+(waves?|weeks?|months?|years?|surveys?)\b"
+    for m in re.finditer(r"\b(?:last|previous|recent|all|(?:each of |all of |in )?the)\s+(\d+|one|two|three|four|five|six|eight|ten|twelve)\s+(waves?|weeks?|months?|years?|surveys?)\b"
                          r"|\bpast\s+(\d+)\s+(waves?|weeks?|surveys?)\b(?<!past 2 weeks)", text):
         unit = (m[2] or m[4]).rstrip("s").replace("survey", "wave")
         take(m, {"last": number(m[1] or m[3]), "unit": unit})
@@ -158,8 +183,12 @@ def periods(text: str) -> tuple[list[dict], str]:
         take(m, {"first": ORDINALS[m[1]]})
     for m in re.finditer(r"\b(previous|prior)\s+(wave|survey|week)\b|\bweek before\b", text):
         take(m, {"latest": 2})
+    dated = any(k in spec for _, spec in found for k in ("from", "month", "year", "quarter"))
     for m in re.finditer(r"\b(latest|most recent|this week'?s?|current|newest|this wave|last wave|last survey|right now|currently|"
                          r"at the moment|these days|nowadays)\b", text):   # "right now" kept the economy question below a match (20 Nov 2026)
+        if dated and m[1] in ("current", "currently", "right now", "at the moment", "these days", "nowadays"):
+            spans.append(m.span())   # "currently using" in the 16 Nov survey: that survey, not the latest one as well
+            continue
         take(m, {"latest": 1})
     for m in re.finditer(r"\b(all|every|each) (waves|surveys|weeks|time)\b|\ball wave\b|\ball[- ]time\b|\bover time\b|\bhistor(y|ically)\b", text):
         take(m, {"all": True})
@@ -181,10 +210,14 @@ def read(question: str) -> dict:
     when, rest = periods(text)
     grain = next((g for pattern, g in GRAINS if re.search(pattern, text)), None)
     kind = next((k for pattern, k in KINDS if re.search(pattern, text)), "share")
+    if any("from" in w for w in when):   # "the last 4 surveys (26 Oct to 16 Nov)": the dates said, once
+        when = [w for w in when if "last" not in w]
     if (kind == "share" and (grain or any("all" in w or "from" in w for w in when))) or (kind == "count" and {"all": True} in when):
         kind = "trend"   # "last 4 weeks" alone is one pooled figure; with a grain ("monthly") it is a series, and so is "how
                          # many" in all waves (one count over every wave before: "How many people bought Amazon prime in all
                          # Waves", fresh set, 15 Nov 2026)
+    if kind == "trend" and not grain and re.search(r"\b(pooled|combined|all together|in total)\b", text):
+        kind = "share"   # "the last 4 surveys pooled": one figure over them
     cuts: dict = {}
     for pattern, dim in CUT_DIMS:
         if re.search(pattern, text):
@@ -192,6 +225,12 @@ def read(question: str) -> dict:
     for pattern, dim, value in CUT_VALUES:
         if re.search(pattern, text) and cuts.get(dim) != "all":
             cuts.setdefault(dim, []).append(value)
+    named = [label for label, (pattern, _) in INCOME_GROUPS.items() if re.search(pattern, text)]
+    if re.search(r"\b(each|every|all|by|across) income groups?\b|\bincome groups? \(", text):
+        named = list(INCOME_GROUPS)   # "each income group (low, $50,000-$99,999, high)": the three
+    merge = {label: INCOME_GROUPS[label][1] for label in named}
+    if merge:
+        cuts["income_band"] = [band for bands in merge.values() for band in bands]
     top = re.search(r"\btop\s+(\d+|three|five|ten)\b", text)
     # waves are only ever compared within one country (config/countries.yml): "China" asks the China survey, no name the first
     country = next((code for code, words in COUNTRY_WORDS.items() if words.search(text)), next(iter(COUNTRY_WORDS)))
@@ -203,5 +242,5 @@ def read(question: str) -> dict:
     about = FILLER.sub(" ", re.sub(r"\b(20[12]\d|q[1-4]|\d+)\b", " ", about))
     about = re.sub(rf"\b({'|'.join(MONTHS)})\b", " ", about)
     return {"question": text, "country": country, "kind": kind, "when": when, "grain": grain, "cuts": cuts, "top": number(top[1]) if top else None,
-            "compare": len(when) >= 2 or bool(re.search(r"\b(compare|compared|versus|vs\.?|against)\b", text)),
+            "merge": merge, "compare": len(when) >= 2 or bool(re.search(r"\b(compare|compared|versus|vs\.?|against)\b", text)),
             "about": " ".join(re.findall(r"[a-z0-9$%'-]+", about))}

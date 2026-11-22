@@ -118,6 +118,8 @@ def dashboard_nets() -> dict[str, list[tuple[str, list[int]]]]:
             for tile in board.get("tiles") or []:
                 if tile.get("codes"):
                     nets.setdefault(str(tile["qcode"]).upper(), []).append((tile["label"], tile["codes"]))
+    for qcode, totals in (yaml.safe_load((CONFIG / "ask_nets.yml").read_text()) or {}).items():   # Ask's own ("use Amazon Prime")
+        nets.setdefault(str(qcode).upper(), []).extend((t["label"], t["codes"]) for t in totals)
     return nets
 
 

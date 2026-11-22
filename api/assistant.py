@@ -17,6 +17,7 @@ questions, never with a guess. Answers are kept per published version, person's 
 """
 from __future__ import annotations
 
+import difflib
 import functools
 import gzip
 import json
@@ -36,6 +37,7 @@ import yaml
 from api import ask_figures, ask_model, ask_reader
 from api.ask_index import FRAME_WORDS, LEARNED, STOP, Index, name_key, read_json, stems
 from etl import weighting
+from etl.serving import p_value
 from shared.data import payloads
 
 log = logging.getLogger("cip.assistant")
@@ -81,7 +83,7 @@ SMALL_BASE = 50                      # config/methodology.yml: a figure on fewer
 SPLIT_MAX = 6                        # a single choice of this many answers or fewer is one segmented bar (dataviz: ≤ 6 parts)
 HEATMAP_MIN = 4                      # groups and answers from which a cut is a heatmap: fewer read better as grouped bars
 FOLLOW_CUTS = (("generation", "generation"), ("income_band", "income"))   # the cuts a follow-up offers, in words ask_reader reads
-SHARES = [(1 / 10, "one in ten"), (1 / 5, "one in five"), (1 / 4, "one in four"), (1 / 3, "one in three"), (2 / 5, "two in five"),
+SHARES = [(1 / 10, "one in ten"), (1 / 8, "one in eight"), (1 / 7, "one in seven"), (1 / 6, "one in six"), (1 / 5, "one in five"), (1 / 4, "one in four"), (1 / 3, "one in three"), (2 / 5, "two in five"),
           (1 / 2, "half"), (3 / 5, "three in five"), (2 / 3, "two in three"), (3 / 4, "three in four"), (4 / 5, "four in five"),
           (9 / 10, "nine in ten")]   # the plain fractions a share is said as (say_share)
 SKIP = re.compile(r"^(none of (these|the above)|other( - please specify)?|prefer not to say|don['’]?t know|not sure)$", re.I)
@@ -222,6 +224,102 @@ def say_share(pct: float) -> str:
     if abs(pct - 100 * share) > 2.5:
         return fmt(pct)
     return f"{'' if abs(pct - 100 * share) < 0.5 else 'about '}{words}".capitalize() + f" ({fmt(pct)})"
+
+
+PREDICATE = re.compile(r"^(are|is|was|were|have|has|had|say|said|expect|expects|use|uses|used|using|buy|buys|bought|"
+                       r"buying|shop|shops|shopped|shopping|own|owns|plan|plans|planning|feel|feels|think|thinks|made|make|"
+                       r"purchased|purchase|eat|eating|prefer|prefers|went|go|visit|visited|subscribe|pay|paid|started|"
+                       r"\w+ed)\b", re.I)
+
+
+def subject_of(question: str) -> str | None:
+    """What the question asks people did, in its own words ("bought anything online in the past two weeks" from "In the
+    9 Nov survey, what share bought anything ONLINE in the past two weeks?"), for a lead an analyst can quote; None when
+    the question is not worded as "what share / how many … did something"."""
+    q = re.sub(r"\([^)]*\)", " ", question.strip().rstrip("?.! "))
+    q = re.sub(r"^(?:in|on|over|across|from|for)\b[^,]*,\s*", "", q, flags=re.I)
+    q = re.sub(r"^(?:what|which)\s+(?:share|percentage|percent|proportion)\s+(?:of\s+(?:people|respondents|us adults|adults|consumers|"
+               r"americans|shoppers)\s+)?(?:who\s+|that\s+)?|^(?:the\s+)?(?:share|percentage|percent|proportion)\s+(?:of\s+\w+\s+)?"
+               r"(?:who|that)\s+|^how many\s+(?:people|respondents|adults|consumers|americans|shoppers)\s+", "", q, flags=re.I)
+    q = re.sub(r"^(?:do|does|did)\s+(?:people|consumers|americans|shoppers|adults|us adults|respondents)\s+", "", q, flags=re.I)
+    q = re.sub(r"\s*,\s*(?:in each|for each|by|across|in every|for men|oldest|newest)\b.*$|\s+(?:in each|by|across) "
+               r"(?:income|generation|age|gender|region)\b.*$", "", q, flags=re.I)
+    q = re.sub(r"\s+(?:week by week|each week|every week|wave by wave|over time|in every survey(?: that asked it)?|"
+               r"in each of the .*? surveys|oldest first|newest first)\b.*$", "", q, flags=re.I)
+    q = re.sub(r"\b(currently|still|also|recently|actually|now)\s+", lambda m: m[0] if m[1].lower() == "currently" else "", q, flags=re.I)
+    q = " ".join(w.lower() if w.isupper() and len(w) > 1 and w not in ("US", "AI", "GLP-1") else w for w in q.split())
+    return q if q and PREDICATE.match(q.removeprefix("currently ")) and len(q.split()) <= 20 else None
+
+
+def in_words(question: str, fig: dict, named: list[int], family: str, condition: dict | None, everyone: bool = True) -> str | None:
+    """The lead in plain English for one figure, or the two sides of a scale, from the latest period: "About four in five
+    US adults (79.2%) bought anything online in the past two weeks (320 of 404, 9 Nov 2026)", ChatGPT's way of saying
+    it with the survey's own numbers (benchmark of 22 Nov 2026). None leaves the brief's lead."""
+    if len(fig["columns"]) != 1 or not named:
+        return None
+    period = fig["periods"][-1]
+    when = period["label"]
+    # unweighted figures: "adults surveyed", not "US adults are" (Pew; style guide of 22 Nov 2026). EC6: online shoppers only
+    who = {"CSI-US": "US adults surveyed", "CSI-CN": "Chinese adults surveyed"}.get(family, "respondents") if everyone else "those asked"
+    among = f"Among {condition['text']}, " if condition else ""
+    if len(named) == 2:   # "better or worse": the bigger side first
+        (hi, ph), (lo, pl) = sorted(((fig["answers"][a].split(" (")[0].lower(), fig["pct"][-1, 0, a]) for a in named), key=lambda x: -x[1])
+        if np.isnan(ph) or np.isnan(pl):
+            return None
+        base = int(fig["bases"][-1, 0, named[0]])
+        # two answers of one sample: their difference's own z (multinomial); "more said worse" only when it is real
+        p1, p2 = ph / 100, pl / 100
+        spread = math.sqrt(max(p1 + p2 - (p1 - p2) ** 2, 1e-9) / base)
+        sure = math.erfc(abs(p1 - p2) / spread / math.sqrt(2)) < 0.05
+        if sure:
+            return f"{among}{'more' if among else 'More'} said {hi} ({ph:.1f}%) than {lo} ({pl:.1f}%), of {base:,} asked, {when}."
+        return (f"{among}{'views' if among else 'Views'} are split: {ph:.1f}% said {hi} and {pl:.1f}% {lo}, a gap too small to call "
+                f"with {base:,} asked ({when}).")
+    a = named[0]
+    pct, people, base = fig["pct"][-1, 0, a], int(fig["people"][-1, 0, a]), int(fig["bases"][-1, 0, a])
+    subject = subject_of(question)
+    if np.isnan(pct) or not subject:
+        return None
+    share, words = min(SHARES, key=lambda s: abs(pct - 100 * s[0]))
+    lead = f"{'About ' if abs(pct - 100 * share) >= 0.5 else ''}{words}{' of' if (words == 'half' or not everyone) and not among else ''} {'' if among else who + ' '}({pct:.1f}%)" if abs(pct - 100 * share) <= 2.5 \
+        else f"{pct:.1f}% {'' if among else 'of ' + who}".rstrip()
+    lead = lead[0].lower() + lead[1:] if among else lead[0].upper() + lead[1:]
+    said = f"{among}{lead} {subject} ({people:,} of {base:,}, {when})."
+    if len(fig["periods"]) > 1 and not np.isnan(fig["pct"][0, 0, a]):
+        first, then = fig["periods"][0]["label"], fig["pct"][0, 0, a]
+        sure = ask_figures.significant(float(pct), base, float(then), int(fig["bases"][0, 0, a]))
+        said += (f" That is about the same as {first} ({then:.1f}%)." if not sure else
+                 f" That is {'up' if pct > then else 'down'} {abs(pct - then):.1f} points from {first} ({then:.1f}%), a significant change.")
+    return said
+
+
+def elsewhere(key: str, answer_label: str, index: Index, visible: set[int]) -> list[dict]:
+    """The same question in every other study, by its latest figure for the same answer (or the same answers summed, for
+    a total such as "Use Amazon Prime (own + household)"): what "How many people use Amazon Prime?" means with no survey
+    named. Studies are matched by wording (Index.alike) and must offer every one of those answers."""
+    parts = re.search(r"\((.+ \+ .+)\)$", answer_label)
+    parts = parts[1].split(" + ") if parts else [answer_label]
+    plain = lambda t: " ".join(re.findall(r"[a-z0-9]+", t.lower()))   # noqa: E731
+    wanted = {plain(p) for p in parts}
+    out = []
+    near = {h["key"] for h in index.find(index.docs[key]["text"], None, 12, visible) if h["match"] >= 0.5}   # reworded ("GLP-1 medication")
+    alike = lambda a, b: difflib.SequenceMatcher(None, a, b).ratio() >= 0.9   # noqa: E731  "an Amazon Prime membership" too
+    for other, doc in index.docs.items():
+        if other == key or visible.isdisjoint(doc["surveys"]) or not (other in near or index.alike(key, other)):
+            continue
+        counts = index.counts(other)
+        fig = ask_figures.compute(counts, {"kind": "share", "when": [{"latest": 1}], "grain": None, "cuts": {}}, visible)
+        if not fig["periods"]:
+            continue
+        picked = [i for i, a in enumerate(fig["answers"]) if any(alike(plain(a), w) for w in wanted)]
+        if len(picked) != len(wanted) or np.isnan(fig["pct"][0, 0, picked]).any():
+            continue
+        people, base = int(fig["people"][0, 0, picked].sum()), int(fig["bases"][0, 0, picked].max())
+        sid = fig["periods"][0]["waves"][-1]
+        out.append({"name": FAMILY.get(doc["family"], doc["family"].replace("_", " ").title()), "qcode": counts["sources"][sid][0],
+                    "text": f"{100 * people / base:.1f}% ({people:,} of {base:,}), {fig['periods'][0]['label']}",
+                    "link": f"/w/{sid}/questions/{counts['sources'][sid][0]}", "date": fig["periods"][0]["to"]})
+    return sorted(out, key=lambda o: o["date"], reverse=True)[:8]
 
 
 def ranked(fig: dict, period: int = -1) -> list[int]:
@@ -432,7 +530,7 @@ def brief(plan: dict, fig: dict, doc: dict, shown: list[int], named: bool = Fals
             left_out = sum(1 for c in range(len(columns)) if pct(p, c, main) is not None and fig["bases"][p, c, main] < SMALL_BASE)
             times = high / low if low else 0
             kind = {"income_band": "income", "age_band": "age", "census_region": "region", "urbanicity": "area"}.get(columns[0][0], columns[0][0])
-            verdict = (f"Little real difference by {kind}. " if tested == "not significant" else
+            verdict = (f"Highest among {top} ({fmt(high)}), though not significantly above {bottom} ({fmt(low)}). " if tested == "not significant" else
                        f"Highest among {top}, about {'twice' if times < 2.5 else 'three times' if times < 3.5 else f'{times:.0f} times'} "
                        f"the {bottom} figure. " if times >= 1.8 else f"Highest among {top}. ")
             takeaway = verdict + (f"{subject} runs from {fmt(low)} among {bottom} to {fmt(high)} among {top} {say_period(periods[p]['label'])}, "
@@ -588,6 +686,7 @@ def lacks_group(fig: dict, plan: dict) -> bool:
     if not plan["cuts"]:
         return False
     dimension, groups = next(iter(plan["cuts"].items()))
+    groups = list(plan["merge"]) if plan.get("merge") else groups   # named groups are columns of their own ("High income")
     available = {value for col, (cut, value) in enumerate(fig["columns"])
                  if cut == dimension and not np.isnan(fig["pct"][:, col]).all()}
     return not available or (groups != "all" and bool(set(groups) - available))
@@ -601,7 +700,8 @@ def add_net(question: str, fig: dict, counts: dict, nets: list[tuple[str, list[i
     Holiday dashboard shows it (21 Nov 2026)."""
     words = set(stems(question)) | ({"not"} if re.search(r"n't\b|\bnever\b", question.lower()) else set())
     for label, codes in sorted(nets, key=lambda net: -len(stems(net[0]))):
-        parts = [i for i, (_, code, _) in enumerate(counts["answers"]) if code in codes]
+        here = set(answers_given(fig))
+        parts = [i for i, (_, code, _) in enumerate(counts["answers"]) if code in codes and i in here]
         if not parts or not set(stems(label)) <= words:
             continue
         if len(parts) == 1:
@@ -617,6 +717,62 @@ def add_net(question: str, fig: dict, counts: dict, nets: list[tuple[str, list[i
         fig["answers"] = fig["answers"] + [f"{label} ({' + '.join(fig['answers'][i] for i in parts)})"]
         return len(fig["answers"]) - 1
     return None
+
+
+NONE_ANSWER = re.compile(r"^(none of (these|the above)|none|have not|haven't|did not|didn't|do not|don't)\b", re.I)
+SIDES = [("better", "worse"), ("more", "less"), ("increase", "decrease"), ("positive", "negative"), ("likely", "unlikely"),
+         ("agree", "disagree"), ("satisfied", "dissatisfied"), ("good", "bad")]
+
+
+def answers_given(fig: dict) -> list[int]:
+    """The answers with a figure in these periods: a question file joined across reused codes holds every code's labels
+    (CS2's has 1,996, Q22 and Q31 of other years among them), and a total over labels never offered is blank: GLP-1's
+    "Using a GLP-1 drug" summed code 1 of 41 other questions and drew an empty chart on staging (22 Nov 2026)."""
+    return [a for a in range(len(fig["answers"])) if not np.isnan(fig["pct"][:, :, a]).all()]
+
+
+def append_answer(fig: dict, label: str, people: np.ndarray, bases: np.ndarray, hidden: np.ndarray) -> int:
+    """One more answer in fig from its people and bases (a total of others), rounded as compute rounds; its place."""
+    pct = np.array([np.nan if off or not b else round(100 * n / b, 1) for n, b, off in zip(people.ravel(), bases.ravel(), hidden.ravel())]).reshape(people.shape)
+    fig["people"], fig["bases"], fig["pct"] = (np.concatenate([fig[k], new[:, :, None]], axis=2)
+                                               for k, new in (("people", people), ("bases", bases), ("pct", pct)))
+    fig["answers"] = fig["answers"] + [label]
+    return len(fig["answers"]) - 1
+
+
+def any_answer(question: str, fig: dict) -> int | None:
+    """"Bought anything online", "used any AI tool": everyone but those who chose the list's "None of these" ("Have not
+    used AI…"), as one more answer. A select-all list never adds up to it: 80.0% bought something online on 16 Nov 2026,
+    which no single answer says (the 20-question benchmark, 22 Nov 2026)."""
+    if not re.search(r"\b(any|anything|at least one|something)\b", question.lower()) or single_choice(fig):
+        return None
+    none = next((i for i in answers_given(fig) if NONE_ANSWER.match(fig["answers"][i])), None)
+    if none is None:
+        return None
+    hidden = np.isnan(fig["pct"][:, :, none])
+    return append_answer(fig, f"Any (everyone but “{fig['answers'][none]}”)", fig["bases"][:, :, none] - fig["people"][:, :, none],
+                         fig["bases"][:, :, none], hidden)
+
+
+def side_answers(question: str, fig: dict) -> list[int]:
+    """The sides of a scale the question names, each as one total: "better or worse" gives Better (Much + Somewhat) and
+    Worse; "eating less" gives Less (A lot + A little). A single choice only, so its people add up."""
+    if not single_choice(fig):
+        return []
+    words = set(re.findall(r"[a-z]+", question.lower()))
+    out = []
+    for pair in SIDES:
+        for side in pair:
+            other = pair[1] if side == pair[0] else pair[0]
+            parts = [i for i in answers_given(fig) if re.search(rf"\b{side}\b", fig["answers"][i].lower())
+                     and not re.search(rf"\b{other}\b", fig["answers"][i].lower())]
+            if side in words and len(parts) >= 2:
+                hidden = np.isnan(fig["pct"][:, :, parts]).any(axis=2)
+                out.append(append_answer(fig, f"{side.capitalize()} ({' + '.join(fig['answers'][i] for i in parts)})",
+                                         fig["people"][:, :, parts].sum(axis=2), fig["bases"][:, :, parts].max(axis=2), hidden))
+        if out:
+            return out
+    return out
 
 
 # how an analyst asks, not what about: "holiday shopping retailers list" lost the unsure reader's right pick for lacking
@@ -719,14 +875,13 @@ def topic_verdict(code: str, plan: dict, index: Index, visible: set[int]) -> dic
     (first_day, first), (last_day, last) = series[0], series[-1]
     change = round(last["pct"] - first["pct"], 1)
     sure = len(series) > 1 and ask_figures.significant(last["pct"], last["base"], first["pct"], first["base"])
-    word = "rising" if sure and change > 0 else "falling" if sure and change < 0 else "holding steady"
-    name = re.sub(r"\s*(Tracker|Databank|Survey Databank)$", "", board["title"]).strip()
     when, since = ask_figures.label_date(last_day), ask_figures.label_date(first_day)
-    moved = (f"up {change:.1f} points since {since}" if change > 0 else f"down {abs(change):.1f} points since {since}" if change < 0
-             else f"the same as on {since}") + (" (a significant change)" if sure else " (not a significant change)" if len(series) > 1 else "")
+    # the figure first, then the change in plain words: "holding steady" said nothing an analyst could quote (22 Nov 2026)
+    moved = ("" if len(series) < 2 else f" That is about the same as on {since} ({first['pct']:.1f}%)." if not sure else
+             f" That is {'up' if change > 0 else 'down'} {abs(change):.1f} points from {first['pct']:.1f}% on {since}, a significant change.")
     also = "; ".join(f"{fig['pct']:.1f}% {tile['say']}" for tile, fig in tiles[1:3])
-    headline = (f"{name}: “{head_tile['label']}” is {word}. {head['pct']:.1f}% {head_tile['say']} on {when} "
-                f"({head['n']:,} of {head['base']:,} respondents), {moved}." + (f" Also, {also}." if also else ""))
+    headline = (f"{head['pct']:.1f}% {head_tile['say']} ({head['n']:,} of {head['base']:,}, {when}).{moved}"
+                + (f" Also, {also}." if also else ""))
     docs = {d["qcode"].upper(): (k, d) for k, d in sorted(index.docs.items(), key=lambda kd: kd[1]["last"])
             if d["family"] == "CSI-US" and not visible.isdisjoint(d["surveys"])}
     link = lambda qcode: f"/w/{latest['wave']['survey_id']}/questions/{qcode}"   # noqa: E731
@@ -897,6 +1052,89 @@ def weigh(fig: dict, counts: dict, index: Index):
     return out
 
 
+# "among GLP-1 users, what share eat less?": a group defined by another question's answer. Three of the 20-question
+# benchmark's misses (22 Nov 2026); ChatGPT answered them by filtering the raw rows, which each wave's people.json holds
+AMONG = re.compile(r"\bamong\s+(?:(?:those|people|respondents|consumers|shoppers|adults|americans)\s+)?(?:who\s+|that\s+)?([^,?]+?)\s*,\s*", re.I)
+
+
+def among_condition(question: str, index: Index, visible: set[int]) -> dict | None:
+    """The group "among …" names, when it is another question's answer: its survey question (key), the answers that
+    make it (labels) and the question without the clause (main). None for a demographic group ("among high-income
+    respondents" is a cut, read by the rules) or a group no survey question names."""
+    m = AMONG.search(question)
+    if not m:
+        return None
+    said = m[1].strip()
+    reading = ask_reader.read(said)
+    if reading["cuts"] and not reading["about"].strip():
+        return None
+    period = " ".join(re.findall(r"\b(?:in|on|over|from)\s+the\s+[^,]*?\bsurveys?\b", question, re.I))
+    found = answer(f"{said} {period}".strip(), index, visible, True)
+    if found.get("mode") != "figures" or not found.get("sources"):
+        return None
+    key = found["sources"][0]["key"]
+    labels = [part for name in found["verify"]["focus"]
+              for part in (re.search(r"\((.+)\)$", name)[1].split(" + ") if re.search(r"\((.+ \+ .+)\)$", name) else [name])]
+    if not labels:   # "GLP-1 users" on a yes/no question: those who said Yes
+        labels = [a[2] for a in index.counts(key)["answers"] if a[2].lower() == "yes"]
+    if not labels:
+        return None
+    shown = re.sub(r"^among\s+|\s*,\s*$", "", m[0].strip(), flags=re.I)   # "people who expect the economy to get worse"
+    return {"text": shown, "key": key, "labels": labels, "main": (question[:m.start()] + question[m.end():]).strip()}
+
+
+def among_figures(fig: dict, counts: dict, condition: dict, index: Index) -> dict:
+    """fig counted again among the condition's respondents only, wave by wave from people.json (unweighted, as the
+    published figures are): one column, "Among …". A wave that did not ask both questions adds nothing."""
+    folder = index.root.parent / "waves"
+    asked = index.counts(condition["key"])["sources"]
+    n = np.zeros((len(fig["periods"]), 1, len(fig["answers"])))
+    b = np.zeros_like(n)
+    for p, period in enumerate(fig["periods"]):
+        for sid in period["waves"]:
+            path = folder / str(sid) / "people.json.gz"
+            weights = weights_of(path)
+            if weights is None or sid not in counts["sources"] or sid not in asked:
+                continue
+            people = json.loads(gzip.decompress(path.read_bytes()))
+            question = people["questions"].get(asked[sid][0], {"rows": [], "bits": {}})
+            inside = np.zeros(len(weights), bool)
+            for item_id, option_id, item_label, _, option_label in question["rows"]:
+                if option_label in condition["labels"] or f"{item_label}: {option_label}" in condition["labels"]:
+                    inside |= bit_mask(question["bits"].get(f"{item_id},{option_id}"), len(weights))
+            wn, wb = weighted_counts(people, np.ones(len(weights)), counts["sources"][sid][0], fig["answers"], [inside])
+            n[p, 0] += np.nan_to_num(wn[:, 0])
+            b[p, 0] += np.nan_to_num(wb[:, 0])
+    pct = np.where(b > 0, np.round(100 * n / np.where(b > 0, b, 1), 1), np.nan)
+    return {**fig, "columns": [["total", f"Among {condition['text']}"]], "people": n, "bases": b, "pct": pct}
+
+
+PEOPLE = {"Male": "men", "Female": "women", "GenZ": "Gen Z", "Millennial": "Millennials", "GenX": "Gen X", "Boomer": "Boomers"}
+
+
+def tested(fig: dict, answer: int) -> str | None:
+    """The answer to "is the difference significant?": the two groups (the two largest of one period) or the two periods
+    of one answer, their figures and people, and the portal's two-sided pooled z-test at 95% (etl/serving.py p_value)."""
+    if len(fig["periods"]) == 1 and len(fig["columns"]) >= 2:
+        sides = sorted(range(len(fig["columns"])), key=lambda c: -fig["bases"][0, c, answer])[:2]
+        named = [(fig["columns"][c][1], fig["pct"][0, c, answer], fig["people"][0, c, answer], fig["bases"][0, c, answer]) for c in sides]
+    elif len(fig["periods"]) == 2 and len(fig["columns"]) == 1:
+        named = [(fig["periods"][k]["label"], fig["pct"][k, 0, answer], fig["people"][k, 0, answer], fig["bases"][k, 0, answer]) for k in (0, 1)]
+    else:
+        return None
+    (g1, p1, x1, n1), (g2, p2, x2, n2) = named
+    if np.isnan(p1) or np.isnan(p2):
+        return None
+    p = p_value(float(x1), int(n1), float(x2), int(n2))
+    g1, g2 = (PEOPLE.get(g, g) for g in (g1, g2))
+    said = (f"{p1:.1f}% of {g1} ({int(x1)} of {int(n1)}) and {p2:.1f}% of {g2} ({int(x2)} of {int(n2)}) chose “{fig['answers'][answer]}”.")
+    if p >= 0.05:   # the conclusion first, then the figures, the test last (UK Analysis Function; Pew)
+        return (f"No clear difference between {g1} and {g2}: {said} A {abs(p1 - p2):.1f}-point gap could be chance in groups this size "
+                f"(p = {p:.3f}, not significant at 95%).")
+    (hi, lo) = (g1, g2) if p1 > p2 else (g2, g1)
+    return f"Yes, {hi} differ from {lo}: {said} The {abs(p1 - p2):.1f}-point gap is significant at 95% (p = {p:.3f})."
+
+
 POOL_WEEKS = 4   # two groups at once ("Gen Z women") are few in one wave of ~400: the Cross-tab screen's 4-week pool
 
 
@@ -1012,6 +1250,14 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     may differ, and the page asks again without quick to have it read (the Ask page shows the quick answer meanwhile).
     key: a follow-up's survey question (follow_ups), answered from it when this person may see it; else ignored."""
     question = index.correct_spelling(" ".join(str(question).split())[:500])   # "walmrt shoppers" is Walmart's
+    original = question
+    condition = among_condition(question, index, visible) if key is None else None
+    question = condition["main"] if condition else question
+    # "is the difference … statistically significant?": the figures without those words, then the portal's test on them
+    asks_test = bool(re.search(r"\bsignifican(t|tly|ce)\b", question, re.I))
+    if asks_test:
+        question = re.sub(r"\bis (?:the|there a) difference (?:in|of)\b|\b(?:statistically\s+)?significan(?:t|tly|ce)\b(?:\s+at\s+95%)?|\bat 95%",
+                          " ", question, flags=re.I)
     plan = ask_reader.read(question)
     text = plan["question"]
     if re.search(r"\b(?:census|survey|population)[ -]weighted\b|\b(?<!un[- ])(?<!not )weighted "
@@ -1323,13 +1569,20 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
             refig = ask_figures.compute(counts, replan, visible)
             if refig["periods"]:   # only when the re-read still finds waves
                 plan, fig = replan, refig
+    if condition:
+        fig = among_figures(fig, counts, condition, index)
     nets = index.nets.get(doc["qcode"].upper(), []) if doc["family"] == "CSI-US" else []
     if (net := add_net(question, fig, counts, nets)) is not None:
         named = [net]
+    elif (net := any_answer(question, fig)) is not None:
+        named = [net]
+    elif sides := side_answers(question, fig):
+        named = sides
     if len(plan["when"]) > 1 and fig["missing"]:
         return no_figure("At least one requested period has no comparable survey data. Try a single period or choose two available periods in Trends.", plan, suggestions)
     if plan["cuts"]:
         dimension, groups = next(iter(plan["cuts"].items()))
+        groups = list(plan["merge"]) if plan.get("merge") else groups
         if lacks_group(fig, plan):
             return no_figure("At least one requested demographic group is unavailable for this survey question. Try a different group or ask for all respondents.", plan, suggestions)
         if len(plan["when"]) > 1 and not fig["grain"] and groups != "all":
@@ -1355,8 +1608,10 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     sentences, shown = write(plan, fig, source_doc, named)
     sentences += [not_then] if not_then else []   # a note (NOTE_STARTS "Not asked")
     glance = {**brief(plan, fig, source_doc, shown, bool(named)), "next": follow_ups(plan, fig, doc, named)}
+    if asks_test and shown and (verdict := tested(fig, shown[0])):
+        glance["takeaway"] = verdict
     # one wave alone says nothing of direction: the change since the wave before, tested, as a chat would add (21 Nov 2026)
-    if len(fig["periods"]) == 1 and len(fig["periods"][0]["waves"]) == 1 and len(fig["columns"]) == 1 and shown and glance["takeaway"] \
+    if len(fig["periods"]) == 1 and len(fig["periods"][0]["waves"]) == 1 and len(fig["columns"]) == 1 and shown and glance["takeaway"] and not condition \
             and not glance.pop("net", False) \
             and (before := [d for d in fig["asked"] if d < fig["periods"][0]["from"]]):
         pair = ask_figures.compute(counts, {**plan, "kind": "share", "grain": None, "when": [
@@ -1396,6 +1651,19 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     everyone = len(fig["columns"]) > 1 or fig["columns"][0][0] == "total"
     lead = glance["takeaway"] if plan["kind"] != "count" and everyone else ""
     headline = lead or next((x for x in points if "%" in x), points[0] if points else "")
+    sizes = [weights_of(index.root.parent / "waves" / str(sid) / "people.json.gz") for sid in last["waves"]]
+    lead_on = named or [a for a in answers_given(fig) if fig["answers"][a].lower() == "yes"][:1]   # a yes/no question: its Yes
+    whole = all(w is not None for w in sizes) and lead_on and fig["bases"][-1, 0, lead_on[0]] >= 0.9 * sum(len(w) for w in sizes)
+    if not asks_test and (plain := in_words(condition["main"] if condition else original, fig, lead_on, doc["family"], condition, bool(whole))):
+        headline = plain
+    # no survey named and one figure: the same question in every other study, point by point (asked for 22 Nov 2026)
+    if not asked_plan["when"] and not condition and not plan["cuts"] and len(named) == 1 and len(fig["columns"]) == 1 and not glance.get("overview"):
+        every = [{"name": f"{FAMILY.get(doc['family'], doc['family'])} (this answer)", "qcode": source_code,
+                               "text": f"{fig['pct'][-1, 0, named[0]]:.1f}% ({int(fig['people'][-1, 0, named[0]]):,} of "
+                                       f"{int(fig['bases'][-1, 0, named[0]]):,}), {last['label']}", "link": f"/w/{source_wave}/questions/{source_code}"}] \
+            + elsewhere(doc["key"], fig["answers"][named[0]], index, visible)
+        if len(every) > 1:
+            glance["overview"] = every
     if last["to"] < str(date.fromisoformat(index.newest) - timedelta(days=CURRENT_DAYS)):   # an old question: said up front
         headline += f" Last asked {ask_figures.label_date(last['to'])}."   # ("worried about losing their job": 2020)
     main_base = int(fig["bases"][0, 0, shown[0]]) if shown and len(fig["periods"]) == 1 and len(fig["columns"]) == 1 else 0
@@ -1403,6 +1671,9 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
             "scope": {"country": plan["country"], "period": period, "waves": waves_used, "base": main_base},
             "source_line": sentences[0], "weighting": weighting, "understood": understood,
             "check": quick and understood in ("meaning", "reader") and not reader_sure and ask_model.ready(), "margin": margin,
+            # a best match Ask is not sure of: the page offers the next questions up front, as Power BI Copilot and ThoughtSpot
+            # do (the reader unsure in 37% of the Colab replay's wrong picks, 22 Nov 2026)
+            "unsure": understood in ("meaning", "rules", "name") or (understood == "reader" and not reader_sure),
             "verify": {"question": question, "key": doc["key"], "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],
                        "kind": plan["kind"], "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, "codes": doc.get("codes", [doc["qcode"]]),
             "chart": drawn, "table": table, "plan": plan, "mode": "figures", "no_source": False,

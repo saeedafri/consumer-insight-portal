@@ -199,6 +199,8 @@ function Reply({ question, answer, audience, checking, onAsk }: { question: stri
     catch (e) { setVerified(e instanceof Error ? e.message : String(e)); }
   };
   // verified and named: right 99%+ in the per-survey checks (etl/ask_quality.py); the rest are best matches to check
+  // unsure of its pick, and not about to be checked by the AI: the alternatives under the answer's first line, not the foot
+  const unsure = !!answer.unsure && !answer.no_source && !checking && answer.suggestions.length > 0;
   const how = { verified: "Verified answer", named: "Matched survey question",
                 learned: "Answered as a question settled earlier by the AI check, figures computed",
                 name: "Best match by name: other survey questions share this name (below)",
@@ -249,6 +251,9 @@ function Reply({ question, answer, audience, checking, onAsk }: { question: stri
           answer.understood === "topic" ? "From the topic's dashboard" : "Closest survey match"}
           {analyst && isAdmin && answer.verify && !checking && answer.understood !== "verified" && <>{" · "}
           {verified ? <span role="status">{verified}</span> : <button type="button" className="linklike" onClick={() => void saveVerified()}>Save as verified</button>}</>}</p>}
+        {unsure && <div className="ask-more ask-alt"><p className="small muted">Not what you meant?</p>
+          <div className="tagrow">{answer.suggestions.slice(0, 3).map(s => <button key={s.key} type="button" className="tag" title={s.text}
+            onClick={() => onAsk(question, s.key)}>{s.qcode}: {s.text.length > 70 ? s.text.slice(0, 69) + "…" : s.text}</button>)}</div></div>}
         {tiles.length > 0 && <Tiles tiles={tiles} />}
         {!!answer.overview?.length && <ul className="ask-points">{answer.overview.map(o => <li key={o.qcode}><b>{o.name}</b>: <Bold text={o.text} /> <Link to={o.link} className="small">{o.qcode} →</Link></li>)}</ul>}
         {analyst && !!answer.points?.length && <ul className="ask-points">{answer.points.map((p, i) => <li key={i}><Bold text={p} /></li>)}</ul>}
@@ -271,9 +276,9 @@ function Reply({ question, answer, audience, checking, onAsk }: { question: stri
       <div className="ask-next">{answer.next.map(n => <button key={n.question} type="button" onClick={() => onAsk(n.question, n.key)}>
         {n.question}<ArrowUpRight size={14} aria-hidden="true" /></button>)}</div>
     </div>}
-    {answer.suggestions.length > 0 && <div className="ask-more">
+    {answer.suggestions.length > (unsure ? 3 : 0) && <div className="ask-more">
       <p className="small muted">{answer.mode === "choose" ? "Choose one" : answer.no_source ? "Closest questions" : answer.suggestions[0]?.alt ? "Did you mean" : "Other questions that match"}</p>
-      <div className="tagrow">{answer.suggestions.map(s => <button key={s.key} type="button" className={s.alt ? "tag sig" : "tag"} title={s.text}
+      <div className="tagrow">{answer.suggestions.slice(unsure ? 3 : 0).map(s => <button key={s.key} type="button" className={s.alt ? "tag sig" : "tag"} title={s.text}
         onClick={() => onAsk(question, s.key)}>{s.qcode}: {s.text.length > 70 ? s.text.slice(0, 69) + "…" : s.text}</button>)}</div>
     </div>}
   </article>;

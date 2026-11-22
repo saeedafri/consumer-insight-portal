@@ -177,10 +177,15 @@ def compute(counts: dict, plan: dict, visible: set[int], versions: list[int] | N
         names = None
     if names is None:
         groups = [g for g in groups if g]
-    columns = cut_columns(counts, plan["cuts"])
+    columns = [(tuple(counts["cuts"][c]), [c]) for c in cut_columns(counts, plan["cuts"])]
+    if plan.get("merge"):   # named groups of values ("high income" = the three bands from $100,000): their people summed
+        dim = next(iter(plan["cuts"]))
+        columns = [col for col in (((dim, label), [c for c, (d, v) in enumerate(counts["cuts"]) if d == dim and v in values])
+                                   for label, values in plan["merge"].items()) if col[1]] or columns
     periods, people, bases, hidden = [], [], [], []
     for k, g in enumerate(groups):
-        rows = [pool(counts, [index_of[waves[i][0]] for i in g], c) for c in columns]
+        rows = [[sum(part) for part in zip(*(pool(counts, [index_of[waves[i][0]] for i in g], c) for c in cuts))] for _, cuts in columns]
+        rows = [(r[0], r[1], r[2] > 0) for r in rows]
         people.append([r[0] for r in rows])
         bases.append([r[1] for r in rows])
         hidden.append([r[2] for r in rows])
@@ -201,7 +206,7 @@ def compute(counts: dict, plan: dict, visible: set[int], versions: list[int] | N
         if kept.any():
             columns, n, b, pct = [c for c, k in zip(columns, kept) if k], n[:, kept], b[:, kept], pct[:, kept]
     answers = [f"{item}: {label}" if item and item != label else label for item, _, label in counts["answers"]]
-    return {"periods": periods, "grain": grain, "columns": [counts["cuts"][c] for c in columns], "answers": answers,
+    return {"periods": periods, "grain": grain, "columns": [list(cut) for cut, _ in columns], "answers": answers,
             "people": n, "bases": b, "pct": pct, "asked": [w[1] for w in waves],
             "versions": counts["versions"], "missing": [i for i, p in enumerate(picked) if not p]}
 

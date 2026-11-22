@@ -1,0 +1,12 @@
+# Answers Ask CIP counts as one when a question names the total, beside the dashboards' tiles (config/dashboards.yml).
+# Read by api/ask_index.py dashboard_nets; used by api/assistant.py add_net when every word of a label is in the question.
+# "How many people use Amazon Prime?" is own membership plus access through the household: 68.3% on 12 Oct 2026, where
+# Ask said "about half" from own membership alone (22 Nov 2026).
+BD5:
+  - {label: "Use Amazon Prime", codes: [1, 2]}
+  - {label: "Have Amazon Prime", codes: [1, 2]}
+  - {label: "Access to Amazon Prime", codes: [1, 2]}
+EC6:
+  - {label: "Use Amazon Prime", codes: [1, 2]}
+  - {label: "Have Amazon Prime", codes: [1, 2]}
+  - {label: "Access to Amazon Prime", codes: [1, 2]}
