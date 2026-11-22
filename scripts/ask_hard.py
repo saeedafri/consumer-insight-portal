@@ -22,7 +22,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 logging.disable(logging.WARNING)
-from api import ask_engine, ask_index, assistant  # noqa: E402
+from api import ask_engine, ask_index, ask_plan, assistant  # noqa: E402
 
 
 def said(found: dict) -> set[str]:
@@ -85,12 +85,31 @@ def check_engine(cases: list[dict], published: Path) -> None:
           f"median {times[len(times) // 2] * 1000:.1f} ms, slowest {times[-1] * 1000:.1f} ms (first reads include loading files)")
 
 
+def check_candidates(cases: list[dict], index, visible: set[int], ids: dict) -> None:
+    """How often the plan reader's candidates hold every survey question a plan needs, and in how many candidates."""
+    held, sizes, times = 0, [], []
+    plans = [c for c in cases if "plan" in c and codes(c["plan"])]
+    for case in plans:
+        started = time.perf_counter()
+        found = ask_plan.candidates(case["question"], index, visible, ids)
+        times.append(time.perf_counter() - started)
+        missing = codes(case["plan"]) - {c.upper() for h in found for c in [h["qcode"], *h.get("codes", [])]}   # EAT9 is GP1 asked earlier
+        held += not missing
+        sizes.append(len(found))
+        if missing:
+            print(case["id"], "missing", sorted(missing))
+    times.sort()
+    print(f"candidates hold every needed question for {held} of {len(plans)} plans; {sorted(sizes)[len(sizes) // 2]} candidates "
+          f"(median), median {times[len(times) // 2] * 1000:.0f} ms, slowest {times[-1] * 1000:.0f} ms")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--published", type=Path, default=ROOT / "data" / "published" / "current" / "api" / "v1")
     ap.add_argument("--cases", type=Path, default=ROOT / "scripts" / "ask_hard.yml")
     ap.add_argument("--out", type=Path)
     ap.add_argument("--engine", action="store_true", help="check the plan engine (api/ask_engine.py) on every plan instead of Ask")
+    ap.add_argument("--candidates", action="store_true", help="check that the plan reader's candidates (api/ask_plan.py) hold every question a plan needs")
     args = ap.parse_args()
     cases = yaml.safe_load(args.cases.read_text())
     if args.engine:
@@ -99,6 +118,8 @@ def main() -> None:
     index = ask_index.Index(args.published / "questions", waves)
     index.add_vectors()
     visible = {w["survey_id"] for w in waves}
+    if args.candidates:
+        return check_candidates(cases, index, visible, ask_engine.surveys(args.published))
     results, by_part, times = [], defaultdict(lambda: [0, 0]), []
     for case in cases:
         started = time.perf_counter()

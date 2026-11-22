@@ -24400,7 +24400,9 @@
 "aliases": [
 "Plans for Halloween spending",
 "Halloween budget intentions",
-"Spending for Halloween"
+"Spending for Halloween",
+"Planning to spend on Halloween",
+"Will spend on Halloween"
 ],
 "asks": [
 "What is your budget for Halloween this year?",
@@ -24410,7 +24412,9 @@
 "What will your Halloween spending include?",
 "How much do you expect to spend on Halloween items?",
 "What is your anticipated Halloween expenditure?",
-"How do you plan to celebrate Halloween financially?"
+"How do you plan to celebrate Halloween financially?",
+"What share plan to spend on Halloween?",
+"Are people planning to spend on Halloween this year?"
 ],
 "name": "Halloween spending plans",
 "text": "Will you spend on or celebrate Halloween this year? Think about all spending, including on candy, gifts, decorations, et",

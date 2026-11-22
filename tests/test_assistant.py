@@ -1243,3 +1243,27 @@ def test_a_weighted_change_is_tested_on_the_unweighted_shares():
            "pct": np.array([[[51.6]], [[51.4]]]), "tested": np.array([[[52.2]], [[51.7]]]),
            "people": np.array([[[208.5]], [[207.7]]]), "bases": np.array([[[404]], [[404]]])}
     assert "p = 0.887" in assistant.tested(fig, 0)   # the weighted people gave p = 1.000
+
+
+def test_a_holiday_question_keeps_its_weeks_before_the_holiday(tmp_path):
+    # "Will you spend on Halloween?" answers "I will spend…" before the holiday and "I spent…" after; checked against the
+    # newest week alone, the earlier weeks left every entry (282 weeks of 112 questions, found by the hard test set)
+    root = tmp_path / "questions" / "CSI-US" / "tracker"
+    root.mkdir(parents=True)
+    (root / "HW1.json.gz").write_bytes(gzip.compress(json.dumps(question_file(
+        [[100, DATES[0], 1], [101, DATES[1], 2]],
+        ["Will you spend on or celebrate Halloween this year?", "Did you spend on or celebrate Halloween this year?"],
+        [["", 1, "I will spend on Halloween this year"], ["", 2, "I won't spend"], ["", 3, "I spent on Halloween this year"], ["", 4, "I did not spend"]],
+        [["total", "Total"]], [(0, 0, 0, 240, 400), (0, 0, 1, 160, 400), (1, 0, 2, 200, 400), (1, 0, 3, 200, 400)])).encode()))
+    waves = [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping and Spending", "modules": []} for i, d in enumerate(DATES[:2])]
+    halloween = Index(tmp_path / "questions", waves).docs["CSI-US/tracker/HW1"]
+    assert halloween["surveys"] == [100, 101]
+
+
+def test_a_question_is_searched_part_by_part_in_the_weeks_it_names():
+    from api import ask_plan
+    assert ask_plan.parts("Among GLP-1 users on 16 Nov, what share bought footwear?")[1:] == ["GLP-1 users on 16 Nov", "what share bought footwear"]
+    ids = {"2026-11-02": 1, "2026-11-09": 2, "2026-11-16": 3}
+    assert ask_plan.weeks("What share bought footwear on 16 Nov 2026?", ids) == {3}
+    assert ask_plan.weeks("Footwear buyers over the last 2 waves", ids) == {2, 3}
+    assert ask_plan.weeks("Who buys footwear?", ids) is None

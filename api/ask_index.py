@@ -251,7 +251,9 @@ class Index:
                 for w, c, a in zip(data["w"], data["c"], data["a"]):
                     if c == 0 and w in waves_in:
                         by_wave.setdefault(data["waves"][w][0], set()).add(data["answers"][a][2])
-                parts[key] = {"key": key, "file": file, "labels": shown, "cuts": {c[0] for c in data["cuts"]}, "wave_answers": by_wave, "versions": versions, "qcode": qcode, "family": family,
+                worded = {w[0]: data["versions"][w[2] - 1] for w in data["waves"] if w[2] in versions}   # each wave's wording
+                parts[key] = {"key": key, "file": file, "labels": shown, "cuts": {c[0] for c in data["cuts"]}, "wave_answers": by_wave,
+                              "wave_wording": worded, "versions": versions, "qcode": qcode, "family": family,
                                   "study_type": study_type, "text": texts[-1], "first": asked[0]["wave_date"],
                                   "title": family.replace("_", " ").title(),
                                   "last": asked[-1]["wave_date"], "waves": len(asked),
@@ -274,12 +276,19 @@ class Index:
         for group in same.values():
             group.sort(key=lambda p: p["first"])
             last = max(group, key=lambda p: p["last"])
-            # a wave counts only when most of its answers are this question's own, as its newest wave asks it: older
-            # waves reused codes for other questions, and their files mix them (Q22 "economy" holding Easter answers)
-            own = {a.lower() for a in last["wave_answers"].get(last["surveys"][-1], ())}
+            # a wave counts only when most of its answers are this question's own, as the newest wave of the same wording
+            # asks it: older waves reused codes for other questions, and their files mix them (Q22 "economy" holding
+            # Easter answers). Of the same wording: before and after a holiday the answers change tense ("I will spend"
+            # / "I spent"), and against the newest wave alone 282 weeks of 112 questions were dropped from every entry
+            # (Halloween on 14 Sep 2026, Easter, Prime Day; found by the hard test set, 22 Nov 2026)
+            dated = sorted(((d, sid, p) for p in group for sid, d in zip(p["surveys"], p["dates"])), key=lambda x: x[:2])
+            own = {}
+            for _, sid, p in dated:   # oldest first: the newest wave of each wording ends up its own answers
+                if sid in p["wave_answers"]:
+                    own[p["wave_wording"].get(sid)] = {a.lower() for a in p["wave_answers"][sid]}
             for p in group:
                 p["keep"] = {sid for sid, answers in p["wave_answers"].items()
-                             if len({a.lower() for a in answers} & own) >= SAME_ANSWERS * max(len(answers), 1)}
+                             if len({a.lower() for a in answers} & own.get(p["wave_wording"].get(sid), set())) >= SAME_ANSWERS * max(len(answers), 1)}
             group = [p for p in group if p["keep"]]
             if not group:   # no wave with its own answers (no Total row): nothing to answer from
                 continue
@@ -300,6 +309,7 @@ class Index:
         # question's entry copied its newest part's, so both go
         for entry in [*parts.values(), *self.docs.values()]:
             entry.pop("wave_answers", None)
+            entry.pop("wave_wording", None)
         self.parts = parts
         self.vectors = self.verified_vectors = None   # keyword ranking until add_vectors has run (retrieve, verified_for)
         self.vector_keys, self.verified, self.unresolved = [], [], []
