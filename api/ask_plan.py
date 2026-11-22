@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import re
 
+from etl.serving import p_value
+
 from api import ask_figures, ask_reader
 from api.ask_reader import POOLED
 from api.ask_index import Index
@@ -72,7 +74,8 @@ COUNTS = re.compile(r"\b(breakdown|main reason|why are|how satisfied|preferred w
 CHAIN = re.compile(r"\bfunnel\b|→|->|\beach step\b", re.I)
 NUMBERS = {"three": 3, "five": 5, "ten": 10}
 DATES = re.compile(r"\b(?:on|in|the|from|to|for|of)?\s*\(?\d{1,2} (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*(?: \d{4})?\)?(?: (?:survey|wave|week))?\b"
-                   r"|\b(?:in |of |across |over )?(?:the )?(?:latest|last \w+|each of the last \w+|every week|each week)(?: (?:survey|wave|week)s?)?\b"
+                   r"|\b(?:in |of |across |over )?(?:the )?(?:latest|(?:each of )?the last (?:\d+|two|three|four|five|six|eight|ten|twelve)(?: (?:survey|wave|week)s?)"
+                   r"|last (?:survey|wave|week)|every week|each week)(?: (?:survey|wave|week)s?)?\b"
                    r"|\b(?:per|according to) the [^,?]+ survey\b", re.I)
 
 
@@ -142,10 +145,12 @@ def items(text: str, answers: list[str]) -> list[str]:
     words (by stem, the survey's frame words aside); none when two tie or nothing is shared."""
     from api.ask_index import stems
     said = set(stems(text)) - GENERIC
-    scored = sorted(((len(said & (set(stems(a)) - GENERIC)), a) for a in answers), reverse=True)
-    if not scored or scored[0][0] == 0 or (len(scored) > 1 and scored[1][0] == scored[0][0]):
+    did = re.search(r"\b(shoppers|users|buyers|purchasers)\b", text, re.I)   # "GenAI shoppers": those who have done it
+    scored = sorted(((len(said & (set(stems(a)) - GENERIC)), bool(did and re.match(r"(have|has|yes|purchased|bought|used)\b", a, re.I)), a)
+                     for a in answers), reverse=True)
+    if not scored or scored[0][0] == 0 or (len(scored) > 1 and scored[1][:2] == scored[0][:2]):
         return []
-    return [scored[0][1]]
+    return [scored[0][2]]
 
 
 def condition(text: str, index: Index, within: set[int], avoid: str | None = None) -> dict | None:
@@ -154,12 +159,12 @@ def condition(text: str, index: Index, within: set[int], avoid: str | None = Non
     from api import assistant   # the answer path reads this module's callers; imported here, never at load
     if group := demographic(text) if len(text.split()) <= 4 else None:
         return group
-    found = assistant.answer(text, index, within, True)
+    found = assistant.answer(text, index, within, True, combined=False)
     if found.get("mode") != "figures" or not found.get("sources"):
         return None
     key = found["sources"][0]["key"]
     if avoid and key == avoid:   # what is counted is never the group's own question ("Amazon's share among holiday purchasers")
-        found = next((assistant.answer(text, index, within, True, key=c["key"]) for c in candidates(text, index, within, {})
+        found = next((assistant.answer(text, index, within, True, key=c["key"], combined=False) for c in candidates(text, index, within, {})
                       if c["key"] != avoid and c.get("family") == index.docs[avoid]["family"]), None) or {}
         if found.get("mode") != "figures" or not found.get("sources"):
             return None
@@ -250,15 +255,18 @@ def fill(question: str, index: Index, visible: set[int], ids: dict[str, int]) ->
         steps = [s for s in re.split(r"→|->|\bthen\b|\bto\b", body) if len(s.split()) >= 2]
         plan.update(op="chain", steps=[condition(s, index, within) for s in steps])
         return plan if all(plan["steps"]) else None
-    among = ""
+    among = said_among = ""
     if (m := AMONG.search(rest)) and not re.search(r"\b(vs\.?|versus)\b", m[1] or m[3] or "") and not demographic(m[1] or m[3] or ""):
         among, rest = (m[1], m[2]) if m[1] else (m[3], m[4])
+        said_among = among   # as the person said it, for the answer ("people who expect the economy to get worse")
         among = re.sub(rf"^\s*(?:the\s+)?{GROUP_WORDS}\s+(?:who|that|with)\s+", "", among, flags=re.I)
         conds = [condition(g, index, within) for g in re.split(r"\bwho\b", among) if g.strip()]
         if not all(conds):
             return None
         plan["among"] = conds[0] if len(conds) == 1 else {"both": conds}
-    if m := MORE_LIKELY.search(rest):   # "Are GenAI shoppers more likely than other AI users to …": the group and the rest
+    # "Are GenAI shoppers more likely than other AI users to …": the group and the rest; never "women or men", a
+    # demographic split (it took "women" against everyone else, 38 bank questions, 22 Nov 2026)
+    if (m := MORE_LIKELY.search(rest)) and not demographic(m[1]):
         group = condition(m[1], index, within)
         if not group:
             return None
@@ -306,5 +314,146 @@ def fill(question: str, index: Index, visible: set[int], ids: dict[str, int]) ->
         return None
     if NOT_ALSO.search(rest):
         ask = {"not": ask}
-    plan["ask"] = {"q": ask["q"]} if plan.get("op") in ("top", "counts") and "q" in ask else ask
+    plan["ask"] = {"q": ask["q"], "key": ask.get("key")} if plan.get("op") in ("top", "counts") and "q" in ask else ask
+    plan["say"] = {"among": said_among.strip(" ,?.:"), "ask": NOT_ALSO.sub(" ", rest).strip(" ,?.:")}   # the person's own words, for the answer
     return plan
+
+
+
+# ---- the answer from a plan: what Ask shows for a combined question (step 5 of the Ask rebuild, 22 Nov 2026) ----
+# Who calls it: api/assistant.py answer, for a question that joins survey questions, groups, weeks or a test (COMBINED),
+# before its single-question path; None hands the question back to that path.
+COMBINED = re.compile(r"\bamong\b|\bof (?:the )?(?:people|those) who\b|\b(?:vs\.?|versus|compared with)\b|\bmore likely\b"
+                      r"|\bdid and did not\b|\bboth\b.+\band\b|\beither\b|\bcounting each\b|\bfunnel\b|→|->|\bsignifican"
+                      r"|\b\d{2}\s*[-–]\s*\d{2}\b|\b\d{2}\s*\+|\bunder[- ]\d{2}|\b(?:did|do|does) NOT\b", re.I)
+
+
+def described(cond: dict, index: Index) -> str:
+    """A condition in plain words: the survey question's name and the answers counted."""
+    if "both" in cond or "either" in cond:
+        return (" and " if "both" in cond else " or ").join(described(c, index) for c in cond.get("both") or cond["either"])
+    if "not" in cond:
+        return "not " + described(cond["not"], index)
+    if "between" in cond:
+        low, high = cond["between"]
+        return f"aged {low}+" if high >= 120 else f"aged {low}-{high}"
+    if isinstance(cond.get("q"), str):   # a demographic
+        return " / ".join(cond.get("is", []))
+    doc = index.docs.get(cond.get("key") or "", {})
+    name = doc.get("name") or doc.get("text", "")[:60]
+    return f"{name}: {'any' if cond.get('any') else ' or '.join(cond.get('is', []))}"
+
+
+SURVEY_AGE_BANDS = {(18, 29), (30, 44), (45, 60), (61, 120)}   # the age bands Ask's single-question path cuts by already
+
+
+def joins(cond: dict | None) -> bool:
+    return bool(cond) and any(k in cond for k in ("both", "either", "not"))
+
+
+def needs_plan(plan: dict) -> bool:
+    """Whether a plan does what Ask's single-question path cannot: both / either / not, a funnel, groups defined by
+    another question's answers or by ages the survey does not cut by, a group across several weeks or of two answers,
+    or a change tested between two weeks. Otherwise that path answers, in its own words: sent here as well, by gender,
+    standard age bands and named income groups, the 6,000-question bank lost 257 right answers (22 Nov 2026)."""
+    groups = list(((plan.get("by") or {}).get("groups") or {}).values())
+    return (plan.get("op") == "chain" or joins(plan.get("ask")) or joins(plan.get("among"))
+            or any(isinstance(g.get("q"), dict) or joins(g) for g in groups)
+            or any(g.get("q") == "D2" and tuple(g["between"]) not in SURVEY_AGE_BANDS for g in groups)
+            or (bool(plan.get("among")) and len(plan["waves"]) > 1)
+            or (bool(plan.get("test")) and not groups and len(plan["waves"]) == 2))
+
+
+def answer(question: str, index: Index, visible: set[int], weighted: bool = False) -> dict | None:
+    """Ask's answer to a combined question from its plan and the plan engine's figures, or None to answer it as before."""
+    from api import ask_engine, ask_figures as figures, assistant
+    if not COMBINED.search(question):
+        return None
+    published = index.root.parent
+    ids = {w["wave_date"]: sid for sid, w in index.waves.items()   # the US weekly tracker's weeks this person may see
+           if sid in visible and w.get("country", "US") == "US" and w.get("study_type") == "tracker"}
+    if not ids:
+        return None
+    plan = fill(question, index, visible, ids)
+    if not plan or not needs_plan(plan):
+        return None
+    if weighted:
+        plan["weighted"] = True   # Census weights per respondent (each wave's people.json), as the single-question path
+    rows = ask_engine.run(plan, published, ids) if plan else []
+    shown = [r for r in rows if r.get("pct") is not None]
+    if not shown or any(r.get("group") and not r["base"] for r in rows if r.get("when") == shown[-1]["when"]):
+        return None   # a group with nobody in it: the plan misread a group, so the single-question path answers
+    when = lambda r: figures.label_date(r["when"]) if r["when"] != "pooled" else "pooled"   # noqa: E731
+    say = plan.get("say", {})
+    subject = assistant.subject_of(say.get("ask", "")) or described(plan.get("ask", {}), index)
+    among = f"Among {say['among']}, " if say.get("among") else ""
+    op = plan.get("op", "share")
+    change = next((r for r in rows if r.get("label") == "change"), None)
+    pct = lambda r: f"{r['pct']:.1f}%"   # noqa: E731
+    count = lambda r: f"{r['n']:,} of {r['base']:,}"   # noqa: E731
+    if op == "chain":
+        headline = " → ".join(f"{r['label']} {pct(r)} ({count(r)})" for r in shown) + f", {when(shown[-1])}."
+    elif op in ("top", "counts"):
+        headline = (f"{among}top {len(shown)}" if op == "top" else f"{among}of {shown[0]['base']:,} asked").strip()
+        headline = headline[0].upper() + headline[1:] + f", {when(shown[0])}: " + ", ".join(f"{r['label']} {pct(r)}" for r in shown) + "."
+    elif "by" in plan:
+        latest = [r for r in shown if r["when"] == shown[-1]["when"]]
+        headline = f"{among}{subject}, {when(latest[0])}: " + "; ".join(f"{r.get('group')} {pct(r)} ({count(r)})" for r in latest) + "."
+        if len(latest) == 2:
+            (a, b) = latest
+            p = p_value(a["n"], a["base"], b["n"], b["base"]) if a["base"] and b["base"] else 1.0
+            gap = abs(a["pct"] - b["pct"])
+            headline += (f" The {gap:.1f}-point gap is significant at 95% (p = {p:.3f})." if p < 0.05 else
+                         f" The {gap:.1f}-point gap could be chance (p = {p:.3f}).")
+    elif len(shown) > 1:
+        series = ", ".join(f"{pct(r)} ({when(r)})" for r in shown)
+        headline = f"{among}{subject}: {series}."
+        if change:
+            headline += (f" A change of {change['points']:+.1f} points, {'significant at 95%' if change['p'] < 0.05 else 'which could be chance'} (p = {change['p']:.3f}).")
+    else:
+        r = shown[0]
+        headline = f"{among}{pct(r)} {subject} ({count(r)}, {when(r)})."
+        headline = headline[0].upper() + headline[1:]
+    headline = headline[0].upper() + headline[1:]
+    groups = sorted({r.get("group") for r in shown if r.get("group")}, key=lambda g: [r.get("group") for r in shown].index(g))
+    weeks_seen = list(dict.fromkeys(r["when"] for r in shown))
+    if groups:
+        head = ["Group", *[when({"when": w}) for w in weeks_seen]]
+        table_rows = [[g, *[next((r["pct"] for r in shown if r.get("group") == g and r["when"] == w), None) for w in weeks_seen]] for g in groups]
+        bases = [[next((r["base"] for r in shown if r.get("group") == g and r["when"] == w), None) for w in weeks_seen] for g in groups]
+    else:
+        labels = list(dict.fromkeys(r["label"] for r in shown))
+        head = ["Answer", *[when({"when": w}) for w in weeks_seen]]
+        table_rows = [[subject if lab == "share" else lab, *[next((r["pct"] for r in shown if r["label"] == lab and r["when"] == w), None) for w in weeks_seen]] for lab in labels]
+        bases = [[next((r["base"] for r in shown if r["label"] == lab and r["when"] == w), None) for w in weeks_seen] for lab in labels]
+    chart = None
+    if len(table_rows) > 1 or len(weeks_seen) > 1:
+        line = len(weeks_seen) > 2 and len(table_rows) <= 5
+        chart = {"type": "line" if line else "bar", "unit": "%",
+                 "categories": head[1:] if line else [str(r[0]) for r in table_rows],
+                 "series": [{"name": str(r[0]), "data": r[1:]} for r in table_rows] if line else
+                           [{"name": w, "data": [r[i + 1] for r in table_rows]} for i, w in enumerate(head[1:])]}
+    keys = []
+    for cond in [plan.get("ask"), plan.get("among"), *(plan.get("steps") or []), *((plan.get("by") or {}).get("groups") or {}).values()]:
+        stack = [cond] if cond else []
+        while stack:
+            c = stack.pop()
+            stack += c.get("both", []) + c.get("either", []) + ([c["not"]] if "not" in c else [])
+            if c.get("key") and c["key"] not in keys:
+                keys.append(c["key"])
+    last = max(ids[w] for w in plan["waves"])
+    sources = [{"id": f"S{i + 1}", "key": k, "survey_id": last, "wave_date": max(plan["waves"]), "qcode": index.docs[k]["qcode"],
+                "question": index.docs[k]["text"], "name": index.docs[k].get("name", ""), "family": index.docs[k]["family"],
+                "waves": len(plan["waves"]), "link": f"/w/{last}/questions/{index.docs[k]['qcode']}"} for i, k in enumerate(keys) if k in index.docs]
+    read_as = [{"label": "Counted", "value": described(plan["ask"], index)}] if plan.get("ask") else []
+    read_as += [{"label": "Among", "value": described(plan["among"], index)}] if plan.get("among") else []
+    read_as += [{"label": "Split by", "value": " / ".join(plan["by"]["groups"]) if "groups" in plan["by"] else plan["by"]["q"]}] if plan.get("by") else []
+    read_as += [{"label": "Steps", "value": " → ".join(described(c, index) for c in plan["steps"])}] if plan.get("steps") else []
+    read_as += [{"label": "Weeks", "value": ", ".join(figures.label_date(w) for w in plan["waves"]) + (" pooled" if plan.get("per") == "pooled" else "")}]
+    notes = ["Worked out from each week's respondents: every figure is a share of those asked the question, in the group named."]
+    return {"answer": headline, "headline": headline, "mode": "figures", "no_source": False, "chart": chart,
+            "table": {"head": head, "rows": table_rows, "bases": [b[-1] or 0 for b in bases], "cell_bases": bases},
+            "sources": sources, "suggestions": [], "notes": notes, "understood": "plan", "read_as": read_as, "plan": plan,
+            "source_line": f"From {', '.join(s['qcode'] for s in sources)} ({'; '.join(s['question'][:80] for s in sources)}).",
+            "scope": {"country": "US", "period": ", ".join(figures.label_date(w) for w in plan["waves"][:3]) + ("…" if len(plan["waves"]) > 3 else ""),
+                      "waves": len(plan["waves"]), "base": max((r["base"] for r in shown), default=0)}}

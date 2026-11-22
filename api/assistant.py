@@ -34,7 +34,7 @@ from datetime import date, timedelta
 import numpy as np
 import yaml
 
-from api import ask_figures, ask_model, ask_reader
+from api import ask_figures, ask_model, ask_plan, ask_reader
 from api.ask_engine import bit_mask, question_in
 from api.ask_index import FRAME_WORDS, LEARNED, STOP, Index, name_key, read_json, stems
 from etl import weighting
@@ -1429,7 +1429,8 @@ def no_figure(message: str, plan: dict, suggestions=()) -> dict:
             "plan": plan, "mode": "none", "no_source": True}
 
 
-def answer(question: str, index: Index, visible: set[int], quick: bool = False, key: str | None = None, weighted: bool = False) -> dict:
+def answer(question: str, index: Index, visible: set[int], quick: bool = False, key: str | None = None, weighted: bool = False,
+           combined: bool = True) -> dict:
     """{answer, chart, table, sources, suggestions, plan, mode, check, tiles, takeaway, next}: mode "figures" when
     answered, "none" when nothing in the surveys matches (then suggestions lists the closest questions, if any). quick:
     the nearest survey question by meaning and the rules, no model (~100 ms); check is then true when the model's reading
@@ -1437,6 +1438,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     key: a follow-up's survey question (follow_ups), answered from it when this person may see it; else ignored."""
     question = index.correct_spelling(" ".join(str(question).split())[:500])   # "walmrt shoppers" is Walmart's
     original = question
+    # a question joining survey questions, groups, weeks or a test: its plan, run on each week's respondents
+    # (api/ask_plan.py, api/ask_engine.py); its parts are answered here as before (combined=False), and a question the
+    # plan cannot place goes on below. Held-out questions right 20 of 29 this way, 14 before (22 Nov 2026)
+    if combined and key is None and (planned := ask_plan.answer(question, index, visible, weighted)):
+        return planned
     condition = among_condition(question, index, visible) if key is None else None
     # "how has spending on apparel changed" among GLP-1 users is GP9 with its group as context, not the general apparel
     # spending question AP9; "which 3 retailers" among holiday starters is XM2 alone (22 Nov 2026). Counted among the group only

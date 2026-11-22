@@ -49,3 +49,14 @@ def test_the_engine_answers_plans_that_join_questions(tmp_path):
     assert [(r["n"], r["base"]) for r in pooled] == [(4, 8)]
     change = ask_engine.run({"waves": ["2026-11-09", "2026-11-16"], "test": True, "ask": {"q": "XM1", "is": ["Yes"]}}, tmp_path, ids)[-1]
     assert change["points"] == -50.0 and 0 < change["p"] < 1
+
+
+def test_a_wave_published_before_weights_is_sized_from_its_answers(tmp_path):
+    wave(tmp_path, 1, [0, 1, 3])
+    path = tmp_path / "waves" / "1" / "people.json.gz"
+    people = json.loads(gzip.decompress(path.read_bytes()))
+    del people["weights"]   # an older publication: no weights stored (the local preview's data, 22 Nov 2026)
+    path.write_bytes(gzip.compress(json.dumps(people).encode()))
+    ask_engine.people_of.cache_clear()
+    assert ask_engine.size_of(people) == 5
+    assert [(r["n"], r["base"]) for r in ask_engine.run({"waves": ["d"], "ask": {"q": "D28", "any": True}}, tmp_path, {"d": 1})] == [(3, 5)]

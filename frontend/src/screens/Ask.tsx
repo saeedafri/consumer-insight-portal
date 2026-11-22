@@ -207,7 +207,8 @@ function Reply({ question, answer, audience, checking, onAsk }: { question: stri
                 model: "Best match, understood by AI: check the question below", reader: "Best match, read by Ask's own model: check the question below",
                 meaning: "Best match by meaning: check the question below",
                 rules: "Best match by words: check the question below",
-                topic: "From the topic's dashboard: its headline figure's trend, then its key figures" }[answer.understood ?? ""];
+                topic: "From the topic's dashboard: its headline figure's trend, then its key figures",
+                plan: "Worked out from each week's respondents, as read below" }[answer.understood ?? ""];
   const drawn = useRef<Chart | null>(null);
   const file = `ask-${(source?.qcode ?? "answer").toLowerCase()}`;
   const weightedAnswer = answer.weighting === "weighted";
@@ -248,9 +249,12 @@ function Reply({ question, answer, audience, checking, onAsk }: { question: stri
         </p>}
         {(how || checking) && <p className="small muted ask-how">{checking ? "Checking the survey match…" : analyst ? how :
           answer.understood === "verified" ? "Verified survey match" : answer.understood === "named" ? "Matched survey question" :
-          answer.understood === "topic" ? "From the topic's dashboard" : "Closest survey match"}
+          answer.understood === "topic" ? "From the topic's dashboard" : answer.understood === "plan" ? "Worked out from the respondents" : "Closest survey match"}
           {analyst && isAdmin && answer.verify && !checking && answer.understood !== "verified" && <>{" · "}
           {verified ? <span role="status">{verified}</span> : <button type="button" className="linklike" onClick={() => void saveVerified()}>Save as verified</button>}</>}</p>}
+        {!!answer.read_as?.length && <div className="ask-more ask-alt"><p className="small muted">Read as</p>
+          <div className="tagrow">{answer.read_as.map(r => <span key={r.label} className="tag" title={r.value}>
+            {r.label}: {r.value.length > 70 ? r.value.slice(0, 69) + "…" : r.value}</span>)}</div></div>}
         {unsure && <div className="ask-more ask-alt"><p className="small muted">Not what you meant?</p>
           <div className="tagrow">{answer.suggestions.slice(0, 3).map(s => <button key={s.key} type="button" className="tag" title={s.text}
             onClick={() => onAsk(question, s.key)}>{s.qcode}: {s.text.length > 70 ? s.text.slice(0, 69) + "…" : s.text}</button>)}</div></div>}

@@ -263,6 +263,7 @@ export interface Answer { answer: string; no_source: boolean; mode: "figures" | 
                           table: { head: string[]; rows: (string | number | null)[][]; bases: number[]; cell_bases?: (number | null)[][] } | null;
                           sources: { id: string; key: string; survey_id: number; wave_date: string; qcode: string; question: string; name?: string; family: string; waves: number; link: string }[];
                           suggestions: { qcode: string; text: string; family: string; key: string; alt?: boolean }[];
+                          read_as?: { label: string; value: string }[];   // a combined question's plan in words (api/ask_plan.py answer)
                           understood?: string; unsure?: boolean; check?: boolean; changed?: string; verify?: { question: string; key: string; code: string; family: string; focus: string[]; kind: string; cut: string; period: string };
                           tiles?: AskTile[]; takeaway?: string; next?: { question: string; key: string }[];
                           corrected?: string;   // the question as answered, its spelling put right (api/assistant.py ask)

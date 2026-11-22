@@ -55,6 +55,15 @@ def people_of(path: Path) -> dict:
     return json.loads(gzip.decompress(path.read_bytes()))
 
 
+def size_of(people: dict) -> int:
+    """Respondents in a wave: its weights' count, or, in a publication before weights were stored (21 Nov 2026), the
+    highest seat any answer's bitset reaches (as api/assistant.py weights_of)."""
+    if "weights" in people:
+        return len(people["weights"])
+    return max((int(h, 16).bit_length() for h in [*(h for values in people["cuts"].values() for h in values.values()),
+                                                   *(h for q in people["questions"].values() for h in q["bits"].values())]), default=0)
+
+
 def starts(label: str, wanted: list[str]) -> bool:
     return any(clean(label).lower().startswith(clean(w).lower()) for w in wanted)
 
@@ -124,7 +133,8 @@ def run(plan: dict, published: Path, ids: dict[str, int] | None = None) -> list[
     op = plan.get("op", "share")
     out = []
     for when, group_dates in buckets:
-        loaded = [(ids[d], people_of(published / "waves" / str(ids[d]) / "people.json.gz")) for d in group_dates]
+        paths = {ids[d]: published / "waves" / str(ids[d]) / "people.json.gz" for d in group_dates}
+        loaded = [(sid, people_of(path)) for sid, path in paths.items()]
         groups: list = [(None, None)]
         if "by" in plan:
             by = plan["by"]
@@ -133,8 +143,12 @@ def run(plan: dict, published: Path, ids: dict[str, int] | None = None) -> list[
         for name, group_cond in groups:
             totals: dict = {}
             for sid, people in loaded:
-                size = len(people["weights"])
-                weight = np.asarray(people["weights"], float) if plan.get("weighted") else np.ones(size)
+                size = size_of(people)
+                if plan.get("weighted"):   # stored weights, or raked from the file's own cuts (an older publication)
+                    from api.assistant import weights_of   # imported here: the answer path imports this module
+                    weight = np.asarray(people["weights"], float) if "weights" in people else weights_of(paths[sid])
+                else:
+                    weight = np.ones(size)
                 among = np.ones(size, bool)
                 for cond in (plan.get("among"), group_cond):
                     if cond:
