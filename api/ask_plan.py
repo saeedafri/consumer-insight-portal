@@ -145,7 +145,8 @@ def items(text: str, answers: list[str]) -> list[str]:
     words (by stem, the survey's frame words aside); none when two tie or nothing is shared."""
     from api.ask_index import stems
     said = set(stems(text)) - GENERIC
-    did = re.search(r"\b(shoppers|users|buyers|purchasers)\b", text, re.I)   # "GenAI shoppers": those who have done it
+    # "GenAI shoppers", a funnel's "GenAI shopping": those who have done it (the step read as anyone asked, 100%, on staging)
+    did = re.search(r"\b(shoppers|users|buyers|purchasers|shopping|buying|using|purchasing)\b", text, re.I)
     scored = sorted(((len(said & (set(stems(a)) - GENERIC)), bool(did and re.match(r"(have|has|yes|purchased|bought|used)\b", a, re.I)), a)
                      for a in answers), reverse=True)
     if not scored or scored[0][0] == 0 or (len(scored) > 1 and scored[1][:2] == scored[0][:2]):
@@ -253,8 +254,8 @@ def fill(question: str, index: Index, visible: set[int], ids: dict[str, int]) ->
     if CHAIN.search(rest):
         body = re.split(r"\bfunnel from\b|:", rest, maxsplit=1)[-1]
         steps = [s for s in re.split(r"→|->|\bthen\b|\bto\b", body) if len(s.split()) >= 2]
-        plan.update(op="chain", steps=[condition(s, index, within) for s in steps])
-        return plan if all(plan["steps"]) else None
+        plan.update(op="chain", steps=[c and {**c, "say": " ".join(s.split()).strip(" ,.?")} for s in steps for c in [condition(s, index, within)]])
+        return plan if all(plan["steps"]) else None   # each step named in the person's words ("GenAI shopping"), not "step 2"
     among = said_among = ""
     if (m := AMONG.search(rest)) and not re.search(r"\b(vs\.?|versus)\b", m[1] or m[3] or "") and not demographic(m[1] or m[3] or ""):
         among, rest = (m[1], m[2]) if m[1] else (m[3], m[4])
