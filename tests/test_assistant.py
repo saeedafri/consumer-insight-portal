@@ -1044,7 +1044,7 @@ def test_two_kinds_of_group_are_read_from_the_cross_tab_files(index, tmp_path):
     (tmp_path / "waves" / "107" / "cuts").mkdir(parents=True)
     (tmp_path / "waves" / "107" / "cuts" / "XQ1.json.gz").write_bytes(gzip.compress(json.dumps({"answers": answers, "counts": counts}).encode()))
     found = assistant.answer("What share of Gen Z women bought from Amazon?", index, EVERYONE)
-    assert found["headline"] == "75.0% of GenZ Female respondents said Amazon on 26 Oct 2026 (45 of 60)."
+    assert found["headline"] == "75.0% of Gen Z women said Amazon on 26 Oct 2026 (45 of 60)."
     both = assistant.answer("Amazon by generation and gender", index, EVERYONE)
     assert both["table"]["head"] == ["Answer", "GenZ · Female", "GenZ · Male"] and both["table"]["rows"] == [["Amazon", 75.0, 25.0]]
 
@@ -1072,9 +1072,9 @@ def test_how_an_analyst_asks_is_not_the_subject(index):
 
 def test_high_and_low_income_are_income_groups():
     plan = ask_reader.read("Thanksgiving spending for high income shoppers")
-    assert plan["cuts"] == {"income_band": ["$100,000 - $149,999", "$150,000 - $199,999", "$200,000 or greater"]}
+    assert plan["cuts"] == {"income_band": "all"} and plan["merge"] == {"High income ($100,000 or more)": (100_000, 10**9)}
     assert "income" not in plan["about"] and "high" not in plan["about"]
-    assert ask_reader.read("low-income grocery spending")["cuts"] == {"income_band": ["under $25,000", "$25,000 - $49,999"]}
+    assert ask_reader.read("low-income grocery spending")["merge"] == {"Low income (under $50,000)": (0, 50_000)}
 
 
 def test_last_month_on_a_question_not_asked_then_shows_its_latest_figures_said_so(index):
@@ -1099,7 +1099,9 @@ def test_a_day_is_its_survey_week_and_a_range_keeps_every_month_between():
 
 def test_named_income_groups_are_merged_and_survey_counts_are_periods():
     plan = ask_reader.read("Walmart food shoppers in each income group (low, $50,000-$99,999, high)")
-    assert list(plan["merge"]) == ["Low income (under $50,000)", "Middle income ($50,000-$99,999)", "High income ($100,000 or more)"]
+    assert plan["merge"] == {"Low income (under $50,000)": (0, 50_000), "Middle income ($50,000-$99,999)": (50_000, 100_000),
+                             "High income ($100,000 or more)": (100_000, 10**9)}   # dollar ranges: any wave's bands fit
+    assert [ask_figures.income_floor(b) for b in ("under $25,000", "$100,000-$124,999", "$200,000+", "prefer not to say")] == [0, 100_000, 200_000, None]
     assert plan["about"] == "walmart food"
     assert ask_reader.read("Walmart in each of the 10 surveys, oldest first")["when"] == [{"last": 10, "unit": "wave"}]
     assert ask_reader.read("Amazon in the last 4 surveys pooled")["kind"] == "share"
@@ -1181,3 +1183,22 @@ def test_among_reads_a_select_all_answer_from_its_item(index, tmp_path):
     fig = ask_figures.compute(counts, ask_reader.read("Amazon in the latest wave"), EVERYONE)
     out = assistant.among_figures(fig, counts, {"text": "Walmart shoppers", "key": "CSI-US/tracker/XQ1", "labels": ["Walmart"]}, index)
     assert out["pct"][0, 0, 0] == 50.0   # Amazon among the 2 Walmart shoppers; matched by item it was nobody (22 Nov 2026)
+
+
+def test_a_respondent_file_question_is_found_in_any_case():
+    people = {"questions": {"q5": {"rows": [], "bits": {}}}}
+    assert assistant.question_in(people, "Q5") is people["questions"]["q5"]   # weighted answers fell back on staging
+
+
+def test_a_pick_one_of_two_exercise_is_never_an_answer_and_two_groups_read_as_people():
+    assert assistant.best_of_pairs({"labels": ["Inflation worries me: This one", "Theft worries me: This one"]})
+    assert not assistant.best_of_pairs({"labels": ["Yes", "No"]})
+    assert assistant.said_as("generation", "GenZ", "gender", "Female") == "Gen Z women"
+    assert assistant.said_as("gender", "Female", "census_region", "South") == "women in the South"
+
+
+def test_not_likely_is_never_on_the_likely_side_and_how_many_use_reads_the_likely_ones():
+    fig = {"answers": ["Very likely", "Somewhat likely", "Not likely", "Never"], "pct": np.array([[[10.0, 17.0, 40.0, 33.0]]]),
+           "people": np.array([[[40, 68, 160, 132]]]), "bases": np.full((1, 1, 4), 400)}
+    (likely,) = assistant.side_answers("How many people use BNPL?", fig)
+    assert fig["pct"][0, 0, likely] == 27.0   # Very + Somewhat, never Not likely

@@ -11,6 +11,7 @@ always complete), month, quarter, year (calendar, by wave date).
 from __future__ import annotations
 
 import calendar
+import re
 from datetime import date, timedelta
 
 import numpy as np
@@ -126,6 +127,17 @@ def auto_grain(indexes: list[int], dates: list[str]) -> str:
     return "month" if len(months) <= AUTO_MONTHS else "quarter"
 
 
+def income_floor(band: str) -> int | None:
+    """An income band's lowest dollar amount ("$100,000-$124,999" 100,000, "under $25,000" 0); None for "prefer not to say"."""
+    text = band.lower().replace(",", "")
+    if "prefer" in text or "not" in text:
+        return None
+    if text.startswith(("under", "less than")):
+        return 0
+    found = re.search(r"\$\s*(\d+)", text)
+    return int(found[1]) if found else None
+
+
 def cut_columns(counts: dict, cuts: dict) -> list[int]:
     """The cut indexes to show: Total, or the values asked for (every value of a dimension for "by …")."""
     present = [tuple(c) for c in counts["cuts"]]
@@ -178,9 +190,11 @@ def compute(counts: dict, plan: dict, visible: set[int], versions: list[int] | N
     if names is None:
         groups = [g for g in groups if g]
     columns = [(tuple(counts["cuts"][c]), [c]) for c in cut_columns(counts, plan["cuts"])]
-    if plan.get("merge"):   # named groups of values ("high income" = the three bands from $100,000): their people summed
+    if plan.get("merge"):   # named groups of values ("high income" = the bands from $100,000): their people summed
         dim = next(iter(plan["cuts"]))
-        columns = [col for col in (((dim, label), [c for c, (d, v) in enumerate(counts["cuts"]) if d == dim and v in values])
+        inside = lambda v, values: (income_floor(v) is not None and values[0] <= income_floor(v) < values[1]) \
+            if isinstance(values, tuple) else v in values   # noqa: E731  a dollar range, or the values themselves
+        columns = [col for col in (((dim, label), [c for c, (d, v) in enumerate(counts["cuts"]) if d == dim and inside(v, values)])
                                    for label, values in plan["merge"].items()) if col[1]] or columns
     periods, people, bases, hidden = [], [], [], []
     for k, g in enumerate(groups):

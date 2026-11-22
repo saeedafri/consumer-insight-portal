@@ -256,7 +256,7 @@ def subject_of(question: str) -> str | None:
                r"(?:income|generation|age|gender|region)\b.*$", "", q, flags=re.I)
     q = re.sub(r"\s+(?:week by week|each week|every week|wave by wave|over time|in every survey(?: that asked it)?|"
                r"in each of the .*? surveys|oldest first|newest first)\b.*$", "", q, flags=re.I)
-    q = re.sub(r"\b(currently|still|also|recently|actually|now)\s+", lambda m: m[0] if m[1].lower() == "currently" else "", q, flags=re.I)
+    q = re.sub(r"\b(currently|still|also|recently|actually)\s+", lambda m: m[0] if m[1].lower() == "currently" else "", q, flags=re.I)
     q = " ".join(w.lower() if w.isupper() and len(w) > 1 and w not in ("US", "AI", "GLP-1") else w for w in q.split())
     return q if q and PREDICATE.match(q.removeprefix("currently ")) and len(q.split()) <= 20 else None
 
@@ -292,6 +292,8 @@ def in_words(question: str, fig: dict, named: list[int], family: str, condition:
     subject = subject_of(question)
     if np.isnan(pct) or not subject:
         return None
+    if fig["answers"][a].startswith("Likely ("):   # the likely side of a how-likely scale, not use itself
+        subject = re.sub(r"^(use|uses|using)\b", "are likely to use", subject)
     share, words = min(SHARES, key=lambda s: abs(pct - 100 * s[0]))
     lead = f"{'About ' if abs(pct - 100 * share) >= 0.5 else ''}{words}{' of' if (words == 'half' or not everyone) and not among else ''} {'' if among else who + ' '}({pct:.1f}%)" if abs(pct - 100 * share) <= 2.5 \
         else f"{pct:.1f}% {'' if among else 'of ' + who}".rstrip()
@@ -781,6 +783,13 @@ SIDES = [("better", "worse"), ("more", "less"), ("increase", "decrease"), ("posi
          ("agree", "disagree"), ("satisfied", "dissatisfied"), ("good", "bad")]
 
 
+def best_of_pairs(doc: dict) -> bool:
+    """A "which matters more to you" exercise stored as statement pairs ("…: This one"): its shares are 50.0% by design and
+    say nothing a question asked of it wants (HOLIDAY_SHOPPING AT3, 22 Nov 2026)."""
+    labels = doc.get("labels", [])
+    return bool(labels) and sum(label.endswith(": This one") for label in labels) * 2 >= len(labels)
+
+
 def answers_given(fig: dict) -> list[int]:
     """The answers with a figure in these periods: a question file joined across reused codes holds every code's labels
     (CS2's has 1,996, Q22 and Q31 of other years among them), and a total over labels never offered is blank: GLP-1's
@@ -820,12 +829,16 @@ def side_answers(question: str, fig: dict) -> list[int]:
     if not single_choice(fig):
         return []
     words = set(re.findall(r"[a-z]+", question.lower()))
+    if re.match(r"\s*(how many|what share|what percentage)\b", question.lower()) and words & {"use", "uses", "using"} \
+            and not words & {w for pair in SIDES for w in pair}:
+        words.add("likely")   # "How many people use BNPL…?" on a how-likely scale: the likely ones (it led with Not likely)
     out = []
     for pair in SIDES:
         for side in pair:
             other = pair[1] if side == pair[0] else pair[0]
             parts = [i for i in answers_given(fig) if re.search(rf"\b{side}\b", fig["answers"][i].lower())
-                     and not re.search(rf"\b{other}\b", fig["answers"][i].lower())]
+                     and not re.search(rf"\b{other}\b", fig["answers"][i].lower())
+                     and not (side == pair[0] and re.search(r"\bnot\b|n't\b", fig["answers"][i].lower()))]   # "Not likely" is not likely
             if side in words and len(parts) >= 2:
                 hidden = np.isnan(fig["pct"][:, :, parts]).all(axis=2)
                 out.append(append_answer(fig, f"{side.capitalize()} ({' + '.join(fig['answers'][i] for i in parts)})",
@@ -1061,11 +1074,17 @@ def weights_of(path: Path) -> np.ndarray | None:
     return np.array([raked[i] for i in range(size)], float)
 
 
+def question_in(people: dict, qcode: str) -> dict | None:
+    """A question in one wave's people.json by its code in any case: the wave spells the weekly core q5, the joined question
+    file Q5, and on staging's case-sensitive files the weighted answer quietly fell back to unweighted (22 Nov 2026)."""
+    return people["questions"].get(qcode) or next((q for code, q in people["questions"].items() if code.lower() == qcode.lower()), None)
+
+
 def weighted_counts(people: dict, weights: np.ndarray, qcode: str, answers: list[str], groups: list[np.ndarray | None]):
     """Weighted people and bases (answers × groups) of one wave's question, a group a respondent mask (None: everyone);
     an answer the wave does not have stays NaN. A single choice's base is those who answered its row, a select-all's
     those who answered the question (bit 0,0), as srv_result counts them."""
-    size, question = len(weights), people["questions"].get(qcode)
+    size, question = len(weights), question_in(people, qcode)
     n, b = np.full((len(answers), len(groups)), np.nan), np.full((len(answers), len(groups)), np.nan)
     if not question:
         return n, b
@@ -1147,31 +1166,63 @@ def among_condition(question: str, index: Index, visible: set[int]) -> dict | No
     return {"text": shown, "key": key, "labels": labels, "main": (question[:m.start()] + question[m.end():]).strip()}
 
 
-def among_figures(fig: dict, counts: dict, condition: dict, index: Index) -> dict:
-    """fig counted again among the condition's respondents only, wave by wave from people.json (unweighted, as the
-    published figures are): one column, "Among …". A wave that did not ask both questions adds nothing."""
+def people_figures(fig: dict, counts: dict, index: Index, columns: list, groups) -> dict:
+    """fig counted again from each wave's respondents (people.json, unweighted as published), one column per group:
+    groups(people, size, sid) gives each wave's respondent masks, None for a wave that cannot say. A wave without both
+    the question and its people file adds nothing."""
     folder = index.root.parent / "waves"
-    asked = index.counts(condition["key"])["sources"]
-    n = np.zeros((len(fig["periods"]), 1, len(fig["answers"])))
+    n = np.zeros((len(fig["periods"]), len(columns), len(fig["answers"])))
     b = np.zeros_like(n)
     for p, period in enumerate(fig["periods"]):
         for sid in period["waves"]:
             path = folder / str(sid) / "people.json.gz"
             weights = weights_of(path)
-            if weights is None or sid not in counts["sources"] or sid not in asked:
+            if weights is None or sid not in counts["sources"]:
                 continue
             people = json.loads(gzip.decompress(path.read_bytes()))
-            question = people["questions"].get(asked[sid][0], {"rows": [], "bits": {}})
-            inside = np.zeros(len(weights), bool)
-            for item_id, option_id, item_label, _, option_label in question["rows"]:
-                names = {option_label or item_label, f"{item_label}: {option_label}"}   # a select-all's answer is its item ("ChatGPT")
-                if names & set(condition["labels"]):
-                    inside |= bit_mask(question["bits"].get(f"{item_id},{option_id}"), len(weights))
-            wn, wb = weighted_counts(people, np.ones(len(weights)), counts["sources"][sid][0], fig["answers"], [inside])
-            n[p, 0] += np.nan_to_num(wn[:, 0])
-            b[p, 0] += np.nan_to_num(wb[:, 0])
+            masks = groups(people, len(weights), sid)
+            if masks is None:
+                continue
+            wn, wb = weighted_counts(people, np.ones(len(weights)), counts["sources"][sid][0], fig["answers"], masks)
+            n[p] += np.nan_to_num(wn).T
+            b[p] += np.nan_to_num(wb).T
     pct = np.where(b > 0, np.round(100 * n / np.where(b > 0, b, 1), 1), np.nan)
-    return {**fig, "columns": [["total", f"Among {condition['text']}"]], "people": n, "bases": b, "pct": pct}
+    return {**fig, "columns": columns, "people": n, "bases": b, "pct": pct}
+
+
+def among_figures(fig: dict, counts: dict, condition: dict, index: Index) -> dict:
+    """fig counted again among the condition's respondents only (people_figures): one column, "Among …"."""
+    asked = index.counts(condition["key"])["sources"]
+
+    def group(people: dict, size: int, sid: int):
+        if sid not in asked:
+            return None
+        question = question_in(people, asked[sid][0]) or {"rows": [], "bits": {}}
+        inside = np.zeros(size, bool)
+        for item_id, option_id, item_label, _, option_label in question["rows"]:
+            names = {option_label or item_label, f"{item_label}: {option_label}"}   # a select-all's answer is its item ("ChatGPT")
+            if names & set(condition["labels"]):
+                inside |= bit_mask(question["bits"].get(f"{item_id},{option_id}"), size)
+        return [inside]
+    return people_figures(fig, counts, index, [["total", f"Among {condition['text']}"]], group)
+
+
+def merged_figures(fig: dict, counts: dict, plan: dict, index: Index) -> dict:
+    """Named groups of a cut ("high income") from each wave's respondents, when a suppressed small band leaves the published
+    sum blank: "Do high-income shoppers buy groceries online more?" fell to another study for its 2021 wave's finer bands."""
+    dim = next(iter(plan["cuts"]))
+
+    def groups(people: dict, size: int, sid: int):
+        masks = []
+        for values in plan["merge"].values():
+            inside = np.zeros(size, bool)
+            for value, hexed in people["cuts"].get(dim, {}).items():
+                floor = ask_figures.income_floor(value)
+                if (isinstance(values, tuple) and floor is not None and values[0] <= floor < values[1]) or (not isinstance(values, tuple) and value in values):
+                    inside |= bit_mask(hexed, size)
+            masks.append(inside)
+        return masks
+    return people_figures(fig, counts, index, [[dim, label] for label in plan["merge"]], groups)
 
 
 PEOPLE = {"Male": "men", "Female": "women", "GenZ": "Gen Z", "Millennial": "Millennials", "GenX": "Gen X", "Boomer": "Boomers"}
@@ -1200,6 +1251,16 @@ def tested(fig: dict, answer: int) -> str | None:
     return f"Yes, {hi} differ from {lo}: {said} The {abs(p1 - p2):.1f}-point gap is significant at 95% (p = {p:.3f})."
 
 
+def said_as(dim1: str, value1: str, dim2: str, value2: str) -> str:
+    """Two groups as people say them: "Gen Z women", "women in the South", "men aged 18-29"."""
+    names = {dim1: PEOPLE.get(value1, value1), dim2: PEOPLE.get(value2, value2)}
+    who = " ".join(names[d] for d in ("generation", "income_band", "urbanicity", "gender") if d in names) or ""
+    for dim, words in (("census_region", "in the {}"), ("age_band", "aged {}")):
+        if dim in names:
+            who = f"{who or 'people'} {words.format(names[dim])}"
+    return who or f"{names[dim1]} {names[dim2]}"
+
+
 POOL_WEEKS = 4   # two groups at once ("Gen Z women") are few in one wave of ~400: the Cross-tab screen's 4-week pool
 
 
@@ -1221,6 +1282,10 @@ def two_groups(question: str, plan: dict, index: Index, visible: set[int], quick
     source = inner["sources"][0]
     survey_id, qcode = source["survey_id"], source["qcode"]
     folder = index.root.parent / "waves"
+    # the wave's own spelling of the code: the weekly core is q1-q6 in a wave, Q5 in the joined question file (staging,
+    # case-sensitive): "women in the South" found no cut file for Q5 beside q5.json.gz (22 Nov 2026)
+    qcode = next((p.name.removesuffix(".json.gz") for p in (folder / str(survey_id) / "cuts").glob("*.json.gz")
+                  if p.name.lower() == f"{qcode.lower()}.json.gz"), qcode) if (folder / str(survey_id) / "cuts").is_dir() else qcode
     if not (folder / str(survey_id) / "cuts" / f"{qcode}.json.gz").exists():
         return no_figure("Figures by two groups at once are not published for this survey question. Try one group, or open Cross-tabs.", plan, inner["suggestions"])
     family = {sid: {**w, "prior_survey_id": w.get("prior_survey_id")} for sid, w in index.waves.items()
@@ -1266,13 +1331,13 @@ def two_groups(question: str, plan: dict, index: Index, visible: set[int], quick
     period = f"on {span}" if len(dates) == 1 else f"over {span} ({len(dates)} waves pooled)"
     figure = lambda a, c: round(cell[a, c][7], 1) if (a, c) in cell else None   # noqa: E731
     sure = [(round(cell[main, c][7], 1), c, cell[main, c]) for c in combos if (main, c) in cell and cell[main, c][6] >= SMALL_BASE]
-    group = combos[0].replace(" · ", " ")
+    group = said_as(first, combos[0].split(" · ")[0], second, combos[0].split(" · ")[1])   # "women in the South", "Gen Z women"
     if len(combos) == 1 and plan["kind"] == "top":
         headline = f"Top {min(len(shown), plan['top'] or TOP)} among {group} {period}: " + "; ".join(
             f"{i + 1}. {a} {figure(a, combos[0]):.1f}%" for i, a in enumerate(shown[:plan["top"] or TOP])) + "."
     elif len(combos) == 1:
         r = cell.get((main, combos[0]))
-        headline = f"{round(r[7], 1):.1f}% of {group} respondents said {quote(main)} {period} ({r[5]:,} of {r[6]:,})." if r else ""
+        headline = f"{round(r[7], 1):.1f}% of {group} said {quote(main)} {period} ({r[5]:,} of {r[6]:,})." if r else ""
     elif len(sure) >= 2:
         (high, top, _), (low, bottom, _) = max(sure), min(sure)
         left_out = len([c for c in combos if (main, c) in cell]) - len(sure)
@@ -1399,6 +1464,8 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     margin = None   # how far the question found by meaning beats the next different one (etl/ask_quality.py calibrates the gate on it)
     reading = None
     named, sure = index.named(question, visible, plan)
+    if named and best_of_pairs(index.docs[named]):   # never answered from (AT3 "Holiday shopping concerns" led with 50.0% "This one")
+        named, sure = None, False
     # an analyst name that belongs to a study asked years ago, for "this week" or "right now": the search instead ("Top 5
     # nonfood retailers this week" took a 2022 one-off of that name over the weekly Q5, 22 Nov 2026)
     if named and re.search(r"\b(this week|this month|right now|currently|these days|today)\b", plan["question"]) and \
@@ -1456,6 +1523,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         candidates = recent or candidates
     # a retailer or brand named among a long-running question's answers brings it in even when its wording is far in
     # meaning: "Amazon in 2025 vs 2026" is the weekly retailer lists, not one of the Amazon studies (golden set, 11 Nov 2026)
+    candidates = [c for c in candidates if not best_of_pairs(c)] or candidates
     seen = {c["key"] for c in candidates}
     candidates += [d for k, d in index.docs.items() if candidates and k not in seen and d["waves"] >= TREND_FROM * 5
                    and not visible.isdisjoint(d["surveys"]) and focus(question, d.get("labels", []), full_names)][:3]
@@ -1532,7 +1600,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         # applied to sure picks too it broke three right answers, 21 Nov 2026)
         current = str(date.fromisoformat(index.newest) - timedelta(days=CURRENT_DAYS))
         if by_reader and not reader_sure and not plan["when"] and chosen["last"] < current:
-            chosen = next((c for c in by_meaning[:3] if c["waves"] >= TREND_FROM and c["last"] >= current), chosen)
+            # a yes/no pick only for another yes/no question ("bought groceries online?" gave way to a grocery categories
+            # list, 22 Nov 2026); other picks as before ("Why buy on social media…" moves to the current reasons question)
+            yes_no = lambda c: {a.lower() for a in c.get("labels", [])} <= {"yes", "no", "cannot remember", "don't know", "not sure"}   # noqa: E731
+            same = lambda c: not yes_no(chosen) or yes_no(c)   # noqa: E731
+            chosen = next((c for c in by_meaning[:3] if c["waves"] >= TREND_FROM and c["last"] >= current and same(c)), chosen)
         if chosen["waves"] <= 2:   # the same question asked over more waves is the better source: most of its own,
             own = {a.lower() for a in chosen.get("labels", []) if not GENERIC.match(a)}   # specific answers alike
             # a short list such as a 5-point scale (much better … much worse) is shared by different questions: then the
@@ -1623,6 +1695,8 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
             plan = {**plan, "kind": "trend", "when": [{"all": True}]}   # no time named: every wave, the latest figure first
         counts = index.counts(doc["key"])
         fig = ask_figures.compute(counts, plan, visible)
+        if plan.get("merge") and fig["periods"] and np.isnan(fig["pct"][-1]).all():   # a suppressed band left the sum blank
+            fig = merged_figures(fig, counts, plan, index)
         if hit is hits[0]:
             first = (doc, plan, counts, fig)
         if fig["periods"] and not (len(plan["when"]) > 1 and fig["missing"]) and not lacks_group(fig, plan):

@@ -42,11 +42,13 @@ CUT_VALUES = [(r"\bgen ?z\b|\bzoomers?\b", "generation", "GenZ"), (r"\bmillennia
 # "high income" is the bands from $100,000, "low income" those under $50,000 (the weekly survey's bands since 2022), each
 # shown as one figure (ask_figures.compute merge): read as a subject they refused 1 in 25 unanswered bank questions
 # ("Thanksgiving spending for high income"), and as bands they gave 3 to 7 columns for one asked group (22 Nov 2026)
-INCOME_GROUPS = {"Low income (under $50,000)": (r"\b(low|lower)[- ](income|earners?|earning)\b", ["under $25,000", "$25,000 - $49,999"]),
-                 "Middle income ($50,000-$99,999)": (r"\b(middle|mid)[- ](income|earners?|earning)\b|\bmiddle class\b", ["$50,000 - $99,999"]),
+# by dollar range, so any wave's bands fit: the weekly survey's since 2022 and older ones ("$100,000-$124,999", "$200,000+");
+# a fixed list of 2022 bands sent "high income" in an older wave to another study (22 Nov 2026)
+INCOME_GROUPS = {"Low income (under $50,000)": (r"\b(low|lower)[- ](income|earners?|earning)\b", (0, 50_000)),
+                 "Middle income ($50,000-$99,999)": (r"\b(middle|mid)[- ](income|earners?|earning)\b|\bmiddle class\b", (50_000, 100_000)),
                  "High income ($100,000 or more)": (r"\b(high|higher|upper)[- ](income|earners?|earning)\b|\baffluent\b|\bwealthy\b",
-                                                    ["$100,000 - $149,999", "$150,000 - $199,999", "$200,000 or greater"])}
-CUT_VALUES += [(pattern, "income_band", band) for pattern, bands in INCOME_GROUPS.values() for band in bands]
+                                                    (100_000, 10**9))}
+CUT_VALUES += [(pattern, "income_band", label) for label, (pattern, _) in INCOME_GROUPS.items()]
 CUT_DIMS = [(r"\b(?:by|and) (generation|generations|gen)\b|\b(?:across|each|every|all) generations?\b|\bwhich generations?\b", "generation"),
             (r"\b(?:by|and) (gender|sex)\b|\bmen (and|vs|versus|or) women\b|\bwomen (and|vs|versus|or) men\b", "gender"),
             (r"\b(?:by|and) age( group| band)?s?\b|\bage (group|band)s?\b(?:\s*\([^)]*\))?|\bwhich age( group)?s?\b(?:\s*\([^)]*\))?", "age_band"), (r"\b(?:by|and) (household )?income\b|\bincome (group|band|level)s?\b(?:\s*\([^)]*\))?", "income_band"),
@@ -230,7 +232,7 @@ def read(question: str) -> dict:
         named = list(INCOME_GROUPS)   # "each income group (low, $50,000-$99,999, high)": the three
     merge = {label: INCOME_GROUPS[label][1] for label in named}
     if merge:
-        cuts["income_band"] = [band for bands in merge.values() for band in bands]
+        cuts["income_band"] = "all"   # every band, summed into the groups named (ask_figures.compute merge)
     top = re.search(r"\btop\s+(\d+|three|five|ten)\b", text)
     # waves are only ever compared within one country (config/countries.yml): "China" asks the China survey, no name the first
     country = next((code for code, words in COUNTRY_WORDS.items() if words.search(text)), next(iter(COUNTRY_WORDS)))
