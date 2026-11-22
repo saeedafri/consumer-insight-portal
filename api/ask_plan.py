@@ -190,7 +190,7 @@ def condition(text: str, index: Index, within: set[int], avoid: str | None = Non
 
 
 MORE_LIKELY = re.compile(r"\b(?:are|were|is)\s+(.+?)\s+more likely(?:\s+than\s+(.+?))?\s+to\s+(.+?)(?:[?.]|$)", re.I)
-BOTH = re.compile(r"\bboth\s+(.+?)\s+and\s+(.+?)(?=[,?]|$)|(.+?)\s+AND\s+(.+?)(?=[,?]|$)")
+BOTH = re.compile(r"\bboth\s+(.+?)\s+and\s+(.+?)(?=[,?]|$)|(.+?)\s+(?:AND|and also)\s+(.+?)(?=[,?]|$)")
 EITHER = re.compile(r"\beither(?: one)?\b|counting each (?:person|one) once|\bor both\b", re.I)
 NOT_ALSO = re.compile(r"\b(?:did|do|does) NOT(?: also)?\b")
 EACH = re.compile(r"\b(each|every)\b|\bweek by week\b", re.I)
@@ -227,6 +227,9 @@ def resolve(text: str, index: Index, within: set[int], joined: str | None, avoid
     if split:
         if joined == "both":
             left, right = (split[1], split[2]) if split[1] else (split[3], split[4])
+            if split[1]:   # "bought groceries both in a store and online": the words before "both" belong to each side
+                said = re.sub(r"^\s*(?:what share|how many(?: people)?|share)\s+(?:who\s+)?", "", text[:split.start()], flags=re.I)
+                left, right = said + left, said + right
         else:
             verb = re.sub(r"^\s*(?:what share|how many(?: people)?)\s+", "", split[1], flags=re.I)
             left, right = verb + split[2], verb + split[3]
@@ -325,7 +328,7 @@ def fill(question: str, index: Index, visible: set[int], ids: dict[str, int]) ->
 # Who calls it: api/assistant.py answer, for a question that joins survey questions, groups, weeks or a test (COMBINED),
 # before its single-question path; None hands the question back to that path.
 COMBINED = re.compile(r"\bamong\b|\bof (?:the )?(?:people|those) who\b|\b(?:vs\.?|versus|compared with)\b|\bmore likely\b"
-                      r"|\bdid and did not\b|\bboth\b.+\band\b|\beither\b|\bcounting each\b|\bfunnel\b|→|->|\bsignifican"
+                      r"|\bdid and did not\b|\bboth\b.+\band\b|\band also\b|\bAND\b|\beither\b|\bcounting each\b|\bfunnel\b|→|->|\bsignifican"
                       r"|\b\d{2}\s*[-–]\s*\d{2}\b|\b\d{2}\s*\+|\bunder[- ]\d{2}|\b(?:did|do|does) NOT\b", re.I)
 
 

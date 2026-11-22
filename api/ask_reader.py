@@ -66,7 +66,10 @@ FILLER = re.compile(r"\b(what|which|who|how|many|much|percent(age)?|share|propor
                     r"please|can|you|across|between|and|vs|versus|compare|compared|comparison|to|from|with|wave|waves|"
                     r"survey|surveys|latest|recent|week|weeks|month|months|year|years|quarter|last|past|this|that|"
                     r"chart|graph|data|figure|figures|number|a|an|by|per|each|every|all|time|since|until|through|more|less|fewer|"
-                    r"than|any|it|its|they|their|them|we|our|us|about|there|at|or|pooled|combined|these|those|using|correct)\b", re.I)
+                    r"than|any|it|its|they|their|them|we|our|us|about|there|at|or|pooled|combined|these|those|using|correct|"
+                    # "get worse" and group nouns are no subject: "buyers", "18-34s" were refused as words no survey asks
+                    # (held-out set, 22 Nov 2026); counts stay, as survey names say them ("in the past two weeks")
+                    r"get|gets|getting|got|buyers|purchasers)\b", re.I)
 
 
 
@@ -253,7 +256,9 @@ def read(question: str) -> dict:
         about = words.sub(" ", about)
     for pattern, *_ in CUT_DIMS + CUT_VALUES + GRAINS + KINDS:   # before the filler words: "by generation" is one phrase
         about = re.sub(pattern, " ", about)
-    about = FILLER.sub(" ", re.sub(r"\b(20[12]\d|q[1-4]|\d+)\b", " ", about))
+    about = re.sub(r"\b(?:last|past|first)\s+(?:two|three|four|five|six|eight|ten|twelve)\b(?!\s+(?:weeks?|months?|years?|days?|waves?|surveys?))",
+                   " ", about)   # "each week of the last four": a period without its unit, never a subject
+    about = FILLER.sub(" ", re.sub(r"\b(20[12]\d|q[1-4]|\d+s?)\b", " ", about))   # "18-34s": an age band, not a word
     about = re.sub(rf"\b({'|'.join(MONTHS)})\b", " ", about)
     return {"question": text, "country": country, "kind": kind, "when": when, "grain": grain, "cuts": cuts, "top": number(top[1] or top[2]) if top else None,
             "merge": merge, "compare": len(when) >= 2 or bool(re.search(r"\b(compare|compared|versus|vs\.?|against)\b", text)),

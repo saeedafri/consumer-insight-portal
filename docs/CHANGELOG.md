@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 22 November 2026
 
+### Fewer wrong refusals, and “both” keeps what was bought
+
+Ask no longer refuses a fair question for an ordinary word: “each week of the last four”, “get worse”, “home-improvement buyers” and “18-34s” were read as subjects no survey asks. “Share using Gemini” is answered from the weekly AI-tools question instead of being refused, because Gemini is one of its answers. “Bought groceries both in a store and online” keeps “groceries” on both sides (23.5% on 16 Nov, not 77%), and “and also” reads as both. On 30 new analyst questions written after these changes and never used to tune them, Ask gets 17 right, up from 14 before the plan engine; every other test set is level or better.
+
 ### Ask answers questions that join survey questions, worked out from each week's respondents
 
 Ask now answers questions that need several survey questions for the same people, exactly: “Among recent AI users, what share used GenAI to shop each week?” (20.6% on 16 Nov, 59 of 286), “Are GenAI shoppers more likely than other AI users to have made holiday purchases?” (57.6% against 48.9%, a gap that could be chance), “both ChatGPT and Gemini”, “did NOT also buy at Walmart”, funnels from AI-tool use to buying and satisfaction, age bands the survey does not cut by (18-34 against 55 and older) and a change tested between two weeks. Each answer shows how the question was read (what was counted, among whom, split by what, which weeks) and every figure with its base. On 132 hard analyst questions with figures worked out from the raw survey files Ask now gets 74 right, up from 57, and on 30 new questions written to test it afterwards 17, up from 15; every other question is answered as before.

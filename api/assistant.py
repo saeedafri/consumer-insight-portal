@@ -1571,7 +1571,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     learned = bool(verified and verified.get("learned"))
     candidates = index.retrieve(subject, plan, CANDIDATES, visible, asked) if unsure and asked is not None and (learned or not verified) else []
     closeness = [c["near"] for c in candidates if "near" in c]   # only the ones found by meaning carry a closeness
-    if not verified and closeness and max(closeness) < NEAR_FLOOR and hits[0]["match"] < EVERY_WORD:   # nothing close in meaning or words ("walmrt" is corrected): free, no model
+    # never when the question names an answer of a long-running question ("Share using Gemini": an AI tool the weekly
+    # list asks, refused on its one word, held-out set 22 Nov 2026); the answer-name rule below brings that question in
+    names_an_answer = lambda: any(d["waves"] >= TREND_FROM * 5 and not visible.isdisjoint(d["surveys"]) and focus(question, d.get("labels", []))   # noqa: E731
+                                  for d in index.docs.values())
+    if not verified and closeness and max(closeness) < NEAR_FLOOR and hits[0]["match"] < EVERY_WORD and not names_an_answer():   # nothing close in meaning or words ("walmrt" is corrected): free, no model
         return {"answer": "None of the surveys asks this. The closest questions are below.", "chart": None, "table": None,
                 "sources": [], "plan": plan, "mode": "none", "no_source": True, "understood": "meaning",
                 "suggestions": [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]}

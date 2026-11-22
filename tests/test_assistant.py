@@ -1285,6 +1285,11 @@ def test_the_plan_filler_reads_groups_weeks_and_list_items():
     # a funnel's "GenAI shopping" and a group's "GenAI shoppers" are those who have done it (read as anyone asked on staging)
     genai = ["Have used GenAI to shop", "Plan to use GenAI to shop within the next six months", "Will not use GenAI to shop"]
     assert ask_plan.items("GenAI shopping", genai) == ask_plan.items("GenAI shoppers", genai) == ["Have used GenAI to shop"]
+    # a bare count of weeks, "get worse", group nouns and age bands are never a subject no survey asks (held-out set);
+    # counts that survey names say stay ("in the past two weeks")
+    assert ask_reader.read("Expecting personal finances to get worse, each week of the last four")["about"] == "expecting personal finances worse"
+    assert "buyers" not in ask_reader.read("Home-improvement buyers among 18-34s")["about"].split()
+    assert "two" in ask_reader.read("Recent activities in past two weeks")["about"].split()
     # a question's own recall period is wording, not a time; a day named is the time
     ids = {"2026-11-02": 1, "2026-11-09": 2, "2026-11-16": 3}
     assert ask_plan.weeks("Used ChatGPT in the last two weeks, 16 Nov 2026?", ids) == {3}
