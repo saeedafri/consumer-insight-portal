@@ -619,11 +619,21 @@ def add_net(question: str, fig: dict, counts: dict, nets: list[tuple[str, list[i
     return None
 
 
+# how an analyst asks, not what about: "what online grocery retailers are most commonly used" was refused for lacking
+# "commonly" and "used", and "holiday shopping retailers list" lost the reader's right pick for lacking "list" (a third
+# of the 6,575 unanswered and 211 of 3,000 wrong picks in the 52,707-question Colab replay, 22 Nov 2026)
+ANALYST_WORDS = frozenset("""doing going faring performing performance perform growing declining shrinking trend trends
+trending evolving evolved evolution changing changes vary varies varied often frequently commonly common main key seeing
+used use usage ranked ranking level levels status behavior behaviour segment segments overall popular popularity rate rates
+list lists individuals stats statistics breakdown insights""".split())
+
+
 def lacking(plan: dict, key: str, index: Index) -> tuple[list[str], int, bool]:
     """The question's subject words that a survey question never uses (its wording, name, aliases, topic or answers, or
     a synonym of the word), how many subject words there are, and whether one of them no survey uses at all."""
     lacking, unknown, words = [], False, 0
-    for word in dict.fromkeys(w for w in re.findall(r"[a-z0-9]+", plan["about"].replace("'", "")) if w not in FRAME_WORDS and stems(w)):   # as the index splits ("glp-1")
+    for word in dict.fromkeys(w for w in re.findall(r"[a-z0-9]+", plan["about"].replace("'", ""))
+                              if w not in FRAME_WORDS and w not in ANALYST_WORDS and stems(w)):   # as the index splits ("glp-1")
         # a misspelt word counts as the word it is close to, a synonym list's word as its list ("glp1" is GLP-1)
         stem = index.known(word) or next((s for s in stems(word) if s in index.synonyms), None)
         words += 1
@@ -1274,6 +1284,15 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
             break
     else:
         doc, plan, counts, fig = first   # none was: say when the pick was asked
+    # "beauty purchases last month" on a question not asked then: its latest figures, said so, as a chat answers with what
+    # it has (15% of the Colab replay's unanswered, 22 Nov 2026); a year or two periods named stay refused
+    not_then = None
+    if not fig["periods"] and fig["asked"] and len(asked_plan["when"]) == 1 and "last" in asked_plan["when"][0]:
+        latest = ask_figures.compute(counts, {**plan, "when": [{"latest": 1}]}, visible)
+        if latest["periods"]:
+            n, unit = asked_plan["when"][0]["last"], asked_plan["when"][0]["unit"]
+            not_then = f"Not asked in the last {unit if n == 1 else f'{n} {unit}s'}: these are its latest figures."
+            plan, fig = {**plan, "when": [{"latest": 1}]}, latest
     if not fig["periods"]:
         asked = f"{ask_figures.label_date(fig['asked'][0])} – {ask_figures.label_date(fig['asked'][-1])}" if fig["asked"] else "never"
         return {"answer": f"“{doc['text'][:200]}” ({doc['qcode']}) was not asked in the period you named: it was asked {asked}.",
@@ -1332,6 +1351,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     source_code, source_text = counts["sources"][source_wave]
     source_doc = {**doc, "qcode": source_code, "text": source_text}
     sentences, shown = write(plan, fig, source_doc, named)
+    sentences += [not_then] if not_then else []   # a note (NOTE_STARTS "Not asked")
     glance = {**brief(plan, fig, source_doc, shown, bool(named)), "next": follow_ups(plan, fig, doc, named)}
     # one wave alone says nothing of direction: the change since the wave before, tested, as a chat would add (21 Nov 2026)
     if len(fig["periods"]) == 1 and len(fig["periods"][0]["waves"]) == 1 and len(fig["columns"]) == 1 and shown and glance["takeaway"] \

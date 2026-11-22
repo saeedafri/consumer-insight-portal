@@ -29,3 +29,9 @@ def test_split_gives_each_new_question_to_the_asks_or_the_bank_never_both(tmp_pa
     bank = [r["question"] for r in csv.DictReader(gzip.open(tmp_path / "bank.csv.gz", "rt"))]
     assert len(asks) == 6 and len(bank) == 4 and not set(asks) & set(bank)   # 60% of the 10 new ones are asks
     assert "Where do people shop?" not in bank
+
+
+def test_a_wording_with_or_without_its_answering_instruction_is_the_same_question():
+    assert v2.same_question("Why do you shop Dollar Tree online? Select all that apply", "Why do you shop Dollar Tree online?")
+    assert v2.same_question("Which matter most to you? (select up to 3)", "Which matter most to you?")
+    assert not v2.same_question("Which do you choose to buy online", "Which do you choose to buy in store")

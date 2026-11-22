@@ -54,6 +54,15 @@ def plain(text: str) -> str:
     return " ".join(re.findall(r"[^\W_]+", text.lower()))
 
 
+# a wording's answering instruction after its question ("? Select all that apply", "(select up to 3)"): the same question
+# with and without it was counted wrong (Dollar Tree's online-grocery reasons, 22 Nov 2026)
+INSTRUCTION = re.compile(r"(?:(?<=[?.])|\s\()\s*(?:please )?(?:select|choose|check|pick|mark)\b[^?]*$", re.I)
+
+
+def same_question(one: str, other: str) -> bool:
+    return plain(INSTRUCTION.sub("", one)) == plain(INSTRUCTION.sub("", other))
+
+
 def wordings(args) -> None:
     """One line per survey question wording in the publication: what the model is told about it."""
     from api.ask_index import Index, digest
@@ -276,7 +285,7 @@ def ask_one(item: dict) -> dict:
     except Exception as exc:   # noqa: BLE001  counted, never stops a lakh-question run
         return {**item, "got": None, "right": False, "error": type(exc).__name__, "ms": 0}
     got = found["sources"][0]["key"] if found.get("mode") == "figures" and found.get("sources") else None
-    right = bool(got) and plain(INDEX.docs[got]["text"]) == plain(item["answer_question"]) if got in INDEX.docs else False
+    right = got in INDEX.docs and same_question(INDEX.docs[got]["text"], item["answer_question"])
     return {**item, "got": got, "right": right, "ms": round(1000 * (time.perf_counter() - started))}
 
 

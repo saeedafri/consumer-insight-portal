@@ -39,6 +39,13 @@ CUT_VALUES = [(r"\bgen ?z\b|\bzoomers?\b", "generation", "GenZ"), (r"\bmillennia
               # "young people" is the survey's youngest age band, "older people" its oldest (config/weighting.yml age_band)
               (r"\b(young|younger) (people|adults|consumers|shoppers|americans)\b", "age_band", "18-29"),
               (r"\b(old|older|elderly) (people|adults|consumers|shoppers|americans)\b|\bseniors\b", "age_band", "Over 60")]
+# "high income" is the bands from $100,000, "low income" those under $50,000 (the weekly survey's bands since 2022): read
+# as a subject they refused 1 in 25 unanswered bank questions ("Thanksgiving spending for high income", 22 Nov 2026)
+INCOME_GROUPS = {r"\b(high|higher|upper)[- ](income|earners?|earning)\b|\baffluent\b|\bwealthy\b":
+                     ["$100,000 - $149,999", "$150,000 - $199,999", "$200,000 or greater"],
+                 r"\b(middle|mid)[- ](income|earners?|earning)\b|\bmiddle class\b": ["$50,000 - $99,999"],
+                 r"\b(low|lower)[- ](income|earners?|earning)\b": ["under $25,000", "$25,000 - $49,999"]}
+CUT_VALUES += [(pattern, "income_band", band) for pattern, bands in INCOME_GROUPS.items() for band in bands]
 CUT_DIMS = [(r"\b(?:by|and) (generation|generations|gen)\b|\bacross generations\b|\bwhich generations?\b", "generation"),
             (r"\b(?:by|and) (gender|sex)\b|\bmen (and|vs|versus|or) women\b|\bwomen (and|vs|versus|or) men\b", "gender"),
             (r"\b(?:by|and) age( group| band)?s?\b|\bage (group|band)s?\b|\bwhich age( group)?s?\b", "age_band"), (r"\b(?:by|and) (household )?income\b|\bincome (group|band|level)s?\b", "income_band"),
