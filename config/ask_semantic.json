@@ -123,7 +123,9 @@
 "aliases": [
 "Holiday shopping progress",
 "Status of holiday shopping",
-"Current holiday shopping situation"
+"Current holiday shopping situation",
+"Started holiday shopping",
+"Started-shopping share"
 ],
 "asks": [
 "What is the current status of consumers' holiday shopping?",
@@ -133,7 +135,9 @@
 "How do consumers report their holiday shopping progress?",
 "What percentage of shoppers have not yet started holiday shopping?",
 "What are the trends in holiday shopping completion?",
-"How do consumers compare their holiday shopping status year-over-year?"
+"How do consumers compare their holiday shopping status year-over-year?",
+"What share have started holiday shopping?",
+"What is the weekly change in the share who started holiday shopping?"
 ],
 "name": "Current holiday shopping status",
 "text": "Now we would like to focus on your holiday shopping (gifts, decorations, etc). What is the current status of your holida",
@@ -7203,7 +7207,8 @@
 "aliases": [
 "Holiday shopping activity",
 "Holiday purchases in last week",
-"Holiday purchases in the last seven days"
+"Holiday purchases in the last seven days",
+"Made a holiday purchase in the last seven days"
 ],
 "asks": [
 "How many consumers made holiday purchases recently?",
@@ -7215,7 +7220,9 @@
 "What are the trends in recent holiday shopping behavior?",
 "How do consumers compare their recent holiday purchases year-over-year?",
 "How many people bought holiday gifts in the last seven days?",
-"Did people buy holiday gifts last week?"
+"Did people buy holiday gifts last week?",
+"What share made a holiday purchase in the last seven days?",
+"What share made a holiday purchase in each wave?"
 ],
 "name": "Recent holiday purchases",
 "text": "Now we would like to focus on your holiday shopping (gifts, decorations, etc). Did you make any holiday purchases in the",
@@ -8925,7 +8932,9 @@
 "aliases": [
 "Shopping without buying",
 "Retail visit outcomes",
-"Store experience without purchase"
+"Store experience without purchase",
+"Leaving a store without purchasing",
+"Left a store without buying"
 ],
 "asks": [
 "Have you ever left a store without making a purchase?",
@@ -8935,7 +8944,9 @@
 "What are your thoughts on leaving stores without purchases?",
 "How frequently do you exit stores without buying?",
 "What is your behavior regarding shopping and not purchasing?",
-"How often do you find yourself not buying anything after visiting a store?"
+"How often do you find yourself not buying anything after visiting a store?",
+"How common is leaving a store without purchasing?",
+"How many left a store without buying?"
 ],
 "name": "Store visits without purchases",
 "text": "At any time in the last six months, have you gone to a store to make a purchase and left without buying anything?",
@@ -9806,7 +9817,11 @@
 "Recent AI tool usage",
 "AI tools used in last two weeks",
 "Engagement with AI tools",
-"Use of generative AI"
+"Use of generative AI",
+"Recent AI-tool use",
+"AI tool use",
+"Recent AI users",
+"AI users"
 ],
 "asks": [
 "Which AI tools have users tried recently?",
@@ -9819,7 +9834,11 @@
 "What are the most common reasons for using AI tools?",
 "How many people use generative AI?",
 "What share of people use AI tools?",
-"Do Americans use GenAI?"
+"Do Americans use GenAI?",
+"How does recent AI-tool use compare?",
+"What share used an AI tool recently?",
+"What share are recent AI users?",
+"How many people used an AI tool in the last two weeks?"
 ],
 "name": "Usage of AI tools recently",
 "text": "Which, if any, of the following AI tools have you used in the last two weeks?",
@@ -11569,7 +11588,9 @@
 "aliases": [
 "Retailers for last week purchases",
 "Recent holiday shopping retailers",
-"Holiday purchases in last week"
+"Holiday purchases in last week",
+"Retailers used by holiday purchasers",
+"Where holiday shoppers bought"
 ],
 "asks": [
 "Which retailers did you shop at for holiday purchases recently?",
@@ -11579,7 +11600,9 @@
 "Are there any retailers you avoided for holiday shopping recently?",
 "How does your recent holiday shopping compare to previous years?",
 "What categories did you focus on for your recent holiday purchases?",
-"Did you shop more online or in-store for recent holiday purchases?"
+"Did you shop more online or in-store for recent holiday purchases?",
+"Which retailers were most used by holiday purchasers?",
+"Which retailers did holiday purchasers use most?"
 ],
 "name": "Retailers for recent holiday purchases",
 "text": "From which, if any, of the following retailers did you make holiday-related purchases in the last seven days?",
@@ -13389,7 +13412,9 @@
 "aliases": [
 "AI platform buying activity",
 "Shopping on AI platforms",
-"Purchasing through AI tools"
+"Purchasing through AI tools",
+"In-platform purchasing",
+"Bought inside an AI platform"
 ],
 "asks": [
 "How many users have made purchases on AI platforms?",
@@ -13399,7 +13424,9 @@
 "What share of users report frequent purchases on AI tools?",
 "How have buying habits changed over time with AI?",
 "What are the most common reasons for using AI for shopping?",
-"How do demographics influence purchasing on AI platforms?"
+"How do demographics influence purchasing on AI platforms?",
+"What share of GenAI shoppers bought inside an AI platform?",
+"How common is in-platform purchasing?"
 ],
 "name": "Purchases within AI platforms",
 "text": "Have you completed a purchase within one of these AI platforms?",
@@ -19450,7 +19477,9 @@
 "aliases": [
 "Recent online shopping",
 "Online buying habits",
-"Ecommerce purchases last two weeks"
+"Ecommerce purchases last two weeks",
+"Online purchasing by category",
+"Online grocery purchasing"
 ],
 "asks": [
 "What did you buy online recently?",
@@ -19460,7 +19489,9 @@
 "Which categories did you buy from online retailers?",
 "What did you purchase via the internet recently?",
 "What items did you buy online lately?",
-"Which products did you acquire through online shopping?"
+"Which products did you acquire through online shopping?",
+"What share bought groceries online?",
+"How does online grocery purchasing compare?"
 ],
 "name": "Online purchases in past two weeks",
 "text": "And which, if any, of these categories have you purchased ONLINE in the past two weeks? Select all that apply or \"None o",
@@ -26868,7 +26899,8 @@
 "aliases": [
 "Purchase process satisfaction",
 "Satisfaction with AI purchases",
-"GenAI buying experience"
+"GenAI buying experience",
+"Purchase satisfaction in AI platforms"
 ],
 "asks": [
 "How satisfied are users with the GenAI purchase process?",
@@ -26878,7 +26910,8 @@
 "What share of users are dissatisfied with their purchase experience?",
 "How have satisfaction levels changed over time?",
 "What are the most common reasons for satisfaction or dissatisfaction?",
-"How do demographics influence satisfaction with GenAI purchases?"
+"How do demographics influence satisfaction with GenAI purchases?",
+"How satisfied were AI-platform purchasers with the purchase process?"
 ],
 "name": "Satisfaction with GenAI purchase process",
 "text": "How satisfied were you with the purchase process in the GenAI platform?",
@@ -30347,7 +30380,9 @@
 "aliases": [
 "Recent in-store shopping",
 "Store purchases last two weeks",
-"In-store buying habits"
+"In-store buying habits",
+"In-store purchasing by category",
+"In-store grocery purchasing"
 ],
 "asks": [
 "What did you buy in stores recently?",
@@ -30357,7 +30392,9 @@
 "Which categories did you visit stores for?",
 "What did you acquire from brick-and-mortar shops?",
 "What items did you purchase in person?",
-"Which products did you buy from stores lately?"
+"Which products did you buy from stores lately?",
+"What share bought groceries in a store?",
+"How does in-store grocery purchasing compare?"
 ],
 "name": "In-store purchases in past two weeks",
 "text": "Which, if any, of these categories have you purchased IN A STORE in the past two weeks? Select all that apply or \"None o",
@@ -33005,7 +33042,9 @@
 "aliases": [
 "Purchase deterrents",
 "Factors preventing purchase",
-"Reasons for shopping failure"
+"Reasons for shopping failure",
+"Reasons for leaving a store without buying",
+"Why people leave stores without buying"
 ],
 "asks": [
 "What reasons have led you to not make a purchase?",
@@ -33015,7 +33054,8 @@
 "What are the common reasons for not completing a purchase?",
 "How do various factors affect your buying decisions?",
 "What prevents you from making purchases in stores?",
-"What barriers do you encounter when shopping that lead to no purchase?"
+"What barriers do you encounter when shopping that lead to no purchase?",
+"What were the leading reasons for leaving a store without purchasing?"
 ],
 "name": "Reasons for not making a purchase",
 "text": "Which of the following factors contributed to your not making a purchase?",
@@ -33825,7 +33865,9 @@
 "aliases": [
 "Apparel buying history",
 "Clothing purchase frequency",
-"Recent apparel shopping"
+"Recent apparel shopping",
+"Apparel purchasing",
+"Bought clothing recently"
 ],
 "asks": [
 "What percentage of consumers bought clothing recently?",
@@ -33835,7 +33877,9 @@
 "What is the trend in recent clothing purchases over time?",
 "How does concern about COVID-19 affect apparel shopping?",
 "What categories are most commonly bought in clothing?",
-"What is the average frequency of clothing purchases?"
+"What is the average frequency of clothing purchases?",
+"What share bought apparel recently?",
+"What does the apparel module say about recent purchasing?"
 ],
 "name": "Recent clothing purchases",
 "text": "Have you purchased any clothing or apparel accessories in the past three months?",

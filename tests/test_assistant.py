@@ -1202,3 +1202,44 @@ def test_not_likely_is_never_on_the_likely_side_and_how_many_use_reads_the_likel
            "people": np.array([[[40, 68, 160, 132]]]), "bases": np.full((1, 1, 4), 400)}
     (likely,) = assistant.side_answers("How many people use BNPL?", fig)
     assert fig["pct"][0, 0, likely] == 27.0   # Very + Somewhat, never Not likely
+
+
+def test_each_week_asked_is_one_figure_per_week_with_changes_from_the_real_counts():
+    # ChatGPT's 40-question answer key (22 Nov 2026): "in each of the four survey weeks" pooled them into one 51.3%
+    assert ask_reader.read("What share had started holiday shopping in each of the four survey weeks?")["grain"] == "wave"
+    across = ask_reader.read("How do in-platform purchasing and purchase satisfaction compare across the AI shopping waves?")
+    assert across["grain"] == "wave" and "ai shopping" in across["about"]
+    assert ask_reader.read("Across all 10 surveys pooled, share who bought from Amazon")["grain"] is None
+    fig = {"grain": "wave", "periods": [{"label": d} for d in ("26 Oct 2026", "2 Nov 2026", "9 Nov 2026", "16 Nov 2026")],
+           "pct": np.array([[[42.6]], [[58.8]], [[52.2]], [[51.7]]]), "people": np.array([[[172]], [[237]], [[211]], [[209]]]),
+           "bases": np.array([[[404]], [[403]], [[404]], [[404]]])}
+    assert round(assistant.exact(fig, 3, 0, 0) - assistant.exact(fig, 0, 0, 0), 1) == 9.2   # 9.1 from the rounded shares
+    assert assistant.week_by_week(fig, [("Started", [42.6, 58.8, 52.2, 51.7])]) == \
+        "Week by week (26 Oct, 2 Nov, 9 Nov, 16 Nov 2026): 42.6%, 58.8%, 52.2%, 51.7%."
+    assert assistant.week_by_week({**fig, "grain": "month"}, [("Started", [1, 2, 3, 4])]) == ""
+
+
+def test_analyst_wording_keeps_its_subject_groups_and_periods():
+    asked = ask_reader.read("Which five retailers were most used by holiday purchasers?")
+    assert "retailers" in asked["about"] and asked["top"] == 5   # "which … most" took "five retailers were" with it
+    assert ask_reader.read("What were the five most commonly purchased categories?")["top"] == 5
+    weekly = ask_reader.read("What is the latest started-shopping percentage, and is its weekly change significant?")
+    assert weekly["when"] == [{"latest": 2}, {"latest": 1}]
+    assert ask_reader.read("How many respondents are in this survey?")["when"] == [{"latest": 1}]
+    dollars = ask_reader.read("Gas cuts across households earning below $50,000, $50,000-$99,999, and $100,000 or more")
+    assert len(dollars["merge"]) == 3 and dollars["cuts"] == {"income_band": "all"}
+
+
+def test_tool_use_with_no_tool_named_is_anyone_who_used_one():
+    fig = {"answers": ["ChatGPT", "Gemini", "Have not used AI in the last two weeks"], "pct": np.array([[[45.0, 30.0, 30.0]]]),
+           "people": np.array([[[180, 120, 120]]]), "bases": np.full((1, 1, 3), 400)}
+    any_use = assistant.any_answer("How does recent AI-tool use compare across these waves?", fig, named=False)
+    assert fig["pct"][0, 0, any_use] == 70.0
+    assert assistant.any_answer("Which AI tools do people use most?", fig, named=False) is None
+
+
+def test_a_weighted_change_is_tested_on_the_unweighted_shares():
+    fig = {"periods": [{"label": "9 Nov 2026"}, {"label": "16 Nov 2026"}], "columns": [["total", "All"]], "answers": ["Started"],
+           "pct": np.array([[[51.6]], [[51.4]]]), "tested": np.array([[[52.2]], [[51.7]]]),
+           "people": np.array([[[208.5]], [[207.7]]]), "bases": np.array([[[404]], [[404]]])}
+    assert "p = 0.887" in assistant.tested(fig, 0)   # the weighted people gave p = 1.000

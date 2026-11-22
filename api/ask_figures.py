@@ -234,4 +234,6 @@ def moved(fig: dict, answer: int, column: int = 0) -> tuple[float, bool] | None:
     if np.isnan(p1) or np.isnan(p2):
         return None
     tested = fig.get("tested", fig["pct"])   # weighted figures are tested on their unweighted shares (etl/weighting.py)
+    if "tested" not in fig:   # unweighted: the change of the real shares, not of two rounded ones (42.6 to 51.7 is 9.2 points)
+        p1, p2 = 100 * fig["people"][-2, column, answer] / n1, 100 * fig["people"][-1, column, answer] / n2
     return round(float(p2 - p1), 1), significant(float(tested[-1, column, answer]), n2, float(tested[-2, column, answer]), n1)

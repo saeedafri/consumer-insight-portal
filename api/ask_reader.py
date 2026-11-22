@@ -44,25 +44,29 @@ CUT_VALUES = [(r"\bgen ?z\b|\bzoomers?\b", "generation", "GenZ"), (r"\bmillennia
 # ("Thanksgiving spending for high income"), and as bands they gave 3 to 7 columns for one asked group (22 Nov 2026)
 # by dollar range, so any wave's bands fit: the weekly survey's since 2022 and older ones ("$100,000-$124,999", "$200,000+");
 # a fixed list of 2022 bands sent "high income" in an older wave to another study (22 Nov 2026)
-INCOME_GROUPS = {"Low income (under $50,000)": (r"\b(low|lower)[- ](income|earners?|earning)\b", (0, 50_000)),
-                 "Middle income ($50,000-$99,999)": (r"\b(middle|mid)[- ](income|earners?|earning)\b|\bmiddle class\b", (50_000, 100_000)),
-                 "High income ($100,000 or more)": (r"\b(high|higher|upper)[- ](income|earners?|earning)\b|\baffluent\b|\bwealthy\b",
-                                                    (100_000, 10**9))}
+# or by their dollars: "households earning below $50,000, $50,000-$99,999, and $100,000 or more" (ChatGPT's key, 22 Nov 2026)
+INCOME_GROUPS = {"Low income (under $50,000)": (r"\b(low|lower)[- ](income|earners?|earning)\b|\b(below|under|less than) \$50,?000\b", (0, 50_000)),
+                 "Middle income ($50,000-$99,999)": (r"\b(middle|mid)[- ](income|earners?|earning)\b|\bmiddle class\b|\$50,?000 ?(-|–|to) ?\$?99,?999\b",
+                                                     (50_000, 100_000)),
+                 "High income ($100,000 or more)": (r"\b(high|higher|upper)[- ](income|earners?|earning)\b|\baffluent\b|\bwealthy\b"
+                                                    r"|\$100,?000(\+| or more| and (over|above|up))|\b(over|above) \$100,?000\b", (100_000, 10**9))}
 CUT_VALUES += [(pattern, "income_band", label) for label, (pattern, _) in INCOME_GROUPS.items()]
 CUT_DIMS = [(r"\b(?:by|and) (generation|generations|gen)\b|\b(?:across|each|every|all) generations?\b|\bwhich generations?\b", "generation"),
             (r"\b(?:by|and) (gender|sex)\b|\bmen (and|vs|versus|or) women\b|\bwomen (and|vs|versus|or) men\b", "gender"),
             (r"\b(?:by|and) age( group| band)?s?\b|\bage (group|band)s?\b(?:\s*\([^)]*\))?|\bwhich age( group)?s?\b(?:\s*\([^)]*\))?", "age_band"), (r"\b(?:by|and) (household )?income\b|\bincome (group|band|level)s?\b(?:\s*\([^)]*\))?", "income_band"),
             (r"\bby region\b|\bregions?\b|\b(the )?south (vs|versus|and|or) (the )?west\b", "census_region"), (r"\burbanicity\b|\burban,? suburban\b", "urbanicity")]
 KINDS = [(r"\bhow many (people|respondents|users|consumers|shoppers|adults|americans)\b|\bnumber of (people|respondents)\b", "count"),
-         (r"\b(top|winner|won|most popular|leading|leader|highest|best|biggest|largest|most common|rank|ranking|favou?rite)\b|\bwhich\b[^?]*\bmost\b", "top"),   # "which retailers do people shop at most?" ranks
+         (r"\b(top|winner|won|most popular|leading|leader|highest|best|biggest|largest|most common(ly)?|rank|ranking|favou?rite)\b|\bwhich\b(?=[^?]*\bmost\b)", "top"),   # "which retailers do people shop at most?" ranks; only "which" leaves the
+                                                       # subject ("which five retailers were most used" lost "retailers", 22 Nov 2026)
          (r"\b(trend|over time|history|historically|evolution|track(ed)?|rising or falling|going up or down|up or down)\b", "trend"),
          (r"\b(change|changed|increase|increased|decrease|decreased|grow|grew|growth|rise|rose|fall|fell|drop|dropped|shift)\b", "change")]
+POOLED = re.compile(r"\b(pooled|combined|all together|in total)\b")   # "the last 4 surveys pooled": one figure over them
 FILLER = re.compile(r"\b(what|which|who|how|many|much|percent(age)?|share|proportion|of|the|in|on|for|did|do|does|is|are|was|"
                     r"were|have|has|had|people|respondents|consumers|shoppers|users|americans|adults|show|me|tell|give|"
                     r"please|can|you|across|between|and|vs|versus|compare|compared|comparison|to|from|with|wave|waves|"
                     r"survey|surveys|latest|recent|week|weeks|month|months|year|years|quarter|last|past|this|that|"
                     r"chart|graph|data|figure|figures|number|a|an|by|per|each|every|all|time|since|until|through|more|less|fewer|"
-                    r"than|any|it|they|their|them|we|our|us|about|there|at|or|pooled|combined)\b", re.I)
+                    r"than|any|it|its|they|their|them|we|our|us|about|there|at|or|pooled|combined|these|those|using|correct)\b", re.I)
 
 
 
@@ -186,7 +190,7 @@ def periods(text: str) -> tuple[list[dict], str]:
     for m in re.finditer(r"\b(previous|prior)\s+(wave|survey|week)\b|\bweek before\b", text):
         take(m, {"latest": 2})
     dated = any(k in spec for _, spec in found for k in ("from", "month", "year", "quarter"))
-    for m in re.finditer(r"\b(latest|most recent|this week'?s?|current|newest|this wave|last wave|last survey|right now|currently|"
+    for m in re.finditer(r"\b(latest|most recent|this week'?s?|current|newest|this wave|this survey|last wave|last survey|right now|currently|"
                          r"at the moment|these days|nowadays)\b", text):   # "right now" kept the economy question below a match (20 Nov 2026)
         if dated and m[1] in ("current", "currently", "right now", "at the moment", "these days", "nowadays"):
             spans.append(m.span())   # "currently using" in the 16 Nov survey: that survey, not the latest one as well
@@ -211,6 +215,11 @@ def read(question: str) -> dict:
     text = " ".join(question.lower().replace("’", "'").split())
     when, rest = periods(text)
     grain = next((g for pattern, g in GRAINS if re.search(pattern, text)), None)
+    # "in each of the four survey weeks", "compare across the AI shopping waves": one figure per wave, not one pooled over
+    # them (it pooled 7 of ChatGPT's 40 answer-key questions, 22 Nov 2026); not stripped from the subject ("AI shopping")
+    if not grain and re.search(r"\beach of the\b|\bacross (?:the |these |all |those )?(?:[\w-]+ ){0,3}?(?:waves|weeks|surveys)\b", text) \
+            and not POOLED.search(text):
+        grain = "wave"
     kind = next((k for pattern, k in KINDS if re.search(pattern, text)), "share")
     if any("from" in w for w in when):   # "the last 4 surveys (26 Oct to 16 Nov)": the dates said, once
         when = [w for w in when if "last" not in w]
@@ -218,7 +227,9 @@ def read(question: str) -> dict:
         kind = "trend"   # "last 4 weeks" alone is one pooled figure; with a grain ("monthly") it is a series, and so is "how
                          # many" in all waves (one count over every wave before: "How many people bought Amazon prime in all
                          # Waves", fresh set, 15 Nov 2026)
-    if kind == "trend" and not grain and re.search(r"\b(pooled|combined|all together|in total)\b", text):
+    if kind == "change" and when == [{"latest": 1}] and grain == "wave":   # "the latest share and its weekly change": the
+        when = [{"latest": 2}, {"latest": 1}]                              # week before and the latest (ChatGPT's key, 22 Nov 2026)
+    if kind == "trend" and not grain and POOLED.search(text):
         kind = "share"   # "the last 4 surveys pooled": one figure over them
     cuts: dict = {}
     for pattern, dim in CUT_DIMS:
@@ -233,7 +244,8 @@ def read(question: str) -> dict:
     merge = {label: INCOME_GROUPS[label][1] for label in named}
     if merge:
         cuts["income_band"] = "all"   # every band, summed into the groups named (ask_figures.compute merge)
-    top = re.search(r"\btop\s+(\d+|three|five|ten)\b", text)
+    # "which five retailers were most used", "the five most commonly purchased categories"
+    top = re.search(r"\b(?:top|which)\s+(\d+|three|five|ten)\b|\b(\d+|three|five|ten)(?= most\b)", text)
     # waves are only ever compared within one country (config/countries.yml): "China" asks the China survey, no name the first
     country = next((code for code, words in COUNTRY_WORDS.items() if words.search(text)), next(iter(COUNTRY_WORDS)))
     about = re.sub(r"[\u201c\"](yes|no|don't know|not sure)[\u201d\"]", " ", rest)   # a quoted Yes is an answer, not the subject (it found the tax-return question)
@@ -243,6 +255,6 @@ def read(question: str) -> dict:
         about = re.sub(pattern, " ", about)
     about = FILLER.sub(" ", re.sub(r"\b(20[12]\d|q[1-4]|\d+)\b", " ", about))
     about = re.sub(rf"\b({'|'.join(MONTHS)})\b", " ", about)
-    return {"question": text, "country": country, "kind": kind, "when": when, "grain": grain, "cuts": cuts, "top": number(top[1]) if top else None,
+    return {"question": text, "country": country, "kind": kind, "when": when, "grain": grain, "cuts": cuts, "top": number(top[1] or top[2]) if top else None,
             "merge": merge, "compare": len(when) >= 2 or bool(re.search(r"\b(compare|compared|versus|vs\.?|against)\b", text)),
             "about": " ".join(re.findall(r"[a-z0-9$%'-]+", about))}
