@@ -15,6 +15,8 @@
 - {question: "Online category purchases through time", code: q3, kind: trend, period: all}
 - {question: "Discretionary income outlook for the coming year", code: CS1, kind: share, period: latest}
 - {question: "Discretionary income outlook through time", code: CS1, kind: trend, period: all}
+- {question: "How people feel about their own finances", code: CS1, kind: share, period: latest}   # the reader took the shutdown question D9 (22 Nov 2026)
+- {question: "Whether people expect their household finances to improve", code: CS1, kind: share, period: latest}   # a 2019 one-off before
 - {question: "US economy expectations for the next 12 months", code: CS2, kind: share, period: latest}
 - {question: "US economy expectations through time", code: CS2, kind: trend, period: all}
 - {question: "Share of adults currently on a GLP-1 drug", code: GP1, kind: share, period: latest}

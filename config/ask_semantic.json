@@ -7202,7 +7202,8 @@
 "2f6d4c7ba015": {
 "aliases": [
 "Holiday shopping activity",
-"Holiday purchases in last week"
+"Holiday purchases in last week",
+"Holiday purchases in the last seven days"
 ],
 "asks": [
 "How many consumers made holiday purchases recently?",
@@ -7212,7 +7213,9 @@
 "Which categories saw recent holiday purchases?",
 "How do consumers perceive their holiday shopping frequency?",
 "What are the trends in recent holiday shopping behavior?",
-"How do consumers compare their recent holiday purchases year-over-year?"
+"How do consumers compare their recent holiday purchases year-over-year?",
+"How many people bought holiday gifts in the last seven days?",
+"Did people buy holiday gifts last week?"
 ],
 "name": "Recent holiday purchases",
 "text": "Now we would like to focus on your holiday shopping (gifts, decorations, etc). Did you make any holiday purchases in the",
@@ -9802,7 +9805,8 @@
 "aliases": [
 "Recent AI tool usage",
 "AI tools used in last two weeks",
-"Engagement with AI tools"
+"Engagement with AI tools",
+"Use of generative AI"
 ],
 "asks": [
 "Which AI tools have users tried recently?",
@@ -9812,7 +9816,10 @@
 "How does usage frequency vary by age?",
 "What share of users report using multiple AI tools?",
 "How have AI tool usage patterns changed over time?",
-"What are the most common reasons for using AI tools?"
+"What are the most common reasons for using AI tools?",
+"How many people use generative AI?",
+"What share of people use AI tools?",
+"Do Americans use GenAI?"
 ],
 "name": "Usage of AI tools recently",
 "text": "Which, if any, of the following AI tools have you used in the last two weeks?",
@@ -18341,7 +18348,8 @@
 "aliases": [
 "GenAI shopping usage",
 "Using GenAI for purchases",
-"GenAI in shopping"
+"GenAI in shopping",
+"Using AI to shop"
 ],
 "asks": [
 "How many consumers use GenAI for shopping?",
@@ -18351,7 +18359,9 @@
 "How do motivations for using GenAI differ by age group?",
 "What are the most common uses of GenAI in shopping?",
 "How does consumer sentiment towards GenAI change over time?",
-"What factors influence the decision to use GenAI for shopping?"
+"What factors influence the decision to use GenAI for shopping?",
+"Do people use AI to help them shop?",
+"How many shoppers use GenAI for shopping?"
 ],
 "name": "Use of GenAI for shopping",
 "text": "Which of the following statements best represents your use of GenAI for shopping (generating ideas, researching products",
@@ -39636,7 +39646,8 @@
 "aliases": [
 "Household financial outlook",
 "Discretionary income expectations",
-"Financial situation predictions"
+"Financial situation predictions",
+"Personal finances outlook"
 ],
 "asks": [
 "How do you expect your discretionary income to change in the future?",
@@ -39646,7 +39657,10 @@
 "How significant are economic conditions in your discretionary income outlook?",
 "What role does job stability play in your financial expectations?",
 "How likely are you to adjust your spending based on income changes?",
-"What influences your perception of future discretionary income?"
+"What influences your perception of future discretionary income?",
+"How do people feel about their personal finances?",
+"Do consumers expect their finances to get better or worse?",
+"Are people optimistic about their own finances?"
 ],
 "name": "Discretionary income outlook",
 "text": "Considering your discretionary income (what is left over after all your monthly bills are paid), do you think your house",

@@ -258,7 +258,7 @@ def test_the_first_and_latest_wave_are_two_periods_oldest_first(index):
 
 def test_one_cut_value_is_named_in_the_answer(index):
     found = assistant.answer("Amazon retailers bought among Gen Z in the latest wave", index, EVERYONE)
-    assert "among GenZ" in found["answer"] and figure(found, "Amazon") == [85.0]
+    assert "among Gen Z" in found["answer"] and figure(found, "Amazon") == [85.0]
 
 
 def test_an_empty_index_is_built_again(tmp_path, index):
@@ -696,18 +696,17 @@ def test_the_glance_never_names_a_small_group_and_says_a_lead_or_a_most_common_a
     assert [t["label"] for t in glance["tiles"]] == ["Highest: GenZ", "Lowest: Boomer", "Gap"]   # Silent: 30 people
     assert glance["tiles"][0]["note"] == "Gas prices reducing spending: yes, 9 Nov 2026"         # a yes says what to
     assert glance["tiles"][2] == {"label": "Gap", "value": "30.0 pts", "note": "GenZ vs Boomer, significant"}
-    assert glance["takeaway"] == ("Highest among GenZ, about twice the Boomer figure. "   # the verdict first, then its figures
-                                  "“Yes” to “Did gas prices make you spend less?” runs from 30.0% among Boomer to 60.0% "
-                                  "among GenZ on 9 Nov 2026, a 30.0-point gap (1 group under 50 respondents left out).")
+    assert glance["takeaway"] == ("Gen Z are about twice as likely as Boomers to say yes to “Gas prices reducing spending”: "   # the verdict
+                                  "60.0% against 30.0% on 9 Nov 2026 (groups under 50 people not compared).")   # first, then its figures
     total = [("total", "Total")]
     split = fig([[[50, 30, 20]]], [[[400] * 3]], ["A", "B", "C"], total)
-    assert assistant.brief({"kind": "share"}, split, doc, [0, 1])["takeaway"] == "“A” is the most common answer at 50.0%, 20.0 points ahead of “B” (30.0%)."
+    assert assistant.brief({"kind": "share"}, split, doc, [0, 1])["takeaway"] == "The most common answer on 9 Nov 2026 is A (50.0%), ahead of B (30.0%)."
     listed = assistant.brief({"kind": "share"}, fig([[[50, 30, 45]]], [[[400] * 3]], ["A", "B", "C"], total), doc, [0, 1])
-    assert listed["takeaway"] == "“A” leads clearly at 50.0%, 20.0 points ahead of “B” (30.0%)."    # several each: a lead of 10+ points
+    assert listed["takeaway"] == "A leads on 9 Nov 2026 at 50.0%, well ahead of B (30.0%)."    # several each: a lead of 10+ points
     named = fig([[[20, 30, 50]]], [[[400] * 3]], ["Better", "Worse", "Same"], total)       # two named, “Same” first of all
-    assert assistant.brief({"kind": "share"}, named, doc, [0, 1], True)["takeaway"] == "“Worse” is at 30.0%, 10.0 points ahead of “Better” (20.0%)."
+    assert assistant.brief({"kind": "share"}, named, doc, [0, 1], True)["takeaway"] == "Worse is at 30.0% on 9 Nov 2026, Better at 20.0%."
     scale = assistant.brief({"kind": "share"}, named, doc, [2])   # nothing named: a better/worse scale said as its net
-    assert scale["takeaway"] == "More negative than positive: 20.0% chose “Better” and 30.0% “Worse” on 9 Nov 2026 (net -10.0)."
+    assert scale["takeaway"] == "More said “worse” than “better”: 30.0% worse, 20.0% better on 9 Nov 2026."
     plain = fig([[[50, 50]]], [[[400] * 2]], ["Yes", "No"], total)
     doc = {"text": "How much did you spend on Prime Day?", "name": "Previous year's Prime Day spending", "key": "K",
            "cuts": {"generation": []}, "waves": 5}
@@ -721,7 +720,7 @@ def test_an_answer_leads_with_tiles_a_takeaway_and_follow_ups_that_come_back_to_
     found = assistant.answer("What share bought from Amazon in all waves?", index, EVERYONE)
     amazon = next(r for r in found["table"]["rows"] if r[0] == "Amazon")
     assert found["tiles"][0]["value"] == assistant.fmt(amazon[-1]) and found["tiles"][1]["label"].startswith("Change since")
-    assert "up" in found["takeaway"] and "“Amazon”" in found["takeaway"]
+    assert "up" in found["takeaway"] and found["takeaway"].startswith("Amazon:")
     follow = next(f for f in found["next"] if f["question"].endswith("by generation"))
     assert follow["key"] == "CSI-US/tracker/XQ1"
     again = assistant.answer(follow["question"], index, EVERYONE, key=follow["key"])
@@ -1033,7 +1032,7 @@ def test_weights_are_raked_from_a_respondent_file_published_before_them(tmp_path
 def test_one_wave_says_how_it_moved_since_the_wave_before(index):
     found = assistant.answer("What share bought from Amazon in the latest wave?", index, EVERYONE)
     # 170 of 400 against 160 of 400 the week before: +2.5 points, not significant at 95%
-    assert found["takeaway"].endswith("“Amazon” is up 2.5 points from 19 Oct 2026 (not a significant change).")
+    assert found["takeaway"].endswith("That is about the same as on 19 Oct 2026 (40.0%) for Amazon.")   # +2.5 points, not significant
     assert found["tiles"][-1] == {"label": "Change since 19 Oct 2026", "value": "+2.5 pts", "note": "not significant"}
 
 
@@ -1045,7 +1044,7 @@ def test_two_kinds_of_group_are_read_from_the_cross_tab_files(index, tmp_path):
     (tmp_path / "waves" / "107" / "cuts").mkdir(parents=True)
     (tmp_path / "waves" / "107" / "cuts" / "XQ1.json.gz").write_bytes(gzip.compress(json.dumps({"answers": answers, "counts": counts}).encode()))
     found = assistant.answer("What share of Gen Z women bought from Amazon?", index, EVERYONE)
-    assert found["headline"] == "75.0% of GenZ Female respondents chose “Amazon” on 26 Oct 2026 (45 of 60)."
+    assert found["headline"] == "75.0% of GenZ Female respondents said Amazon on 26 Oct 2026 (45 of 60)."
     both = assistant.answer("Amazon by generation and gender", index, EVERYONE)
     assert both["table"]["head"] == ["Answer", "GenZ · Female", "GenZ · Male"] and both["table"]["rows"] == [["Amazon", 75.0, 25.0]]
 
@@ -1150,3 +1149,35 @@ def test_the_lead_repeats_what_the_analyst_asked_with_the_figure():
         "bought anything online in the past two weeks"
     assert assistant.subject_of("Do people have Amazon Prime?") == "have Amazon Prime"
     assert assistant.subject_of("Walmart vs Target") is None   # no "who did what": the brief's lead stays
+
+
+def test_how_a_verdict_is_asked_is_never_a_missing_subject(index):
+    assert assistant.unasked({"about": "amazon doing lately"}, "CSI-US/tracker/XQ1", index) == []   # "How is Amazon doing lately?"
+
+
+def test_how_many_use_a_list_with_no_answer_named_is_anyone_who_used_one():
+    fig = {"answers": ["ChatGPT", "Gemini", "Have not used AI"], "pct": np.array([[[42.0, 35.0, 29.0]]]),
+           "people": np.array([[[168, 140, 116]]]), "bases": np.full((1, 1, 3), 400)}
+    added = assistant.any_answer("How many people use generative AI?", fig, named=False)
+    assert fig["pct"][0, 0, added] == 71.0   # everyone but the 29.0% who used none
+    assert assistant.any_answer("How many people use ChatGPT?", fig, named=True) is None   # a tool named: that tool
+
+
+def test_a_long_answer_is_named_by_its_lead_words_only_once_the_question_is_chosen():
+    labels = ["Food or beverages (i.e., groceries)", "Clothing, footwear or fashion accessories", "Pet products"]
+    assert assistant.focus("Millennials who bought clothing online", labels) == []   # never to choose a question
+    assert assistant.focus("Millennials who bought clothing online", labels, loose=True) == [1]
+    assert assistant.focus("share who bought groceries online", labels, loose=True) == [0]   # its "i.e." name
+
+
+def test_among_reads_a_select_all_answer_from_its_item(index, tmp_path):
+    waves = tmp_path / "waves" / "107"
+    waves.mkdir(parents=True)   # a select-all list stores each answer as an item: [item, 0, "Walmart", None, None]
+    people = {"cuts": {}, "weights": [1, 1, 1, 1], "questions": {"XQ1": {"text": "", "rows": [[1, 0, "Amazon", None, None], [2, 0, "Walmart", None, None]],
+                                                                         "bits": {"0,0": format(0b1111, "x"), "1,0": format(0b101, "x"), "2,0": format(0b011, "x")}}}}
+    (waves / "people.json.gz").write_bytes(gzip.compress(json.dumps(people).encode()))
+    counts = index.counts("CSI-US/tracker/XQ1")
+    counts["sources"] = {107: ("XQ1", "")}
+    fig = ask_figures.compute(counts, ask_reader.read("Amazon in the latest wave"), EVERYONE)
+    out = assistant.among_figures(fig, counts, {"text": "Walmart shoppers", "key": "CSI-US/tracker/XQ1", "labels": ["Walmart"]}, index)
+    assert out["pct"][0, 0, 0] == 50.0   # Amazon among the 2 Walmart shoppers; matched by item it was nobody (22 Nov 2026)

@@ -141,7 +141,7 @@ function writeUp(question: string, answer: Answer, form: "email" | "slide"): str
     `${answer.scope.base ? `, ${answer.scope.base.toLocaleString("en-US")} respondents` : ""}` : "";
   const source = `Source: Coresight Research consumer survey${answer.sources[0] ? `, question ${answer.sources[0].qcode} “${answer.sources[0].question}”` : ""}` +
     `${scope ? `; ${scope}` : ""}; ${answer.weighting === "weighted" ? "Census-weighted" : "unweighted"}.`
-  const notes = (answer.notes ?? []).filter(n => !n.startsWith("Asked under"));
+  const notes = (answer.notes ?? []).filter(n => !n.startsWith("Includes the same question"));
   const lead = answer.headline || answer.takeaway || "";
   return form === "slide"
     ? [lead, "", ...figures.slice(0, 3).map(f => `• ${f}`), ...(answer.takeaway && answer.takeaway !== lead ? [`• ${answer.takeaway}`] : []), "", source].join("\n")

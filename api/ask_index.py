@@ -403,6 +403,11 @@ class Index:
         stem = word[:5]
         if stem in self.postings:
             return stem
+        # a word only the synonym list knows ("GLP1" for the wordings' "GLP-1", config/search_synonyms.yml): its group's
+        # longest word the surveys use; "GLP1" alone answered "no survey question matches" (22 Nov 2026)
+        # only for a word written with a digit: "recession" through "economy" answered a no-answer question (22 Nov 2026)
+        if any(c.isdigit() for c in word) and (group := [s for s in getattr(self, "synonyms", {}).get(stem, ()) if s in self.postings and len(s) >= 3]):
+            return max(group, key=len)
         if len(word) < 5 or word.isdigit():
             return None
         close = difflib.get_close_matches(word, self.vocabulary, n=1, cutoff=0.85)   # whole words: "submarine" stays unknown
