@@ -23,7 +23,7 @@ The one place every agent (Claude, Gemini, Codex, others) and every person reads
 
 | Item | Status | Where | Note |
 |---|---|---|---|
-| (nothing in progress) | | | |
+| Ask rebuild (own model, no paid AI per question, chosen after 8 research reports on 22 Nov 2026: plan format + respondent engine + trained question finder + one-pass plan filler + fast path). Step 1 done: hard test set of 132 multi-step analyst questions (39 from ChatGPT's key, 93 new; 5 must be refused), each with a plan and figures worked out from the raw weekly files, tagged by what it combines. Step 2 done: the plan engine runs a plan over each wave's respondents (among, either/both/not, age bands from raw ages, groups, funnels, top lists, pooled weeks, change test, weighted) | In progress: step 3 (trained question finder) next | scripts/ask_hard.yml, scripts/ask_hard_truth.py, scripts/ask_hard.py (--engine), api/ask_engine.py (bit_mask, question_in moved here from api/assistant.py), tests/test_ask_hard.py, tests/test_ask_engine.py | 22 Nov 2026. Engine: all 127 plans match the raw-file figures exactly, median 0.1 ms, slowest 3 ms. The raw-file calculator agrees with all 33 figures checked from ChatGPT's key except its online groceries (health products in the key); the engine caught one calculator error (pandas read the answer "None" as blank). Ask today, not yet using the engine: 57 of 132 right (43%), right question read 79 of 126, median 120 ms; 0 right on both, either, chains, tests, age bands, custom groups. Raw files (14 Sep - 16 Nov 2026) are in ~/Downloads/Collab/ask-benchmark, not the repo |
 
 ## Waiting for deploy (done here, not on staging yet)
 

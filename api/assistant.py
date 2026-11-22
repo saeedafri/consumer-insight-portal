@@ -35,6 +35,7 @@ import numpy as np
 import yaml
 
 from api import ask_figures, ask_model, ask_reader
+from api.ask_engine import bit_mask, question_in
 from api.ask_index import FRAME_WORDS, LEARNED, STOP, Index, name_key, read_json, stems
 from etl import weighting
 from etl.serving import p_value
@@ -1097,12 +1098,6 @@ def overview(question: str, plan: dict, index: Index, visible: set[int], quick: 
             "next": [{"question": f"{p['name']} over time", "key": p["source"]["key"]} for p in parts[:3]]}
 
 
-def bit_mask(hexed: str | None, size: int) -> np.ndarray:
-    """A people.json bitset (hex, respondent i = bit i) as booleans in seat order."""
-    value = int(hexed or "0", 16)
-    return np.unpackbits(np.frombuffer(value.to_bytes((size + 7) // 8, "little"), np.uint8), bitorder="little")[:size].astype(bool)
-
-
 @functools.lru_cache(maxsize=2048)
 def weights_of(path: Path) -> np.ndarray | None:
     """One wave's Census weight per respondent, in people.json's seat order: the ETL's (shared/data/payloads.py
@@ -1124,12 +1119,6 @@ def weights_of(path: Path) -> np.ndarray | None:
                 seats[int(i)][margin] = value
     raked = weighting.rake(seats, config["margins"], (config["trim_low"], config["trim_high"]))
     return np.array([raked[i] for i in range(size)], float)
-
-
-def question_in(people: dict, qcode: str) -> dict | None:
-    """A question in one wave's people.json by its code in any case: the wave spells the weekly core q5, the joined question
-    file Q5, and on staging's case-sensitive files the weighted answer quietly fell back to unweighted (22 Nov 2026)."""
-    return people["questions"].get(qcode) or next((q for code, q in people["questions"].items() if code.lower() == qcode.lower()), None)
 
 
 def weighted_counts(people: dict, weights: np.ndarray, qcode: str, answers: list[str], groups: list[np.ndarray | None]):

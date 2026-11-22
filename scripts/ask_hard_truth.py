@@ -41,7 +41,9 @@ def load(folder: Path) -> dict:
     waves = {}
     for path in sorted(glob.glob(str(folder / "Coresight US weekly survey *.xlsx"))):
         date = re.search(r"(\d{4}-\d{2}-\d{2})", path)[1]
-        data, questions = pd.read_excel(path, "Data"), pd.read_excel(path, "Questions")
+        # only an empty cell is blank: pandas reads the answer "None" (D12, 59 people) and "N/A" as missing by default
+        data = pd.read_excel(path, "Data", keep_default_na=False, na_values=[""])
+        questions = pd.read_excel(path, "Questions")
         codes: dict = {}
         for _, row in questions.iterrows():
             entry = codes.setdefault(str(row["Question code"]), {"multi": "select all" in str(row["Type"]), "columns": {}})

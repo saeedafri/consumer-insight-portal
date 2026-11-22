@@ -22,7 +22,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 logging.disable(logging.WARNING)
-from api import ask_index, assistant  # noqa: E402
+from api import ask_engine, ask_index, assistant  # noqa: E402
 
 
 def said(found: dict) -> set[str]:
@@ -69,18 +69,38 @@ def score(case: dict, found: dict) -> dict:
             "pick": pick}
 
 
+def check_engine(cases: list[dict], published: Path) -> None:
+    """Every plan through the plan engine, its figures against the raw-file figures: label, share, people and base."""
+    ids, wrong, times = ask_engine.surveys(published), [], []
+    key = lambda r: (str(r.get("when")), r.get("group"), r.get("label"), r.get("pct"), r.get("n"), r.get("base"), r.get("points"))   # noqa: E731
+    for case in (c for c in cases if "plan" in c):
+        started = time.perf_counter()
+        got = ask_engine.run(case["plan"], published, ids)
+        times.append(time.perf_counter() - started)
+        if sorted(map(key, got), key=str) != sorted(map(key, case["expect"]), key=str):
+            wrong.append(case["id"])
+            print(case["id"], "expected", [key(r)[2:6] for r in case["expect"]][:6], "\n     got", [key(r)[2:6] for r in got][:6])
+    times.sort()
+    print(f"engine: {len(times) - len(wrong)} of {len(times)} plans match the raw files; "
+          f"median {times[len(times) // 2] * 1000:.1f} ms, slowest {times[-1] * 1000:.1f} ms (first reads include loading files)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--published", type=Path, default=ROOT / "data" / "published" / "current" / "api" / "v1")
     ap.add_argument("--cases", type=Path, default=ROOT / "scripts" / "ask_hard.yml")
     ap.add_argument("--out", type=Path)
+    ap.add_argument("--engine", action="store_true", help="check the plan engine (api/ask_engine.py) on every plan instead of Ask")
     args = ap.parse_args()
+    cases = yaml.safe_load(args.cases.read_text())
+    if args.engine:
+        return check_engine(cases, args.published)
     waves = json.loads(gzip.decompress((args.published / "waves.json.gz").read_bytes()))
     index = ask_index.Index(args.published / "questions", waves)
     index.add_vectors()
     visible = {w["survey_id"] for w in waves}
     results, by_part, times = [], defaultdict(lambda: [0, 0]), []
-    for case in yaml.safe_load(args.cases.read_text()):
+    for case in cases:
         started = time.perf_counter()
         found = assistant.answer(case["question"], index, visible, True)
         times.append(time.perf_counter() - started)

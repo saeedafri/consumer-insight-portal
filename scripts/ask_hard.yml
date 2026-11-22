@@ -2384,9 +2384,9 @@
   expect:
   - when: '2026-11-16'
     label: share
-    pct: 13.9
+    pct: 11.9
     n: 48
-    base: 345
+    base: 404
 - id: H070
   source: new
   parts:
