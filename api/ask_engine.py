@@ -65,17 +65,26 @@ def age_of(label: str) -> float:
     return float(found[0]) if found else math.nan
 
 
-def mask(people: dict, size: int, cond: dict) -> tuple[np.ndarray, np.ndarray]:
+def code_in(q, sid: int | None) -> list[str]:
+    """The codes to try in one wave: a code, a list, or {survey id: code} (the exact code each week asked it under:
+    a question's older codes can name another question today, "Q6" before footwear's FW1 is the weekly q6)."""
+    if isinstance(q, dict):
+        return [q[sid]] if sid in q else [q[str(sid)]] if str(sid) in q else []
+    return [q] if isinstance(q, str) else list(q)
+
+
+def mask(people: dict, size: int, cond: dict, sid: int | None = None) -> tuple[np.ndarray, np.ndarray]:
     """(true, asked) for one condition in one wave: who meets it, and who was asked every question it reads."""
     if "either" in cond or "both" in cond:
-        parts = [mask(people, size, c) for c in cond.get("either") or cond["both"]]
+        parts = [mask(people, size, c, sid) for c in cond.get("either") or cond["both"]]
         asked = np.logical_and.reduce([a for _, a in parts])
         true = (np.logical_or if "either" in cond else np.logical_and).reduce([t for t, _ in parts])
         return true & asked, asked
     if "not" in cond:
-        true, asked = mask(people, size, cond["not"])
+        true, asked = mask(people, size, cond["not"], sid)
         return ~true & asked, asked
-    question = question_in(people, cond["q"])
+    # a code, or the codes one question was asked under (GLP-1 use is EAT9 on 14 Sep, GP1 later): the first this wave has
+    question = next((q for code in code_in(cond["q"], sid) if (q := question_in(people, code))), None)
     if question is None:   # not asked in this wave
         return np.zeros(size, bool), np.zeros(size, bool)
     rows = [r for r in question["rows"] if "item" not in cond or starts(r[2], [cond["item"]])]
@@ -95,9 +104,9 @@ def mask(people: dict, size: int, cond: dict) -> tuple[np.ndarray, np.ndarray]:
     return true & asked, asked
 
 
-def answers_of(people: dict, code: str) -> list[str]:
+def answers_of(people: dict, code, sid: int | None = None) -> list[str]:
     """A question's answers in survey order: its items (select-all) or its options."""
-    question = question_in(people, code) or {"rows": []}
+    question = next((q for c in code_in(code, sid) if (q := question_in(people, c))), {"rows": []})
     return list(dict.fromkeys(clean(r[2] if r[1] == 0 else r[4]) for r in question["rows"] if r[0] or r[1]))
 
 
@@ -115,45 +124,45 @@ def run(plan: dict, published: Path, ids: dict[str, int] | None = None) -> list[
     op = plan.get("op", "share")
     out = []
     for when, group_dates in buckets:
-        loaded = [people_of(published / "waves" / str(ids[d]) / "people.json.gz") for d in group_dates]
+        loaded = [(ids[d], people_of(published / "waves" / str(ids[d]) / "people.json.gz")) for d in group_dates]
         groups: list = [(None, None)]
         if "by" in plan:
             by = plan["by"]
             groups = list(by["groups"].items()) if "groups" in by else \
-                [(a, {"q": by["q"], "is": [a]}) for a in answers_of(loaded[-1], by["q"]) if not re.match(r"prefer not", a, re.I)]
+                [(a, {"q": by["q"], "is": [a]}) for a in answers_of(loaded[-1][1], by["q"], loaded[-1][0]) if not re.match(r"prefer not", a, re.I)]
         for name, group_cond in groups:
             totals: dict = {}
-            for people in loaded:
+            for sid, people in loaded:
                 size = len(people["weights"])
                 weight = np.asarray(people["weights"], float) if plan.get("weighted") else np.ones(size)
                 among = np.ones(size, bool)
                 for cond in (plan.get("among"), group_cond):
                     if cond:
-                        among &= mask(people, size, cond)[0]
+                        among &= mask(people, size, cond, sid)[0]
 
                 def add(key: str, true: np.ndarray, base: np.ndarray) -> None:   # people and base, summed over pooled waves
                     n, b = totals.get(key, (0.0, 0.0))
                     totals[key] = (n + weight[true].sum(), b + weight[base].sum())
                 if op == "share":
-                    true, asked = mask(people, size, plan["ask"])
+                    true, asked = mask(people, size, plan["ask"], sid)
                     add("share", true & among, among if plan.get("base") == "all" else asked & among)
                 elif op in ("top", "counts"):
-                    for answer in answers_of(people, plan["ask"]["q"]):
+                    for answer in answers_of(people, plan["ask"]["q"], sid):
                         if op == "top" and NONE_LIKE.match(answer):
                             continue
-                        true, asked = mask(people, size, {"q": plan["ask"]["q"], "is": [answer]})
+                        true, asked = mask(people, size, {"q": plan["ask"]["q"], "is": [answer]}, sid)
                         add(answer, true & among, asked & among)
                 elif op == "chain":
                     reached = among
                     for number, step in enumerate(plan["steps"], 1):
-                        true, _ = mask(people, size, step)
+                        true, _ = mask(people, size, step, sid)
                         add(step.get("say", f"step {number}"), true & reached, reached)
                         reached = reached & true
             rows = [{"when": when, "label": label, "pct": round(100 * n / b, 1) if b else None, "n": round(n), "base": round(b),
                      **({"group": name} if name else {})} for label, (n, b) in totals.items()]
             out += sorted(rows, key=lambda r: -(r["pct"] or 0))[: plan.get("top", 5)] if op == "top" else rows
-    if op == "share" and len(out) == 2 and plan.get("test"):   # the change in points and its two-sided z-test (95%)
-        (a, b) = out
+    if op == "share" and len(out) == 2 and plan.get("test") and all(r["base"] for r in out) and 0 < sum(r["n"] for r in out) < sum(r["base"] for r in out):
+        (a, b) = out   # the change in points and its two-sided z-test (95%); never on an empty group or all one answer
         p1, p2 = a["n"] / a["base"], b["n"] / b["base"]
         pooled = (a["n"] + b["n"]) / (a["base"] + b["base"])
         z = (p2 - p1) / math.sqrt(pooled * (1 - pooled) * (1 / a["base"] + 1 / b["base"]))

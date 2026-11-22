@@ -1,0 +1,829 @@
+# Ask's held-out test set: 30 analyst questions written after the plan filler's rules were tuned on scripts/ask_hard.yml
+# (22 Nov 2026), never used to tune them. Same format and calculator (scripts/ask_hard_truth.py fills `expect`); scored
+# with scripts/ask_hard.py --cases scripts/ask_heldout.yml. A score here is the honest one: rules fit to the hard set
+# can look better there than they are.
+- id: X001
+  source: heldout
+  parts:
+  - lookup
+  question: How many people bought luxury products in the past three months, according to the 14 Sep survey?
+  plan:
+    waves:
+    - 2026-09-14
+    ask:
+      q: LX1
+      is:
+      - 'Yes'
+  expect:
+  - when: '2026-09-14'
+    label: share
+    pct: 29.1
+    n: 117
+    base: 402
+- id: X002
+  source: heldout
+  parts:
+  - among
+  - top
+  question: For people who dined out or ordered restaurant food (14 Sep), which delivery services did they use? Top 3
+  plan:
+    waves:
+    - 2026-09-14
+    op: top
+    top: 3
+    ask:
+      q: EAT5
+  expect:
+  - when: '2026-09-14'
+    label: DoorDash
+    pct: 39.7
+    n: 141
+    base: 355
+  - when: '2026-09-14'
+    label: Restaurant's own delivery service
+    pct: 23.4
+    n: 83
+    base: 355
+  - when: '2026-09-14'
+    label: Uber Eats
+    pct: 21.7
+    n: 77
+    base: 355
+- id: X003
+  source: heldout
+  parts:
+  - cut
+  - demographic
+  question: Did more women than men buy beauty products in the past three months? 28 Sep
+  plan:
+    waves:
+    - 2026-09-28
+    ask:
+      q: BT1
+      is:
+      - 'Yes'
+    by:
+      groups:
+        women:
+          q: D1
+          is:
+          - Female
+        men:
+          q: D1
+          is:
+          - Male
+  expect:
+  - when: '2026-09-28'
+    label: share
+    pct: 77.5
+    n: 155
+    base: 200
+    group: women
+  - when: '2026-09-28'
+    label: share
+    pct: 53.5
+    n: 107
+    base: 200
+    group: men
+- id: X004
+  source: heldout
+  parts:
+  - per-wave
+  question: Share using Gemini in the last two weeks, each of the last four surveys
+  plan:
+    waves:
+    - 2026-10-26
+    - 2026-11-02
+    - 2026-11-09
+    - 2026-11-16
+    ask:
+      q: D28
+      is:
+      - Gemini
+  expect:
+  - when: '2026-10-26'
+    label: share
+    pct: 35.4
+    n: 143
+    base: 404
+  - when: '2026-11-02'
+    label: share
+    pct: 42.2
+    n: 151
+    base: 358
+  - when: '2026-11-09'
+    label: share
+    pct: 35.9
+    n: 145
+    base: 404
+  - when: '2026-11-16'
+    label: share
+    pct: 34.7
+    n: 140
+    base: 404
+- id: X005
+  source: heldout
+  parts:
+  - among
+  question: Among people who bought diamond jewelry candidates (would consider diamond jewelry) on 21 Sep, what share prefer a lab-grown diamond?
+  plan:
+    waves:
+    - 2026-09-21
+    among:
+      q: DJ1
+      is:
+      - 'Yes'
+    ask:
+      q: DJ3
+      is:
+      - Lab-grown
+  expect:
+  - when: '2026-09-21'
+    label: share
+    pct: 24.2
+    n: 45
+    base: 186
+- id: X006
+  source: heldout
+  parts:
+  - both
+  question: On 16 Nov, what share bought footwear in the past three months and also bought for the holidays in the last seven days?
+  plan:
+    waves:
+    - 2026-11-16
+    ask:
+      both:
+      - q: FW1
+        is:
+        - 'Yes'
+      - q: XM1
+        is:
+        - 'Yes'
+  expect:
+  - when: '2026-11-16'
+    label: share
+    pct: 31.2
+    n: 126
+    base: 404
+- id: X007
+  source: heldout
+  parts:
+  - compare
+  - test
+  question: Is the share who used Copilot on 16 Nov significantly different from 26 Oct?
+  plan:
+    waves:
+    - 2026-10-26
+    - 2026-11-16
+    test: true
+    ask:
+      q: D28
+      is:
+      - Copilot
+  expect:
+  - when: '2026-10-26'
+    label: share
+    pct: 12.6
+    n: 51
+    base: 404
+  - when: '2026-11-16'
+    label: share
+    pct: 12.9
+    n: 52
+    base: 404
+  - label: change
+    points: 0.2
+    p: 0.916
+- id: X008
+  source: heldout
+  parts:
+  - cut
+  - age-band
+  question: Home-improvement buyers in the past three months among 18-34s vs 55 and over, 12 Oct
+  plan:
+    waves:
+    - 2026-10-12
+    ask:
+      q: HI1
+      is:
+      - 'Yes'
+    by:
+      groups:
+        18-34:
+          q: D2
+          between:
+          - 18
+          - 34
+        55+:
+          q: D2
+          between:
+          - 55
+          - 120
+  expect:
+  - when: '2026-10-12'
+    label: share
+    pct: 58.4
+    n: 45
+    base: 77
+    group: 18-34
+  - when: '2026-10-12'
+    label: share
+    pct: 36.3
+    n: 62
+    base: 171
+    group: 55+
+- id: X009
+  source: heldout
+  parts:
+  - top
+  question: Top 5 retailers people bought food from in the latest survey
+  plan:
+    waves:
+    - 2026-11-16
+    op: top
+    top: 5
+    ask:
+      q: q4
+  expect:
+  - when: '2026-11-16'
+    label: Walmart
+    pct: 64.9
+    n: 262
+    base: 404
+  - when: '2026-11-16'
+    label: Amazon
+    pct: 24.8
+    n: 100
+    base: 404
+  - when: '2026-11-16'
+    label: Dollar General
+    pct: 22.3
+    n: 90
+    base: 404
+  - when: '2026-11-16'
+    label: Dollar Tree
+    pct: 22.3
+    n: 90
+    base: 404
+  - when: '2026-11-16'
+    label: Aldi
+    pct: 21.0
+    n: 85
+    base: 404
+- id: X010
+  source: heldout
+  parts:
+  - among
+  - net
+  question: Among denim buyers in the past 12 months (12 Oct), what share plan to buy denim in the next six months?
+  plan:
+    waves:
+    - 2026-10-12
+    among:
+      q: DNM1
+      is:
+      - 'Yes'
+    ask:
+      q: DNM2
+      is:
+      - 'Yes'
+  expect:
+  - when: '2026-10-12'
+    label: share
+    pct: 76.6
+    n: 157
+    base: 205
+- id: X011
+  source: heldout
+  parts:
+  - counts
+  question: Breakdown of how people feel about tariffs' impact on the US economy, 28 Sep
+  plan:
+    waves:
+    - 2026-09-28
+    op: counts
+    ask:
+      q: TF2
+  expect:
+  - when: '2026-09-28'
+    label: Tariffs have a very negative impact on the overall economy
+    pct: 28.8
+    n: 116
+    base: 403
+  - when: '2026-09-28'
+    label: Tariffs have a very positive impact on the overall economy
+    pct: 7.9
+    n: 32
+    base: 403
+  - when: '2026-09-28'
+    label: Tariffs have a somewhat negative impact on the overall economy
+    pct: 26.3
+    n: 106
+    base: 403
+  - when: '2026-09-28'
+    label: Tariffs have a somewhat positive impact on the overall economy
+    pct: 11.2
+    n: 45
+    base: 403
+  - when: '2026-09-28'
+    label: Don’t know
+    pct: 15.1
+    n: 61
+    base: 403
+  - when: '2026-09-28'
+    label: Tariffs have no impact on the overall economy
+    pct: 10.7
+    n: 43
+    base: 403
+- id: X012
+  source: heldout
+  parts:
+  - lookup
+  question: What share of people have filed their 2026 income tax return, 14 Sep?
+  plan:
+    waves:
+    - 2026-09-14
+    ask:
+      q: CS3
+      is:
+      - 'Yes'
+  expect:
+  - when: '2026-09-14'
+    label: share
+    pct: 37.3
+    n: 150
+    base: 402
+- id: X013
+  source: heldout
+  parts:
+  - either
+  question: Share who bought from Costco or Sam's Club for food in the last two weeks (either), 16 Nov
+  plan:
+    waves:
+    - 2026-11-16
+    ask:
+      q: q4
+      is:
+      - Costco
+      - Sam's Club
+  expect:
+  - when: '2026-11-16'
+    label: share
+    pct: 31.9
+    n: 129
+    base: 404
+- id: X014
+  source: heldout
+  parts:
+  - cut
+  - demographic
+  question: 'Rural vs urban: share who bought from Dollar General for food, latest wave'
+  plan:
+    waves:
+    - 2026-11-16
+    ask:
+      q: q4
+      is:
+      - Dollar General
+    by:
+      groups:
+        rural:
+          q: D6
+          is:
+          - Rural
+        urban:
+          q: D6
+          is:
+          - Urban
+  expect:
+  - when: '2026-11-16'
+    label: share
+    pct: 35.2
+    n: 32
+    base: 91
+    group: rural
+  - when: '2026-11-16'
+    label: share
+    pct: 22.4
+    n: 28
+    base: 125
+    group: urban
+- id: X015
+  source: heldout
+  parts:
+  - per-wave
+  - net
+  question: Expecting personal finances to get worse, each week of the last four
+  plan:
+    waves:
+    - 2026-10-26
+    - 2026-11-02
+    - 2026-11-09
+    - 2026-11-16
+    ask:
+      q: CS1
+      is:
+      - Somewhat worse
+      - Much worse
+  expect:
+  - when: '2026-10-26'
+    label: share
+    pct: 35.9
+    n: 145
+    base: 404
+  - when: '2026-11-02'
+    label: share
+    pct: 35.2
+    n: 142
+    base: 403
+  - when: '2026-11-09'
+    label: share
+    pct: 25.7
+    n: 104
+    base: 404
+  - when: '2026-11-16'
+    label: share
+    pct: 35.4
+    n: 143
+    base: 404
+- id: X016
+  source: heldout
+  parts:
+  - among
+  - top
+  question: Among GLP-1 users on 21 Sep, what statements apply since taking the medication? Top 3
+  plan:
+    waves:
+    - 2026-09-21
+    op: top
+    top: 3
+    among:
+      q: GP1
+      is:
+      - 'Yes'
+    ask:
+      q: GP5
+  expect:
+  - when: '2026-09-21'
+    label: I have been exercising more
+    pct: 42.3
+    n: 30
+    base: 71
+  - when: '2026-09-21'
+    label: I appreciate eating healthier foods more
+    pct: 33.8
+    n: 24
+    base: 71
+  - when: '2026-09-21'
+    label: I am paying more attention to the nutritional content
+    pct: 33.8
+    n: 24
+    base: 71
+- id: X017
+  source: heldout
+  parts:
+  - lookup
+  question: What share of people have heard of AI, 5 Oct survey?
+  plan:
+    waves:
+    - 2026-10-05
+    ask:
+      q: G1
+      is:
+      - 'Yes'
+  expect:
+  - when: '2026-10-05'
+    label: share
+    pct: 92.5
+    n: 371
+    base: 401
+- id: X018
+  source: heldout
+  parts:
+  - among
+  - counts
+  question: Among people who used generative AI on 5 Oct, do they use it personally, for work or both?
+  plan:
+    waves:
+    - 2026-10-05
+    op: counts
+    ask:
+      q: G6
+  expect:
+  - when: '2026-10-05'
+    label: Only personal
+    pct: 60.3
+    n: 164
+    base: 272
+  - when: '2026-10-05'
+    label: Both
+    pct: 32.7
+    n: 89
+    base: 272
+  - when: '2026-10-05'
+    label: Only for work
+    pct: 7.0
+    n: 19
+    base: 272
+- id: X019
+  source: heldout
+  parts:
+  - cut
+  - income-dollars
+  question: Luxury buying in the past three months for households under $50,000 vs $100,000 or more, 14 Sep
+  plan:
+    waves:
+    - 2026-09-14
+    ask:
+      q: LX1
+      is:
+      - 'Yes'
+    by:
+      groups:
+        under $50,000:
+          q: D5
+          is:
+          - under $25
+          - $25,000
+        $100,000 or more:
+          q: D5
+          is:
+          - $100,000
+          - $150,000
+          - $200,000
+  expect:
+  - when: '2026-09-14'
+    label: share
+    pct: 18.2
+    n: 24
+    base: 132
+    group: under $50,000
+  - when: '2026-09-14'
+    label: share
+    pct: 47.5
+    n: 58
+    base: 122
+    group: $100,000 or more
+- id: X020
+  source: heldout
+  parts:
+  - pooled
+  question: Across the last four surveys pooled, what share bought groceries online?
+  plan:
+    waves:
+    - 2026-10-26
+    - 2026-11-02
+    - 2026-11-09
+    - 2026-11-16
+    per: pooled
+    ask:
+      q: q3
+      is:
+      - Food or beverages
+  expect:
+  - when: pooled
+    label: share
+    pct: 30.0
+    n: 484
+    base: 1615
+- id: X021
+  source: heldout
+  parts:
+  - among
+  - top
+  question: Among holiday purchasers on 2 Nov, which retailers did they buy from most? Top 3
+  plan:
+    waves:
+    - 2026-11-02
+    op: top
+    top: 3
+    among:
+      q: XM1
+      is:
+      - 'Yes'
+    ask:
+      q: XM2
+  expect:
+  - when: '2026-11-02'
+    label: Walmart
+    pct: 48.0
+    n: 96
+    base: 200
+  - when: '2026-11-02'
+    label: Amazon
+    pct: 36.5
+    n: 73
+    base: 200
+  - when: '2026-11-02'
+    label: Target
+    pct: 25.5
+    n: 51
+    base: 200
+- id: X022
+  source: heldout
+  parts:
+  - lookup
+  question: What share bought from a dollar store in the past three months, 26 Oct?
+  plan:
+    waves:
+    - 2026-10-26
+    ask:
+      q: DS1
+      is:
+      - 'Yes'
+  expect:
+  - when: '2026-10-26'
+    label: share
+    pct: 69.3
+    n: 280
+    base: 404
+- id: X023
+  source: heldout
+  parts:
+  - both
+  question: Share who bought groceries both in a store and online on 16 Nov
+  plan:
+    waves:
+    - 2026-11-16
+    ask:
+      both:
+      - q: q2
+        is:
+        - Food or beverages
+      - q: q3
+        is:
+        - Food or beverages
+  expect:
+  - when: '2026-11-16'
+    label: share
+    pct: 23.5
+    n: 95
+    base: 404
+- id: X024
+  source: heldout
+  parts:
+  - cut
+  - demographic
+  question: 'Men vs women: used social media to shop in the past three months, 19 Oct'
+  plan:
+    waves:
+    - 2026-10-19
+    ask:
+      q: SC1
+      is:
+      - 'Yes'
+    by:
+      groups:
+        men:
+          q: D1
+          is:
+          - Male
+        women:
+          q: D1
+          is:
+          - Female
+  expect:
+  - when: '2026-10-19'
+    label: share
+    pct: 47.5
+    n: 95
+    base: 200
+    group: men
+  - when: '2026-10-19'
+    label: share
+    pct: 50.0
+    n: 100
+    base: 200
+    group: women
+- id: X025
+  source: heldout
+  parts:
+  - among
+  - net
+  question: Among people buying apparel on 2 Nov, how many would be willing to spend more for better fit?
+  plan:
+    waves:
+    - 2026-11-02
+    ask:
+      q: AP14
+      is:
+      - Yes, I would be willing
+  expect:
+  - when: '2026-11-02'
+    label: share
+    pct: 59.3
+    n: 48
+    base: 81
+- id: X026
+  source: heldout
+  parts:
+  - compare
+  - test
+  question: Did gas-price spending cuts change significantly between 14 Sep and 16 Nov?
+  plan:
+    waves:
+    - 2026-09-14
+    - 2026-11-16
+    test: true
+    ask:
+      q: D14
+      is:
+      - 'Yes'
+  expect:
+  - when: '2026-09-14'
+    label: share
+    pct: 62.7
+    n: 252
+    base: 402
+  - when: '2026-11-16'
+    label: share
+    pct: 58.2
+    n: 235
+    base: 404
+  - label: change
+    points: -4.5
+    p: 0.19
+- id: X027
+  source: heldout
+  parts:
+  - lookup
+  question: Share who purchased anything on Amazon during Big Deal Days 2025, 12 Oct
+  plan:
+    waves:
+    - 2026-10-12
+    ask:
+      q: BD1
+      is:
+      - 'Yes'
+  expect:
+  - when: '2026-10-12'
+    label: share
+    pct: 32.9
+    n: 133
+    base: 404
+- id: X028
+  source: heldout
+  parts:
+  - cut
+  - age-band
+  question: 'Who is more likely to have finished holiday shopping on 16 Nov: under 35 or 55 and older?'
+  plan:
+    waves:
+    - 2026-11-16
+    ask:
+      q: XM3
+      is:
+      - Finished shopping
+    by:
+      groups:
+        18-34:
+          q: D2
+          between:
+          - 18
+          - 34
+        55+:
+          q: D2
+          between:
+          - 55
+          - 120
+  expect:
+  - when: '2026-11-16'
+    label: share
+    pct: 14.9
+    n: 14
+    base: 94
+    group: 18-34
+  - when: '2026-11-16'
+    label: share
+    pct: 4.7
+    n: 7
+    base: 150
+    group: 55+
+- id: X029
+  source: heldout
+  parts:
+  - refuse
+  question: How many of the 2 Nov apparel buyers bought footwear two weeks later?
+  refuse: each week asks different people; nobody can be followed from one week to another
+- id: X030
+  source: heldout
+  parts:
+  - among
+  question: Among people who noticed retail prices rising (28 Sep), what share changed their shopping to avoid tariffs?
+  plan:
+    waves:
+    - 2026-09-28
+    among:
+      q: IN1
+      is:
+      - Prices have generally risen
+    ask:
+      q: TF5
+      is:
+      - 'Yes'
+  expect:
+  - when: '2026-09-28'
+    label: share
+    pct: 47.1
+    n: 132
+    base: 280

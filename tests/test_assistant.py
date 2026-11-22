@@ -1267,3 +1267,22 @@ def test_a_question_is_searched_part_by_part_in_the_weeks_it_names():
     assert ask_plan.weeks("What share bought footwear on 16 Nov 2026?", ids) == {3}
     assert ask_plan.weeks("Footwear buyers over the last 2 waves", ids) == {2, 3}
     assert ask_plan.weeks("Who buys footwear?", ids) is None
+
+
+def test_the_plan_filler_reads_groups_weeks_and_list_items():
+    from api import ask_plan
+    assert ask_plan.demographic("women") == {"q": "D1", "is": ["Female"]}
+    assert ask_plan.demographic("55 and older") == {"q": "D2", "between": [55, 120]}
+    assert ask_plan.demographic("under-30s") == {"q": "D2", "between": [18, 29]}
+    assert ask_plan.demographic("$100,000 or more")["q"] == "D5"
+    assert list(ask_plan.age_bands("by age: 18-34, 35-54, 55+")) == ["18-34", "35-54", "55+"]
+    a, _, b, _ = ask_plan.sides("What share of women used AI", "men?")
+    assert (a, b) == ("women", "men")
+    # a list answer said in other words; nothing when two tie
+    assert ask_plan.items("In-store grocery purchasing", ["Pet products", "Food or beverages (i.e., groceries)"]) == ["Food or beverages (i.e., groceries)"]
+    assert ask_plan.items("Going to a bar", ["Gone to a bar", "Gone to a gym"]) == ["Gone to a bar"]
+    assert ask_plan.items("shopping", ["Holiday shopping", "Grocery shopping"]) == []
+    # a question's own recall period is wording, not a time; a day named is the time
+    ids = {"2026-11-02": 1, "2026-11-09": 2, "2026-11-16": 3}
+    assert ask_plan.weeks("Used ChatGPT in the last two weeks, 16 Nov 2026?", ids) == {3}
+    assert ask_plan.weeks("GLP-1 use in every week of the last 2", ids) == {2, 3}

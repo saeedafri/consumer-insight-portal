@@ -85,6 +85,30 @@ def check_engine(cases: list[dict], published: Path) -> None:
           f"median {times[len(times) // 2] * 1000:.1f} ms, slowest {times[-1] * 1000:.1f} ms (first reads include loading files)")
 
 
+def check_filler(cases: list[dict], index, visible: set[int], published: Path, out: Path | None) -> None:
+    """Each question's plan from the plan filler, run on the plan engine: right when every expected figure comes out."""
+    ids, results, by_part, times = ask_engine.surveys(published), [], defaultdict(lambda: [0, 0]), []
+    for case in (c for c in cases if "plan" in c):
+        started = time.perf_counter()
+        plan = ask_plan.fill(case["question"], index, visible, ids)
+        rows = ask_engine.run(plan, published, ids) if plan else []
+        times.append(time.perf_counter() - started)
+        shown = {f"{r[k]:.1f}" for r in rows for k in ("pct", "points") if r.get(k) is not None}
+        wanted = [f"{r[k]:.1f}" for r in case["expect"] for k in ("pct", "points") if r.get(k) is not None]
+        right = bool(wanted) and all(w in shown for w in wanted)
+        results.append({"id": case["id"], "right": right, "question": case["question"], "plan": plan, "want": case["plan"]})
+        for part in case.get("parts", []):
+            by_part[part][0] += right
+            by_part[part][1] += 1
+    times.sort()
+    print(f"filler + engine: {sum(r['right'] for r in results)} of {len(results)} right; median {times[len(times) // 2] * 1000:.0f} ms, "
+          f"slowest {times[-1] * 1000:.0f} ms; no plan for {sum(r['plan'] is None for r in results)}")
+    for part, (good, total) in sorted(by_part.items(), key=lambda x: -x[1][1]):
+        print(f"  {part:16} {good:3} of {total:3}")
+    if out:
+        out.write_text(json.dumps(results, indent=1, default=str))
+
+
 def check_candidates(cases: list[dict], index, visible: set[int], ids: dict) -> None:
     """How often the plan reader's candidates hold every survey question a plan needs, and in how many candidates."""
     held, sizes, times = 0, [], []
@@ -109,6 +133,7 @@ def main() -> None:
     ap.add_argument("--cases", type=Path, default=ROOT / "scripts" / "ask_hard.yml")
     ap.add_argument("--out", type=Path)
     ap.add_argument("--engine", action="store_true", help="check the plan engine (api/ask_engine.py) on every plan instead of Ask")
+    ap.add_argument("--filler", action="store_true", help="score the plan filler (api/ask_plan.py fill) run through the plan engine")
     ap.add_argument("--candidates", action="store_true", help="check that the plan reader's candidates (api/ask_plan.py) hold every question a plan needs")
     args = ap.parse_args()
     cases = yaml.safe_load(args.cases.read_text())
@@ -120,6 +145,8 @@ def main() -> None:
     visible = {w["survey_id"] for w in waves}
     if args.candidates:
         return check_candidates(cases, index, visible, ask_engine.surveys(args.published))
+    if args.filler:
+        return check_filler(cases, index, visible, args.published, args.out)
     results, by_part, times = [], defaultdict(lambda: [0, 0]), []
     for case in cases:
         started = time.perf_counter()
