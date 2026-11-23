@@ -167,10 +167,12 @@
 - q: Which age group is most pessimistic about the economy?
   want:
   - and thinking about the econo
-- q: What was the median holiday spend?
-  want: none
-- q: Did the tariffs cause people to spend less?
-  want: none
+- q: What was the median holiday spend?   # the middle budget band, worked out from the counts (23 Nov 2026)
+  want:
+  - what is your estimated total
+- q: Did the tariffs cause people to spend less?   # what people said tariffs changed, said as their report (23 Nov 2026)
+  want:
+  - avoid the impact of tariffs
 - q: How much will Gen Z spend on gifts?
   want:
   - estimated total budget

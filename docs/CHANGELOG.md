@@ -4,6 +4,12 @@ Every feature, enhancement and update, newest first: the same entries as the por
 (`frontend/src/screens/WhatsNew.tsx`). Add each change to both; `tests/test_docs.py` fails if they differ.
 The API and the MCP connector are documented in [API.md](API.md).
 
+## 23 November 2026
+
+### Ask works out a median or average budget, answers month-against-month questions, and says what people reported about tariffs
+
+“What was the median holiday spend?” and “What is the average holiday budget?” now give the middle budget band and an average worked out from the band mid-points, for everyone or by group (Gen Z: middle band $500-$749, about $854 on 7 Sep 2026); a question with no amounts asked, such as the average price of a turkey, is still declined. “Groceries online in October vs September” is answered from the weekly online-categories question, which asks every week (27.8% in September, 29.5% in October), instead of an annual study asked only in May, and the lead no longer repeats the months as what people did. “Did the tariffs cause people to spend less?” shows what people said tariffs made them change, with a note that this is their own report, not a measured cause; a question whose effect the survey does not ask, such as dining out, is still declined. Real analyst questions answered right: 166 to 184 of 232.
+
 ## 22 November 2026
 
 ### Fewer wrong refusals, and “both” keeps what was bought

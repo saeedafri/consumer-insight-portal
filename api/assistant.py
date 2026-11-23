@@ -258,6 +258,10 @@ def subject_of(question: str) -> str | None:
     q = re.sub(r"\s+(?:week by week|each week|every week|wave by wave|over time|in every survey(?: that asked it)?|"
                r"in each of the .*?(?:surveys|weeks|waves)|(?:in|for) each (?:wave|week|survey)|"
                r"across (?:the |these |all )?.*?(?:waves|weeks|surveys)|oldest first|newest first)\b.*$", "", q, flags=re.I)
+    # a period the question names is said by the figures' own dates ("in October vs September" is not what people did)
+    q = re.sub(r"\s+(?:in|during|over)\s+(?:(?:january|february|march|april|may|june|july|august|september|october|november|"
+               r"december)|20\d\d|q[1-4])\b(?:\s*(?:20\d\d|vs\.?|versus|and|to|-|(?:january|february|march|april|may|june|july|"
+               r"august|september|october|november|december)))*\s*$|\s+(?:in the )?latest wave\s*$", "", q, flags=re.I)
     q = re.sub(r"\b(currently|still|also|recently|actually)\s+", lambda m: m[0] if m[1].lower() == "currently" else "", q, flags=re.I)
     q = " ".join(w.lower() if w.isupper() and len(w) > 1 and w not in ("US", "AI", "GLP-1") else w for w in q.split())
     return q if q and PREDICATE.match(q.removeprefix("currently ")) and len(q.split()) <= 20 else None
@@ -1486,6 +1490,18 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     if re.search(r"\b(?:who also (?:bought|purchased|used|shopped|selected|chose|answered)|"
                  r"(?:bought|purchased|shopped) (?:from|at) both)\b", text):
         return no_figure("This question needs a count of people who did both things. Try Audiences to check for overlap within a survey wave, or ask about each group separately.", plan)
+    # "Did the tariffs cause people to spend less?": what people said tariffs did to their shopping, said as their report,
+    # not a measured cause (real questions, 23 Nov 2026); "what caused" and causal effects stay refused
+    if (said := re.match(r"\s*did (?:the )?(.{2,40}?) (?:cause|make|lead) (?:people|consumers|shoppers|you) (?:to )?(.+)", question, re.I)):
+        reported = answer(f"{said[1]} {said[2]}", index, visible, quick, key, weighted, combined)
+        # only a question that asks about the cause and names the effect: "dine out less" is not in what tariffs changed
+        effect = {w[:5] for w in re.findall(r"[a-z]{4,}", said[2].lower())} - {"less", "more", "fewer"}
+        source = reported.get("sources", [{}])[0].get("question", "").lower() if reported.get("sources") else ""
+        shown = f"{source} {reported.get('answer', '')}".lower()
+        if reported["mode"] == "figures" and said[1].lower().rstrip("s")[:6] in source and effect and \
+                all(any(w.startswith(e) for w in re.findall(r"[a-z]{4,}", shown)) for e in effect):
+            reported["notes"] = [f"What people said about {said[1]}: the surveys record their own report, not a measured cause."] + reported.get("notes", [])
+            return reported
     if re.search(r"\b(?:causal effect|causal impact|did .{1,80} cause|what caused|how much did .{1,80} cause)\b", plan["question"]):
         return no_figure("These survey results cannot establish what caused the change. Try asking what respondents reported or how their answers changed over time.", plan)
     if key is None and not plan["cuts"] and not plan["when"] and (topic := topic_of(text)) and \
@@ -1497,7 +1513,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         return both
     if len(plan["cuts"]) > 1:
         return no_figure("Ask CIP can show at most two kinds of group at once (for example Gen Z women). Try fewer groups, or Cross-tabs.", plan)
-    if re.search(r"\b(?:median|average (?:price|amount|cost|spend(?:ing)?))\b", plan["question"]):
+    if re.search(r"\baverage (?:price|cost)\b", plan["question"]):   # a median or average of an amount asked in bands is worked out (ask_figures.middle)
         return no_figure("Ask CIP cannot calculate that spending or price statistic from its published response shares. Try a spending range or ask what share chose one.", plan)
     # an acronym no survey uses ("OTT", "DTC", "HBO"): the surveys do not ask about it, so no nearby figure stands in for it
     # ("How many people has subcription of OTT?" was answered from a meal-kit question, fresh set, 20 Nov 2026). Not when
@@ -1757,6 +1773,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     # which has no Gen Z figures; the weekly q3 has them (20 Nov 2026)
     fallbacks += [h for h in hits[1:3] if h not in fallbacks and top and by_words.get(h["key"], 0) >= NEAR_EQUAL * top] \
         if selected is None and (asked_plan["when"] or asked_plan["cuts"]) else []
+    # and the closest by the subject's own words: "groceries online in October vs September" read the annual grocery study
+    # (May only); the weekly online categories, first by words, list groceries every week (real questions, 23 Nov 2026)
+    if selected is None and (asked_plan["when"] or asked_plan["cuts"]) and asked_plan["about"]:
+        fallbacks = fallbacks[:3] + [h for h in index.find(asked_plan["about"], asked_plan, 2, visible)   # every word found:
+                                     if h["key"] != hits[0]["key"] and h not in fallbacks and h["match"] >= EVERY_WORD]   # "moved house" never borrows income
     for hit in hits[:1] + fallbacks[:5]:
         doc = index.docs[hit["key"]]
         plan = asked_plan
@@ -1898,6 +1919,16 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         headline = plain
     if by_week := week_by_week(fig, glance.get("series", [])):
         headline += " " + by_week
+    # "median holiday spend", "average holiday budget": the middle band and an average from band mid-points, as an analyst
+    # (or ChatGPT on the raw file) works it out; the shares by band follow as points (real questions, 23 Nov 2026)
+    middles = ask_figures.middle(fig) if re.search(r"\b(?:median|average|mean|typical)\b", original, re.I) else []
+    if not middles and re.search(r"\b(?:median|average (?:amount|spend(?:ing)?))\b", original, re.I):   # no amounts asked: no stand-in
+        return no_figure("Ask CIP cannot calculate that spending or price statistic from its published response shares. Try a spending range or ask what share chose one.", plan)
+    if middles:
+        points.insert(0, headline)
+        headline = f"{last['label']}: " + "; ".join(
+            f"{'everyone' if fig['columns'][c][0] == 'total' else fig['columns'][c][1]}: middle answer {quote(b)}, average about ${m:,}"
+            for c, b, m in middles) + " (average estimated from band mid-points; the top band counted at its floor)."
     # no survey named and one figure: the same question in every other study, point by point (asked for 22 Nov 2026)
     if not asked_plan["when"] and not condition and not plan["cuts"] and len(named) == 1 and len(fig["columns"]) == 1 and not glance.get("overview"):
         every = [{"name": f"{FAMILY.get(doc['family'], doc['family'])} (this answer)", "qcode": source_code,

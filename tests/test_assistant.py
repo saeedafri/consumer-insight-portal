@@ -1049,9 +1049,9 @@ def test_two_kinds_of_group_are_read_from_the_cross_tab_files(index, tmp_path):
     assert both["table"]["head"] == ["Answer", "GenZ · Female", "GenZ · Male"] and both["table"]["rows"] == [["Amazon", 75.0, 25.0]]
 
 
-def test_nvidia_is_the_ai_check_only_when_chosen_and_never_capped_by_openai_spend(monkeypatch, tmp_path):
+def test_a_free_ai_check_nvidia_or_gemini_is_on_only_when_chosen_and_never_capped_by_openai_spend(monkeypatch, tmp_path):
     from api import ask_model
-    for name in ask_model.KEY_NAMES + ask_model.NVIDIA_NAMES:
+    for name in ask_model.KEY_NAMES + ask_model.NVIDIA_NAMES + ask_model.GEMINI_NAMES:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("NVIDIA-API", "nvapi-test")   # the user's .env spells it so
     monkeypatch.delenv("CIP_ASK_MODEL", raising=False)
@@ -1063,6 +1063,10 @@ def test_nvidia_is_the_ai_check_only_when_chosen_and_never_capped_by_openai_spen
     assert ask_model.nvidia() and ask_model.model() == ask_model.NVIDIA_MODEL and ask_model.ready()
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")   # an OpenAI key wins, and its cap counts
     assert not ask_model.nvidia() and ask_model.model() == "gpt-4o-mini" and not ask_model.ready()
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza-test")
+    assert ask_model.model() == "gpt-4o-mini"   # Gemini's key alone changes nothing
+    monkeypatch.setenv("CIP_ASK_PROVIDER", "gemini")   # chosen, it goes before OpenAI's key and is free of its cap
+    assert ask_model.gemini() and ask_model.model() == ask_model.GEMINI_MODEL and ask_model.ready()
 
 
 def test_how_an_analyst_asks_is_not_the_subject(index):
@@ -1294,3 +1298,35 @@ def test_the_plan_filler_reads_groups_weeks_and_list_items():
     ids = {"2026-11-02": 1, "2026-11-09": 2, "2026-11-16": 3}
     assert ask_plan.weeks("Used ChatGPT in the last two weeks, 16 Nov 2026?", ids) == {3}
     assert ask_plan.weeks("GLP-1 use in every week of the last 2", ids) == {2, 3}
+
+
+def test_a_median_or_average_of_dollar_bands_is_worked_out_from_the_counts():
+    answers = ["Less than $100", "$100-$299", "$300-$499", "$4,000+", "Don't know"]
+    fig = {"answers": answers, "periods": [{"label": "7 Sep 2026"}], "columns": [["total", "total"]],
+           "people": np.array([[[10, 20, 30, 40, 99]]])}   # "Don't know" left out: 100 gave an amount, the 50th is in $300-$499
+    assert ask_figures.middle(fig) == [(0, "$300-$499", round((10 * 50 + 20 * 199.5 + 30 * 399.5 + 40 * 4000) / 100))]
+    assert ask_figures.middle({**fig, "answers": ["Yes", "No", "Maybe", "Never", "Other"]}) == []   # not amounts: nothing
+
+
+def test_a_named_period_is_said_by_the_dates_not_repeated_as_what_people_did():
+    assert assistant.subject_of("What share bought groceries online in October vs September?") == "bought groceries online"
+    assert assistant.subject_of("What share bought groceries online in September vs October 2026?") == "bought groceries online"
+    assert assistant.subject_of("What share bought anything online in the past two weeks?") == "bought anything online in the past two weeks"
+
+
+def test_did_x_cause_people_to_do_y_answers_what_people_reported(monkeypatch):
+    calls = []
+    real = assistant.answer
+
+    def fake(question, *args, **kwargs):
+        if not question.lower().startswith("did "):
+            calls.append(question)
+            return {"mode": "figures", "notes": [], "answer": "45.5% said Spend less on non-essentials",
+                    "sources": [{"question": "How have you changed your shopping to avoid the impact of tariffs?"}]}
+        return real(question, *args, **kwargs)
+    monkeypatch.setattr(assistant, "answer", fake)
+    class Spelling:
+        def correct_spelling(self, text):
+            return text
+    found = assistant.answer("Did the tariffs cause people to spend less?", Spelling(), set(), True)
+    assert calls == ["tariffs spend less?"] and found["notes"][0].startswith("What people said about tariffs")

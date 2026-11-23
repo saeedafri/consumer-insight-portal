@@ -55,7 +55,11 @@ EMBED_TOKENS = 2048   # and at most ~this many tokens a batch: the model's worki
 BULK = 200   # more new texts than this are encoded in a child process (embed_elsewhere): its memory goes when it exits
              # (a model change re-encodes ~18,000 texts: in the web process that took it from 500 MB to 1.1 GB, 12 Nov 2026)
 NVIDIA_URL, NVIDIA_MODEL = "https://integrate.api.nvidia.com/v1", "nvidia/nemotron-3.5-lightning-30b-a3b"   # 0.6 s, thinking off (21 Nov 2026)
-PRICES = {"gpt-4o-mini": (0.15, 0.60), "gpt-5-nano": (0.05, 0.40), NVIDIA_MODEL: (0.0, 0.0),   # NVIDIA: free credits
+# Google's free tier, in OpenAI's request format: Flash-Lite read the Ask prompt right in 1-2 s; 3.8 Flash was "high
+# demand" (503) on the day (23 Nov 2026). The free tier may use what is sent (the question, candidate wording and answer
+# labels, never respondent data or figures) to improve Google's products
+GEMINI_URL, GEMINI_MODEL = "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.5-flash-lite"
+PRICES = {"gpt-4o-mini": (0.15, 0.60), "gpt-5-nano": (0.05, 0.40), NVIDIA_MODEL: (0.0, 0.0), GEMINI_MODEL: (0.0, 0.0),   # free
           "gpt-4.1-mini": (0.40, 1.60), "gpt-5-mini": (0.25, 2.00)}   # $ per million tokens in, out (OpenAI, 11 Nov 2026)
 CALL_SECONDS = 6
 # after OpenAI refuses the key (401 a wrong key, 429 no credit or too many calls) no call goes for 15 minutes: staging's
@@ -92,6 +96,7 @@ SYSTEM = ("You map an analyst's question about Coresight's US consumer surveys t
 KEY_NAMES = ("OPENAPI_KEY", "OPENAI_API_KEY", "OPEN_API_KEY", "OPENAI_KEY")   # the setting under any of its usual names
 # with no OpenAI key, NVIDIA's API (OpenAI's request format) under the key the user keeps in .env, never in code
 NVIDIA_NAMES = ("NVIDIA_API_KEY", "NVIDIA-API", "NVIDIA_KEY")
+GEMINI_NAMES = ("GEMINI_API_KEY", "GOOGLE_API_KEY")   # Google AI Studio's key, chosen by CIP_ASK_PROVIDER=gemini
 
 
 def key_name() -> str | None:
@@ -99,13 +104,20 @@ def key_name() -> str | None:
     # any case: an Azure app setting typed "open_api_key" is the same key (11 Nov 2026: staging's was not found)
     # NVIDIA's only when chosen (CIP_ASK_PROVIDER=nvidia): its best model on the user's key took the golden set from 158 to
     # 145 of 161 and the fresh set from 48 to 46 against no AI at all (21 Nov 2026), so it is never on by itself
-    names = KEY_NAMES + (NVIDIA_NAMES if os.environ.get("CIP_ASK_PROVIDER", "").lower() == "nvidia" else ())
+    # Gemini's, when chosen, goes before OpenAI's: choosing it is choosing it over a paid key
+    provider = os.environ.get("CIP_ASK_PROVIDER", "").lower()
+    names = (GEMINI_NAMES if provider == "gemini" else ()) + KEY_NAMES + (NVIDIA_NAMES if provider == "nvidia" else ())
     return next((n for wanted in names for n in os.environ if n.upper() == wanted and os.environ[n].strip()), None)
 
 
 def nvidia() -> bool:
     """Whether the AI is NVIDIA's: its key is set and OpenAI's is not (key_name prefers OpenAI's)."""
     return (key_name() or "").upper() in NVIDIA_NAMES
+
+
+def gemini() -> bool:
+    """Whether the AI is Google's Gemini (CIP_ASK_PROVIDER=gemini and its key set)."""
+    return (key_name() or "").upper() in GEMINI_NAMES
 
 
 def key() -> str:
@@ -130,7 +142,7 @@ def status() -> dict:
 
 
 def model() -> str:
-    return os.environ.get("CIP_ASK_MODEL") or (NVIDIA_MODEL if nvidia() else "gpt-4o-mini")
+    return os.environ.get("CIP_ASK_MODEL") or (NVIDIA_MODEL if nvidia() else GEMINI_MODEL if gemini() else "gpt-4o-mini")
 
 
 def budget() -> float:
@@ -165,14 +177,17 @@ def charge(name: str, tokens_in: int, tokens_out: int) -> float:
 def ready() -> bool:
     """A key, this month's spend under the cap, and no refusal from OpenAI in the last PAUSE_SECONDS."""
     # the money cap is OpenAI's: NVIDIA's calls cost nothing, and a month's OpenAI spend must not switch them off
-    return bool(key()) and (nvidia() or spent()["usd"] < budget()) and time.time() >= REFUSED["until"]
+    return bool(key()) and (nvidia() or gemini() or spent()["usd"] < budget()) and time.time() >= REFUSED["until"]
 
 
 def call(path: str, body: dict, seconds: float = CALL_SECONDS) -> dict:
     """One OpenAI request (plan here, etl/ask_semantic.py send); a refusal of the key pauses every caller (ready)."""
     if nvidia() and path == "chat/completions":   # its models think first: off, or a 160-token reply is cut before the answer
         body = {**body, "chat_template_kwargs": {"enable_thinking": False}}
-    request = urllib.request.Request(f"{NVIDIA_URL if nvidia() else 'https://api.openai.com/v1'}/{path}", data=json.dumps(body).encode(),
+    if gemini() and path == "chat/completions":   # Flash's thinking spent the 160 tokens and replied "Her" (23 Nov 2026);
+        body = {**body, "reasoning_effort": "low"}  # "minimal" is refused by 3.8 Flash
+    url = NVIDIA_URL if nvidia() else GEMINI_URL if gemini() else "https://api.openai.com/v1"
+    request = urllib.request.Request(f"{url}/{path}", data=json.dumps(body).encode(),
                                      headers={"Authorization": f"Bearer {key()}", "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=seconds) as reply:

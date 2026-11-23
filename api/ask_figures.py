@@ -225,6 +225,41 @@ def compute(counts: dict, plan: dict, visible: set[int], versions: list[int] | N
             "versions": counts["versions"], "missing": [i for i, p in enumerate(picked) if not p]}
 
 
+def band(label: str) -> tuple[float, float | None] | None:
+    """An amount band's low and high ("$100-$299" → 100, 299; "Less than $100" → 0, 100; "$4,000+" → 4000, None)."""
+    if "$" not in label:
+        return None
+    amounts = [float(x.replace(",", "")) for x in re.findall(r"\d[\d,]*(?:\.\d+)?", label)]
+    if not amounts:
+        return None
+    if re.search(r"\b(?:less than|under|below|up to)\b", label, re.I):
+        return 0.0, amounts[0]
+    if len(amounts) == 1:   # "$4,000+", "More than $100", "$200,000 or greater"
+        return amounts[0], None
+    return amounts[0], amounts[1]
+
+
+def middle(fig: dict) -> list[tuple[int, str, float]]:
+    """For an amount question (a holiday budget in dollar bands), per column of the latest period: the band the middle
+    person's answer falls in (exact, from the counts) and the average estimated from band mid-points, an open top band
+    counted at its floor. Only those who gave an amount count ("Don't know" left out). Empty when the answers are not
+    amount bands. Called by api/assistant.py answer for "median", "average", "typical" questions."""
+    bands = sorted(((b, a) for a, label in enumerate(fig["answers"]) if (b := band(label))), key=lambda x: x[0][0])
+    if len(bands) < 3 or not len(fig["periods"]):
+        return []
+    found = []
+    for column in range(len(fig["columns"])):
+        people = [float(fig["people"][-1, column, a]) for _, a in bands]
+        total = sum(people)
+        if not total:
+            continue
+        running = np.cumsum(people)
+        median_band = fig["answers"][bands[int(np.searchsorted(running, total / 2))][1]]
+        mean = sum(n * ((low + high) / 2 if high is not None else low) for n, ((low, high), _) in zip(people, bands)) / total
+        found.append((column, median_band, round(mean)))
+    return found
+
+
 def moved(fig: dict, answer: int, column: int = 0) -> tuple[float, bool] | None:
     """The change in points between the last two periods for one answer, and whether it is significant (95%)."""
     if len(fig["periods"]) < 2:
