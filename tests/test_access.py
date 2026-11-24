@@ -13,10 +13,12 @@ from urllib.parse import urlsplit
 
 import pytest
 import sqlalchemy as sa
+import yaml
 
 import api.main as api
 from api import signin, team
 from shared.core import access, audit, session
+from shared.core.config import REPO_ROOT
 
 
 def call(path, cookie="", method="GET", body=b"", headers=None):
@@ -241,6 +243,26 @@ def test_the_tracker_views_are_served_as_published_and_say_so_before_the_first_p
         assert status == 200 and "sectors" in json.loads(body)
         assert call(f"/api/v1/{name}")[0] == 401                                           # signed out: nothing
 
+
+
+def test_an_analyst_given_home_ask_library_channels_and_retailers_gets_the_us_weekly_survey(portal, monkeypatch):
+    """The analysts' menus of 24 Nov 2026, without the US weekly tracker's: the US weekly waves stay open (those screens are
+    built on them), so the Library lists them, This week at a glance shows them and In store vs online reads its question
+    files without Trends. China's menu off still takes China away (config/access.yml family_menus)."""
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
+    monkeypatch.setitem(RULES, "features", [*RULES["features"], "library", "us_tracker", "china_tracker", "channels", "retailers"])
+    monkeypatch.setitem(RULES, "family_menus", yaml.safe_load((REPO_ROOT / "config/access.yml").read_text())["family_menus"])
+    china = {"survey_id": 416, "survey_family": "CSI-CN", "study_type": "tracker", "prior_survey_id": None, "wave_date": "2026-10-19", "title": "China"}
+    put(portal, "waves", [*json.loads(gzip.decompress((portal / "api/v1/waves.json.gz").read_bytes())), china])
+    put(portal, "glance", {"surveys": [{"name": "US", "survey_id": 415, "cards": []}, {"name": "China", "survey_id": 416, "cards": []}]})
+    boss = signed("boss@coresight.com")
+    four = ["ask", "library", "channels", "retailers"]
+    assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": four}).encode())[0] == 200
+    ana = signed("ana@coresight.com")
+    assert [w["survey_id"] for w in json.loads(call("/api/v1/waves", ana)[2])] == [415, 300]          # no China
+    assert [s["name"] for s in json.loads(call("/api/v1/glance", ana)[2])["surveys"]] == ["US"]
+    assert call("/api/v1/questions/CSI-US/tracker/Q1", ana)[0] == 200                                 # In store vs online's files
+    assert call("/api/v1/questions/ACME_STUDY/adhoc/Q1", ana)[0] == 403                               # not Trends for the rest
 
 
 def test_the_tracker_views_refuse_someone_who_may_not_open_every_tracker_wave(portal, monkeypatch):
@@ -842,8 +864,9 @@ def test_a_choice_saved_before_the_menus_grew_loses_nothing_and_a_new_one_is_kep
 
 
 def test_a_weekly_tracker_hidden_on_the_access_screen_closes_its_waves(portal, monkeypatch):
-    """Shopping & Spending off for one person: its waves leave the list and do not open, and that person's cached
-    answers are kept apart from their client's (access.scope, 15 Nov 2026)."""
+    """A weekly tracker in family_menus (in config only China's since 24 Nov 2026; the US one here, the fixture's wave)
+    off for one person: its waves leave the list and do not open, and that person's cached answers are kept apart from
+    their client's (access.scope, 15 Nov 2026)."""
     monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
     monkeypatch.setitem(RULES, "features", RULES["features"] + ["us_tracker"])
     monkeypatch.setitem(RULES, "family_menus", {"CSI-US": "us_tracker"})

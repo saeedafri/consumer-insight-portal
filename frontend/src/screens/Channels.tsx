@@ -3,7 +3,7 @@
 // files (every group, exact counts; etl → api/v1/questions/CSI-US/tracker/q2|q3|Q4|Q5.json.gz) are fetched once and cached;
 // every pick of week, group or category is computed here in the browser, so nothing runs on the server when someone changes a filter.
 // Opened from the left menu (Core research) and the Home page's card; week, group, category and the trend's date range
-// are kept in the address. People is two choices: a kind of group (gender, age, income…), then All or one group; only
+// are kept in the address. Respondent group is two choices: a kind of group (gender, age, income…), then All or one group; only
 // groups this week has answers from are offered (older income bands are empty in recent weeks). All of a kind puts its
 // groups side by side (the research team's call of 23 Nov 2026): the category by group, and each group's trend.
 import { useMemo } from "react";
@@ -127,14 +127,13 @@ export default function Channels() {
   return <div className="stack">
     <div className="page-head"><div>
       <h1>In store vs online</h1>
-      <p className="lede">Which categories people bought in a store, and which online, in the past two weeks. Every weekly survey since August 2022; pick a week,
-        a group of people and a category, or click a category in the chart.</p>
+      <p className="lede">Share of people who bought each category in a store or online.</p>
     </div></div>
 
     <section className="card compare-bar" aria-label="Choose what to show">
       <label><span>Week</span><select value={survey} onChange={e => pick("w", e.target.value)}>
         {data.weeks.map(w => <option key={w[0]} value={w[0]}>{fmtDate(w[1])}</option>)}</select></label>
-      <label><span>People</span><select value={kind} onChange={e => choose(e.target.value)}>
+      <label><span>Respondent group</span><select value={kind} onChange={e => choose(e.target.value)}>
         {kinds.map(k => <option key={k} value={k}>{k === "total" ? "Everyone" : CUT_NAMES[k] ?? k}</option>)}</select></label>
       {kind !== "total" && <label><span>{CUT_NAMES[kind] ?? kind}</span><select value={cut} onChange={e => pick("g", e.target.value)}>
         <option value="total:Total">All</option>
@@ -162,7 +161,7 @@ export default function Channels() {
             <EChart height={height} label={`${category} by ${kindName}, ${fmtDate(date)}`} onClick={p => pick("g", `${kind}:${p.name}`)}
                     option={bars(groups, (fn, g) => fn(survey, `${kind}:${g}`, category))} />
           </Card>
-        : <Card title="Every category, this week" sub={`${groupName} · ${fmtDate(date)} · % who bought each in a store (red) and online (blue)`}>
+        : <Card title="All categories, this week" sub={`${groupName} · ${fmtDate(date)} · % who bought each in a store (red) and online (blue)`}>
             <EChart height={height} label={`In store and online buying by category, ${fmtDate(date)}`} onClick={p => pick("c", p.name)}
                     option={bars(categories, (fn, l) => fn(survey, cut, l))} />
           </Card>}

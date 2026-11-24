@@ -145,14 +145,16 @@ export interface Sector {
 export const useSectors = () =>
   useQuery({ queryKey: ["sectors"], queryFn: () => get<{ sectors: Sector[] }>("/api/v1/sectors"), ...forever });
 
-/** Home's "This week at a glance" (etl/glance.py): six cards from the newest weekly wave, two rows of three (null: the
- *  week lacks that card's figures); `feature` is the menu a card's link needs. */
 /** A figure's change against an earlier one, drawn as a Delta badge ("▲ 0.4 pts vs Aug 17"). */
 export type Change = { d: number | null; label: string; flags?: string[] };
+/** Home's "This week at a glance" (etl/glance.py): a block per weekly survey (US, China), each six cards from its newest
+ *  wave in two rows of three (null: the week lacks that card's figures); a card's `feature` is the menu its link needs
+ *  (the API leaves out a block whose waves someone may not open). */
 export interface GlanceCard { badge: string; title: string; value: string; note: string; changes: Change[]; link: string; feature: string }
+export interface GlanceSurvey { name: string; people: string; survey_id: number; wave_date: string; respondents: number;
+  sector: string | null; cards: (GlanceCard | null)[] }
 export const useGlance = () =>
-  useQuery({ queryKey: ["glance"], ...forever,
-             queryFn: () => get<{ survey_id: number; wave_date: string; respondents: number; sector: string | null; cards: (GlanceCard | null)[] }>("/api/v1/glance") });
+  useQuery({ queryKey: ["glance"], ...forever, queryFn: () => get<{ surveys: GlanceSurvey[] }>("/api/v1/glance") });
 
 /** The retail databank (etl/retailers.py): counts per week, added up in the browser for whichever weeks are chosen.
  *  A retailer's counts: weekly market [shoppers, food, nonfood, ...profile]; a sector [shoppers, ...profile]; profile is

@@ -530,10 +530,11 @@ async def wave_logic(survey_id: int, request: Request, who: dict = Depends(user)
     return send_payload(request, found)
 
 
-async def tracker_view(request: Request, who: dict, name: str) -> Response:
+async def tracker_view(request: Request, who: dict, name: str, trim=None) -> Response:
     """A view across the weekly tracker's waves, as the ETL published it (api/v1/<name>.json.gz). nginx sends the file
     itself to most people (deploy/cip_locations.conf); this serves a filtered session and a laptop without nginx.
-    Someone who may not open every tracker wave gets 403: the file mixes all of them. Nothing is computed here."""
+    Someone who may not open every tracker wave gets 403: the file mixes all of them. Nothing is computed here, except
+    `trim`: a view whose parts follow menus keeps only this person's (the glance's survey blocks, a few KB)."""
     tracker = [w for w in await run_in_threadpool(all_waves) if w["study_type"] == "tracker"]
     # the databank's own menu decides, not the weekly trackers' (tracker_menus=False): its file mixes their waves (15 Nov 2026)
     if not all(access.sees(who, w, tracker_menus=False) for w in tracker):
@@ -541,7 +542,7 @@ async def tracker_view(request: Request, who: dict, name: str) -> Response:
     found = published_file(name)
     if found is None:   # a new container restores the published files in the background (~75 s, deploy/start.sh, 12 Nov
         raise HTTPException(503, "Being published: retry in a few seconds", headers={"Retry-After": "5"})   # 2026): the screens retry
-    return send_payload(request, found)
+    return send_payload(request, to_payload(trim(json.loads(found.body))) if trim else found)
 
 
 @app.get("/api/v1/public/facts")
@@ -563,9 +564,12 @@ async def retailers(request: Request, who: dict = Depends(user)) -> Response:
 
 @app.get("/api/v1/glance")
 async def glance(request: Request, who: dict = Depends(user)) -> Response:
-    """Home's "This week at a glance" (etl/glance.py): six cards from the newest weekly tracker wave."""
-    require_feature(who, "us_tracker")
-    return await tracker_view(request, who, "glance")
+    """Home's "This week at a glance" (etl/glance.py): six cards from the newest wave of each weekly survey (US, China).
+    Home is everyone's; someone who may not open a survey's waves (the China tracker's menu off) gets the file without
+    its block (only "*" sessions get it from nginx)."""
+    shown = {w["survey_id"] for w in await run_in_threadpool(all_waves) if access.sees(who, w)}
+    return await tracker_view(request, who, "glance",
+                              lambda data: {**data, "surveys": [s for s in data["surveys"] if s["survey_id"] in shown]})
 
 
 @app.get("/api/v1/sectors")
@@ -664,7 +668,9 @@ async def question(family: str, study_type: str, qcode: str, request: Request, w
     """One question across every wave of its family and every cut, in compact columns: Compare and Trends pick waves
     and cuts from it on screen. The ETL publishes one per question (a static read); others are built once and cached.
     Someone who may not see every wave of the family gets the file without those waves."""
-    require_feature(who, "trends", "compare", "audiences")   # the three screens that read a question across waves
+    # the three screens that read a question across waves, and In store vs online, which reads four US weekly ones
+    # (frontend/src/screens/Channels.tsx): without Trends it got 403 (24 Nov 2026)
+    require_feature(who, "trends", "compare", "audiences", *(["channels"] if (family, study_type) == ("CSI-US", "tracker") else []))
     scope = access.scope(who)
     def build() -> Payload:
         found = published_file("questions", family, study_type, qcode)

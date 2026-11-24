@@ -215,10 +215,10 @@ export default function Shell() {
         {TRACKERS.filter(([code]) => allowed(me, `tracker_${code}`)).map(([code, label]) =>
           <NavLink key={code} to={`/trackers/${code}`}><Icon of={Activity} />{label}</NavLink>)}
       </RailGroup>}
-      <RailGroup label="Reference">
+      {(allowed(me, "methodology") || allowed(me, "whats_new")) && <RailGroup label="Reference">
         {allowed(me, "methodology") && <NavLink to="/methodology"><Icon of={Info} />Methodology</NavLink>}
         {allowed(me, "whats_new") && <NavLink to="/whats-new"><Icon of={Star} />What's new</NavLink>}
-      </RailGroup>
+      </RailGroup>}
       {(isAdmin || given(me, "fieldwork") || SECTIONS.some(([path]) => given(me, `forsta_${path}`))) &&
         <RailGroup label="Research operations" closed={!/^\/(fieldwork|forsta)/.test(location.pathname)}>
         {(isAdmin || given(me, "fieldwork")) && <NavLink to="/fieldwork"><Icon of={Filter} />Fieldwork</NavLink>}

@@ -1,11 +1,47 @@
-# Home's "This week at a glance" (etl/glance.py → api/v1/glance.json.gz → frontend/src/screens/Home.tsx): which weekly
-# tracker questions feed the cards of the second row. Row one comes from the week's sector (config/sectors.yml) and its
-# topics (config/dashboards.yml, config/survey_calendar.yml). Change it here: no code changes needed.
+# Home's "This week at a glance" (etl/glance.py → api/v1/glance.json.gz → frontend/src/screens/Home.tsx): one block of
+# six cards per weekly survey, in this order, each shown or hidden with its badge above the cards (US, China). Row one
+# of the US survey comes from the week's sector (config/sectors.yml) and its topics (config/dashboards.yml,
+# config/survey_calendar.yml); a survey without sectors names its row one here (first_row). Change it here: no code
+# changes needed.
+#
+#   name            the survey's badge on Home
+#   report          its weekly report's rules (config/<report>.yml: family, the answers left out, the net-score words)
+#   people          who answered, as the cards say it ("404 US adults", "44.9% of adults in China")
+#   in_store        the categories bought in a store in the past two weeks; online: the same bought online (an online
+#                   answer may add a note: "… (incl. digital purchases)")
+#   channels        true: the gap card opens the In store vs online screen (US questions only), else the question
+#   change_sections the weekly report's tables the "biggest change" card reads; change_period: how far back they look
+#   outlook         a sentiment line of the weekly report; outlook_note: what its figure is
+#   bills           "how have your expenses changed": the share who say this bill went up (US only)
+#   first_row       a survey without sectors: its row one, each a question's top answer (of `people`, `when`), or
+#                   its net score (net: true) with its own note
 
-in_store: q2                  # categories bought in a store in the past two weeks
-online: q3                    # the same categories bought online (an answer may add a note: "… (incl. digital purchases)")
-outlook: Personal finances    # a sentiment line of the weekly report (config/weekly_report.yml sentiment)
-bills: {question: q6, group: Utilities}   # "how have your expenses changed": the share who say this bill went up
-# the weekly report's tables the "biggest change" card reads (config/weekly_report.yml sections): food, nonfood, in
-# store and online, as asked on 23 Nov 2026 (not Activities)
-change_sections: [Food retailers, Nonfood retailers, Bought in store, Bought online]
+surveys:
+  - name: US
+    report: weekly_report
+    people: US adults
+    in_store: q2
+    online: q3
+    channels: true
+    # food, nonfood, in store and online, as asked on 23 Nov 2026 (not Activities)
+    change_sections: [Food retailers, Nonfood retailers, Bought in store, Bought online]
+    change_period: three months
+    outlook: Personal finances
+    outlook_note: "net better: % expecting better minus % worse, next 12 months"
+    bills: {question: q6, group: Utilities}
+
+  - name: China
+    report: china_weekly_report
+    people: adults in China
+    in_store: Q5
+    online: Q6
+    change_sections: [Bought in store, Bought online]
+    change_period: four weeks
+    outlook: Personal finances
+    outlook_note: "net optimism: % positive minus % negative, next 12 months"
+    first_row:
+      # not the top category in store: the widest-gap card below names it already (household essentials, 9 Nov 2026)
+      - {question: Q4, badge: Activities, title: Top activity, when: past two weeks}
+      - {question: Q6, badge: Bought online, title: Top category online, when: past two weeks}
+      - {question: Q1, badge: Spending plans, title: "Everyday goods and dining, next two weeks", net: true,
+         note: "net more: % increasing their spending minus % cutting it"}

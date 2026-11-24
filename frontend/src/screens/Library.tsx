@@ -14,23 +14,26 @@ import { X } from "lucide-react";
 
 const KIND: Record<string, string> = { tracker: "Weekly tracker", annual: "Annual study", adhoc: "Ad hoc study" };
 const PLATFORM: Record<string, string> = { forsta: "Forsta", qualtrics: "Qualtrics", surveymonkey: "SurveyMonkey" };
+const MARKET: Record<string, string> = { US: "United States", CN: "China" };   // a wave's country (cip_survey.country, US when empty)
 
 export default function Library() {
   const { data: waves, isLoading, error } = useWaves();
   const [params, setParams] = useSearchParams();
   const kind = KIND[params.get("kind") ?? ""] ? params.get("kind")! : "all", year = params.get("year") ?? "all", event = params.get("event") ?? "all";
+  const market = MARKET[params.get("market") ?? ""] ? params.get("market")! : "all";
   const [text, setText] = useState(params.get("q") ?? "");
   const [saved, setSaved] = useState(savedViews);
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); v === "all" || !v ? p.delete(k) : p.set(k, v); setParams(p, { replace: true }); };
   const me = useMe().data;   // the row buttons link only to screens on this person's menu
   const years = useMemo(() => [...new Set((waves ?? []).map(w => w.wave_date.slice(0, 4)))].sort((a, b) => b.localeCompare(a)), [waves]);
   const events = useMemo(() => [...new Set((waves ?? []).flatMap(w => w.events ?? []))].sort(), [waves]);
+  const markets = useMemo(() => Object.keys(MARKET).filter(m => (waves ?? []).some(w => (w.country ?? "US") === m)), [waves]);
   const shown = useMemo(() => {
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
     return (waves ?? []).filter(w => (kind === "all" || w.study_type === kind) && (year === "all" || w.wave_date.startsWith(year)) &&
-      (event === "all" || (w.events ?? []).includes(event)) &&
+      (event === "all" || (w.events ?? []).includes(event)) && (market === "all" || (w.country ?? "US") === market) &&
       words.every(t => `${w.title} ${w.survey_family} ${(w.modules ?? []).join(" ")} ${(w.events ?? []).join(" ")} ${w.wave_date}`.toLowerCase().includes(t)));
-  }, [waves, kind, year, event, text]);
+  }, [waves, kind, year, event, market, text]);
   // the US weekly tracker leads; China's weekly waves (CSI-CN) are listed with the rest
   const latest = waves?.find(w => w.survey_family === "CSI-US" && w.study_type === "tracker" && w.rows_built !== 0) ?? waves?.[0];
   // the wave most people open next: its book is fetched while this screen is idle (≈ 20 KB, cached 5 min)
@@ -38,18 +41,18 @@ export default function Library() {
   if (isLoading) return <SkeletonScreen kind="library" />;
   if (error) return <Failure error={error} />;
   const all = waves!;
-  if (!latest) return <><div className="page-head"><div><h1>Survey library</h1></div></div>
+  if (!latest) return <><div className="page-head"><div><h1>Survey Library</h1></div></div>
     <Empty>No surveys are available to you yet. When a survey is published for your account it appears here.</Empty></>;
   const byYear = new Map<string, typeof shown>();
   for (const w of shown) byYear.set(w.wave_date.slice(0, 4), [...(byYear.get(w.wave_date.slice(0, 4)) ?? []), w]);
   const trackers = all.filter(w => w.study_type === "tracker");
   return <>
     <div className="page-head"><div>
-      <h1>Every Coresight consumer survey, one place</h1>
-      <p className="lede">{all.length.toLocaleString("en-US")} surveys and waves{all.length ? ` from ${all.at(-1)!.wave_date.slice(0, 4)} to ${all[0].wave_date.slice(0, 4)}` : ""}: the weekly US consumer tracker plus annual and ad hoc studies. Open any wave for its overview, every question, cross-tabs and trends.</p>
+      <h1>Survey Library</h1>
+      <p className="lede">Explore {all.length.toLocaleString("en-US")} surveys from {all.at(-1)!.wave_date.slice(0, 4)} to {all[0].wave_date.slice(0, 4)}{markets.length > 1 ? ", spanning the US and China" : ""}.</p>
     </div></div>
     <div className="hero">
-      <Card className="latest" title={<>Latest {latest.study_type === "tracker" ? "tracker " : ""}wave · {fmtDate(latest.wave_date)}</>} sub={`${latest.qualified_n.toLocaleString("en-US")} qualified · ${population(latest)}`}>
+      <Card className="latest" title={<>Latest survey · {fmtDate(latest.wave_date)} · {latest.country === "CN" ? "China" : "US"}</>} sub={`${latest.qualified_n.toLocaleString("en-US")} qualified · ${population(latest)}`}>
         <div className="hero-wave-title">{latest.title}</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "6px 0" }}>
           {(latest.modules ?? []).map(m => (
@@ -66,10 +69,10 @@ export default function Library() {
         </div>
       </Card>
       <div className="grid g2">
-        <div className="card kpi lead"><div className="k-label">Weekly tracker waves</div><div className="k-value"><CountUp text={String(trackers.length)} /></div><div className="k-note">{trackers.length ? `since ${fmtDate(trackers.at(-1)!.wave_date)}` : "none yet"}</div></div>
+        <div className="card kpi lead"><div className="k-label">Weekly surveys</div><div className="k-value"><CountUp text={String(trackers.length)} /></div><div className="k-note">{trackers.length ? `Since ${new Date(`${trackers.at(-1)!.wave_date}T00:00:00`).toLocaleDateString("en-US", { month: "long", year: "numeric" })}` : "none yet"}</div></div>
         <div className="card kpi"><div className="k-label">Annual and ad hoc studies</div><div className="k-value"><CountUp text={String(all.length - trackers.length)} /></div><div className="k-note">{years.length} years of archive</div></div>
-        <div className="card kpi"><div className="k-label">Respondents, all waves</div><div className="k-value"><CountUp text={`${(all.reduce((a, w) => a + w.qualified_n, 0) / 1000).toFixed(0)}k`} /></div><div className="k-note">qualified</div></div>
-        {allowed(me, "search") && <Link className="card kpi" to="/search"><div className="k-label">Find any question</div><div className="k-value" style={{ fontSize: 22 }}>Search →</div><div className="k-note">across every wave</div></Link>}
+        <div className="card kpi"><div className="k-label">Total respondents</div><div className="k-value"><CountUp text={`${(all.reduce((a, w) => a + w.qualified_n, 0) / 1000).toFixed(0)}k`} /></div><div className="k-note">Qualified respondents across all surveys</div></div>
+        {allowed(me, "search") && <Link className="card kpi" to="/search"><div className="k-label">Search questions</div><div className="k-value" style={{ fontSize: 22 }}>Search →</div><div className="k-note">Find answers to any question across all surveys</div></Link>}
       </div>
     </div>
     <TeamSaved />
@@ -91,6 +94,10 @@ export default function Library() {
             ))}
           </TabsList>
         </Tabs>
+        <label className="sr-only" htmlFor="market">Market</label>
+        <select id="market" value={market} onChange={e => set("market", e.target.value)}>
+          <option value="all">All markets</option>{markets.map(m => <option key={m} value={m}>{MARKET[m]}</option>)}
+        </select>
         <label className="sr-only" htmlFor="year">Year</label>
         <select id="year" value={year} onChange={e => set("year", e.target.value)}>
           <option value="all">All years</option>{years.map(y => <option key={y}>{y}</option>)}
@@ -143,12 +150,12 @@ export default function Library() {
               <Link to={`/w/${w.survey_id}`} className="wave-title-link">{w.title}</Link>
               <small className="tags">{(w.events ?? []).map(e => <span key={e} className="tag event">{e}</span>)}{(w.modules ?? []).slice(0, 4).map(m => <span key={m} className="tag">{m}</span>)}</small>
             </span>
-            <span className="muted">{KIND[w.study_type] ?? w.study_type}{w.platform ? <><br /><small>{PLATFORM[w.platform]}</small></> : null}</span>
+            <span className="muted">{KIND[w.study_type] ?? w.study_type}<br /><small>{MARKET[w.country ?? "US"]}{w.platform ? <><br />{PLATFORM[w.platform]}</> : null}</small></span>
             <span className="n">n={w.qualified_n.toLocaleString("en-US")}</span>
             <span className="wave-actions">
-              <Link to={`/w/${w.survey_id}`} className="btn-chip" title="Wave overview">Overview</Link>
-              {allowed(me, "changes") && <Link to={`/w/${w.survey_id}/changes`} className="btn-chip" title="What changed this wave">Changes</Link>}
-              {allowed(me, "explorer") && <Link to={`/w/${w.survey_id}/questions`} className="btn-chip" title="Question explorer">Questions</Link>}
+              <Link to={`/w/${w.survey_id}`} className="btn-chip" title="Summary of this survey">Summary</Link>
+              {allowed(me, "changes") && <Link to={`/w/${w.survey_id}/changes`} className="btn-chip" title="What changed in this survey">What changed</Link>}
+              {allowed(me, "explorer") && <Link to={`/w/${w.survey_id}/questions`} className="btn-chip" title="Every question in this survey">All questions</Link>}
             </span>
           </div>)}
         </div>)}

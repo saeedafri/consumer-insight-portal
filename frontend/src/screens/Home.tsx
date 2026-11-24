@@ -1,15 +1,16 @@
 // Home (/app/, the first page after sign-in; the Survey library moved to /app/library): "What would you like to
 // understand?" A question box that hands off to Ask CIP (screens/Ask.tsx answers it on arrival), then "This week at a
-// glance", always open so Home never looks empty: six cards from the newest weekly survey, picked by the ETL
-// (etl/glance.py → api/v1/glance; the research team's layout of 23 Nov 2026), then sections that
-// open on a click, all closed on every visit (16 Nov 2026): the research areas, filtered by how often each runs; this
-// week's grocery buying in store and online from the newest weekly survey; a way into the cross-tabs; the latest wave.
+// glance", always open so Home never looks empty: six cards from the newest wave of each weekly survey (US, China), each
+// shown or hidden by its badge, picked by the ETL (etl/glance.py → api/v1/glance; the research team's layout of 23 Nov
+// 2026), then sections that open on a click, all closed on every visit (16 Nov 2026): the research areas, filtered by
+// how often each runs; this week's grocery buying in store and online from the newest weekly survey; a way into the
+// cross-tabs; the latest wave.
 // Everything comes from files the ETL already publishes (the waves list, the newest wave's book): nothing is computed
 // on the server when the page opens. Cards and the box show only what this person's package includes (config/access.yml).
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowRight, CalendarDays, ChevronDown, Cpu, Fuel, Gauge, Gift, Globe, Layers, MessageSquareText, Percent, Pill, Share2,
+import { ArrowRight, CalendarDays, Check, ChevronDown, Cpu, Fuel, Gauge, Gift, Globe, Layers, MessageSquareText, Percent, Pill, Share2,
   ShoppingBag, Store, Table2, Wallet } from "lucide-react";
 import MicButton from "../components/MicButton";
 import type { LucideIcon } from "lucide-react";
@@ -24,6 +25,7 @@ const EXAMPLES = ["How worried are people about tariffs?", "Are consumers using 
 // this week's grocery buying, from the weekly questions q2 (in a store) and q3 (online), matched by the answer's first words
 const THEMES: [string, string, string][] = [["Groceries in store", "q2", "Food or beverages"], ["Groceries online", "q3", "Food or beverages"]];
 const RUNS = ["Weekly", "Monthly", "Quarterly", "Seasonal"] as const;
+const HIDDEN = "cip-glance-hidden";   // the weekly surveys this browser hides in This week at a glance
 type Runs = typeof RUNS[number];
 // The topic trackers on Home, with how often each runs, measured from the waves that carry each (median gap, 16 Nov
 // 2026): tariffs, financial health and GLP-1 every 28 days; gas prices weekly (Apr to Aug 2026); social commerce every
@@ -73,8 +75,8 @@ export default function Home() {
   const ask = (question: string) => question.trim().length >= 3 && navigate(`/ask?q=${encodeURIComponent(question.trim())}`);
   // [shown to this person, how often it runs, icon, title, where it opens, what it is for]
   const areas = ([
-    [!!latest, "Weekly", ShoppingBag, "Shopping & Spending Survey", `/w/${latest?.survey_id}`, "Where people shop, what they buy and how spending changes, every week."],
-    [!!latest && allowed(me, "explorer"), "Weekly", Layers, "In store vs online", "/channels", "Which categories people bought in a store, and which online, in the past two weeks."],
+    [!!latest && allowed(me, "us_tracker"), "Weekly", ShoppingBag, "Shopping & Spending Survey", `/w/${latest?.survey_id}`, "Where people shop, what they buy and how spending changes, every week."],
+    [!!latest && allowed(me, "channels"), "Weekly", Layers, "In store vs online", "/channels", "Which categories people bought in a store, and which online, in the past two weeks."],
     [!!report && allowed(me, "report"), "Weekly", Gauge, "Consumer sentiment & outlook", `/w/${report}/report`, "Personal finances and the economy over the next 12 months, by household income."],
     [allowed(me, "retailers"), "Weekly", Store, "Retailer databank", "/retailers", "Any retailer or sector, alone or side by side, over the weeks you choose: how many shop there and who they are."],
     [!!china && allowed(me, "china_tracker"), "Weekly", Globe, "China weekly tracker", `/w/${china?.survey_id}`, "A weekly survey of consumers in China: how they shop and spend."],
@@ -101,7 +103,7 @@ export default function Home() {
       </>}
     </section>
 
-    {latest && allowed(me, "us_tracker") && <ThisWeek />}
+    <ThisWeek />
 
     {areas.length > 0 && <Fold title="Explore key research">
       <div className="runs-filter"><span>Show research that runs</span>
@@ -126,18 +128,39 @@ export default function Home() {
   </div>;
 }
 
-/** "This week at a glance": the ETL's six cards in their two rows of three (a card the week lacks leaves a gap, so each
- *  row keeps its subject); a card links on only when this person has its screen. */
+/** "This week at a glance": the ETL's six cards per weekly survey (US, China), each block in its two rows of three (a
+ *  card the week lacks leaves a gap, so each row keeps its subject). A badge per survey above the cards shows or hides
+ *  its block, remembered in this browser (the last one shown stays); a card links on only when this person has its screen. */
 function ThisWeek() {
   const me = useMe().data;
   const { data } = useGlance();
-  if (!data?.cards.some(Boolean)) return null;
+  const [hidden, setHidden] = useState<string[]>(() => {
+    try { const kept = JSON.parse(localStorage.getItem(HIDDEN) ?? "[]"); return Array.isArray(kept) ? kept : []; } catch { return []; }
+  });
+  const surveys = data?.surveys.filter(s => s.cards.some(Boolean)) ?? [];   // the API leaves out a survey this person may not open
+  const kept = surveys.filter(s => !hidden.includes(s.name));
+  const shown = kept.length ? kept : surveys.slice(0, 1);   // every survey hidden (one has since gone): the first stays
+  if (!surveys.length) return null;
+  const toggle = (name: string) => {
+    const next = hidden.includes(name) ? hidden.filter(n => n !== name) : [...hidden, name];
+    setHidden(next);
+    try { localStorage.setItem(HIDDEN, JSON.stringify(next)); } catch { /* private window: this visit only */ }
+  };
   return <section aria-labelledby="glance-title">
     <h2 id="glance-title" className="report-section">This week at a glance</h2>
-    <p className="muted section-note">Weekly survey of {fmtDate(data.wave_date)} · {data.respondents.toLocaleString("en-US")} US adults
-      {data.sector ? ` · this week's sector: ${data.sector}` : ""}</p>
-    {[data.cards.slice(0, 3), data.cards.slice(3)].map((row, r) => <div key={r} className="grid g3 glance-row">{row.map((c, i) => c &&
-      <FigureCard key={c.title} {...c} lead={i === 0} to={allowed(me, c.feature) ? c.link : undefined} />)}</div>)}
+    {surveys.length > 1 && <div className="survey-filter" role="group" aria-label="Surveys shown">
+      <span>Surveys</span>
+      {surveys.map(s => { const on = shown.includes(s);
+        return <button key={s.name} type="button" className="chip" aria-pressed={on} disabled={on && shown.length === 1}
+                       title={on && shown.length === 1 ? "One survey always stays shown" : `${on ? "Hide" : "Show"} the ${s.name} weekly survey`}
+                       onClick={() => toggle(s.name)}>{on && <Check size={12} aria-hidden="true" />}{s.name} weekly survey</button>; })}
+    </div>}
+    {shown.map(s => <div key={s.name} className="glance-survey">
+      <p className="muted section-note"><span className="chip flat">{s.name}</span> Weekly survey of {fmtDate(s.wave_date)} · {s.respondents.toLocaleString("en-US")} {s.people}
+        {s.sector ? ` · this week's sector: ${s.sector}` : ""}</p>
+      {[s.cards.slice(0, 3), s.cards.slice(3)].map((row, r) => <div key={r} className="grid g3 glance-row">{row.map((c, i) => c &&
+        <FigureCard key={c.title} {...c} lead={i === 0} to={allowed(me, c.feature) ? c.link : undefined} />)}</div>)}
+    </div>)}
   </section>;
 }
 

@@ -1104,3 +1104,9 @@ details.fold > summary .fold-mark { flex: none; color: var(--ink-3); transition:
 details.fold:not([open]) > summary .fold-mark { transform: rotate(-90deg); }
 details.fold:not([open]) > summary.card-head { margin-bottom: 0; }
 details.fold > summary:hover .fold-mark { color: var(--ink); }
+/* Home's week at a glance: a badge per weekly survey (US, China) that shows or hides its block of cards */
+.survey-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 14px; font-size: 12px; color: var(--ink-2); }
+.survey-filter .chip { border: 1px solid var(--line-strong); background: transparent; color: var(--ink-2); cursor: pointer; }
+.survey-filter .chip[aria-pressed="true"] { background: var(--red-wash); border-color: var(--red); color: var(--red-text); }
+.survey-filter .chip:disabled { cursor: default; }
+.glance-survey + .glance-survey { margin-top: 28px; }

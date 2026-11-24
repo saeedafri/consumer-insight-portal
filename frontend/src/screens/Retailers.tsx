@@ -81,9 +81,7 @@ export default function Retailers() {
   return <div className="stack">
     <div className="page-head"><div>
       <h1>Retailer databank</h1>
-      <p className="lede">Any retailer or sector from the weekly tracker since July 2025: how many people shop there, who they are, and how
-        they compare. Choose one week or several: only weeks in which every chosen retailer was asked are offered, and several weeks are
-        added together (each week's respondents are different people), so smaller retailers have enough shoppers to describe.</p>
+      <p className="lede">Compare retailers and sectors side by side to explore shopping activity, shopper demographics and consumer sentiment.</p>
     </div>
       <div className="seg" role="group" aria-label="View">{MODES.map(([m, label]) =>
         <button key={m} aria-pressed={m === mode} onClick={() => set({ view: m, m: null, r: null, w: null, m2: null, r2: null, w2: null })}>{label}</button>)}</div>
@@ -206,7 +204,7 @@ function Chooser({ data, side, mode, markets, several, set }: { data: Data; side
     if (next.length) set({ [`w${p}`]: ids(next) });
   };
   return <div className="retail-side">
-    <label><span>{mode === "sector" || mode === "sectors" ? "Sector" : "Market"}</span>
+    <label><span>Sector</span>
       <select value={side.market.name} onChange={e => set({ [`m${p}`]: e.target.value, [`r${p}`]: null, [`w${p}`]: null })}>
         {markets.map(m => <option key={m.name}>{m.name}</option>)}</select></label>
     {mode === "retailer"
@@ -270,7 +268,7 @@ function Reach({ data, sides, series }: { data: Data; sides: Side[]; series: Ser
     ["Shoppers in the past two weeks (weekly) or among the sector's shoppers", "Source: Coresight Research US Consumer Survey"]);
   return <>
     <div className="grid g2">
-      <Card id="reach" title={weekly ? "Bought in the past two weeks" : "Bought from, among the sector's shoppers"}
+      <Card id="reach" title={weekly ? "Bought in the past two weeks" : `Share of ${sides.map(s => s.market.base.replace(/ asked$/, "")).join(" / ")} who bought from the selected ${series.length > 1 ? "retailers" : "retailer"}`}
             sub={<><span className="chip flat">Aggregate of the selected time period</span>{" "}
               {sides.map(s => weekSpan(data, s.weeks)).join(" / ")} · % of {sides.map(s => s.market.base).join(" / ")}</>}
             aside={<ExportButtons onExport={exportTable} />}>

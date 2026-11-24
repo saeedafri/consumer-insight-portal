@@ -103,7 +103,7 @@ export default function Access() {
   return <div className="access">
     <header className="card-head">
       <div><h1>Access</h1>
-        <p className="sub">Choose which menus a role, a client or one person sees: every entry of the left menu, under its group. A person's menus beat their client's, which beat their role's. Drag a menu between the two columns, or use its Show and Hide button. Turning off Shopping & Spending or the China weekly tracker takes its waves out of the Library, Search and Ask too. The super admin always sees everything; Home and a wave's Overview are always on.</p></div>
+        <p className="sub">Choose which menus a role, a client or one person sees: every entry of the left menu, under its group. A person's menus beat their client's, which beat their role's. Drag a menu between the two columns, or use its Show and Hide button. Turning off the China weekly tracker takes its waves out of the Library, Search and Ask too; turning off the US weekly tracker hides only its menu link, as Home, Ask, the Library, In store vs online and the databanks are built on its data. The super admin always sees everything; Home and a wave's Overview are always on.</p></div>
     </header>
     <div className="access-targets">
       {group("role", "Roles")}
