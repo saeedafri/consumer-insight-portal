@@ -8,6 +8,8 @@
 #   tables    one table per tab, title: question code (multi-choice: each answer becomes a row). Older surveys numbered
 #             their questions Q1, Q2…: there the question is found by its wording, which also tells a reused code apart
 #             (DS1-DS3: drugstores in drugstore weeks, dollar stores in off-price weeks)
+#   buyers    who the sector's buyers are, as its cards say it ("61.5% of footwear buyers"); "all adults" where a
+#             question was asked of everyone (M1)
 #   spend     the "how much did you spend" question (dollar bands): its middle band is the Sector databank's and
 #             Home's "Median spend" card (eCommerce and Social commerce ask none)
 #
@@ -15,64 +17,77 @@
 
 sectors:
   - name: Clothing
+    buyers: clothing buyers
     module: Apparel
     purchase: {question: AP1, codes: [1], label: Bought clothing or accessories in the past three months}
     tables: {Retailers: AP3, Brands: AP5, Categories: AP2}
     spend: AP9
   - name: Beauty
+    buyers: beauty buyers
     module: Beauty
     purchase: {question: BT1, codes: [1], label: Bought beauty products in the past three months}
     tables: {Retailers: BT13, Products: BT7, "Where they discover products": BT3}
     spend: BT15
   - name: Department stores
+    buyers: department store shoppers
     module: Department stores
     purchase: {question: DP1, codes: [1], label: Bought from a department store in the past three months}
     tables: {Retailers: DP2, Products: DP3}
     spend: DP8
   - name: Dollar stores
+    buyers: dollar store shoppers
     module: Off-price / dollar stores
     purchase: {question: DS1, codes: [1], label: Bought from a dollar store in the past three months}
     tables: {Retailers: DS2, Products: DS3}
     spend: DS4
   - name: Drugstore / pharmacy
+    buyers: drugstore and pharmacy shoppers
     module: Drugstore / pharmacy
     purchase: {question: DS1, codes: [1], label: Bought from a drugstore or pharmacy in the past three months}
     tables: {Retailers: DS2, Products: DS3}
     spend: DS5
   - name: eCommerce
+    buyers: online shoppers
     module: eCommerce
     purchase: {question: EC1, codes: [1], label: Bought online in the past three months}
     tables: {Retailers: EC2, Categories: EC4}
   - name: Footwear
+    buyers: footwear buyers
     module: Footwear
     purchase: {question: FW1, codes: [1], label: Bought footwear in the past three months}
     tables: {Retailers: FW2, Brands: FW3, Categories: FW4}
     spend: FW6
   - name: Home furnishings
+    buyers: home-furnishing buyers
     module: Home furnishings
     purchase: {question: HF1, codes: [1], label: Bought home-furnishing or décor products in the past three months}
     tables: {Retailers: HF2, Products: HF3}
     spend: HF5
   - name: Home improvement
+    buyers: home-improvement buyers
     module: Home improvement / DIY
     purchase: {question: HI1, codes: [1], label: Bought home-improvement, DIY or garden products in the past three months}
     tables: {Retailers: HI2, Products: HI3}
     spend: HI5
   - name: Luxury
+    buyers: luxury buyers
     module: Luxury
     purchase: {question: LX1, codes: [1], label: Bought luxury products in the past three months}
     tables: {Brands: LX3, Categories: LX2, "Where they bought": LX4}
     spend: LX7
   - name: Mass merchants and warehouse clubs
+    buyers: mass merchant and warehouse club shoppers
     module: Mass merchants / warehouse clubs
     tables: {Retailers: M1, Categories: M2}      # no purchase question: M1 is asked of everyone
     spend: M4
   - name: Off-price
+    buyers: off-price shoppers
     module: Off-price / dollar stores
     purchase: {question: O1, codes: [1], label: Bought from an off-price retailer in the past three months}
     tables: {Retailers: O2, Products: O3}
     spend: O5
   - name: Social commerce
+    buyers: social media shoppers
     module: Social commerce
     purchase: {question: SC1, codes: [1], label: Used social media while shopping in the past three months}
     tables: {Platforms: SC2, Products bought on social media: SC6}

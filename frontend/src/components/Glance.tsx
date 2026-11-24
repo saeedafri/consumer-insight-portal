@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import CountUp from "./CountUp";
-import type { Metric } from "../api";
+import type { Change, Metric } from "../api";
 import { useDashboard } from "../api";
 import { direction, fmtDate, HIDDEN_BASE } from "../stats";
 import { Failure, Skeleton } from "./bits";
@@ -42,11 +42,14 @@ function Tile({ title, m, value, note, prior, lead }: { title: string; m: Metric
 }
 
 /** One figure as a card (Home's week at a glance, the Sector and Retailer databanks' cards): a link with `to`, a
- *  button with `onClick`, else plain. `children` replaces the value and note (several retailers, one line each). */
-export function FigureCard({ title, value = "", note, lead, to, onClick, children }: { title: string; value?: string; note?: string;
-  lead?: boolean; to?: string; onClick?: () => void; children?: ReactNode }) {
-  const body = <><div className="k-label">{title}</div>{children ?? <><div className={`k-value${value.length > 14 ? " k-text" : ""}`}>{value}</div>
-    <div className="k-note">{note}</div></>}</>;
+ *  button with `onClick`, else plain. `badge` names where it comes from (the sector, "New this week"); `changes` are
+ *  its change badges, as the at-a-glance tiles above show theirs. `children` replaces the value and note (several
+ *  retailers, one line each). */
+export function FigureCard({ badge, title, value = "", note, changes = [], lead, to, onClick, children }: { badge?: string; title: string;
+  value?: string; note?: string; changes?: Change[]; lead?: boolean; to?: string; onClick?: () => void; children?: ReactNode }) {
+  const body = <>{badge && <span className="chip flat k-badge">{badge}</span>}<div className="k-label">{title}</div>
+    {children ?? <><div className={`k-value${value.length > 14 ? " k-text" : ""}`}>{value}</div><div className="k-note">{note}</div>
+      {changes.length > 0 && <div className="k-note">{changes.map(c => <Delta key={c.label} d={c.d} label={c.label} flags={c.flags ?? []} />)}</div>}</>}</>;
   const look = `card kpi glance-tile${lead ? " lead" : ""}`;
   return to ? <Link className={look} to={to}>{body}</Link>
     : onClick ? <button type="button" className={look} onClick={onClick}>{body}</button> : <div className={look}>{body}</div>;

@@ -13,7 +13,10 @@ The six cards, as the research team laid them out (call of 23 Nov 2026), in two 
             (etl/weekly_report.py three_points), the category with the widest gap between buying in a store and online
             this week, and the personal-finances outlook (net better) against the week before, with the share whose
             utility bills went up
-A card whose figures the week lacks is null, so the other cards keep their row. Which questions: config/glance.yml.
+Every card names where it comes from in a badge (the sector, "New this week", "Monthly topic"…) and carries change
+badges like the at-a-glance tiles the research team pointed to ("vs LY", "vs last week"), where the figure has an
+earlier one. A card whose figures the week lacks is null, so the other cards keep their row. Which questions:
+config/glance.yml.
 Checked by tests/test_glance.py.
 """
 from __future__ import annotations
@@ -44,12 +47,12 @@ def sector_card(sector: dict, kind: str) -> dict | None:
     """One of the sector's own cards (etl/sectors.py newest_cards: "leader", "product", "spend"), named with the sector
     and opening its tab of the Sector databank.
 
-    Every card of this file: title, value, note, the screen it opens, and the menu that screen needs
-    (config/access.yml), so Home links only to screens this person may open."""
+    Every card of this file: badge, title, value, note, change badges ({d, label, flags}), the screen it opens, and the
+    menu that screen needs (config/access.yml), so Home links only to screens this person may open."""
     found = next((c for c in sector["cards"] if c["kind"] == kind), None)
     tab = f"&tab={quote(found['tab'])}" if found and found["tab"] else ""
-    return found and {"title": f"{sector['name']}: {found['title'].lower()}", "value": found["value"], "note": found["note"],
-                      "link": f"/sectors?sector={quote(sector['name'])}{tab}", "feature": "sectors"}
+    return found and {"badge": sector["name"], "title": found["title"], "value": found["value"], "note": found["note"],
+                      "changes": found["changes"], "link": f"/sectors?sector={quote(sector['name'])}{tab}", "feature": "sectors"}
 
 
 def event_card(wave: dict, book: dict) -> dict | None:
@@ -68,8 +71,8 @@ def event_card(wave: dict, book: dict) -> dict | None:
         if rows:
             top = max(rows, key=lambda r: r["Total"])
             question = asked[0]["text"].split("?")[0] + "?"
-            return dict(title=f"New this week: {module}", value=f"{top['Total']:.1f}%", note=f"{top['label']}: {question}",
-                        link=f"/w/{wave['survey_id']}/questions/{asked[0]['id']}", feature="explorer")
+            return dict(badge="New this week", title=module, value=f"{top['Total']:.1f}%", note=f"{top['label']}: {question}",
+                        changes=[], link=f"/w/{wave['survey_id']}/questions/{asked[0]['id']}", feature="explorer")
     return None
 
 
@@ -82,16 +85,21 @@ def topic_card(wave: dict, dashboards: dict[str, dict]) -> dict | None:
     others = [c for c in dashboards if modules.get(c) not in sectors]
     for code in sorted(others, key=lambda c: modules.get(c) not in topics):   # monthly topics first, then seasonal ones
         board, link = dashboards[code], f"/trackers/{code}?w={wave['survey_id']}"
+        badge = "Monthly topic" if modules.get(code) in topics else "Seasonal"
+        prior = f"vs {(board.get('prior_label') or 'prior week').removeprefix('the ')}"
+
+        def moves(m: dict) -> list[dict]:   # the tile's own badges, as its tracker page shows them
+            return [{"d": m["vs_ly"], "label": "vs LY", "flags": m["flags"]}, {"d": m["vs_prior"], "label": prior, "flags": m["flags"]}]
         for h in board.get("highlights") or []:
             top = (board["lists"].get(h["list"]) or [None])[0]
             if top and top["pct"] is not None:
-                return dict(title=f"{board['title']}: {h['title']}", value=top["label"], note=f"{top['pct']:.1f}% {h['of']}", link=link,
-                            feature=f"tracker_{code}")
+                return dict(badge=badge, title=f"{board['title']}: {h['title']}", value=top["label"], note=f"{top['pct']:.1f}% {h['of']}",
+                            changes=moves(top), link=link, feature=f"tracker_{code}")
         tiles = {t["code"]: t for t in dashboard_config()[code]["tiles"]}
         for key, m in board["tiles"].items():
             if m and m["pct"] is not None:
-                return dict(title=f"{board['title']}: {board.get('tile_labels', {}).get(key, key)}", value=f"{m['pct']:.1f}%",
-                            note=tiles[key]["say"] if key in tiles else "", link=link, feature=f"tracker_{code}")
+                return dict(badge=badge, title=f"{board['title']}: {board.get('tile_labels', {}).get(key, key)}", value=f"{m['pct']:.1f}%",
+                            note=tiles[key]["say"] if key in tiles else "", changes=moves(m), link=link, feature=f"tracker_{code}")
     return None
 
 
@@ -99,9 +107,9 @@ def change_card(wave: dict, report: dict | None) -> dict | None:
     """The weekly report's biggest significant three-month change (four-week averages) in food, nonfood, in store or
     online (config/glance.yml change_sections)."""
     point = report and next((p for p in report.get("three_points") or [] if p["section"] in settings()["change_sections"]), None)
-    return point and dict(title=f"Biggest change: {point['section']}", value=f"{point['change']:+.1f} pts",
-                          note=f"{point['label']}: {point['from']:.1f}% to {point['to']:.1f}% over three months (four-week averages)",
-                          link=f"/w/{wave['survey_id']}/report", feature="report")
+    return point and dict(badge="Weekly report", title=f"Biggest change: {point['section']}", value=f"{point['change']:+.1f} pts",
+                          note=f"{point['label']}: {point['from']:.1f}% to {point['to']:.1f}% over three months (four-week averages), a significant change",
+                          changes=[], link=f"/w/{wave['survey_id']}/report", feature="report")
 
 
 def gap_card(wave: dict, book: dict) -> dict | None:
@@ -117,13 +125,16 @@ def gap_card(wave: dict, book: dict) -> dict | None:
     for row in store["groups"][0]["rows"]:
         twin = next((r for r in web if r["label"] == row["label"] or r["label"].startswith(f"{row['label']} (")), None)
         if twin and row.get("Total") is not None and not row["label"].lower().startswith(skip):
-            pairs.append((row["label"], row["Total"], twin["Total"]))
+            pairs.append((row, twin))
     if not pairs:
         return None
-    label, store_share, online_share = max(pairs, key=lambda p: abs(p[1] - p[2]))
-    return dict(title="Widest gap: in store vs online", value=label,
-                note=f"{store_share:.1f}% bought in a store, {online_share:.1f}% online, past two weeks",
-                link=f"/channels?w={wave['survey_id']}&c={quote(label)}", feature="channels")
+    row, twin = max(pairs, key=lambda p: abs(p[0]["Total"] - p[1]["Total"]))
+    asked_before = row.get("prior") is not None and twin.get("prior") is not None and "wording_changed_prior" not in row["flags"] + twin["flags"]
+    gap = row["Total"] - twin["Total"]
+    moved = [{"d": round(gap - (row["prior"] - twin["prior"]), 1), "label": "vs last week"}] if asked_before else []
+    return dict(badge="In store vs online", title="Widest gap: in store vs online", value=row["label"],
+                note=f"{row['Total']:.1f}% bought in a store, {twin['Total']:.1f}% online, past two weeks: a gap of {abs(gap):.1f} pts",
+                changes=moved, link=f"/channels?w={wave['survey_id']}&c={quote(row['label'])}", feature="channels")
 
 
 def outlook_card(wave: dict, report: dict | None, book: dict) -> dict | None:
@@ -136,14 +147,14 @@ def outlook_card(wave: dict, report: dict | None, book: dict) -> dict | None:
     weekly = line["lines"]["Total"]["weekly"]
     if weekly[at] is None:
         return None
-    before = f"; {weekly[at - 1]:+.1f} the week before" if at and weekly[at - 1] is not None else ""
+    before = [{"d": round(weekly[at] - weekly[at - 1], 1), "label": "vs last week"}] if at and weekly[at - 1] is not None else []
     bills = settings()["bills"]
     asked = next((q for q in book["questions"] if q["id"] == bills["question"]), None)
     group = asked and next((g for g in asked["groups"] if g["label"] == bills["group"]), None)
     rose = group and sum(r["Total"] or 0 for r in group["rows"] if "increase" in r["label"].lower())
     went_up = f". {rose:.1f}% say {bills['group'].lower()} went up in the past year" if rose else ""
-    return dict(title=f"{settings()['outlook']} outlook", value=f"{weekly[at]:+.1f}",
-                note=f"net better: % expecting better minus % worse, next 12 months{before}{went_up}",
+    return dict(badge="Consumer sentiment", title=f"{settings()['outlook']} outlook", value=f"{weekly[at]:+.1f}",
+                note=f"net better: % expecting better minus % worse, next 12 months{went_up}", changes=before,
                 link=f"/w/{wave['survey_id']}/report", feature="report")
 
 

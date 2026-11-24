@@ -22,6 +22,7 @@ tests/test_sectors.py.
 from __future__ import annotations
 
 import gzip
+from datetime import date
 import json
 import re
 from functools import lru_cache
@@ -85,11 +86,24 @@ def median_band(rows: list[dict]) -> str | None:
     return next(label for (_, label, _), running in zip(bands, accumulate(shares)) if running >= sum(shares) / 2)
 
 
+def changes(values: list[float | None], waves: list[dict]) -> list[dict]:
+    """A row's newest figure against the same survey about a year earlier (±4 weeks) and the sector's survey before:
+    the "vs LY" and "vs Aug 17" badges of its cards, as the at-a-glance tiles show theirs (components/Glance.tsx)."""
+    now = date.fromisoformat(waves[-1]["date"])
+    earlier = [(k, date.fromisoformat(w["date"])) for k, w in enumerate(waves[:-1]) if values[k] is not None]
+    year_ago = [k for k, day in earlier if abs((now - day).days - 364) <= 28]
+    found = [{"d": round(values[-1] - values[year_ago[-1]], 1), "label": "vs LY"}] if year_ago else []
+    if earlier:
+        k, day = earlier[-1]
+        found.append({"d": round(values[-1] - values[k], 1), "label": f"vs {day:%b} {day.day}"})
+    return found
+
+
 def newest_cards(sector: dict) -> list[dict]:
     """The sector's newest survey in three cards, drawn as they are by the Sector databank and Home (etl/glance.py):
     its leading retailer (or brand, or platform), its top product or category (the first tab titled Products or
-    Categories), and the median spend, else the purchase rate. Each: kind, title, value, note and the tab it opens.
-    "Of all adults" where everyone was asked (M1 of mass merchants), else "of buyers" (M2 asks shoppers only)."""
+    Categories), and the median spend, else the purchase rate. Each: kind, title, value, note, change badges and the
+    tab it opens. "Of all adults" where everyone was asked (M1 of mass merchants), else of the sector's buyers."""
     products = next((t for t in sector["tables"][1:] if t["title"].startswith(("Products", "Categories"))), None)
     cards = []
     for kind, word, table in [("leader", "Leading", sector["tables"][0]), ("product", "Top", products)]:
@@ -97,17 +111,18 @@ def newest_cards(sector: dict) -> list[dict]:
         if row:
             singular = table["title"].split()[0].lower()
             singular = singular[:-3] + "y" if singular.endswith("ies") else singular.removesuffix("s")   # "Categories" → "category"
-            who = "all adults" if table["bases"][-1] == sector["waves"][-1]["respondents"] else "buyers"
+            who = "all adults" if table["bases"][-1] == sector["waves"][-1]["respondents"] else sector["buyers"]
             cards.append({"kind": kind, "title": f"{word} {singular}", "value": row["label"],
-                          "note": f"{row['values'][-1]:.1f}% of {who}, past three months", "tab": table["title"]})
+                          "note": f"{row['values'][-1]:.1f}% of {who}, past three months",
+                          "changes": changes(row["values"], sector["waves"]), "tab": table["title"]})
     median = (sector["spend"] or {}).get("median", [None])[-1]
     bought = (sector["purchase"] or {}).get("values", [None])[-1]
     if median:
         cards.append({"kind": "spend", "title": "Median spend", "value": median,
-                      "note": "half of buyers spent less, half more, past three months", "tab": None})
+                      "note": f"half of {sector['buyers']} spent less, half more, past three months", "changes": [], "tab": None})
     elif bought is not None:
-        cards.append({"kind": "purchase", "title": "Bought in the sector", "value": f"{bought:.1f}%",
-                      "note": sector["purchase"]["label"], "tab": None})
+        cards.append({"kind": "purchase", "title": "Bought in the sector", "value": f"{bought:.1f}%", "note": sector["purchase"]["label"],
+                      "changes": changes(sector["purchase"]["values"], sector["waves"]), "tab": None})
     return cards
 
 
@@ -174,6 +189,7 @@ def build(books: dict[int, dict], waves: list[dict], question_file) -> dict:
             spend = {"question": sector["spend"], "median": [q and median_band(q["groups"][0]["rows"]) for q in asked]}
         sectors.append({
             "name": sector["name"],
+            "buyers": sector.get("buyers", "buyers"),
             "waves": [{"survey_id": w["survey_id"], "date": w["wave_date"], "respondents": w["qualified_n"]} for w in surveys],
             "purchase": bought,
             "spend": spend,

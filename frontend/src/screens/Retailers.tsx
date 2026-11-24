@@ -271,9 +271,12 @@ function Reach({ data, sides, series }: { data: Data; sides: Side[]; series: Ser
   return <>
     <div className="grid g2">
       <Card id="reach" title={weekly ? "Bought in the past two weeks" : "Bought from, among the sector's shoppers"}
-            sub={`Aggregate of the selected time period: ${sides.map(s => weekSpan(data, s.weeks)).join(" / ")} · % of ${sides.map(s => s.market.base).join(" / ")}`}
+            sub={<><span className="chip flat">Aggregate of the selected time period</span>{" "}
+              {sides.map(s => weekSpan(data, s.weeks)).join(" / ")} · % of {sides.map(s => s.market.base).join(" / ")}</>}
             aside={<ExportButtons onExport={exportTable} />}>
-        <div className="kpis">{series.map((s, i) => <div key={s.label} className={`kpi${i ? "" : " lead"}`}><span>{s.label}</span><b>{pct(values[i])}</b>
+        <div className="kpis">{series.map((s, i) => <div key={s.label} className={`kpi${i ? "" : " lead"}`}
+            title={`${s.label}: ${pct(values[i])} of ${s.base.toLocaleString("en-US")} ${sides[s.side].market.base}, ${weekSpan(data, sides[s.side].weeks)} (added together)`}>
+          <span>{s.label}</span><b>{pct(values[i])}</b>
           <small>{(s.counts[0] ?? 0).toLocaleString("en-US")} of {s.base.toLocaleString("en-US")}</small></div>)}</div>
         <EChart label="Shoppers by retailer" height={Math.max(160, series.length * 34 + 30)} option={{
           // the hover says what the % is made of: its shoppers, its base and the weeks added together

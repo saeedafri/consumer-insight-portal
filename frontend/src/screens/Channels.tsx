@@ -4,7 +4,8 @@
 // every pick of week, group or category is computed here in the browser, so nothing runs on the server when someone changes a filter.
 // Opened from the left menu (Core research) and the Home page's card; week, group, category and the trend's date range
 // are kept in the address. People is two choices: a kind of group (gender, age, income…), then All or one group; only
-// groups this week has answers from are offered (older income bands are empty in recent weeks).
+// groups this week has answers from are offered (older income bands are empty in recent weeks). All of a kind puts its
+// groups side by side (the research team's call of 23 Nov 2026): the category by group, and each group's trend.
 import { useMemo } from "react";
 import { useSearchParams } from "react-router";
 import { CUT_NAMES, useQuestion, useWaves } from "../api";
@@ -23,6 +24,9 @@ const SKIP = /^(none of|other|don.?t know)/i;
 // The tracker renumbered the two questions, and a code also held other questions in other weeks (q2 was "places you
 // are avoiding" until Dec 2023, Q4 a food-retailer question from Jan 2024): only the weeks whose wording is this question count.
 const IN_STORE = /in a store in the past two weeks/i, ONLINE = /online in the past two weeks/i;
+
+/** % of a group (cut "dim:value") of one week (survey_id) who bought a category (answer label), or null. */
+type Share = (survey: number, cut: string, label: string) => number | null;
 
 /** Question files as one share lookup, over the weeks that asked `wording`: share(survey_id, "dim:value", answer label)
  *  → % of the group asked, or null; weeks: survey_id → date; labels: every answer those weeks gave. */
@@ -86,7 +90,11 @@ export default function Channels() {
   const categories = [...data.storeLabels].filter(l => data.labels.has(l) && !SKIP.test(l) && data.inStore(survey, cut, l) != null)
     .sort((x, y) => (data.inStore(survey, cut, y) ?? 0) - (data.inStore(survey, cut, x) ?? 0));
   const category = categories.includes(params.get("c") ?? "") ? params.get("c")! : categories[0];
-  const groupName = cut === "total:Total" ? "Everyone" : `${CUT_NAMES[cut.split(":")[0]] ?? ""}: ${cut.split(":")[1]}`;
+  const kindName = CUT_NAMES[kind] ?? kind;
+  const sideBySide = kind !== "total" && cut === "total:Total";   // All of a kind: its groups side by side
+  const groups = offered.filter(c => c[0] === kind).map(c => c[1]);
+  const groupName = sideBySide ? `${kindName}, each group` : cut === "total:Total" ? "Everyone" : `${CUT_NAMES[cut.split(":")[0]] ?? ""}: ${cut.split(":")[1]}`;
+  const hue = (i: number) => [C.redLine, C.s1, C.s3, C.other, C.rose, C.s2, C.grey, C.silver][i % 8];   // a group's colour, the same on both charts
   const nowStore = data.inStore(survey, cut, category), nowOnline = data.onLine(survey, cut, category);
   const change = (fn: typeof data.inStore, now: number | null) => prior && now != null && fn(prior[0], cut, category) != null ? now - fn(prior[0], cut, category)! : null;
   // both cards draw at one height, so the trend card has no empty space under its chart beside the long category list
@@ -100,8 +108,22 @@ export default function Channels() {
   const spanText = `${fmtDate(span[0][1])} to ${fmtDate(span.at(-1)![1])}`;
   const figure = (v: number | null) => v == null ? null : +v.toFixed(1);   // a % as charts and exports show it
   const source = "Source: Coresight Research US Consumer Survey, weekly tracker; q2 (in a store) and q3 (online), past two weeks. Unweighted.";
-  const exportTrend = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, `${category} in store vs online`, ["Week", "In a store %", "Online %"],
-    span.map(w => [w[1], figure(data.inStore(w[0], cut, category)), figure(data.onLine(w[0], cut, category))]), [`${category}: ${groupName}, ${spanText}`, source]);
+  const shown = sideBySide ? groups.map(g => [g, `${kind}:${g}`]) : [["", cut]];   // the trend's groups: [name, cut]
+  const exportTrend = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, `${category} in store vs online`,
+    ["Week", ...shown.flatMap(([g]) => [`${g} in a store %`.trim(), `${g} online %`.trim()])],
+    span.map(w => [w[1], ...shown.flatMap(([, c]) => [figure(data.inStore(w[0], c, category)), figure(data.onLine(w[0], c, category))])]),
+    [`${category}: ${groupName}, ${spanText}`, source]);
+  /** In-store (red) and online (blue) bars, a pair per row: every category for one group, or every group for one category. */
+  const bars = (rows: string[], share: (fn: Share, row: string) => number | null) => ({
+    tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v: number) => pct(v) },
+    legend: { top: 0, left: 0, textStyle: axisText(), data: ["In a store", "Online"] },
+    grid: { left: 8, right: 40, top: 32, bottom: 8, containLabel: true },
+    xAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" } },
+    yAxis: { type: "category", inverse: true, data: rows, axisLabel: { ...axisText(), width: 190, overflow: "truncate" } },
+    series: [["In a store", data.inStore, C.red], ["Online", data.onLine, C.blue]].map(([name, fn, color]) => ({
+      type: "bar", name, barMaxWidth: 10, barGap: "30%", itemStyle: { color, borderRadius: [2, 4, 4, 2] },
+      data: rows.map(r => figure(share(fn as Share, r))) })),
+  });
   return <div className="stack">
     <div className="page-head"><div>
       <h1>In store vs online</h1>
@@ -135,40 +157,37 @@ export default function Channels() {
     </div>
 
     <div className="grid g2">
-      <Card title="Every category, this week" sub={`${groupName} · ${fmtDate(date)} · % who bought each in a store (red) and online (blue)`}>
-        <EChart height={height} label={`In store and online buying by category, ${fmtDate(date)}`}
-                onClick={p => pick("c", p.name)}
-                option={{
-                  tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v: number) => pct(v) },
-                  legend: { top: 0, left: 0, textStyle: axisText(), data: ["In a store", "Online"] },
-                  grid: { left: 8, right: 40, top: 32, bottom: 8, containLabel: true },
-                  xAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" } },
-                  yAxis: { type: "category", inverse: true, data: categories, axisLabel: { ...axisText(), width: 190, overflow: "truncate" } },
-                  series: [["In a store", data.inStore, C.red], ["Online", data.onLine, C.blue]].map(([name, fn, color]) => ({
-                    type: "bar", name, barMaxWidth: 10, barGap: "30%", itemStyle: { color, borderRadius: [2, 4, 4, 2] },
-                    data: categories.map(l => figure((fn as typeof data.inStore)(survey, cut, l))) })),
-                }} />
-      </Card>
-      <Card title={category} sub={`${groupName} · ${spanText} · in a store (red) vs online (blue)`}
-            aside={<div className="toolbar one-row">
-              <label className="sr-only" htmlFor="trend-from">From</label>
-              <select id="trend-from" value={span[0][0]} onChange={e => pick("from", e.target.value)} title="From">
-                {oldestFirst.map(w => <option key={w[0]} value={w[0]}>From {fmtDate(w[1])}</option>)}</select>
-              <label className="sr-only" htmlFor="trend-to">To</label>
-              <select id="trend-to" value={span.at(-1)![0]} onChange={e => pick("to", e.target.value)} title="To">
-                {oldestFirst.map(w => <option key={w[0]} value={w[0]}>To {fmtDate(w[1])}</option>)}</select>
-              <ExportButtons onExport={exportTrend} />
-            </div>}>
-        <EChart height={height} label={`${category}: in store vs online over time`}
+      {sideBySide
+        ? <Card title={`${category} by ${kindName.toLowerCase()}`} sub={`${fmtDate(date)} · % of each group who bought it in a store (red) and online (blue) · click a group to see it alone`}>
+            <EChart height={height} label={`${category} by ${kindName}, ${fmtDate(date)}`} onClick={p => pick("g", `${kind}:${p.name}`)}
+                    option={bars(groups, (fn, g) => fn(survey, `${kind}:${g}`, category))} />
+          </Card>
+        : <Card title="Every category, this week" sub={`${groupName} · ${fmtDate(date)} · % who bought each in a store (red) and online (blue)`}>
+            <EChart height={height} label={`In store and online buying by category, ${fmtDate(date)}`} onClick={p => pick("c", p.name)}
+                    option={bars(categories, (fn, l) => fn(survey, cut, l))} />
+          </Card>}
+      <Card title={category} sub={`${groupName} · ${spanText} · ${sideBySide ? "solid: in a store, dashed: online" : "in a store (red) vs online (blue)"}`}
+            aside={<ExportButtons onExport={exportTrend} />}>
+        <div className="toolbar one-row" style={{ marginBottom: 8 }}>
+          <label className="sr-only" htmlFor="trend-from">From</label>
+          <select id="trend-from" value={span[0][0]} onChange={e => pick("from", e.target.value)} title="From">
+            {oldestFirst.map(w => <option key={w[0]} value={w[0]}>From {fmtDate(w[1])}</option>)}</select>
+          <label className="sr-only" htmlFor="trend-to">To</label>
+          <select id="trend-to" value={span.at(-1)![0]} onChange={e => pick("to", e.target.value)} title="To">
+            {oldestFirst.map(w => <option key={w[0]} value={w[0]}>To {fmtDate(w[1])}</option>)}</select>
+        </div>
+        <EChart height={height - 48} label={`${category}: in store vs online over time`}
                 option={{
                   tooltip: { ...tooltip(), trigger: "axis", valueFormatter: (v: number | null) => pct(v) },
-                  legend: { top: 0, left: 0, textStyle: axisText() },
+                  legend: { top: 0, left: 0, type: "scroll", textStyle: axisText() },
                   grid: { left: 8, right: 16, top: 36, bottom: 40, containLabel: true },
                   xAxis: { type: "time", axisLabel: valueText() },
                   yAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" } },
-                  series: [["In a store", data.inStore, C.red], ["Online", data.onLine, C.blue]].map(([name, fn, color]) => ({
-                    type: "line", name, showSymbol: false, smooth: 0.2, color, lineStyle: { width: 2 },
-                    data: span.map(w => [time(w[1]), (fn as typeof data.inStore)(w[0], cut, category)]) })),
+                  series: shown.flatMap(([g, c], i) => ([["In a store", data.inStore, sideBySide ? hue(i) : C.red, "solid"],
+                                                          ["Online", data.onLine, sideBySide ? hue(i) : C.blue, sideBySide ? "dashed" : "solid"]] as const)
+                    .map(([what, fn, color, line]) => ({
+                      type: "line", name: sideBySide ? `${g}, ${what.toLowerCase()}` : what, showSymbol: false, smooth: 0.2, color, lineStyle: { width: 2, type: line },
+                      data: span.map(w => [time(w[1]), fn(w[0], c, category)]) }))),
                 }} />
       </Card>
     </div>

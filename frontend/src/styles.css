@@ -538,8 +538,9 @@ dl.facts dd { margin: 0; font-weight: 600; }
 .glance-tile .k-value.k-text { font-size: 18px; line-height: 1.3; letter-spacing: 0; }
 .glance-lines { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; font-size: 13px; color: var(--ink); }   /* one line per retailer compared (Retailers.tsx Highlights) */
 .glance-lines small { display: block; font-size: 11px; color: var(--ink-3); }
-.card[id] { scroll-margin-top: 132px; }
-.glance-row + .glance-row { margin-top: 16px; }   /* Home's week at a glance: its two rows of three */   /* a card scrolled to clears the sticky header and the page's bar */
+.card[id] { scroll-margin-top: 132px; }   /* a card scrolled to clears the sticky header and the page's bar */
+.glance-row + .glance-row { margin-top: 16px; }   /* Home's week at a glance: its two rows of three */
+.k-badge { align-self: flex-start; width: fit-content; margin: 4px 0 8px; padding: 2px 8px; font-size: 10.5px; }   /* where a card's figure comes from (FigureCard) */
 .glance-takeaways { border-left: 3px solid var(--red); }
 .glance-takeaways h3 { margin: 0; font: var(--t-h3); }
 .glance-takeaways .sub { margin: 3px 0 10px; color: var(--ink-2); font-size: 12px; }
