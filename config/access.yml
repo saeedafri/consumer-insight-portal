@@ -50,10 +50,10 @@ grown_from:
   tracker_holiday_tracker: dashboards
   tracker_holiday_outlook: dashboards
   tracker_social_commerce: dashboards
-# a weekly tracker's waves open only with its menu: Library, Search, Ask, Trends and every wave screen (access.sees).
-# Not the US one: Home, Ask, the Library, In store vs online and the databanks are built on its data, so its menu is only
-# the left menu's link (24 Nov 2026: analysts given those four without it got empty screens)
-family_menus: {CSI-CN: china_tracker}
+# a weekly tracker listed here has its waves open only with its menu: Library, Search, Ask, Trends and every wave screen
+# (access.sees), e.g. {CSI-CN: china_tracker}. None since 24 Nov 2026: analysts given Home, Ask, the Library and the
+# databanks without the tracker menus got no weekly surveys, so each tracker's menu is only its left menu link
+family_menus: {}
 # the left menu as the Access screen offers it, group by group (frontend/src/components/Shell.tsx draws the same, and
 # tests/test_access.py checks every feature is here once): a key, or {label, always} (on for everyone), {label, admin}
 # (the super admin's alone), {label, children} (a menu with pages of its own)
@@ -72,7 +72,7 @@ menu:
 feature_labels:   # the names the Access screen shows
   library: Survey library
   us_tracker: US weekly tracker (the left menu's link to the Shopping & Spending survey's newest wave; its data stays open)
-  china_tracker: China weekly tracker (its waves)
+  china_tracker: China weekly tracker (the left menu's link to its newest wave; its data stays open)
   channels: In store vs online
   tracker_tariffs_inflation: Tariffs & inflation
   tracker_financial_health: Financial health

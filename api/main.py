@@ -565,8 +565,8 @@ async def retailers(request: Request, who: dict = Depends(user)) -> Response:
 @app.get("/api/v1/glance")
 async def glance(request: Request, who: dict = Depends(user)) -> Response:
     """Home's "This week at a glance" (etl/glance.py): six cards from the newest wave of each weekly survey (US, China).
-    Home is everyone's; someone who may not open a survey's waves (the China tracker's menu off) gets the file without
-    its block (only "*" sessions get it from nginx)."""
+    Home is everyone's; someone who may not open a survey's waves (config/access.yml family_menus, surveys) gets the
+    file without its block (only "*" sessions get it from nginx)."""
     shown = {w["survey_id"] for w in await run_in_threadpool(all_waves) if access.sees(who, w)}
     return await tracker_view(request, who, "glance",
                               lambda data: {**data, "surveys": [s for s in data["surveys"] if s["survey_id"] in shown]})

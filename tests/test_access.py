@@ -245,10 +245,10 @@ def test_the_tracker_views_are_served_as_published_and_say_so_before_the_first_p
 
 
 
-def test_an_analyst_given_home_ask_library_channels_and_retailers_gets_the_us_weekly_survey(portal, monkeypatch):
-    """The analysts' menus of 24 Nov 2026, without the US weekly tracker's: the US weekly waves stay open (those screens are
-    built on them), so the Library lists them, This week at a glance shows them and In store vs online reads its question
-    files without Trends. China's menu off still takes China away (config/access.yml family_menus)."""
+def test_an_analyst_given_home_ask_library_channels_and_retailers_gets_both_weekly_surveys(portal, monkeypatch):
+    """The analysts' menus of 24 Nov 2026, without either weekly tracker's: the US and China weekly waves stay open (those
+    screens are built on them, config/access.yml family_menus), so the Library lists them, This week at a glance shows
+    them and In store vs online reads its question files without Trends."""
     monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
     monkeypatch.setitem(RULES, "features", [*RULES["features"], "library", "us_tracker", "china_tracker", "channels", "retailers"])
     monkeypatch.setitem(RULES, "family_menus", yaml.safe_load((REPO_ROOT / "config/access.yml").read_text())["family_menus"])
@@ -259,8 +259,8 @@ def test_an_analyst_given_home_ask_library_channels_and_retailers_gets_the_us_we
     four = ["ask", "library", "channels", "retailers"]
     assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": four}).encode())[0] == 200
     ana = signed("ana@coresight.com")
-    assert [w["survey_id"] for w in json.loads(call("/api/v1/waves", ana)[2])] == [415, 300]          # no China
-    assert [s["name"] for s in json.loads(call("/api/v1/glance", ana)[2])["surveys"]] == ["US"]
+    assert [w["survey_id"] for w in json.loads(call("/api/v1/waves", ana)[2])] == [415, 300, 416]
+    assert [s["name"] for s in json.loads(call("/api/v1/glance", ana)[2])["surveys"]] == ["US", "China"]
     assert call("/api/v1/questions/CSI-US/tracker/Q1", ana)[0] == 200                                 # In store vs online's files
     assert call("/api/v1/questions/ACME_STUDY/adhoc/Q1", ana)[0] == 403                               # not Trends for the rest
 
@@ -864,7 +864,7 @@ def test_a_choice_saved_before_the_menus_grew_loses_nothing_and_a_new_one_is_kep
 
 
 def test_a_weekly_tracker_hidden_on_the_access_screen_closes_its_waves(portal, monkeypatch):
-    """A weekly tracker in family_menus (in config only China's since 24 Nov 2026; the US one here, the fixture's wave)
+    """A weekly tracker in family_menus (none in config since 24 Nov 2026; the US one here, the fixture's wave)
     off for one person: its waves leave the list and do not open, and that person's cached answers are kept apart from
     their client's (access.scope, 15 Nov 2026)."""
     monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
