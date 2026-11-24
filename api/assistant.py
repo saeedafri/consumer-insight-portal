@@ -1637,6 +1637,12 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         verified = None           # for "Do GLP-1 users eat less?" on "Which foods…", over a reader sure at a lead of 7 (14 Nov 2026)
     if listed and not quick and not reader_sure and not verified:
         reading = ask_model.plan(question, listed)
+        # a reader's pick that uses every word of the subject stands over the AI's "none of these" or a pick missing one:
+        # Gemini Flash-Lite refused "tariffs" and "Valentine's Day spending", and took noticed price changes for "the pace
+        # of price increases"; each right refusal it gave lacked a word, such as "turkey" or "Fed" (23 Nov 2026)
+        if reading and reader_pick and reader_pick[0] is not None and not lacking(plan, candidates[reader_pick[0]]["key"], index)[0] \
+                and (reading["pick"] is None or lacking(plan, candidates[reading["pick"]]["key"], index)[0]):
+            reading = None
     by_reader = reading is None and reader_pick is not None
     if by_reader:   # its pick only: the rules read the kind, period and group, as the reading's defaults say
         reading = {"pick": reader_pick[0], "alt": None, "focus": [], "kind": "share", "grain": "auto", "cut": "none", "period": "all"}

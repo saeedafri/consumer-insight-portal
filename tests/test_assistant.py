@@ -545,6 +545,15 @@ def test_the_reader_picks_and_the_ai_is_asked_only_when_the_reader_is_unsure(ind
     assert checked["understood"] == "model" and checked["sources"][0]["qcode"] == "XQ1" and len(calls) == 1
     monkeypatch.setattr(assistant.ask_model, "plan", lambda q, c: None)   # no key (or the AI failed): the reader's pick stands
     assert assistant.answer(question, index, EVERYONE)["sources"][0]["qcode"] == "Q14"
+    # a reader's pick using every subject word stands over the AI's pick missing one, and over its "none of these"
+    monkeypatch.setattr(assistant, "lacking", lambda plan, key, *rest: (["amazon"] if key.endswith("/XQ1") else [], 1, False))
+    monkeypatch.setattr(assistant.ask_model, "plan", lambda q, c: {
+        "pick": next(x["number"] for x in c if "retailers" in x["text"]), "alt": None, "focus": [], "kind": "share",
+        "grain": "auto", "cut": "none", "period": "latest"})
+    assert assistant.answer(question, index, EVERYONE)["sources"][0]["qcode"] == "Q14"
+    monkeypatch.setattr(assistant.ask_model, "plan", lambda q, c: {
+        "pick": None, "alt": None, "focus": [], "kind": "share", "grain": "auto", "cut": "none", "period": "latest"})
+    assert assistant.answer(question, index, EVERYONE)["sources"][0]["qcode"] == "Q14"
 
 
 def test_a_misspelt_retailer_is_put_right_and_other_words_are_left_alone(tmp_path, index, monkeypatch):

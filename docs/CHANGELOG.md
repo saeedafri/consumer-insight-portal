@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 23 November 2026
 
+### Gemini can read the questions Ask's own reader is unsure of
+
+Ask can now send a question its own reader is unsure of to Google's Gemini (free tier, gemini-3.5-flash-lite) to pick the survey question: set CIP_ASK_PROVIDER=gemini and GEMINI_API_KEY. Gemini sees only the question and the candidate questions' wording and answer labels, never respondent data, and never writes a figure. Measured on 23 Nov 2026: real analyst questions 202 of 232 right, up from 184 (“Are people eating out less?”, “Have consumers bought anything on TikTok Shop?”, “How has financial optimism changed this year?”); the no-answer set 57 of 60 declined, up from 55; researched 48 of 58 and fresh 48 of 50 as before; the golden set 154 of 161, down from 158. When Ask's own reader picked a question using every word of the subject (“tariffs”, “Valentine's Day spending”) and Gemini said no survey asks it, or picked one missing a word, the reader's pick now stands.
+
 ### Ask works out a median or average budget, answers month-against-month questions, and says what people reported about tariffs
 
 “What was the median holiday spend?” and “What is the average holiday budget?” now give the middle budget band and an average worked out from the band mid-points, for everyone or by group (Gen Z: middle band $500-$749, about $854 on 7 Sep 2026); a question with no amounts asked, such as the average price of a turkey, is still declined. “Groceries online in October vs September” is answered from the weekly online-categories question, which asks every week (27.8% in September, 29.5% in October), instead of an annual study asked only in May, and the lead no longer repeats the months as what people did. “Did the tariffs cause people to spend less?” shows what people said tariffs made them change, with a note that this is their own report, not a measured cause; a question whose effect the survey does not ask, such as dining out, is still declined. Real analyst questions answered right: 166 to 184 of 232.
