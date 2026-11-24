@@ -49,7 +49,7 @@ from sqlalchemy import text
 
 from shared.core.database import get_engine
 from shared.data import payloads
-from etl import expectations, fieldwork, retailers, sectors, weekly_report
+from etl import expectations, fieldwork, glance, retailers, sectors, weekly_report
 
 log = logging.getLogger("cip.publish")
 ROOT = Path(os.environ.get("CIP_PUBLISH_DIR") or Path(__file__).resolve().parents[1] / "data/published")
@@ -318,7 +318,7 @@ def backup(version: Path) -> None:
 
 def write_views(out: Path) -> int:
     """The views built from a version's files (the weekly reports, the sector tables, expected vs actual, the
-    fieldwork record): by every
+    fieldwork record, Home's week at a glance): by every
     publish, and again after a restore, so a new image's views appear at deploy without waiting for new data.
     Returns the bytes written."""
     size = weekly_report.publish(out, write)   # the weekly report of the recent tracker waves, from the question files
@@ -326,6 +326,7 @@ def write_views(out: Path) -> int:
     size += retailers.publish(out, write)      # the retailer comparison, from the weeks' respondent bitsets
     size += fieldwork.publish(out, write)      # the admins' Fieldwork screen, from Forsta's kept fieldwork records
     size += write(out / "api/v1/public/facts", site_facts(out))   # the public home page's live figures
+    size += glance.publish(out, write)         # Home's "This week at a glance", from the files written above
     return size + expectations.publish(out, write)   # retail events: expected vs actual, plus the spend answers
 
 

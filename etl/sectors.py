@@ -7,7 +7,8 @@ files (no database); publish() writes one file for every sector, api/v1/sectors.
 
 Each sector, as the Databank lays it out: one column per survey the sector ran (sectors rotate, so about every 12
 weeks, back to 2022), a purchase-rate row (% of all respondents who bought in the category in the past three months),
-then one table per tab (retailers, brands, categories), each row an answer's % of the respondents asked (the buyers).
+then one table per tab (retailers, brands, categories), each row an answer's % of the respondents asked (the buyers),
+and the median spend band per survey (the Sector databank's and Home's "Median spend" card, etl/glance.py).
 
 Finding a sector's surveys and questions:
   surveys    tagged with the sector's module since Jul 2025; before that, the survey title names it ("Shopping and
@@ -24,12 +25,13 @@ import gzip
 import json
 import re
 from functools import lru_cache
+from itertools import accumulate
 from pathlib import Path
 
 import yaml
 
 from etl import survey_calendar, weekly_report
-from etl.weekly_report import Question, first_sentence, margin_of_error, read_questions, read_waves, share
+from etl.weekly_report import Question, band, first_sentence, margin_of_error, read_questions, read_waves, share
 
 CONFIG = Path(__file__).resolve().parents[1] / "config"
 
@@ -71,6 +73,44 @@ def locate(question_file, found: dict | None, survey_id: int) -> tuple[Question,
     return None if at is None else (question, at)
 
 
+def median_band(rows: list[dict]) -> str | None:
+    """The spend band the middle buyer's answer falls in ("$201 - $300"), from one survey's book rows (label, Total %);
+    answers without a dollar amount ("Cannot remember") are left out. The book, not the question file: a reused code's
+    file carries its newest wording's labels (DS5 is drugstore spend in drugstore weeks, the reason for a dollar store
+    visit in off-price weeks), and a % rounded to 0.1 moves a middle band only on an exact tie. None under three bands."""
+    bands = sorted((amount[0], row["label"], row["Total"] or 0) for row in rows if (amount := band(row["label"])))
+    shares = [share for *_, share in bands]
+    if len(bands) < 3 or not sum(shares):
+        return None
+    return next(label for (_, label, _), running in zip(bands, accumulate(shares)) if running >= sum(shares) / 2)
+
+
+def newest_cards(sector: dict) -> list[dict]:
+    """The sector's newest survey in three cards, drawn as they are by the Sector databank and Home (etl/glance.py):
+    its leading retailer (or brand, or platform), its top product or category (the first tab titled Products or
+    Categories), and the median spend, else the purchase rate. Each: kind, title, value, note and the tab it opens.
+    "Of all adults" where everyone was asked (M1 of mass merchants), else "of buyers" (M2 asks shoppers only)."""
+    products = next((t for t in sector["tables"][1:] if t["title"].startswith(("Products", "Categories"))), None)
+    cards = []
+    for kind, word, table in [("leader", "Leading", sector["tables"][0]), ("product", "Top", products)]:
+        row = table and next((r for r in table["rows"] if r["values"][-1] is not None), None)   # rows: biggest in the newest first
+        if row:
+            singular = table["title"].split()[0].lower()
+            singular = singular[:-3] + "y" if singular.endswith("ies") else singular.removesuffix("s")   # "Categories" → "category"
+            who = "all adults" if table["bases"][-1] == sector["waves"][-1]["respondents"] else "buyers"
+            cards.append({"kind": kind, "title": f"{word} {singular}", "value": row["label"],
+                          "note": f"{row['values'][-1]:.1f}% of {who}, past three months", "tab": table["title"]})
+    median = (sector["spend"] or {}).get("median", [None])[-1]
+    bought = (sector["purchase"] or {}).get("values", [None])[-1]
+    if median:
+        cards.append({"kind": "spend", "title": "Median spend", "value": median,
+                      "note": "half of buyers spent less, half more, past three months", "tab": None})
+    elif bought is not None:
+        cards.append({"kind": "purchase", "title": "Bought in the sector", "value": f"{bought:.1f}%",
+                      "note": sector["purchase"]["label"], "tab": None})
+    return cards
+
+
 def build(books: dict[int, dict], waves: list[dict], question_file) -> dict:
     """Every sector of config/sectors.yml from the tracker's waves (oldest first), their books (by survey_id) to find
     each question, and `question_file` (code -> Question or None) for its counts. A sector's columns: its surveys that
@@ -79,7 +119,7 @@ def build(books: dict[int, dict], waves: list[dict], question_file) -> dict:
     sectors = []
     for sector in settings()["sectors"]:
         purchase = sector.get("purchase")
-        codes = [*([purchase["question"]] if purchase else []), *sector["tables"].values()]
+        codes = [*([purchase["question"]] if purchase else []), *sector["tables"].values(), *([sector["spend"]] if "spend" in sector else [])]
         surveys = [w for w in sector_waves(waves, sector) if w["survey_id"] in books]
         tagged = [w for w in surveys if w.get("modules")]
         if not tagged:
@@ -128,13 +168,19 @@ def build(books: dict[int, dict], waves: list[dict], question_file) -> dict:
                     value = share(question, at, question.total,
                                   [a for a in question.offered(at) if question.codes[a] in purchase["codes"]])
                 bought["values"].append(None if value is None else round(value, 1))
+        spend = None
+        if "spend" in sector:   # each survey's spend question, as its book asked it (found by wording)
+            asked = [questions.get(sector["spend"]) for questions in found]
+            spend = {"question": sector["spend"], "median": [q and median_band(q["groups"][0]["rows"]) for q in asked]}
         sectors.append({
             "name": sector["name"],
             "waves": [{"survey_id": w["survey_id"], "date": w["wave_date"], "respondents": w["qualified_n"]} for w in surveys],
             "purchase": bought,
+            "spend": spend,
             "tables": [{"title": title, "question": code, **table(code)} for title, code in sector["tables"].items()],
             "margin": margin_of_error(min((w["qualified_n"] for w in surveys if w["qualified_n"]), default=0)),   # the Databank's "±5 %, 95 % confidence"
         })
+        sectors[-1]["cards"] = newest_cards(sectors[-1])
     return {"sectors": sectors}
 
 

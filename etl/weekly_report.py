@@ -137,6 +137,21 @@ def read_waves(out: Path, family: str, study: str) -> list[dict]:
     return sorted((w for w in waves if w["survey_family"] == family and w["study_type"] == study), key=lambda w: w["wave_date"])
 
 
+def band(label: str) -> tuple[float, float | None] | None:
+    """An amount band's low and high ("$100-$299" → 100, 299; "Less than $100" → 0, 100; "$4,000+" → 4000, None). Also used by
+    etl/sectors.py (median spend) and api/ask_figures.py (Ask's median and average budgets)."""
+    if "$" not in label:
+        return None
+    amounts = [float(x.replace(",", "")) for x in re.findall(r"\d[\d,]*(?:\.\d+)?", label)]
+    if not amounts:
+        return None
+    if re.search(r"\b(?:less than|under|below|up to)\b", label, re.I):
+        return 0.0, amounts[0]
+    if len(amounts) == 1:   # "$4,000+", "More than $100", "$200,000 or greater"
+        return amounts[0], None
+    return amounts[0], amounts[1]
+
+
 def share(question: Question, wave: int | None, cuts: list[int], answers: list[int]) -> float | None:
     """The % of respondents in `wave` (one week) who gave one of `answers`; None when that week did not ask it."""
     if wave is None:

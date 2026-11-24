@@ -70,15 +70,15 @@ export function Change({ now, before, label, routing, move }:
 
 /** A titled box. `fold`: its head opens and closes it (native <details>, starts open), as every box on the Logs page does
  *  so an admin keeps only what they need in view (21 Nov 2026). */
-export function Card({ title, sub, aside, children, className = "", as = "h2", fold = false }:
-  { title?: ReactNode; sub?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string; as?: "h1" | "h2" | "h3"; fold?: boolean }) {
+export function Card({ title, sub, aside, children, className = "", as = "h2", fold = false, id }:
+  { title?: ReactNode; sub?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string; as?: "h1" | "h2" | "h3"; fold?: boolean; id?: string }) {
   const Heading = as;
   const head = <div><Heading>{title}</Heading>{sub && <p className="sub">{sub}</p>}</div>;
-  if (fold) return <details className={`card fold ${className}`} open>
+  if (fold) return <details id={id} className={`card fold ${className}`} open>
     <summary className="card-head">{head}<span className="head-actions">{aside}<ChevronDown className="fold-mark" size={18} aria-hidden="true" /></span></summary>
     {children}
   </details>;
-  return <section className={`card ${className}`}>
+  return <section id={id} className={`card ${className}`}>
     {(title || aside) && <header className="card-head">{head}{aside}</header>}
     {children}
   </section>;

@@ -1,12 +1,14 @@
 // The sector databank (/app/sectors): the Databank's sector tables. Per sector, one column per survey the sector ran
 // (sectors rotate through the weekly tracker, so about every 12 weeks): the share who bought in the category, then its
-// retailers, brands and categories as tabs. Every number is built by the ETL when data is published (etl/sectors.py →
+// retailers, brands and categories as tabs, under three cards from its newest survey (leading retailer, top product,
+// median spend: the research team's row of 23 Nov 2026). Every number is built by the ETL when data is published (etl/sectors.py →
 // api/v1/sectors.json.gz); which sectors and questions: config/sectors.yml. This screen only draws.
 // Opened from the left menu ("Sector databank"); the sector and tab are kept in the address so a view can be shared.
 import { useSearchParams } from "react-router";
 import { useSectors } from "../api";
 import type { Sector } from "../api";
 import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
+import { FigureCard } from "../components/Glance";
 import { downloadTable } from "../csv";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtDate } from "../stats";
@@ -34,8 +36,19 @@ export default function Sectors() {
         {data.sectors.map(s => <option key={s.name}>{s.name}</option>)}
       </select>
     </div>
+    <SectorCards sector={sector} onTab={t => pick("tab", t)} />
     <SectorTable sector={sector} tab={params.get("tab")} onTab={t => pick("tab", t)} />
   </div>;
+}
+
+/** The sector's newest survey in three cards, as etl/sectors.py newest_cards wrote them: its leading retailer and top
+ *  product or category (each opens its tab), and the median spend or the purchase rate. */
+function SectorCards({ sector, onTab }: { sector: Sector; onTab: (title: string) => void }) {
+  return <section aria-label={`${sector.name} at a glance`}>
+    <p className="muted section-note">{sector.name} in its newest survey, {fmtDate(sector.waves[sector.waves.length - 1].date)}</p>
+    <div className="grid g3">{sector.cards.map((c, i) =>
+      <FigureCard key={c.kind} {...c} lead={i === 0} onClick={c.tab ? () => onTab(c.tab!) : undefined} />)}</div>
+  </section>;
 }
 
 /** One sector as the Databank lays it out: the purchase-rate row on top, then the chosen tab's answers, then the base. */

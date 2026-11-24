@@ -2,14 +2,17 @@
 // from the weekly tracker: Q4/Q5 (Aug 2022 to Dec 2023), then Q2/Q3 and q2/q3 (from Jan 2024). Four published question
 // files (every group, exact counts; etl → api/v1/questions/CSI-US/tracker/q2|q3|Q4|Q5.json.gz) are fetched once and cached;
 // every pick of week, group or category is computed here in the browser, so nothing runs on the server when someone changes a filter.
-// Opened from the left menu (Core research) and the Home page's card; week, group and category are kept in the address.
+// Opened from the left menu (Core research) and the Home page's card; week, group, category and the trend's date range
+// are kept in the address. People is two choices: a kind of group (gender, age, income…), then All or one group; only
+// groups this week has answers from are offered (older income bands are empty in recent weeks).
 import { useMemo } from "react";
 import { useSearchParams } from "react-router";
 import { CUT_NAMES, useQuestion, useWaves } from "../api";
 import type { QuestionFile } from "../api";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import { Delta } from "../components/Glance";
-import { Card, Empty, Failure, SkeletonScreen } from "../components/bits";
+import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
+import { downloadTable } from "../csv";
 import { C, useTheme } from "../theme";
 import { fmtDate } from "../stats";
 
@@ -73,7 +76,12 @@ export default function Channels() {
   const at = Math.max(0, data.weeks.findIndex(w => String(w[0]) === params.get("w")));
   const [survey, date] = data.weeks[at];
   const prior = data.weeks[at + 1];
-  const cut = data.cuts.some(c => c.join(":") === params.get("g")) ? params.get("g")! : "total:Total";
+  const offered = data.cuts.filter(c => [...data.storeLabels].some(l => data.inStore(survey, c.join(":"), l) != null));
+  const cut = offered.some(c => c.join(":") === params.get("g")) ? params.get("g")! : "total:Total";
+  const kinds = [...new Set(offered.map(c => c[0]))];
+  // "All" of a kind is everyone, with the kind kept in the address (k) so its group list stays open
+  const kind = cut !== "total:Total" ? cut.split(":")[0] : kinds.includes(params.get("k") ?? "") ? params.get("k")! : "total";
+  const choose = (k: string) => setParams(p => { p.set("g", "total:Total"); if (k === "total") p.delete("k"); else p.set("k", k); return p; }, { replace: true });
   // the categories this week asked both ways, biggest in store first
   const categories = [...data.storeLabels].filter(l => data.labels.has(l) && !SKIP.test(l) && data.inStore(survey, cut, l) != null)
     .sort((x, y) => (data.inStore(survey, cut, y) ?? 0) - (data.inStore(survey, cut, x) ?? 0));
@@ -83,6 +91,17 @@ export default function Channels() {
   const change = (fn: typeof data.inStore, now: number | null) => prior && now != null && fn(prior[0], cut, category) != null ? now - fn(prior[0], cut, category)! : null;
   // both cards draw at one height, so the trend card has no empty space under its chart beside the long category list
   const height = Math.max(340, categories.length * 30 + 60);
+  // the trend's date range (its own, as the research team asked on 23 Nov 2026: the week above does not move it)
+  const oldestFirst = [...data.weeks].reverse();
+  // where the address's From or To week sits among the weeks (an unknown week: the first, or the newest)
+  const place = (key: string, fallback: number) => { const i = oldestFirst.findIndex(w => String(w[0]) === params.get(key)); return i < 0 ? fallback : i; };
+  const [first, last] = [place("from", 0), place("to", oldestFirst.length - 1)].sort((x, y) => x - y);   // From after To: swapped
+  const span = oldestFirst.slice(first, last + 1);
+  const spanText = `${fmtDate(span[0][1])} to ${fmtDate(span.at(-1)![1])}`;
+  const figure = (v: number | null) => v == null ? null : +v.toFixed(1);   // a % as charts and exports show it
+  const source = "Source: Coresight Research US Consumer Survey, weekly tracker; q2 (in a store) and q3 (online), past two weeks. Unweighted.";
+  const exportTrend = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, `${category} in store vs online`, ["Week", "In a store %", "Online %"],
+    span.map(w => [w[1], figure(data.inStore(w[0], cut, category)), figure(data.onLine(w[0], cut, category))]), [`${category}: ${groupName}, ${spanText}`, source]);
   return <div className="stack">
     <div className="page-head"><div>
       <h1>In store vs online</h1>
@@ -93,8 +112,11 @@ export default function Channels() {
     <section className="card compare-bar" aria-label="Choose what to show">
       <label><span>Week</span><select value={survey} onChange={e => pick("w", e.target.value)}>
         {data.weeks.map(w => <option key={w[0]} value={w[0]}>{fmtDate(w[1])}</option>)}</select></label>
-      <label><span>People</span><select value={cut} onChange={e => pick("g", e.target.value)}>
-        {data.cuts.map(c => <option key={c.join(":")} value={c.join(":")}>{c[0] === "total" ? "Everyone" : `${CUT_NAMES[c[0]] ?? c[0]}: ${c[1]}`}</option>)}</select></label>
+      <label><span>People</span><select value={kind} onChange={e => choose(e.target.value)}>
+        {kinds.map(k => <option key={k} value={k}>{k === "total" ? "Everyone" : CUT_NAMES[k] ?? k}</option>)}</select></label>
+      {kind !== "total" && <label><span>{CUT_NAMES[kind] ?? kind}</span><select value={cut} onChange={e => pick("g", e.target.value)}>
+        <option value="total:Total">All</option>
+        {offered.filter(c => c[0] === kind).map(c => <option key={c[1]} value={c.join(":")}>{c[1]}</option>)}</select></label>}
       <label><span>Category</span><select value={category} onChange={e => pick("c", e.target.value)}>
         {categories.map(l => <option key={l}>{l}</option>)}</select></label>
     </section>
@@ -124,10 +146,19 @@ export default function Channels() {
                   yAxis: { type: "category", inverse: true, data: categories, axisLabel: { ...axisText(), width: 190, overflow: "truncate" } },
                   series: [["In a store", data.inStore, C.red], ["Online", data.onLine, C.blue]].map(([name, fn, color]) => ({
                     type: "bar", name, barMaxWidth: 10, barGap: "30%", itemStyle: { color, borderRadius: [2, 4, 4, 2] },
-                    data: categories.map(l => { const v = (fn as typeof data.inStore)(survey, cut, l); return v == null ? null : +v.toFixed(1); }) })),
+                    data: categories.map(l => figure((fn as typeof data.inStore)(survey, cut, l))) })),
                 }} />
       </Card>
-      <Card title={category} sub={`${groupName} · every week since ${fmtDate(data.weeks.at(-1)![1])} · in a store (red) vs online (blue)`}>
+      <Card title={category} sub={`${groupName} · ${spanText} · in a store (red) vs online (blue)`}
+            aside={<div className="toolbar one-row">
+              <label className="sr-only" htmlFor="trend-from">From</label>
+              <select id="trend-from" value={span[0][0]} onChange={e => pick("from", e.target.value)} title="From">
+                {oldestFirst.map(w => <option key={w[0]} value={w[0]}>From {fmtDate(w[1])}</option>)}</select>
+              <label className="sr-only" htmlFor="trend-to">To</label>
+              <select id="trend-to" value={span.at(-1)![0]} onChange={e => pick("to", e.target.value)} title="To">
+                {oldestFirst.map(w => <option key={w[0]} value={w[0]}>To {fmtDate(w[1])}</option>)}</select>
+              <ExportButtons onExport={exportTrend} />
+            </div>}>
         <EChart height={height} label={`${category}: in store vs online over time`}
                 option={{
                   tooltip: { ...tooltip(), trigger: "axis", valueFormatter: (v: number | null) => pct(v) },
@@ -137,7 +168,7 @@ export default function Channels() {
                   yAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" } },
                   series: [["In a store", data.inStore, C.red], ["Online", data.onLine, C.blue]].map(([name, fn, color]) => ({
                     type: "line", name, showSymbol: false, smooth: 0.2, color, lineStyle: { width: 2 },
-                    data: [...data.weeks].reverse().map(w => [time(w[1]), (fn as typeof data.inStore)(w[0], cut, category)]) })),
+                    data: span.map(w => [time(w[1]), (fn as typeof data.inStore)(w[0], cut, category)]) })),
                 }} />
       </Card>
     </div>

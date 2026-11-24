@@ -1,0 +1,11 @@
+# Home's "This week at a glance" (etl/glance.py → api/v1/glance.json.gz → frontend/src/screens/Home.tsx): which weekly
+# tracker questions feed the cards of the second row. Row one comes from the week's sector (config/sectors.yml) and its
+# topics (config/dashboards.yml, config/survey_calendar.yml). Change it here: no code changes needed.
+
+in_store: q2                  # categories bought in a store in the past two weeks
+online: q3                    # the same categories bought online (an answer may add a note: "… (incl. digital purchases)")
+outlook: Personal finances    # a sentiment line of the weekly report (config/weekly_report.yml sentiment)
+bills: {question: q6, group: Utilities}   # "how have your expenses changed": the share who say this bill went up
+# the weekly report's tables the "biggest change" card reads (config/weekly_report.yml sections): food, nonfood, in
+# store and online, as asked on 23 Nov 2026 (not Activities)
+change_sections: [Food retailers, Nonfood retailers, Bought in store, Bought online]

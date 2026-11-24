@@ -61,3 +61,13 @@ def test_an_answer_spelled_differently_over_the_years_is_one_row():
     fixture = json.loads(FIXTURE.read_text())
     retailers = [row["label"] for row in build(fixture)["tables"][0]["rows"]]
     assert sum(label.replace("'", "") == "Dillards" for label in retailers) == 1
+
+
+def test_median_spend_is_the_band_the_middle_buyer_falls_in_by_amount_not_by_list_order():
+    """M4 on 9 Nov 2026 (369 mass merchant shoppers), its book rows in the book's order: below $201 adds up to 34.5%,
+    with $201 - $300 to 54.6%, so the middle shopper spent $201 - $300; "Cannot remember" counts nowhere."""
+    book = [("More than $500", 26.0), ("$301 - $500", 17.3), ("$201 - $300", 20.1), ("$101 - $200", 17.1),
+            ("$50 - $100", 9.8), ("Less than $50", 7.6), ("Cannot remember", 2.2)]
+    assert sectors.median_band([{"label": label, "Total": share} for label, share in book]) == "$201 - $300"
+    assert sectors.median_band([{"label": label, "Total": None} for label, _ in book]) is None    # every figure hidden
+    assert sectors.median_band([{"label": "Prices were lower", "Total": 40.0}]) is None           # not a spend question

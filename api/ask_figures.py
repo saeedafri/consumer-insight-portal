@@ -17,6 +17,7 @@ from datetime import date, timedelta
 import numpy as np
 
 from api.dashboards import significant
+from etl.weekly_report import band
 
 PERIOD_KEY = {"month": lambda d: d[:7], "quarter": lambda d: f"{d[:4]}-Q{(int(d[5:7]) + 2) // 3}", "year": lambda d: d[:4]}
 AUTO_WAVES, AUTO_MONTHS = 26, 36   # a trend with no grain asked: waves up to 26 points, then months, then quarters
@@ -223,20 +224,6 @@ def compute(counts: dict, plan: dict, visible: set[int], versions: list[int] | N
     return {"periods": periods, "grain": grain, "columns": [list(cut) for cut, _ in columns], "answers": answers,
             "people": n, "bases": b, "pct": pct, "asked": [w[1] for w in waves],
             "versions": counts["versions"], "missing": [i for i, p in enumerate(picked) if not p]}
-
-
-def band(label: str) -> tuple[float, float | None] | None:
-    """An amount band's low and high ("$100-$299" → 100, 299; "Less than $100" → 0, 100; "$4,000+" → 4000, None)."""
-    if "$" not in label:
-        return None
-    amounts = [float(x.replace(",", "")) for x in re.findall(r"\d[\d,]*(?:\.\d+)?", label)]
-    if not amounts:
-        return None
-    if re.search(r"\b(?:less than|under|below|up to)\b", label, re.I):
-        return 0.0, amounts[0]
-    if len(amounts) == 1:   # "$4,000+", "More than $100", "$200,000 or greater"
-        return amounts[0], None
-    return amounts[0], amounts[1]
 
 
 def middle(fig: dict) -> list[tuple[int, str, float]]:

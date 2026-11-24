@@ -4,6 +4,19 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "24 November 2026",
+  entries: [
+    { title: "This week at a glance: six cards on Home from the newest weekly survey",
+      body: "Home now opens with This week at a glance, always shown, so the page is never empty: six cards from the newest weekly survey, in two rows. The first row is the week's sector: its leading retailer (in the mass merchants week of 9 Nov 2026, Walmart, bought from by 72.8% of all adults in the past three months) and its top product or category, then what is new this week: a one-off or event topic such as a retro, else a monthly or seasonal tracker, else the sector's median spend. The second row is the biggest significant three-month change in the weekly report's food, nonfood, in-store and online tables, the category with the widest gap between buying in a store and online, and the personal-finances outlook against the week before, with the share who say their utility bills went up. Each card opens the screen it comes from. The cards are picked when data is published, so Home is as fast as before.",
+      link: ["/", "Open Home"] },
+    { title: "Retailer and Sector databanks open with cards, and say which weeks a figure adds up",
+      body: "The Retailer databank now starts with a row of cards for the weeks you chose: where the retailer ranks among its market's retailers and who leads, the generation and the household income most of its shoppers are in (set against all adults), and how positive people feel about it. Comparing retailers puts each one on its own line in every card, in its chart colour; the Sector views show the sector's leading retailer and the generation and income most of its shoppers are in. Click a card to jump to its chart. The “Bought in the past two weeks” card now says it is the aggregate of the selected time period and names the weeks, and pointing at a bar shows its shoppers, its base and the weeks added together. The Sector databank opens with three cards from the sector's newest survey: its leading retailer, its top product or category (each opens its tab) and the median spend, the band the middle buyer's spend falls in.",
+      link: ["/retailers", "Open the Retailer databank"] },
+    { title: "In store vs online: people by kind of group, the trend's own dates, and Excel",
+      body: "People is now two choices: the kind of group (gender, age band, generation, household income, Census region or urbanicity), then All or one group. Only the groups the chosen week has answers from are offered, so an income band the survey no longer uses no longer leads to an empty chart. The category's trend has its own From and To dates (the week chosen above does not move it) and downloads as Excel, CSV or PowerPoint from Export.",
+      link: ["/channels", "Open In store vs online"] },
+  ],
+}, {
   date: "23 November 2026",
   entries: [
     { title: "Gemini can read the questions Ask's own reader is unsure of",

@@ -138,10 +138,19 @@ export interface Sector {
   name: string; margin: number;
   waves: { survey_id: number; date: string; respondents: number }[];
   purchase: { label: string; values: (number | null)[] } | null;
+  spend: { question: string; median: (string | null)[] } | null;   // the middle buyer's spend band per survey
+  cards: { kind: string; title: string; value: string; note: string; tab: string | null }[];   // the newest survey's row of cards
   tables: { title: string; question: string; bases: (number | null)[]; rows: { label: string; values: (number | null)[] }[] }[];
 }
 export const useSectors = () =>
   useQuery({ queryKey: ["sectors"], queryFn: () => get<{ sectors: Sector[] }>("/api/v1/sectors"), ...forever });
+
+/** Home's "This week at a glance" (etl/glance.py): six cards from the newest weekly wave, two rows of three (null: the
+ *  week lacks that card's figures); `feature` is the menu a card's link needs. */
+export interface GlanceCard { title: string; value: string; note: string; link: string; feature: string }
+export const useGlance = () =>
+  useQuery({ queryKey: ["glance"], ...forever,
+             queryFn: () => get<{ survey_id: number; wave_date: string; respondents: number; sector: string | null; cards: (GlanceCard | null)[] }>("/api/v1/glance") });
 
 /** The retail databank (etl/retailers.py): counts per week, added up in the browser for whichever weeks are chosen.
  *  A retailer's counts: weekly market [shoppers, food, nonfood, ...profile]; a sector [shoppers, ...profile]; profile is

@@ -561,6 +561,13 @@ async def retailers(request: Request, who: dict = Depends(user)) -> Response:
     return await tracker_view(request, who, "retailers")
 
 
+@app.get("/api/v1/glance")
+async def glance(request: Request, who: dict = Depends(user)) -> Response:
+    """Home's "This week at a glance" (etl/glance.py): six cards from the newest weekly tracker wave."""
+    require_feature(who, "us_tracker")
+    return await tracker_view(request, who, "glance")
+
+
 @app.get("/api/v1/sectors")
 async def sectors(request: Request, who: dict = Depends(user)) -> Response:
     """The Databank's sector tables (etl/sectors.py): purchase rate, retailers, brands and categories per sector wave."""

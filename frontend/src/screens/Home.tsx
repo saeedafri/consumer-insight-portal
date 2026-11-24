@@ -1,5 +1,7 @@
 // Home (/app/, the first page after sign-in; the Survey library moved to /app/library): "What would you like to
-// understand?" A question box that hands off to Ask CIP (screens/Ask.tsx answers it on arrival), then sections that
+// understand?" A question box that hands off to Ask CIP (screens/Ask.tsx answers it on arrival), then "This week at a
+// glance", always open so Home never looks empty: six cards from the newest weekly survey, picked by the ETL
+// (etl/glance.py → api/v1/glance; the research team's layout of 23 Nov 2026), then sections that
 // open on a click, all closed on every visit (16 Nov 2026): the research areas, filtered by how often each runs; this
 // week's grocery buying in store and online from the newest weekly survey; a way into the cross-tabs; the latest wave.
 // Everything comes from files the ETL already publishes (the waves list, the newest wave's book): nothing is computed
@@ -11,9 +13,9 @@ import { ArrowRight, CalendarDays, ChevronDown, Cpu, Fuel, Gauge, Gift, Globe, L
   ShoppingBag, Store, Table2, Wallet } from "lucide-react";
 import MicButton from "../components/MicButton";
 import type { LucideIcon } from "lucide-react";
-import { allowed, useBook, useMe, useReportWaves, useWaves } from "../api";
+import { allowed, useBook, useGlance, useMe, useReportWaves, useWaves } from "../api";
 import type { Book } from "../api";
-import { Delta } from "../components/Glance";
+import { Delta, FigureCard } from "../components/Glance";
 import { Failure, SkeletonScreen } from "../components/bits";
 import { fmtDate } from "../stats";
 import { dashboardFeature } from "../trackers";
@@ -99,6 +101,8 @@ export default function Home() {
       </>}
     </section>
 
+    {latest && allowed(me, "us_tracker") && <ThisWeek />}
+
     {areas.length > 0 && <Fold title="Explore key research">
       <div className="runs-filter"><span>Show research that runs</span>
         <div className="seg small" role="group" aria-label="How often the research runs">
@@ -120,6 +124,21 @@ export default function Home() {
 
     {latest && <Link className="chip sig latest-pill" to={`/w/${latest.survey_id}`}><span aria-hidden="true">●</span> Latest wave: {fmtDate(latest.wave_date)}{latest.qualified_n ? ` · ${latest.qualified_n.toLocaleString("en-US")} adults` : ""}</Link>}
   </div>;
+}
+
+/** "This week at a glance": the ETL's six cards in their two rows of three (a card the week lacks leaves a gap, so each
+ *  row keeps its subject); a card links on only when this person has its screen. */
+function ThisWeek() {
+  const me = useMe().data;
+  const { data } = useGlance();
+  if (!data?.cards.some(Boolean)) return null;
+  return <section aria-labelledby="glance-title">
+    <h2 id="glance-title" className="report-section">This week at a glance</h2>
+    <p className="muted section-note">Weekly survey of {fmtDate(data.wave_date)} · {data.respondents.toLocaleString("en-US")} US adults
+      {data.sector ? ` · this week's sector: ${data.sector}` : ""}</p>
+    {[data.cards.slice(0, 3), data.cards.slice(3)].map((row, r) => <div key={r} className="grid g3 glance-row">{row.map((c, i) => c &&
+      <FigureCard key={c.title} {...c} lead={i === 0} to={allowed(me, c.feature) ? c.link : undefined} />)}</div>)}
+  </section>;
 }
 
 /** This week's grocery buying in store and online: two figures from the newest weekly survey, each with its change vs last week. */

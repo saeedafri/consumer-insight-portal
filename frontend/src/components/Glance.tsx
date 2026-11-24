@@ -1,5 +1,9 @@
 // The business team's Databank block for a module wave: "This week at a glance" tiles and "Key takeaways",
-// every number from config/dashboards.yml built by api/dashboards.py (vs prior week and vs last year).
+// every number from config/dashboards.yml built by api/dashboards.py (vs prior week and vs last year); drawn by a
+// wave's Overview and the Trackers page. Also FigureCard, one figure as a card, for Home's week at a glance and the
+// Sector and Retailer databanks' cards, and Delta, the change chip Home and In store vs online use.
+import type { ReactNode } from "react";
+import { Link } from "react-router";
 import CountUp from "./CountUp";
 import type { Metric } from "../api";
 import { useDashboard } from "../api";
@@ -35,6 +39,17 @@ function Tile({ title, m, value, note, prior, lead }: { title: string; m: Metric
       <span style={{ color: "var(--warn)", fontWeight: 600 }}>Small base (n={m.base})</span>
     </div>}
   </div>;
+}
+
+/** One figure as a card (Home's week at a glance, the Sector and Retailer databanks' cards): a link with `to`, a
+ *  button with `onClick`, else plain. `children` replaces the value and note (several retailers, one line each). */
+export function FigureCard({ title, value = "", note, lead, to, onClick, children }: { title: string; value?: string; note?: string;
+  lead?: boolean; to?: string; onClick?: () => void; children?: ReactNode }) {
+  const body = <><div className="k-label">{title}</div>{children ?? <><div className={`k-value${value.length > 14 ? " k-text" : ""}`}>{value}</div>
+    <div className="k-note">{note}</div></>}</>;
+  const look = `card kpi glance-tile${lead ? " lead" : ""}`;
+  return to ? <Link className={look} to={to}>{body}</Link>
+    : onClick ? <button type="button" className={look} onClick={onClick}>{body}</button> : <div className={look}>{body}</div>;
 }
 
 /** Balanced rows at every width: 4 tiles are 4, then 2 × 2, never 3 + 1. */
