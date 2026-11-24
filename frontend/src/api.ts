@@ -161,6 +161,7 @@ export const useGlance = () =>
  *  every group of `groups` in order. Weeks are indexes into `weeks` (oldest first). */
 export interface RetailMarket {
   name: string; sector: boolean; base: string; purchase: string | null;
+  shoppers?: string | null;   // a sector's shoppers as titles say it ("department store shoppers"); files before 24 Nov 2026 lack it
   weeks: number[]; asked: number[]; bought: (number | null)[]; buyers: number[][];
   retailers: { name: string; weeks: Record<string, number[]>; sentiment: [string, number, number, string?][] | null }[];   // [date, positive, asked, module]
 }

@@ -51,6 +51,7 @@ def test_a_sector_counts_its_buyers_from_its_own_question_in_its_own_weeks():
                            ({"survey_id": 2, "wave_date": "2026-11-02", "modules": []}, people)])   # not a sector week
     sector = next(m for m in doc["markets"] if m["name"] == "Department stores")
     assert sector["sector"] and sector["weeks"] == [0] and sector["asked"] == [10] and sector["bought"] == [10]
+    assert sector["shoppers"] == "department store shoppers"   # config/sectors.yml buyers: the screen's chart and card titles
     kohls, macys = sector["retailers"]
     assert (kohls["name"], kohls["weeks"]["0"][0], macys["weeks"]["0"][0]) == ("Kohl's", 5, 3)   # of 10 buyers
 

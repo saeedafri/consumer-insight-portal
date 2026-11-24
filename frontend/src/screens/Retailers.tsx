@@ -31,6 +31,9 @@ type Side = { market: RetailMarket; picked: RetailMarket["retailers"]; valid: nu
 /** A line on every chart: a retailer's counts over the side's chosen weeks, as a share of the side's base. */
 type Series = { label: string; counts: number[]; base: number; side: number };
 
+/** A sector's shoppers as titles say it ("department store shoppers", config/sectors.yml buyers); an older file: from its base. */
+const shoppersOf = (market: RetailMarket) => market.shoppers ?? market.base.replace(/ asked$/, "");
+
 /** Counts added over weeks: a retailer's (missing weeks count nothing) or any per-week list. */
 const sum = (rows: (number[] | undefined)[]) => rows.reduce<number[]>((t, r) => r ? r.map((v, i) => v + (t[i] ?? 0)) : t, []);
 
@@ -160,7 +163,7 @@ function Highlights({ data, sides, series, mode }: { data: Data; sides: Side[]; 
     });
     cards.push({ title: "Leading retailer", target: "sector-overview", lines: lines.map(({ side, s, ranked }) =>
       ({ who: side.market.name, value: ranked[0]?.name ?? "–", note: `${pct(ranked[0]?.v)} of ${side.market.base}`, colour: colour(s) })) });
-    for (const [dim, title] of [["generation", "Biggest generation"], ["income", "Biggest household income"]] as const)
+    for (const [dim, title] of [["generation", "Generation that shops the most"], ["income", "Income group that shops the most"]] as const)
       cards.push({ title, target: "who-shops", lines: lines.map(({ side, s, ref, all }) =>
         ({ who: side.market.name, ...most(dim, { ...ref, from: 0 }, { ...all, from: 0, label: "All adults" }), colour: colour(s) })) });
   } else {
@@ -169,16 +172,18 @@ function Highlights({ data, sides, series, mode }: { data: Data; sides: Side[]; 
       const side = sides[s.side], ref = reference(data, side), r = side.picked[i];   // one side here: series are its picks, in order
       return { s, i, side, ref, r, ranked: ranking(side) };
     });
-    cards.push({ title: "Rank among the market's retailers", target: "reach", lines: shown.map(({ s, i, side, ranked, r }) => {
+    const market = sides[0].market;   // one side in these views
+    const rankTitle = `Market rank among ${market.sector ? `${shoppersOf(market).replace(/ (shoppers|buyers)$/, "")} retailers` : market.name.toLowerCase()}`;
+    cards.push({ title: rankTitle, target: "reach", lines: shown.map(({ s, i, side, ranked, r }) => {
       const at = ranked.findIndex(x => x.name === r.name), next = ranked[at === 0 ? 1 : 0];
       return { who: s.label, value: `#${at + 1} of ${ranked.length}`, colour: colour(i),
                note: next ? `${at === 0 ? "ahead of" : "leader:"} ${next.name} (${pct(next.v)}) · ${side.market.name}` : side.market.name };
     }) });
-    for (const [dim, title] of [["generation", "Biggest generation"], ["income", "Biggest household income"]] as const)
+    for (const [dim, title] of [["generation", "Generation that shops the most"], ["income", "Income group that shops the most"]] as const)
       cards.push({ title, target: "who-shops", lines: shown.map(({ s, i, ref }) =>
         ({ who: s.label, ...most(dim, { counts: s.counts, n: s.counts[0] ?? 0, from: offset, label: s.label }, { ...ref, from: 0 }), colour: colour(i) })) });
     const feelings = shown.map(({ s, i, side, r }) => ({ s, i, figure: feeling(data, side, r) }));
-    if (feelings.some(x => x.figure)) cards.push({ title: "How positive people feel", target: "sentiment", lines: feelings.map(({ s, i, figure }) =>
+    if (feelings.some(x => x.figure)) cards.push({ title: "Shoppers who feel positive", target: "sentiment", lines: feelings.map(({ s, i, figure }) =>
       ({ who: s.label, value: figure ? pct(share(figure[1], figure[2])) : "not asked", colour: colour(i),
          note: figure ? `very or somewhat positive · ${fmtDate(figure[0])}, n=${figure[2]}` : "no sector module asked about it" })) });
   }
@@ -268,7 +273,7 @@ function Reach({ data, sides, series }: { data: Data; sides: Side[]; series: Ser
     ["Shoppers in the past two weeks (weekly) or among the sector's shoppers", "Source: Coresight Research US Consumer Survey"]);
   return <>
     <div className="grid g2">
-      <Card id="reach" title={weekly ? "Bought in the past two weeks" : `Share of ${sides.map(s => s.market.base.replace(/ asked$/, "")).join(" / ")} who bought from the selected ${series.length > 1 ? "retailers" : "retailer"}`}
+      <Card id="reach" title={weekly ? "Bought in the past two weeks" : `Share of ${sides.map(s => shoppersOf(s.market)).join(" / ")} who bought from ${new Intl.ListFormat("en-GB").format(new Set(sides.flatMap(s => s.picked.map(r => r.name))))}`}
             sub={<><span className="chip flat">Aggregate of the selected time period</span>{" "}
               {sides.map(s => weekSpan(data, s.weeks)).join(" / ")} · % of {sides.map(s => s.market.base).join(" / ")}</>}
             aside={<ExportButtons onExport={exportTable} />}>

@@ -157,6 +157,7 @@ def build(people_by_week: list[tuple[dict, dict]]) -> dict:
         sector = next((s for s in rules["sectors"] if s["name"] == name), None)
         out_markets.append({"name": "Weekly retailers" if name == "weekly" else name, "sector": name != "weekly",
                             "base": "all respondents" if name == "weekly" else f"{name.lower()} shoppers asked",
+                            "shoppers": sector.get("buyers") if sector else None,   # titles: "department store shoppers"
                             "purchase": (sector.get("purchase") or {}).get("label") if sector else None,
                             "weeks": m["weeks"], "asked": m["asked"], "bought": m["bought"], "buyers": m["buyers"],
                             "retailers": [{"name": r["name"], "weeks": {str(w): c for w, c in r["weeks"].items()},
