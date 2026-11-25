@@ -2,17 +2,19 @@
 // their retailers, from the weekly tracker since Jul 2025. Every count is built by the ETL when data is published
 // (etl/retailers.py → api/v1/retailers.json.gz: counts per week; rules in config/retailers.yml and config/sectors.yml);
 // this screen only adds up the weeks chosen (one, or several) and draws: first a row of cards (rank or leader, the
-// generation and income most shoppers are in, how positive people feel; the research team's call of 23 Nov 2026), each
-// scrolling to its chart. Only weeks in which every chosen retailer was
-// asked can be chosen, so a comparison is always like for like. Opened from the left menu (Core research → Retailer
-// databank); the view, markets, retailers and weeks are kept in the address, so a link opens the same comparison.
+// generation and income most shoppers are in, how positive people feel; the research team's call of 23 Nov 2026 and
+// their mock-ups of 24 Nov: one retailer under its name, several as a line each, name left and figure right), each
+// scrolling to its chart. Only weeks in which every chosen retailer was asked can be chosen, so a comparison is always
+// like for like. Opened from the left menu (Core research → Retailer databank); the view, sectors, retailers and weeks
+// are kept in the address, so a link opens the same comparison. The Market filter (US, China) lists China but cannot
+// choose it: China's weekly survey asks no retailer questions.
 import { Fragment } from "react";
 import { Link, useSearchParams } from "react-router";
 import { isFiller, useRetailers } from "../api";
 import type { RetailMarket, Retailers as Data } from "../api";
 import EChart from "../components/EChart";
 import { FigureCard } from "../components/Glance";
-import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
+import { Card, Empty, ExportButtons, Failure, marketOptions, SkeletonScreen } from "../components/bits";
 import { downloadTable } from "../csv";
 import { fmtDate } from "../stats";
 import { C } from "../theme";
@@ -139,59 +141,62 @@ const ranking = (side: Side) => side.market.retailers.map(r => {
 }).sort((a, b) => b.v - a.v);
 
 /** The research team's cards over the chosen weeks: where each retailer ranks in its market (a sector: who leads it),
- *  the generation and the household income most of its shoppers are in, against the group they are set against, and
+ *  the generation and the household income most of its shoppers are in (their share of them), and
  *  how positive people feel. One line per retailer (or sector) when several are shown; a card scrolls to its chart. */
 function Highlights({ data, sides, series, mode }: { data: Data; sides: Side[]; series: Series[]; mode: Mode }) {
   const dims = Object.keys(data.groups);
   const start = (dim: string) => dims.slice(0, dims.indexOf(dim)).reduce((t, d) => t + data.groups[d].length, 0);   // where a kind of group's counts begin
-  type People = { counts: number[]; n: number; from: number; label: string };   // counts of each group from `from`, of n people
-  /** the biggest group of `dim` among `shoppers`, with its share of `against` (everyone, or the sector's shoppers) */
-  const most = (dim: string, shoppers: People, against: People) => {
-    const at = (people: People, i: number) => people.counts[people.from + start(dim) + i] ?? 0;
-    const biggest = data.groups[dim]?.map((group, i) => ({ group, i, n: at(shoppers, i) })).filter(g => !isFiller(g.group)).sort((a, b) => b.n - a.n)[0];
-    return biggest && shoppers.n >= data.min_buyers
-      ? { value: biggest.group, note: `${pct(share(biggest.n, shoppers.n))} of shoppers · ${against.label.toLowerCase()} ${pct(share(at(against, biggest.i), against.n))}` }
+  type People = { counts: number[]; n: number; from: number };   // counts of each group from `from`, of n people
+  /** the biggest group of `dim` among `shoppers` and its share of them ("35.1% of shoppers", as the mock-ups say it) */
+  const most = (dim: string, shoppers: People) => {
+    const biggest = data.groups[dim]?.map((group, i) => ({ group, n: shoppers.counts[shoppers.from + start(dim) + i] ?? 0 }))
+      .filter(g => !isFiller(g.group)).sort((a, b) => b.n - a.n)[0];
+    const of = biggest && pct(share(biggest.n, shoppers.n));
+    return biggest && shoppers.n >= data.min_buyers ? { value: biggest.group, short: `${biggest.group} · ${of}`, note: `${of} of shoppers` }
       : { value: "–", note: `fewer than ${data.min_buyers} shoppers: choose more weeks` };
   };
-  type Line = { who: string; value: string; note: string; colour: string };
+  type Line = { who: string; value: string; note: string; colour: string; short?: string };   // short: the value with its share, on a line
   const cards: { title: string; target: string; lines: Line[] }[] = [];
   if (mode === "sector" || mode === "sectors") {
     const lines = sides.map((side, s) => {
       const ranked = ranking(side);
-      const ref = reference(data, side), all = { counts: sum(side.weeks.map(w => data.weeks[w].profile)), n: side.weeks.reduce((t, w) => t + data.weeks[w].n, 0) };
-      return { side, s, ranked, ref, all };
+      return { side, s, ranked, ref: reference(data, side) };
     });
     cards.push({ title: "Leading retailer", target: "sector-overview", lines: lines.map(({ side, s, ranked }) =>
-      ({ who: side.market.name, value: ranked[0]?.name ?? "–", note: `${pct(ranked[0]?.v)} of ${side.market.base}`, colour: colour(s) })) });
+      ({ who: side.market.name, value: ranked[0]?.name ?? "–", short: ranked[0] && `${ranked[0].name} · ${pct(ranked[0].v)}`,
+         note: `${pct(ranked[0]?.v)} of ${side.market.base}`, colour: colour(s) })) });
     for (const [dim, title] of [["generation", "Generation that shops the most"], ["income", "Income group that shops the most"]] as const)
-      cards.push({ title, target: "who-shops", lines: lines.map(({ side, s, ref, all }) =>
-        ({ who: side.market.name, ...most(dim, { ...ref, from: 0 }, { ...all, from: 0, label: "All adults" }), colour: colour(s) })) });
+      cards.push({ title, target: "who-shops", lines: lines.map(({ side, s, ref }) =>
+        ({ who: side.market.name, ...most(dim, { ...ref, from: 0 }), colour: colour(s) })) });
   } else {
     const offset = sides[0].market.sector ? 1 : 3;   // counts start after [shoppers] or [shoppers, food, nonfood]
     const shown = series.map((s, i) => {
-      const side = sides[s.side], ref = reference(data, side), r = side.picked[i];   // one side here: series are its picks, in order
-      return { s, i, side, ref, r, ranked: ranking(side) };
+      const side = sides[s.side], r = side.picked[i];   // one side here: series are its picks, in order
+      return { s, i, side, r, ranked: ranking(side) };
     });
     const market = sides[0].market;   // one side in these views
     const rankTitle = `Market rank among ${market.sector ? `${shoppersOf(market).replace(/ (shoppers|buyers)$/, "")} retailers` : market.name.toLowerCase()}`;
-    cards.push({ title: rankTitle, target: "reach", lines: shown.map(({ s, i, side, ranked, r }) => {
+    cards.push({ title: rankTitle, target: "reach", lines: shown.map(({ s, i, ranked, r }) => {
       const at = ranked.findIndex(x => x.name === r.name), next = ranked[at === 0 ? 1 : 0];
-      return { who: s.label, value: `#${at + 1} of ${ranked.length}`, colour: colour(i),
-               note: next ? `${at === 0 ? "ahead of" : "leader:"} ${next.name} (${pct(next.v)}) · ${side.market.name}` : side.market.name };
+      return { who: s.label, value: `#${at + 1} of ${ranked.length}`, colour: colour(i), note: "" };
     }) });
     for (const [dim, title] of [["generation", "Generation that shops the most"], ["income", "Income group that shops the most"]] as const)
-      cards.push({ title, target: "who-shops", lines: shown.map(({ s, i, ref }) =>
-        ({ who: s.label, ...most(dim, { counts: s.counts, n: s.counts[0] ?? 0, from: offset, label: s.label }, { ...ref, from: 0 }), colour: colour(i) })) });
+      cards.push({ title, target: "who-shops", lines: shown.map(({ s, i }) =>
+        ({ who: s.label, ...most(dim, { counts: s.counts, n: s.counts[0] ?? 0, from: offset }), colour: colour(i) })) });
     const feelings = shown.map(({ s, i, side, r }) => ({ s, i, figure: feeling(data, side, r) }));
     if (feelings.some(x => x.figure)) cards.push({ title: "Shoppers who feel positive", target: "sentiment", lines: feelings.map(({ s, i, figure }) =>
       ({ who: s.label, value: figure ? pct(share(figure[1], figure[2])) : "not asked", colour: colour(i),
-         note: figure ? `very or somewhat positive · ${fmtDate(figure[0])}, n=${figure[2]}` : "no sector module asked about it" })) });
+         note: figure ? `Very or somewhat positive · ${fmtDate(figure[0])}` : "No sector module asked about it" })) });
   }
   const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });   // a card's chart
-  return <div className={`grid g${Math.min(4, cards.length)}`}>{cards.map((c, i) =>
-    <FigureCard key={c.title} title={c.title} value={c.lines[0].value} note={c.lines[0].note} lead={i === 0} onClick={() => go(c.target)}>
-      {c.lines.length > 1 ? <ul className="glance-lines">{c.lines.map(l => <li key={l.who}><b style={{ color: l.colour }}>{l.who}</b> {l.value}<small>{l.note}</small></li>)}</ul> : undefined}
-    </FigureCard>)}</div>;
+  return <section aria-label="At a glance">
+    {mode === "retailer" && <h2 className="glance-name">{series[0]?.label}</h2>}
+    <div className={`grid g${Math.min(4, cards.length)}`}>{cards.map((c, i) =>
+      <FigureCard key={c.title} title={c.title} value={c.lines[0].value} note={c.lines[0].note} lead={i === 0} onClick={() => go(c.target)}>
+        {c.lines.length > 1 ? <ul className="glance-lines">{c.lines.map(l =>
+          <li key={l.who}><b style={{ color: l.colour }}>{l.who}</b><span>{l.short ?? l.value}</span></li>)}</ul> : undefined}
+      </FigureCard>)}</div>
+  </section>;
 }
 
 /** One side's controls: the market, its retailers (one, or several to tick), and its weeks (one, or several to tick). */
@@ -209,6 +214,7 @@ function Chooser({ data, side, mode, markets, several, set }: { data: Data; side
     if (next.length) set({ [`w${p}`]: ids(next) });
   };
   return <div className="retail-side">
+    {!p && <label className="market"><span>Market</span><select defaultValue="US">{marketOptions(["US"], "no retailer questions")}</select></label>}
     <label><span>Sector</span>
       <select value={side.market.name} onChange={e => set({ [`m${p}`]: e.target.value, [`r${p}`]: null, [`w${p}`]: null })}>
         {markets.map(m => <option key={m.name}>{m.name}</option>)}</select></label>

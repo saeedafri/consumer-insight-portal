@@ -4,7 +4,17 @@ Every feature, enhancement and update, newest first: the same entries as the por
 (`frontend/src/screens/WhatsNew.tsx`). Add each change to both; `tests/test_docs.py` fails if they differ.
 The API and the MCP connector are documented in [API.md](API.md).
 
+## 25 November 2026
+
+### Consumer Health dataset: the data science team's workbook, kept up to date every week
+
+The data science team's Consumer Health workbook (one row per US weekly respondent: when they answered, their demographics, which of the 14 activities they did in the past two weeks, and the team's counts, pairs and patterns, 73 columns) is now kept up to date by CIP. Their workbook to 10 August 2026 is kept exactly as it is, and each US weekly survey after it is added in the same sheets, columns, rules and format, from the respondents CIP already loads: 15 weeks and 6,043 people so far, to 23 November 2026. Rebuilt the same way, the 54 weeks from August 2025 to August 2026 already in their workbook came out identical, all 21,713 rows apart from the source file's name, and the 23 November week's 15 shares match CIP's own figures. Every publish writes it again. Whoever the super admin gives the Consumer Health dataset menu on the Access page downloads it from Reference in the left menu, or with an API key from GET /api/v1/datasets/consumer-health.
+
 ## 24 November 2026
+
+### A US and China Market filter on In store vs online, the Library's cards and the databanks; the retailer cards as mocked up
+
+In store vs online has a Market filter, United States or China. China's weekly survey (questions Q5 and Q6, every week since February 2023) gives the categories bought in a store and online, for everyone or by gender, age, household income and urbanicity: in the week of 9 Nov 2026, household essentials 44.9% in a store against 20.7% online. A change reads vs last week only when the week before had a survey, else it names that week (vs Oct 26), as on Home. Home's China card for the widest gap now opens this screen on China. In the Survey Library the Market filter also sets the cards at the top: with China chosen, the latest survey is 9 Nov 2026, with 181 weekly surveys since February 2023 and 103k respondents; All markets keeps 558 surveys, 454 weekly and 296k respondents. The Retailer and Sector databanks show the Market filter too, with China listed but not choosable, as China's weekly survey asks no retailer or sector questions. The Retailer databank's cards follow the research team's mock-ups: one retailer's name above its cards, and when comparing, a line per retailer with the name on the left and the figure on the right (Millennial · 36.5%), so a long figure no longer runs over the next line; a card's note is the share of shoppers (36.5% of shoppers), and how positive shoppers feel keeps the date it was asked (Very or somewhat positive · Nov 16, 2026).
 
 ### Next.js security update
 

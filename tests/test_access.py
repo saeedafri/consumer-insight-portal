@@ -31,9 +31,13 @@ def call(path, cookie="", method="GET", body=b"", headers=None):
     scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": method, "scheme": "http",
              "path": parts.path, "raw_path": parts.path.encode(), "query_string": parts.query.encode(), "root_path": "",
              "headers": [(k.encode(), v.encode()) for k, v in head.items()], "client": ("1.2.3.4", 1), "server": ("test", 80)}
-    sent = []
+    sent, received = [], False
 
-    async def receive():
+    async def receive():   # the body once, then nothing until the client leaves, as a server does (a file response waits on it)
+        nonlocal received
+        if received:
+            await asyncio.Event().wait()
+        received = True
         return {"type": "http.request", "body": body, "more_body": False}
 
     async def send(message):
@@ -233,6 +237,19 @@ def test_the_weekly_report_is_served_as_published_and_a_wave_without_one_says_so
     status, _, body = call("/api/v1/waves/300/report", signed("ana@coresight.com"))
     assert status == 404 and "no weekly report" in json.loads(body)["detail"]
     assert call("/api/v1/waves/415/report")[0] == 401                       # signed out: nothing
+
+
+def test_the_consumer_health_dataset_goes_only_to_those_given_it(portal, monkeypatch):
+    """Respondent rows (etl/consumer_health.py): a chosen-only menu, so staff without it get 403 and the super admin the file."""
+    monkeypatch.setattr(access, "rules", lambda: {**RULES, "features": RULES["features"] + ["datasets"],
+                                                  "chosen_only": RULES["chosen_only"] + ["datasets"]})
+    assert call("/api/v1/datasets/consumer-health", signed("boss@coresight.com"))[0] == 404            # not built yet
+    folder = portal / "api/v1/datasets"
+    folder.mkdir(parents=True)
+    (folder / "Consumer_Health_Raw_Respondent_Data_Chronological_2023_2026.xlsx").write_bytes(b"PK workbook")
+    assert call("/api/v1/datasets/consumer-health", signed("ana@coresight.com"))[0] == 403
+    status, headers, body = call("/api/v1/datasets/consumer-health", signed("boss@coresight.com"))
+    assert status == 200 and body == b"PK workbook" and "Chronological_2023_2026.xlsx" in headers["content-disposition"][0]
 
 
 def test_the_tracker_views_are_served_as_published_and_say_so_before_the_first_publish(portal):

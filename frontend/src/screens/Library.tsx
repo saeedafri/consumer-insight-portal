@@ -1,10 +1,11 @@
-// Every survey and wave: the latest tracker wave first, then the archive grouped by year, filterable.
+// Every survey and wave: the latest tracker wave first, then the archive grouped by year, filterable. The Market filter
+// (US, China) also sets the cards at the top: the latest survey, the weekly surveys, the studies and the respondents.
 import CountUp from "../components/CountUp";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { allowed, bookOf, queries, send, useAlerts, useMe, useTeamViews, useWaves } from "../api";
 import type { Alert, TeamView } from "../api";
-import { Card, deleteLater, Empty, Failure, population, SkeletonScreen } from "../components/bits";
+import { Card, deleteLater, Empty, Failure, MARKETS, marketOptions, population, SkeletonScreen } from "../components/bits";
 import { removeView, savedViews } from "../saved";
 import { fmtDate } from "../stats";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -14,28 +15,29 @@ import { X } from "lucide-react";
 
 const KIND: Record<string, string> = { tracker: "Weekly tracker", annual: "Annual study", adhoc: "Ad hoc study" };
 const PLATFORM: Record<string, string> = { forsta: "Forsta", qualtrics: "Qualtrics", surveymonkey: "SurveyMonkey" };
-const MARKET: Record<string, string> = { US: "United States", CN: "China" };   // a wave's country (cip_survey.country, US when empty)
 
 export default function Library() {
   const { data: waves, isLoading, error } = useWaves();
   const [params, setParams] = useSearchParams();
   const kind = KIND[params.get("kind") ?? ""] ? params.get("kind")! : "all", year = params.get("year") ?? "all", event = params.get("event") ?? "all";
-  const market = MARKET[params.get("market") ?? ""] ? params.get("market")! : "all";
+  const market = MARKETS[params.get("market") ?? ""] ? params.get("market")! : "all";
   const [text, setText] = useState(params.get("q") ?? "");
   const [saved, setSaved] = useState(savedViews);
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); v === "all" || !v ? p.delete(k) : p.set(k, v); setParams(p, { replace: true }); };
   const me = useMe().data;   // the row buttons link only to screens on this person's menu
   const years = useMemo(() => [...new Set((waves ?? []).map(w => w.wave_date.slice(0, 4)))].sort((a, b) => b.localeCompare(a)), [waves]);
   const events = useMemo(() => [...new Set((waves ?? []).flatMap(w => w.events ?? []))].sort(), [waves]);
-  const markets = useMemo(() => Object.keys(MARKET).filter(m => (waves ?? []).some(w => (w.country ?? "US") === m)), [waves]);
+  const markets = useMemo(() => Object.keys(MARKETS).filter(m => (waves ?? []).some(w => (w.country ?? "US") === m)), [waves]);
+  const inMarket = useMemo(() => (waves ?? []).filter(w => market === "all" || (w.country ?? "US") === market), [waves, market]);
   const shown = useMemo(() => {
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
-    return (waves ?? []).filter(w => (kind === "all" || w.study_type === kind) && (year === "all" || w.wave_date.startsWith(year)) &&
-      (event === "all" || (w.events ?? []).includes(event)) && (market === "all" || (w.country ?? "US") === market) &&
+    return inMarket.filter(w => (kind === "all" || w.study_type === kind) && (year === "all" || w.wave_date.startsWith(year)) &&
+      (event === "all" || (w.events ?? []).includes(event)) &&
       words.every(t => `${w.title} ${w.survey_family} ${(w.modules ?? []).join(" ")} ${(w.events ?? []).join(" ")} ${w.wave_date}`.toLowerCase().includes(t)));
-  }, [waves, kind, year, event, market, text]);
-  // the US weekly tracker leads; China's weekly waves (CSI-CN) are listed with the rest
-  const latest = waves?.find(w => w.survey_family === "CSI-US" && w.study_type === "tracker" && w.rows_built !== 0) ?? waves?.[0];
+  }, [inMarket, kind, year, event, text]);
+  // the US weekly tracker leads (China's with China chosen); China's weekly waves (CSI-CN) are listed with the rest
+  const leads = market === "CN" ? "CSI-CN" : "CSI-US";
+  const latest = inMarket.find(w => w.survey_family === leads && w.study_type === "tracker" && w.rows_built !== 0) ?? inMarket[0] ?? waves?.[0];
   // the wave most people open next: its book is fetched while this screen is idle (≈ 20 KB, cached 5 min)
   useEffect(() => { if (latest) void queries.prefetchQuery({ queryKey: ["book", latest.survey_id, false], queryFn: () => bookOf(latest.survey_id), staleTime: 5 * 60_000 }); }, [latest]);
   if (isLoading) return <SkeletonScreen kind="library" />;
@@ -45,7 +47,7 @@ export default function Library() {
     <Empty>No surveys are available to you yet. When a survey is published for your account it appears here.</Empty></>;
   const byYear = new Map<string, typeof shown>();
   for (const w of shown) byYear.set(w.wave_date.slice(0, 4), [...(byYear.get(w.wave_date.slice(0, 4)) ?? []), w]);
-  const trackers = all.filter(w => w.study_type === "tracker");
+  const trackers = inMarket.filter(w => w.study_type === "tracker");
   return <>
     <div className="page-head"><div>
       <h1>Survey Library</h1>
@@ -70,8 +72,8 @@ export default function Library() {
       </Card>
       <div className="grid g2">
         <div className="card kpi lead"><div className="k-label">Weekly surveys</div><div className="k-value"><CountUp text={String(trackers.length)} /></div><div className="k-note">{trackers.length ? `Since ${new Date(`${trackers.at(-1)!.wave_date}T00:00:00`).toLocaleDateString("en-US", { month: "long", year: "numeric" })}` : "none yet"}</div></div>
-        <div className="card kpi"><div className="k-label">Annual and ad hoc studies</div><div className="k-value"><CountUp text={String(all.length - trackers.length)} /></div><div className="k-note">{years.length} years of archive</div></div>
-        <div className="card kpi"><div className="k-label">Total respondents</div><div className="k-value"><CountUp text={`${(all.reduce((a, w) => a + w.qualified_n, 0) / 1000).toFixed(0)}k`} /></div><div className="k-note">Qualified respondents across all surveys</div></div>
+        <div className="card kpi"><div className="k-label">Annual and ad hoc studies</div><div className="k-value"><CountUp text={String(inMarket.length - trackers.length)} /></div><div className="k-note">{new Set(inMarket.map(w => w.wave_date.slice(0, 4))).size} years of archive</div></div>
+        <div className="card kpi"><div className="k-label">Total respondents</div><div className="k-value"><CountUp text={`${(inMarket.reduce((a, w) => a + w.qualified_n, 0) / 1000).toFixed(0)}k`} /></div><div className="k-note">Qualified respondents across all {market === "all" ? "" : market === "CN" ? "China " : "US "}surveys</div></div>
         {allowed(me, "search") && <Link className="card kpi" to="/search"><div className="k-label">Search questions</div><div className="k-value" style={{ fontSize: 22 }}>Search →</div><div className="k-note">Find answers to any question across all surveys</div></Link>}
       </div>
     </div>
@@ -96,7 +98,7 @@ export default function Library() {
         </Tabs>
         <label className="sr-only" htmlFor="market">Market</label>
         <select id="market" value={market} onChange={e => set("market", e.target.value)}>
-          <option value="all">All markets</option>{markets.map(m => <option key={m} value={m}>{MARKET[m]}</option>)}
+          <option value="all">All markets</option>{marketOptions(markets)}
         </select>
         <label className="sr-only" htmlFor="year">Year</label>
         <select id="year" value={year} onChange={e => set("year", e.target.value)}>
@@ -150,7 +152,7 @@ export default function Library() {
               <Link to={`/w/${w.survey_id}`} className="wave-title-link">{w.title}</Link>
               <small className="tags">{(w.events ?? []).map(e => <span key={e} className="tag event">{e}</span>)}{(w.modules ?? []).slice(0, 4).map(m => <span key={m} className="tag">{m}</span>)}</small>
             </span>
-            <span className="muted">{KIND[w.study_type] ?? w.study_type}<br /><small>{MARKET[w.country ?? "US"]}{w.platform ? <><br />{PLATFORM[w.platform]}</> : null}</small></span>
+            <span className="muted">{KIND[w.study_type] ?? w.study_type}<br /><small>{MARKETS[w.country ?? "US"]}{w.platform ? <><br />{PLATFORM[w.platform]}</> : null}</small></span>
             <span className="n">n={w.qualified_n.toLocaleString("en-US")}</span>
             <span className="wave-actions">
               <Link to={`/w/${w.survey_id}`} className="btn-chip" title="Summary of this survey">Summary</Link>

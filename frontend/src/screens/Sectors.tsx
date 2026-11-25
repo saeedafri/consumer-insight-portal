@@ -4,10 +4,11 @@
 // median spend: the research team's row of 23 Nov 2026). Every number is built by the ETL when data is published (etl/sectors.py →
 // api/v1/sectors.json.gz); which sectors and questions: config/sectors.yml. This screen only draws.
 // Opened from the left menu ("Sector databank"); the sector and tab are kept in the address so a view can be shared.
+// The Market filter offers China but cannot choose it: China's weekly survey asks no sector questions.
 import { useSearchParams } from "react-router";
 import { useSectors } from "../api";
 import type { Sector } from "../api";
-import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
+import { Card, Empty, ExportButtons, Failure, marketOptions, SkeletonScreen } from "../components/bits";
 import { FigureCard } from "../components/Glance";
 import { downloadTable } from "../csv";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,6 +32,8 @@ export default function Sectors() {
         the % of all respondents; retailers, brands and categories are the % of the sector's buyers.</p>
     </div></div>
     <div className="toolbar one-row">
+      <label className="sr-only" htmlFor="market">Market</label>
+      <select id="market" defaultValue="US">{marketOptions(["US"], "no sector questions")}</select>
       <label className="sr-only" htmlFor="sector">Sector</label>
       <select id="sector" value={sector.name} onChange={e => pick("sector", e.target.value)}>
         {data.sectors.map(s => <option key={s.name}>{s.name}</option>)}

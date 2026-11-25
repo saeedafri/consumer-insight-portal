@@ -15,7 +15,7 @@ import type { Me, Wave } from "../api";
 import { fmtDate } from "../stats";
 import { isSaved, removeView, saveView } from "../saved";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, FileText, Files, Filter, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, MessageSquare, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
+import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, Download, FileText, Files, Filter, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, MessageSquare, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 // [path, label, icon]; FEATURE names the /me feature a screen needs (config/access.yml): unlisted screens always show
@@ -215,9 +215,11 @@ export default function Shell() {
         {TRACKERS.filter(([code]) => allowed(me, `tracker_${code}`)).map(([code, label]) =>
           <NavLink key={code} to={`/trackers/${code}`}><Icon of={Activity} />{label}</NavLink>)}
       </RailGroup>}
-      {(allowed(me, "methodology") || allowed(me, "whats_new")) && <RailGroup label="Reference">
+      {(allowed(me, "methodology") || allowed(me, "whats_new") || isAdmin || given(me, "datasets")) && <RailGroup label="Reference">
         {allowed(me, "methodology") && <NavLink to="/methodology"><Icon of={Info} />Methodology</NavLink>}
         {allowed(me, "whats_new") && <NavLink to="/whats-new"><Icon of={Star} />What's new</NavLink>}
+        {/* respondent rows: only for those given it (config/access.yml chosen_only), a download from api/main.py dataset() */}
+        {(isAdmin || given(me, "datasets")) && <a href="/api/v1/datasets/consumer-health" download><Icon of={Download} />Consumer Health dataset</a>}
       </RailGroup>}
       {(isAdmin || given(me, "fieldwork") || SECTIONS.some(([path]) => given(me, `forsta_${path}`))) &&
         <RailGroup label="Research operations" closed={!/^\/(fieldwork|forsta)/.test(location.pathname)}>

@@ -1,4 +1,4 @@
-// Small shared pieces: base note, change chip, states, section card, source line, undo bar.
+// Small shared pieces: base note, change chip, states, section card, source line, Market filter choices, undo bar.
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
@@ -175,6 +175,15 @@ export function provenance(w?: Wave | null): string {
   const window = w.field_start && w.field_end ? ` · in field ${local(w.field_start)} – ${local(w.field_end)}` : "";
   return `${PLATFORM[w.platform]} ${w.source_ref ?? ""}${window}`.trim();
 }
+
+/** The weekly surveys' markets as the Market filters name them (Library, In store vs online, the databanks): a wave's
+ *  country (cip_survey.country, US when empty). */
+export const MARKETS: Record<string, string> = { US: "United States", CN: "China" };
+
+/** A Market filter's choices: a market not in `available` (no data on this screen) is listed but cannot be chosen, saying why. */
+export const marketOptions = (available: string[], missing = "not available") => Object.entries(MARKETS).map(([code, name]) =>
+  available.includes(code) ? <option key={code} value={code}>{name}</option>
+    : <option key={code} value={code} disabled>{name} ({missing})</option>);
 
 /** Who the sample stands for: the wave's own population, else the tracker's universe, never a guess for other studies. */
 export const population = (w: Wave) => w.population || (w.study_type === "tracker" ? "US adults 18+" : "Survey respondents");

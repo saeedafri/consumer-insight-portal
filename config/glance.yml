@@ -4,12 +4,12 @@
 # config/survey_calendar.yml); a survey without sectors names its row one here (first_row). Change it here: no code
 # changes needed.
 #
-#   name            the survey's badge on Home
+#   name            the survey's badge on Home; market: its code in the Market filters (?market=CN)
 #   report          its weekly report's rules (config/<report>.yml: family, the answers left out, the net-score words)
 #   people          who answered, as the cards say it ("404 US adults", "44.9% of adults in China")
 #   in_store        the categories bought in a store in the past two weeks; online: the same bought online (an online
 #                   answer may add a note: "… (incl. digital purchases)")
-#   channels        true: the gap card opens the In store vs online screen (US questions only), else the question
+#   channels        true: the gap card opens the In store vs online screen on this market, else the question
 #   change_sections the weekly report's tables the "biggest change" card reads; change_period: how far back they look
 #   outlook         a sentiment line of the weekly report; outlook_note: what its figure is
 #   bills           "how have your expenses changed": the share who say this bill went up (US only)
@@ -18,6 +18,7 @@
 
 surveys:
   - name: US
+    market: US
     report: weekly_report
     people: US adults
     in_store: q2
@@ -31,10 +32,12 @@ surveys:
     bills: {question: q6, group: Utilities}
 
   - name: China
+    market: CN
     report: china_weekly_report
     people: adults in China
     in_store: Q5
     online: Q6
+    channels: true
     change_sections: [Bought in store, Bought online]
     change_period: four weeks
     outlook: Personal finances

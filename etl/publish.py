@@ -11,6 +11,7 @@ screens stay fast whatever the number of users. Only search and not-yet-publishe
                                                                     every question of every multi-wave family × banner
                           api/v1/waves/<id>/cuts/<qcode>.json.gz    answers counted by every cut (any two-cut crosstab)
                           api/v1/waves/<id>/people.json.gz          respondent bitsets for Audiences (read by the API only)
+                          api/v1/datasets/Consumer_Health_*.xlsx    the data science team's workbook (etl/consumer_health.py)
                           manifest.json                             version, counts, each wave's built_at
   <root>/current → .build-<version>                                 swapped atomically after the gates pass
 
@@ -318,7 +319,7 @@ def backup(version: Path) -> None:
 
 def write_views(out: Path) -> int:
     """The views built from a version's files (the weekly reports, the sector tables, expected vs actual, the
-    fieldwork record, Home's week at a glance): by every
+    fieldwork record, Home's week at a glance, the Consumer Health workbook): by every
     publish, and again after a restore, so a new image's views appear at deploy without waiting for new data.
     Returns the bytes written."""
     size = weekly_report.publish(out, write)   # the weekly report of the recent tracker waves, from the question files
@@ -327,6 +328,11 @@ def write_views(out: Path) -> int:
     size += fieldwork.publish(out, write)      # the admins' Fieldwork screen, from Forsta's kept fieldwork records
     size += write(out / "api/v1/public/facts", site_facts(out))   # the public home page's live figures
     size += glance.publish(out, write)         # Home's "This week at a glance", from the files written above
+    try:   # the data science team's respondent workbook, with every newer US week
+        from etl import consumer_health   # openpyxl loads numpy: here, not at the ETL's cold start (tests/test_etl_imports.py)
+        size += consumer_health.publish(out)
+    except Exception as exc:   # their file waits for the next publish; the portal's own screens never wait on it
+        log.warning("The Consumer Health dataset was not written: %s", exc)
     return size + expectations.publish(out, write)   # retail events: expected vs actual, plus the spend answers
 
 

@@ -76,7 +76,7 @@ export default function Home() {
   // [shown to this person, how often it runs, icon, title, where it opens, what it is for]
   const areas = ([
     [!!latest && allowed(me, "us_tracker"), "Weekly", ShoppingBag, "Shopping & Spending Survey", `/w/${latest?.survey_id}`, "Where people shop, what they buy and how spending changes, every week."],
-    [!!latest && allowed(me, "channels"), "Weekly", Layers, "In store vs online", "/channels", "Which categories people bought in a store, and which online, in the past two weeks."],
+    [!!latest && allowed(me, "channels"), "Weekly", Layers, "In store vs online", "/channels", "Which categories people in the US and China bought in a store, and which online, in the past two weeks."],
     [!!report && allowed(me, "report"), "Weekly", Gauge, "Consumer sentiment & outlook", `/w/${report}/report`, "Personal finances and the economy over the next 12 months, by household income."],
     [allowed(me, "retailers"), "Weekly", Store, "Retailer databank", "/retailers", "Any retailer or sector, alone or side by side, over the weeks you choose: how many shop there and who they are."],
     [!!china && allowed(me, "china_tracker"), "Weekly", Globe, "China weekly tracker", `/w/${china?.survey_id}`, "A weekly survey of consumers in China: how they shop and spend."],

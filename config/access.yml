@@ -24,7 +24,7 @@ features: [library, search, schedule, boards,
            dashboards, explorer, crosstab, trends, compare, audiences, changes, report, survey,
            tracker_tariffs_inflation, tracker_financial_health, tracker_genai, tracker_glp1, tracker_mideast_gas,
            tracker_holiday_tracker, tracker_holiday_outlook, tracker_social_commerce,
-           methodology, whats_new,
+           methodology, whats_new, datasets,
            fieldwork, forsta_reports, forsta_check, forsta_crosstab, forsta_samples, forsta_warnings, forsta_files,
            forsta_deletion, forsta_account,
            ingest, logs,
@@ -32,7 +32,7 @@ features: [library, search, schedule, boards,
 # features no package includes: a role gets one only once the super admin turns it on (the admin pages, which only
 # the super admin had before 15 Nov 2026)
 chosen_only: [fieldwork, forsta_reports, forsta_check, forsta_crosstab, forsta_samples, forsta_warnings, forsta_files,
-              forsta_deletion, forsta_account, ingest, logs]
+              forsta_deletion, forsta_account, ingest, logs, datasets]
 # menus split off an older one on 15 Nov 2026 (shared/core/access.py grown): a package, or an Access choice saved before
 # then, gives each what the menu it grew from gave ("*": always on then), so nobody lost a menu when the list grew
 grown_from:
@@ -64,7 +64,7 @@ menu:
                                                             trends, compare, audiences, changes, report, survey]}]}
   - {group: Trackers, items: [tracker_tariffs_inflation, tracker_financial_health, tracker_genai, tracker_glp1,
       tracker_mideast_gas, tracker_holiday_tracker, tracker_holiday_outlook, tracker_social_commerce]}
-  - {group: Reference, items: [methodology, whats_new]}
+  - {group: Reference, items: [methodology, whats_new, datasets]}
   - {group: Research operations, items: [fieldwork, forsta_reports, forsta_check, forsta_crosstab, forsta_samples,
       forsta_warnings, forsta_files, forsta_deletion, forsta_account]}
   - {group: Administration, items: [ingest, logs, {label: Access, admin: true}]}
@@ -84,6 +84,7 @@ feature_labels:   # the names the Access screen shows
   tracker_social_commerce: Social commerce
   methodology: Methodology
   whats_new: What's new
+  datasets: Consumer Health dataset (download)
   forsta_reports: Team reports (Forsta)
   forsta_check: Forsta vs CIP
   forsta_crosstab: Cross-tab setup (Forsta)

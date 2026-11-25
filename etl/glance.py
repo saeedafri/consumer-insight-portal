@@ -194,7 +194,7 @@ def gap_card(survey: dict, wave: dict, book: dict) -> dict | None:
     asked_before = row.get("prior") is not None and twin.get("prior") is not None and "wording_changed_prior" not in row["flags"] + twin["flags"]
     gap = row["Total"] - twin["Total"]
     changes = [{"d": round(gap - (row["prior"] - twin["prior"]), 1), "label": wave["vs"]}] if asked_before else []
-    link, feature = ((f"/channels?w={wave['survey_id']}&c={quote(row['label'])}", "channels") if survey.get("channels")
+    link, feature = ((f"/channels?market={survey['market']}&w={wave['survey_id']}&c={quote(row['label'])}", "channels") if survey.get("channels")
                      else (f"/w/{wave['survey_id']}/questions/{store['id']}", "explorer"))
     return dict(badge="In store vs online", title="Widest gap: in store vs online", value=row["label"],
                 note=f"{row['Total']:.1f}% bought in a store, {twin['Total']:.1f}% online, past two weeks: a gap of {abs(gap):.1f} pts",

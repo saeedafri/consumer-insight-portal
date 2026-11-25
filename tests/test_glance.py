@@ -64,6 +64,7 @@ def test_the_six_cards_of_the_week_in_the_order_asked_each_with_its_badge():
     assert product["changes"] == [{"d": -0.6, "label": "vs Aug 17"}]                       # not asked a year ago
     assert leader["link"] == "/sectors?sector=Mass%20merchants%20and%20warehouse%20clubs&tab=Retailers"
     assert gap["changes"] == [{"d": 5.3, "label": "vs last week"}]                         # 45.3 pts now, 40.0 last week
+    assert gap["link"].startswith("/channels?market=US&w=")
     assert outlook["changes"] == [{"d": 1.8, "label": "vs last week"}]
     assert outlook["note"].endswith("next 12 months. 56.4% say utilities went up in the past year")
 
@@ -133,7 +134,8 @@ def test_the_china_survey_has_its_own_six_cards_against_the_survey_before_it():
     assert activity["note"] == "39.3% of adults in China, past two weeks" and activity["changes"][0]["label"] == "vs Oct 26"
     assert plans["changes"] == [{"d": 4.3, "label": "vs Oct 26"}]                 # -23.4 on 26 Oct
     assert change["note"] == "Books, music, movies and video games: from 9.8% on Oct 26 to 4.7% on Nov 9, a significant change"
-    assert gap["changes"] == [{"d": 3.9, "label": "vs Oct 26"}] and gap["link"] == "/w/724/questions/Q5"   # no channels screen
+    assert gap["changes"] == [{"d": 3.9, "label": "vs Oct 26"}]
+    assert gap["link"] == "/channels?market=CN&w=724&c=Household%20essentials" and gap["feature"] == "channels"   # on China
     assert outlook["changes"] == [{"d": 6.9, "label": "vs Oct 26"}]               # the week before had no survey
     assert outlook["note"] == "net optimism: % positive minus % negative, next 12 months"
 

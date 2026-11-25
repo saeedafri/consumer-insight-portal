@@ -1,0 +1,64 @@
+# The Consumer Health dataset (etl/consumer_health.py): the data science team's workbook "Consumer Health — Master Raw
+# Respondent Dataset", one row per US weekly respondent, kept up to date by CIP. Their workbook (to 10 Aug 2026) is the
+# history, loaded once; every US weekly wave after it is added here, in their columns and by their rules. Each rule
+# below was checked against all 62,109 rows of their workbook (25 Nov 2026): every derived column matched 100%.
+
+family: CSI-US                     # the US weekly tracker
+source_sheet: Forsta API           # Source_Sheet of a row CIP adds; its Source_File is the Forsta survey (selfserve/58f/261103)
+
+# The activities question, found by its wording in each wave. Its answers become the 0/1 columns, in the workbook's
+# order; `code` is the answer's part of Activity_Pattern_Code (FRI+MAL+DIN), as the team wrote it from 2024.
+activities:
+  question: Which, if any, of these have you done in the past two weeks?
+  none: None of these              # → None_Selected
+  original:                        # the 12 asked in every year: Activity_Count, the pattern, the bands
+    Friends_Family: {answer: Met up with friends or family locally, code: FRI}
+    Enclosed_Mall: {answer: Gone to a shopping mall (enclosed shopping center), code: MAL}
+    Gym_Fitness: {answer: Gone to a gym or fitness classes, code: GYM}
+    Dine_In_Restaurant: {answer: Gone to a restaurant (dine in), code: DIN}
+    Arranged_Trip: {answer: "Arranged a trip (e.g., to visit family, book a vacation)", code: ATR}
+    Beauty_Services: {answer: Got a haircut/grooming/other beauty services, code: BEA}
+    Played_Sports: {answer: Played sports, code: SPT}
+    Took_Trip: {answer: "Gone on a trip (e.g., visit family, go on vacation)", code: TRP}
+    Open_Air_Center: {answer: "Gone to an open-air shopping center (e.g., a strip mall)", code: OAC}
+    Coffee_Shop: {answer: Gone to a coffee-shop, code: COF}
+    Bar: {answer: Gone to a bar, code: BAR}
+    Leisure_Cultural: {answer: "Gone to a leisure or cultural attraction (e.g., theme park, museum)", code: LEI}
+  added:                           # asked from 13 Jul 2026; blank (not asked) before, never a 0
+    Movie_Theater: Gone to a movie theater/cinema
+    Live_Performance: "Gone to a live performance (e.g., concert, play, comedy show, etc.)"
+
+# Each demographic column: the wordings that ask it (the answer's label is the value, as in the team's rows)
+demographics:
+  Gender: ["What is your gender?"]
+  Age_Group: ["What is your age?", "What is your age group?"]   # a single age is put in its band below
+  Relationship_Status: ["What is your relationship status?"]
+  Ethnicity: ["With which ethnicity do you most closely identify?"]
+  Household_Income: ["What was your total household income last year?"]
+  Area_Type: ["Which of the following best describes the area where your primary residence is located?"]
+  State: ["In which state is your primary residence?"]
+age_bands:                         # the oldest age of each band; older than the last is "over 60" ("70 or more" too)
+  "18 - 29": 29
+  "30 - 44": 44
+  "45 - 60": 60
+oldest_band: over 60
+
+# Counts of some activities (Entertainment_Count only in weeks that asked the added two)
+counts:
+  Social_Dining_Count: [Friends_Family, Dine_In_Restaurant, Coffee_Shop, Bar]
+  Shopping_Count: [Enclosed_Mall, Open_Air_Center]
+  Fitness_Count: [Gym_Fitness, Played_Sports]
+  Travel_Count: [Arranged_Trip, Took_Trip]
+  Personal_Leisure_Count: [Beauty_Services, Leisure_Cultural]
+  Entertainment_Count: [Movie_Theater, Live_Performance]
+# 1 when the respondent did at least one activity of each list (Mall_and_Restaurant counts a strip mall too, as the
+# team's rows do)
+pairs:
+  Friends_and_Restaurant: [[Friends_Family], [Dine_In_Restaurant]]
+  Mall_and_Restaurant: [[Enclosed_Mall, Open_Air_Center], [Dine_In_Restaurant]]
+  Restaurant_and_Coffee: [[Dine_In_Restaurant], [Coffee_Shop]]
+  Restaurant_and_Bar: [[Dine_In_Restaurant], [Bar]]
+  Arranged_and_Took_Trip: [[Arranged_Trip], [Took_Trip]]
+  Gym_and_Sports: [[Gym_Fitness], [Played_Sports]]
+  Shopping_and_Dining: [[Enclosed_Mall, Open_Air_Center], [Dine_In_Restaurant, Coffee_Shop, Bar]]
+high_activity: 5                   # High_Activity_5Plus and the top band of Activity_Count_Band ("5+")

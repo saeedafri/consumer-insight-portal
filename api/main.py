@@ -859,6 +859,20 @@ async def export(kind: str, request: Request, who: dict = Depends(user)) -> Resp
     return Response(body, media_type=EXPORT_TYPES[kind], headers={"Content-Disposition": f'attachment; filename="{spec["name"]}.{kind}"'})
 
 
+@app.get("/api/v1/datasets/consumer-health")
+async def dataset(request: Request, who: dict = Depends(user)) -> Response:
+    """The Consumer Health workbook as the last publish wrote it (etl/consumer_health.py): respondent rows, so only for
+    those the super admin gives the "datasets" menu. Sent from disk; nothing is built on the request."""
+    require_feature(who, "datasets")
+    # the folder and name etl/consumer_health.py FOLDER and NAME write; that module is not imported here, as it loads
+    # openpyxl (and numpy with it) into every API worker for one folder name
+    found = sorted((PUBLISHED / "api/v1/datasets").glob("Consumer_Health_*.xlsx"))
+    if not found:
+        raise HTTPException(404, "The Consumer Health dataset has not been built yet")
+    audit.record(request, "download", target=found[-1].name)
+    return FileResponse(found[-1], media_type=EXPORT_TYPES["xlsx"], filename=found[-1].name)
+
+
 @app.get("/readyz")
 @app.head("/readyz", include_in_schema=False)
 async def readyz() -> JSONResponse:
