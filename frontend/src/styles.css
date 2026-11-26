@@ -245,6 +245,8 @@ input:focus-visible, select:focus-visible { box-shadow: 0 0 0 3px color-mix(in s
 }
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 .seg button:hover { color: var(--ink); }
+/* a group picked among many (In store vs online's trend buttons): plain to see, as the Survey filter's chips */
+.seg.picked button[aria-pressed="true"] { background: var(--red-wash); color: var(--red-text); box-shadow: inset 0 0 0 1px var(--red); }
 .toolbar {
   display: flex;
   flex-wrap: wrap;

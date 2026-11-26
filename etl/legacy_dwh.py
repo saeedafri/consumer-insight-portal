@@ -14,6 +14,7 @@ imported) are skipped and counted.
 
     python -m etl.legacy_dwh --all            # every Qualtrics-era wave, oldest first
     python -m etl.legacy_dwh --id SV_0IHGTy1GPAlUsGa
+    python -m etl.legacy_dwh --group-income   # once: older waves' income bands named as Forsta's (26 Nov 2026)
 """
 from __future__ import annotations
 
@@ -460,6 +461,8 @@ def main() -> int:
     group = ap.add_mutually_exclusive_group(required=True)
     group.add_argument("--id", help="one legacy survey id")
     group.add_argument("--all", action="store_true", help="every wave of the era, oldest first")
+    group.add_argument("--group-income", action="store_true",
+                       help="once: every loaded wave's older income bands named as Forsta's, its cube and serving rows rebuilt")
     ap.add_argument("--era", choices=("qualtrics", "surveymonkey"), default="qualtrics")
     args = ap.parse_args()
     try:
@@ -470,10 +473,31 @@ def main() -> int:
         return 1
 
 
+def group_all_income() -> int:
+    """Every wave loaded before income bands were grouped (26 Nov 2026): its bands named as Forsta's, then its cube and
+    serving rows rebuilt where any changed. Publish after (python -m etl.publish), so the screens read the new groups."""
+    from etl.wave_loader import group_income_bands
+    with get_engine("etl").connect() as conn:
+        waves = [r[0] for r in conn.execute(text("SELECT survey_id FROM cip_survey ORDER BY survey_id"))]
+    failed = []
+    for survey_id in waves:
+        try:
+            if group_income_bands(survey_id):
+                log.info("survey_id=%s: income bands grouped; %d cells, %d serving rows", survey_id,
+                         cube.refresh_wave(survey_id), serving.build_wave(survey_id))
+        except Exception:   # its bands may be renamed already, so a rerun would pass it by: named for a rebuild by hand
+            log.exception("survey_id=%s failed: rebuild its cube (python -m etl.cube --wave <its wave label>) and serving rows "
+                          "(python -m etl.serving --wave %s)", survey_id, survey_id)
+            failed.append(survey_id)
+    return 1 if failed else 0
+
+
 def _main(args) -> int:
     if args.id:
         load_legacy(args.id)
         return 0
+    if args.group_income:
+        return group_all_income()
     with get_engine("etl").connect() as conn:
         surveys = legacy_surveys(conn, era=args.era)
     failed = []

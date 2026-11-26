@@ -5,11 +5,11 @@
 // CSI-CN/tracker/Q5|Q6.json.gz) are fetched once and cached; every pick of week, group or category is computed here in
 // the browser, so nothing runs on the server when someone changes a filter.
 // Opened from the left menu (Core research) and the Home page's cards (China's widest gap opens it on China); market,
-// week, group, category, the trend's group and its date range are kept in the address. Respondent group is two choices:
-// a kind of group (gender, age, income…), then All or one group; only groups this week has answers from are offered
-// (older income bands are empty in recent weeks). The bar chart compares (all categories, or a kind's groups side by
-// side, the research team's call of 23 Nov 2026); the line chart inspects one group at a time, chosen on its own
-// buttons, week by week over the last year by default (the research team's call of 25 Nov 2026).
+// week, group, category and the trend's date range are kept in the address. Respondent group is one group at a time: a
+// kind (gender, age, income…), then one of its groups, its first by default, with no "All" (the research team, 26 Nov
+// 2026); only groups this week has answers from are offered. The filters above and the trend's own buttons are the same
+// choice. The bar chart shows every category for that group, biggest in store first, the chosen one highlighted where it
+// ranks; the line chart shows the chosen category week by week, over the last year by default.
 import { useMemo, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { CUT_NAMES, isFiller, useQuestion, useWaves } from "../api";
@@ -113,28 +113,24 @@ export default function Channels() {
   // household income's "Prefer not to say / answer" is no group: left out of both charts (the research team, 25 Nov 2026)
   const cuts = data.cuts.filter(c => !(c[0] === "income_band" && isFiller(c[1])));
   const offered = cuts.filter(c => [...data.storeLabels].some(l => data.inStore(week, c.join(":"), l) != null));
-  const cut = offered.some(c => c.join(":") === params.get("g")) ? params.get("g")! : "total:Total";
   const kinds = [...new Set(offered.map(c => c[0]))];
-  // "All" of a kind is everyone, with the kind kept in the address (k) so its group list stays open
-  const kind = cut !== "total:Total" ? cut.split(":")[0] : kinds.includes(params.get("k") ?? "") ? params.get("k")! : "total";
-  // a group chosen here resets the line chart's own group (t, tk), so the line follows it again
-  const pickGroup = (g: string, k?: string) => setParams(p => {
-    p.set("g", g); p.delete("t"); p.delete("tk");
-    if (k === "total") p.delete("k"); else if (k) p.set("k", k);
-    return p;
-  }, { replace: true });
+  // the group (g): a group this week has no answers from gives way to its kind's first group, then to everyone
+  const asked = params.get("g") ?? "";
+  const cut = (offered.find(c => c.join(":") === asked) ?? offered.find(c => c[0] === asked.split(":")[0]) ?? ["total", "Total"]).join(":");
+  const kind = cut.split(":")[0];
+  const groups = offered.filter(c => c[0] === kind);
+  const chooseKind = (k: string) => pick("g", offered.find(c => c[0] === k)!.join(":"));   // a kind opens on its first group
+  const kindOptions = kinds.map(k => <option key={k} value={k}>{k === "total" ? "Everyone" : CUT_NAMES[k] ?? k}</option>);
   // the categories this week asked both ways, biggest in store first
   const categories = [...data.storeLabels].filter(l => data.labels.has(l) && !SKIP.test(l) && data.inStore(week, cut, l) != null)
     .sort((x, y) => (data.inStore(week, cut, y) ?? 0) - (data.inStore(week, cut, x) ?? 0));
   const category = categories.includes(params.get("c") ?? "") ? params.get("c")! : categories[0];
   const kindName = CUT_NAMES[kind] ?? kind;
-  const sideBySide = kind !== "total" && cut === "total:Total";   // All of a kind: its groups side by side
-  const groups = offered.filter(c => c[0] === kind).map(c => c[1]);
-  const groupName = sideBySide ? `${kindName}, each group` : cut === "total:Total" ? "Everyone" : `${CUT_NAMES[cut.split(":")[0]] ?? ""}: ${cut.split(":")[1]}`;
+  const groupName = cut === "total:Total" ? "Everyone" : `${kindName}: ${cut.slice(kind.length + 1)}`;
   const nowStore = data.inStore(week, cut, category), nowOnline = data.onLine(week, cut, category);
   const change = (fn: typeof data.inStore, now: number | null) => prior && now != null && fn(prior[0], cut, category) != null ? now - fn(prior[0], cut, category)! : null;
   // both cards draw at one height, so the trend card has no empty space under its chart beside the long category list
-  const height = Math.max(400, (sideBySide ? groups.length : categories.length) * 30 + 60);
+  const height = Math.max(400, categories.length * 30 + 60);
   const figure = (v: number | null) => v == null ? null : +v.toFixed(1);   // a % as charts and exports show it
   const source = `Source: ${survey.source}. Unweighted.`;
 
@@ -145,48 +141,35 @@ export default function Channels() {
   const place = (key: string, fallback: number) => { const i = oldestFirst.findIndex(w => String(w[0]) === params.get(key)); return i < 0 ? fallback : i; };
   const [first, last] = [place("from", yearAgo), place("to", oldestFirst.length - 1)].sort((x, y) => x - y);   // From after To: swapped
   const span = oldestFirst.slice(first, last + 1);
-  // The line chart's group, one at a time (t), from the groups its own weeks have answers from: by default the group the
-  // page shows, or everyone when the bars compare a kind's groups; its buttons list one kind's groups (tk, else the page's kind)
-  const trendOffered = cuts.filter(c => span.some(w => data.inStore(w[0], c.join(":"), category) != null));
-  const trendHas = (c: string | null) => trendOffered.some(x => x.join(":") === c);
-  const trendCut = trendHas(params.get("t")) ? params.get("t")! : !sideBySide && trendHas(cut) ? cut : "total:Total";
-  const trendKinds = [...new Set(trendOffered.map(c => c[0]))];
-  const trendKind = trendCut !== "total:Total" ? trendCut.split(":")[0]
-    : trendKinds.includes(params.get("tk") ?? "") ? params.get("tk")! : trendKinds.includes(kind) ? kind : "total";
-  const trendName = trendCut === "total:Total" ? "Everyone" : `${CUT_NAMES[trendKind] ?? trendKind}: ${trendCut.slice(trendKind.length + 1)}`;
-  const chooseTrendKind = (k: string) => setParams(p => { p.set("t", "total:Total"); p.set("tk", k); return p; }, { replace: true });
   // the line starts and ends where the group has both figures (Non-binary from Aug 2022), so each line's end label and
-  // the gap are one week's; a week in between without them (15 US weeks of 2021-22 whose surveys asked no gender, age
-  // or income question) breaks the line, and the note under it says why
-  const answered = (w: [number, string]) => data.inStore(w[0], trendCut, category) != null && data.onLine(w[0], trendCut, category) != null;
+  // the gap are one week's; a week in between without them (20 US weeks of 2021-22 have no demographics in CIP:
+  // docs/CHANGELOG.md, 26 Nov 2026) breaks the line, and the note under it counts them
+  const answered = (w: [number, string]) => data.inStore(w[0], cut, category) != null && data.onLine(w[0], cut, category) != null;
   const start = span.findIndex(answered), end = span.length - [...span].reverse().findIndex(answered);
   const drawn = start < 0 ? [] : span.slice(start, end);
   const unanswered = drawn.filter(w => !answered(w)).length;
   const rangeText = drawn.length ? `${fmtDate(drawn[0][1])} to ${fmtDate(drawn.at(-1)![1])}` : "no weeks";
   const both = drawn.at(-1);   // the last week, where the gap between the two lines is marked
-  const bothStore = both && figure(data.inStore(both[0], trendCut, category)), bothOnline = both && figure(data.onLine(both[0], trendCut, category));
+  const bothStore = both && figure(data.inStore(both[0], cut, category)), bothOnline = both && figure(data.onLine(both[0], cut, category));
 
-  const barRows = sideBySide ? groups : [category, ...categories.filter(l => l !== category)];   // the chosen category on top
-  const barFocus = sideBySide ? groups.find(g => trendCut === `${kind}:${g}`) ?? "" : category;
-  const barShare = (fn: Share, row: string) => sideBySide ? fn(week, `${kind}:${row}`, category) : fn(week, cut, row);
-  /** In-store (red) and online (blue) bars, a pair per row: every category for one group, or every group for one
-   *  category. The row the line chart shows (barFocus) in full colour, the others lighter; no focus, all full. */
+  /** In-store (red) and online (blue) bars with their %, a pair per category for the group, biggest in store first. The
+   *  category the line chart shows stays where it ranks (26 Nov 2026), in full colour with its figures in bold; the others lighter. */
   const barOption = () => ({
     tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v: number) => pct(v) },
     legend: { top: 0, left: 0, textStyle: axisText(), data: ["In a store", "Online"] },
-    grid: { left: 8, right: 40, top: 32, bottom: 8, containLabel: true },
+    grid: { left: 8, right: 48, top: 32, bottom: 8, containLabel: true },   // right: room for the last bar's %
     xAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" } },
-    yAxis: { type: "category", inverse: true, data: barRows, triggerEvent: true,
-             axisLabel: { ...axisText(), width: 190, overflow: "truncate", color: (row?: string) => !barFocus || row === barFocus ? C.ink : C.ink3 } },
+    yAxis: { type: "category", inverse: true, data: categories, triggerEvent: true,
+             axisLabel: { ...axisText(), width: 190, overflow: "truncate", color: (row?: string) => row === category ? C.ink : C.ink3 } },
     series: [["In a store", data.inStore, C.red], ["Online", data.onLine, C.blue]].map(([name, fn, color]) => ({
       type: "bar", name, barMaxWidth: 10, barGap: "30%", itemStyle: { color, borderRadius: [2, 4, 4, 2] },
-      data: barRows.map(r => ({ value: figure(barShare(fn as Share, r)), itemStyle: !barFocus || r === barFocus ? undefined : { opacity: 0.3 } })) })),
+      label: { show: true, position: "right", fontSize: 11, color: C.ink3, formatter: (p: { value: number }) => pct(p.value) },
+      data: categories.map(r => ({ value: figure((fn as Share)(week, cut, r)),
+        ...(r === category ? { label: { color: C.ink, fontWeight: 700 } } : { itemStyle: { opacity: 0.3 } }) })) })),
   });
-  const barTitle = sideBySide ? `${category} by ${kindName.toLowerCase()}` : "All categories, this week";
-  // a bar or its row's label: a category opens in the line chart; a group, in the comparison, opens its trend there
-  const openRow = (row: string) => sideBySide ? pick("t", `${kind}:${row}`) : pick("c", row);
-  const exportBars = (format: Format) => downloadTable(format, `${barTitle} ${date}`, [sideBySide ? kindName : "Category", "In a store %", "Online %"],
-    barRows.map(r => [r, figure(barShare(data.inStore, r)), figure(barShare(data.onLine, r))]),
+  const barTitle = "All categories, this week";
+  const exportBars = (format: Format) => downloadTable(format, `${barTitle} ${date}`, ["Category", "In a store %", "Online %"],
+    categories.map(r => [r, figure(data.inStore(week, cut, r)), figure(data.onLine(week, cut, r))]),
     [`${barTitle}: ${groupName}, ${fmtDate(date)}`, source]);
 
   const lineOption = () => ({
@@ -199,10 +182,11 @@ export default function Channels() {
     grid: { left: 8, right: 112, top: 36, bottom: 28, containLabel: true },   // right: room for the end labels
     xAxis: { type: "time", min: "dataMin", max: "dataMax", axisLabel: valueText() },
     yAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" } },
-    series: [...([["In a store", data.inStore, data.storeBase, C.red, "solid"], ["Online", data.onLine, data.onlineBase, C.blue, "dashed"]] as const)
-      .map(([name, fn, base, color, line]) => ({
-        type: "line", name, showSymbol: false, smooth: 0.2, color, lineStyle: { width: 2, type: line },
-        data: drawn.map(w => [time(w[1]), figure(fn(w[0], trendCut, category)), base(w[0], trendCut)]),
+    // both lines solid: their colours tell them apart (the research team, 26 Nov 2026)
+    series: [...([["In a store", data.inStore, data.storeBase, C.red], ["Online", data.onLine, data.onlineBase, C.blue]] as const)
+      .map(([name, fn, base, color]) => ({
+        type: "line", name, showSymbol: false, smooth: 0.2, color, lineStyle: { width: 2 },
+        data: drawn.map(w => [time(w[1]), figure(fn(w[0], cut, category)), base(w[0], cut)]),
         // each line's latest figure at its end, as in the research team's mock-up
         endLabel: { show: true, color, fontSize: 12, formatter: (p: { value: [number, number | null] }) => `${name} ${pct(p.value[1])}` },
         labelLayout: { moveOverlap: "shiftY" },   // end labels of lines that end close together move apart
@@ -217,17 +201,17 @@ export default function Channels() {
                     data: [[{ coord: [time(both[1]), bothStore] }, { coord: [time(both[1]), bothOnline] }]] },
       }] : [])],
   });
-  const lineTitle = `${category}: in a store vs online, ${trendName}`;
+  const lineTitle = `${category}: in a store vs online, ${groupName}`;
   const exportTrend = (format: Format) => downloadTable(format, `${category} in store vs online`,
     ["Week", "In a store %", "Online %", "In a store base", "Online base"],
-    drawn.map(w => [w[1], figure(data.inStore(w[0], trendCut, category)), figure(data.onLine(w[0], trendCut, category)),
-                    data.storeBase(w[0], trendCut), data.onlineBase(w[0], trendCut)]),
+    drawn.map(w => [w[1], figure(data.inStore(w[0], cut, category)), figure(data.onLine(w[0], cut, category)),
+                    data.storeBase(w[0], cut), data.onlineBase(w[0], cut)]),
     [`${lineTitle}, ${rangeText}`, source]);
 
   return <div className="stack">
     <div className="page-head"><div>
       <h1>In store vs online</h1>
-      <p className="lede">Share of people who bought each category in a store or online.</p>
+      <p className="lede">Percentage of respondents who bought each category in a store or online.</p>
     </div></div>
 
     <section className="card compare-bar" aria-label="Choose what to show">
@@ -235,11 +219,9 @@ export default function Channels() {
         {marketOptions(Object.keys(SURVEYS))}</select></label>
       <label><span>Week</span><select value={week} onChange={e => pick("w", e.target.value)}>
         {data.weeks.map(w => <option key={w[0]} value={w[0]}>{fmtDate(w[1])}</option>)}</select></label>
-      <label><span>Respondent group</span><select value={kind} onChange={e => pickGroup("total:Total", e.target.value)}>
-        {kinds.map(k => <option key={k} value={k}>{k === "total" ? "Everyone" : CUT_NAMES[k] ?? k}</option>)}</select></label>
-      {kind !== "total" && <label><span>{CUT_NAMES[kind] ?? kind}</span><select value={cut} onChange={e => pickGroup(e.target.value)}>
-        <option value="total:Total">All</option>
-        {offered.filter(c => c[0] === kind).map(c => <option key={c[1]} value={c.join(":")}>{c[1]}</option>)}</select></label>}
+      <label><span>Respondent group</span><select value={kind} onChange={e => chooseKind(e.target.value)}>{kindOptions}</select></label>
+      {kind !== "total" && <label><span>{kindName}</span><select value={cut} onChange={e => pick("g", e.target.value)}>
+        {groups.map(c => <option key={c[1]} value={c.join(":")}>{c[1]}</option>)}</select></label>}
       <label><span>Category</span><select value={category} onChange={e => pick("c", e.target.value)}>
         {categories.map(l => <option key={l}>{l}</option>)}</select></label>
     </section>
@@ -259,17 +241,15 @@ export default function Channels() {
 
     <div className="grid g2">
       <Card title={barTitle} aside={<ExportButtons onExport={exportBars} png={() => barChart.current && downloadPng(barChart.current, `${barTitle}: ${groupName}, ${fmtDate(date)}`, source, `${barTitle} ${date}`)} />}
-            sub={sideBySide ? `${fmtDate(date)} · % of each group who bought it in a store (red) and online (blue) · click a group to see its trend`
-                            : `${groupName} · ${fmtDate(date)} · % who bought each in a store (red) and online (blue) · click a category to see its trend`}>
-        <EChart height={height} label={sideBySide ? `${category} by ${kindName}, ${fmtDate(date)}` : `In store and online buying by category, ${fmtDate(date)}`}
-                onClick={p => openRow(String(p.componentType === "yAxis" ? p.value : p.name))} option={barOption()} build={barOption} onReady={c => { barChart.current = c; }} />
+            sub={<><b>{groupName}</b> · <b>{fmtDate(date)}</b> · % who bought each in a store (red) and online (blue) · click a category to see its trend</>}>
+        <EChart height={height} label={`In store and online buying by category, ${groupName}, ${fmtDate(date)}`}
+                onClick={p => pick("c", String(p.componentType === "yAxis" ? p.value : p.name))} option={barOption()} build={barOption} onReady={c => { barChart.current = c; }} />
       </Card>
-      <Card title={category} sub={`${trendName} · ${rangeText} · week by week, in a store (red) vs online (blue, dashed)`}
+      <Card title={category} sub={<><b>{groupName}</b> · <b>{rangeText}</b> · week by week, in a store (red) vs online (blue)</>}
             aside={<ExportButtons onExport={exportTrend} png={() => lineChart.current && downloadPng(lineChart.current, `${lineTitle}, ${rangeText}`, source, `${category} in store vs online`)} />}>
         <div className="toolbar one-row" style={{ marginBottom: 8 }}>
-          <label className="sr-only" htmlFor="trend-kind">Respondent group for the trend</label>
-          <select id="trend-kind" value={trendKind} onChange={e => chooseTrendKind(e.target.value)} title="Respondent group for the trend">
-            {trendKinds.map(k => <option key={k} value={k}>{k === "total" ? "Everyone" : CUT_NAMES[k] ?? k}</option>)}</select>
+          <label className="sr-only" htmlFor="trend-kind">Respondent group</label>
+          <select id="trend-kind" value={kind} onChange={e => chooseKind(e.target.value)} title="Respondent group">{kindOptions}</select>
           <label className="sr-only" htmlFor="trend-from">From</label>
           <select id="trend-from" value={span[0][0]} onChange={e => pick("from", e.target.value)} title="From">
             {oldestFirst.map(w => <option key={w[0]} value={w[0]}>From {fmtDate(w[1])}</option>)}</select>
@@ -277,17 +257,15 @@ export default function Channels() {
           <select id="trend-to" value={span.at(-1)![0]} onChange={e => pick("to", e.target.value)} title="To">
             {oldestFirst.map(w => <option key={w[0]} value={w[0]}>To {fmtDate(w[1])}</option>)}</select>
         </div>
-        {trendKind !== "total" && <div className="seg" role="group" aria-label={`${CUT_NAMES[trendKind] ?? trendKind}: one group at a time`} style={{ marginBottom: 8 }}>
-          {[["total", "Total"], ...trendOffered.filter(c => c[0] === trendKind)].map(c =>
-            <button key={c[1]} type="button" aria-pressed={c.join(":") === trendCut} onClick={() => pick("t", c.join(":"))}>
-              {c[0] === "total" ? "Everyone" : c[1]}</button>)}
+        {kind !== "total" && <div className="seg picked" role="group" aria-label={`${kindName}: one group at a time`} style={{ marginBottom: 8 }}>
+          {groups.map(c => <button key={c[1]} type="button" aria-pressed={c.join(":") === cut} onClick={() => pick("g", c.join(":"))}>{c[1]}</button>)}
         </div>}
         {drawn.length
-          ? <EChart height={height - (trendKind !== "total" ? 92 : 48)} label={`${category}: in store vs online over time, ${trendName}`}
+          ? <EChart height={height - (kind !== "total" ? 92 : 48)} label={`${category}: in store vs online over time, ${groupName}`}
                     option={lineOption()} build={lineOption} onReady={c => { lineChart.current = c; }} />
-          : <Empty>{trendName} has no answers between these weeks.</Empty>}
-        {unanswered > 0 && <p className="muted small">{trendName} has no answers in {unanswered} of these weeks (their surveys did not ask
-          about {(CUT_NAMES[trendKind] ?? trendKind).toLowerCase()}): the lines break there.</p>}
+          : <Empty>{groupName} has no answers between these weeks.</Empty>}
+        {unanswered > 0 && <p className="muted small">No answers from {groupName} for this category in {unanswered} of these
+          weeks: the lines break there.</p>}
       </Card>
     </div>
     <p className="source-line">{source} Every group is shown, however small: check its base (n, in the trend's tooltip).</p>

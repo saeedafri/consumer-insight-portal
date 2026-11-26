@@ -114,10 +114,13 @@ def test_a_weekly_trend_exports_as_a_line_chart_of_every_week():
     assert chart.count('<c:ptCount val="20"/>') == 4   # two lines, each its 20 weeks and 20 figures
     # the end labels: the oldest week first, so the last point is the newest week (in a store 40.0, online 20.0)
     assert re.findall(r"<a:t>([\d.]+%)</a:t>", chart) == ["40.0%", "20.0%"]
-    # an answer table, or a date that is no week, stays bars
+    # faint horizontal lines and a % axis, as on screen (26 Nov 2026)
+    assert "<c:majorGridlines>" in chart and 'formatCode="0&quot;%&quot;"' in chart
+    # an answer table, or a date that is no week, stays bars, its labels in %
     for first in ("Yes", "2026-13-01"):
         bars = zipfile.ZipFile(io.BytesIO(exports.build_pptx(exports.check({"name": "q", "header": ["Answer", "Total %"], "rows": [[first, 47.5]], "notes": []}))))
-        assert b"<c:barChart>" in next(bars.read(n) for n in bars.namelist() if n.startswith("ppt/charts/chart"))
+        xml = next(bars.read(n) for n in bars.namelist() if n.startswith("ppt/charts/chart"))
+        assert b"<c:barChart>" in xml and b'formatCode="0.0&quot;%&quot;"' in xml and b"<c:majorGridlines" not in xml
 
 
 def test_mcp_crosstab_reuses_published_cut_files_without_database(client):

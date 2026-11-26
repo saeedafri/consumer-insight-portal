@@ -203,6 +203,38 @@ def income_mid_k(label: Optional[str]) -> Optional[float]:
     return None
 
 
+def income_range(label: Optional[str]) -> Optional[tuple[int, float]]:
+    """A household income band's dollars, low to high: "$10,000-$24,999", "Between $30,000 and $49,999", "Under $15,000",
+    "Over $150,000", "$200,000+" (no top: infinity); None for one that names no dollar range (a refusal, China's yuan)."""
+    value = " ".join(str(label or "").split()).lower().replace(",", "")
+    dollars = [int(n) for n in re.findall(r"\$(\d+)", value)]
+    if len(dollars) == 2:
+        return dollars[0], dollars[1]
+    if len(dollars) == 1 and re.match(r"(under|less than|below)\b", value):
+        return 0, dollars[0] - 1
+    if len(dollars) == 1 and re.match(r"(over|more than|above)\b", value):
+        return dollars[0] + 1, float("inf")
+    if len(dollars) == 1 and re.search(r"(\+|or (more|greater|above))$", value):
+        return dollars[0], float("inf")
+    return None
+
+
+def group_income(labels: Iterable[str]) -> dict[str, str]:
+    """One wave's income bands -> the Forsta band each lies wholly inside (config income_bands), {old: new} for those
+    named differently; a "Prefer not to …" becomes "prefer not to say". A band that spans two, or names no range, leaves
+    the whole wave as it is ({}): its neighbours would otherwise be groups missing part of their range."""
+    bands, names = load_config().get("income_bands", []), {}
+    for label in labels:
+        if re.match(r"\s*prefer not", label, re.I):
+            names[label] = "prefer not to say"
+            continue
+        span = income_range(label)
+        names[label] = _containing(*span, bands) if span else None
+        if not names[label]:
+            return {}
+    return {old: new for old, new in names.items() if old.lower() != new.lower()}   # MySQL groups by case-blind names
+
+
 def census_region_of_division(division: Optional[str]) -> Optional[str]:
     """SurveyMonkey's panel gives the Census division; the portal cuts by region."""
     divisions = load_config().get("census_divisions") or {}

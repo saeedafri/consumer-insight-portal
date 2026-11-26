@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 
 MAX_ROWS = 2000
-RED, INK, GREY = "D62E2F", "2D2A29", "6B6A68"
+RED, INK, GREY, GRID = "D62E2F", "2D2A29", "6B6A68", "D9D9D9"
 BLUES = ["1F5C99", "4A86C5", "8DB8E2", "C2DAF0"]
 
 
@@ -151,7 +151,13 @@ def add_slide(deck, spec: dict):
         if chart.has_legend:
             chart.legend.position, chart.legend.include_in_layout = XL_LEGEND_POSITION.TOP, False
         chart.category_axis.tick_labels.font.size = Pt(10)
-        chart.value_axis.has_major_gridlines = False
+        # a trend reads against faint horizontal lines and a % axis, as on screen (the research team, 26 Nov 2026)
+        chart.value_axis.has_major_gridlines = weekly
+        if weekly:
+            chart.value_axis.major_gridlines.format.line.color.rgb = RGBColor.from_string(GRID)
+        percent_sign = '"%"' if "%" in spec["header"][shown[0]] else ""
+        if percent_sign:
+            chart.value_axis.tick_labels.number_format, chart.value_axis.tick_labels.number_format_is_linked = f"0{percent_sign}", False
         chart.value_axis.tick_labels.font.size = Pt(9)
         plot = chart.plots[0]
         for k, series in enumerate(plot.series):
@@ -174,7 +180,7 @@ def add_slide(deck, spec: dict):
         else:
             chart.category_axis.reverse_order = True
             plot.has_data_labels = True
-            plot.data_labels.font.size, plot.data_labels.number_format, plot.data_labels.number_format_is_linked = Pt(9), '0.0', False
+            plot.data_labels.font.size, plot.data_labels.number_format, plot.data_labels.number_format_is_linked = Pt(9), f"0.0{percent_sign}", False
     else:   # no numbers to chart: the table itself
         table = slide.shapes.add_table(len(rows) + 1, len(spec["header"]), Inches(0.5), Inches(1.4), Inches(12.3), Inches(0.3) * (len(rows) + 1)).table
         for j, h in enumerate(spec["header"]):

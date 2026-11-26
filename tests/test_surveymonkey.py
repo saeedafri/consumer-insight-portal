@@ -19,6 +19,23 @@ def test_surveymonkey_income_ranges_take_the_workbook_midpoint():
     assert survey_map.income_mid_k("$50,000 - $99,999") == 74.9995          # the Forsta/Qualtrics table still wins
 
 
+def test_older_income_bands_take_the_forsta_band_that_holds_them():
+    """The research team, 26 Nov 2026: one set of income groups across the years, grouped only where it is clear."""
+    panel = ["$0-$9,999", "$10,000-$24,999", "$25,000-$49,999", "$50,000-$74,999", "$75,000-$99,999", "$100,000-$124,999",
+             "$125,000-$149,999", "$150,000-$174,999", "$175,000-$199,999", "$200,000+", "Prefer not to answer"]
+    assert survey_map.group_income(panel) == {
+        "$0-$9,999": "under $25,000", "$10,000-$24,999": "under $25,000", "$25,000-$49,999": "$25,000 - $49,999",
+        "$50,000-$74,999": "$50,000 - $99,999", "$75,000-$99,999": "$50,000 - $99,999",
+        "$100,000-$124,999": "$100,000 - $149,999", "$125,000-$149,999": "$100,000 - $149,999",
+        "$150,000-$174,999": "$150,000 - $199,999", "$175,000-$199,999": "$150,000 - $199,999",
+        "$200,000+": "$200,000 or greater", "Prefer not to answer": "prefer not to say"}
+    assert survey_map.group_income(["Under $15,000", "$200,000 or more"]) == {"Under $15,000": "under $25,000", "$200,000 or more": "$200,000 or greater"}
+    assert survey_map.group_income(["under $25,000", "$200,000 or greater", "prefer not to say"]) == {}   # Forsta's own: as they are
+    # a band across two (25,000 falls inside it) leaves the wave's bands as they are: its neighbours would be part-groups
+    assert survey_map.group_income(["Under $15,000", "Between $15,000 and $29,999", "Between $30,000 and $49,999"]) == {}
+    assert survey_map.group_income(["Over $150,000"]) == {} and survey_map.group_income(["3000-5000元"]) == {}
+
+
 def test_census_divisions_roll_up_to_regions():
     assert survey_map.census_region_of_division("South Atlantic") == "South"
     assert survey_map.census_region_of_division("Pacific") == "West"

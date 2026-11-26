@@ -257,6 +257,20 @@ def rebuild_profiles(survey_id: int, questions: Optional[list] = None,
     log.info("Rebuilt %d profiles for survey_id=%s", len(payload), survey_id)
 
 
+def group_income_bands(survey_id: int) -> int:
+    """Name a wave's older household income bands as Forsta's (survey_map.group_income), so one band is one group across
+    the years; the midpoints stay the finer bands' own. Run only by python -m etl.legacy_dwh --group-income, once the data
+    team has checked the mapping (26 Nov 2026). Returns how many bands were renamed."""
+    with get_engine("etl").begin() as conn:
+        labels = [r[0] for r in conn.execute(text(
+            "SELECT DISTINCT income_band FROM cip_profile WHERE survey_id = :sid AND income_band IS NOT NULL"), {"sid": survey_id})]
+        names = survey_map.group_income(labels)
+        for old, new in names.items():
+            conn.execute(text("UPDATE cip_profile SET income_band = :new WHERE survey_id = :sid AND income_band = :old"),
+                         {"sid": survey_id, "old": old, "new": new})
+    return len(names)
+
+
 def rebuild_question_bases(survey_id: int, drop_labels: bool = True) -> None:
     """Set cip_question.base_n to the number of qualified respondents who
     actually reached each question.
