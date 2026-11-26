@@ -103,14 +103,16 @@ profile:
 # Wording used to auto-detect a demographic when no explicit mapping exists.
 # First matching question code wins.
 profile_detect:
-  gender:          "what is your gender"
-  age:             "what is your age"
+  # "…best describes your gender", "…includes your age", "…the area of your primary residence": Metaverse users
+  # (24 Nov 2022); no other loaded survey resolves differently with them (26 Nov 2026)
+  gender:          "what is your gender|describes your gender"
+  age:             "what is your age|includes your age"
   relationship:    "relationship status|marital status"
   ethnicity:       "ethnicity|racial|race do you"
   # the demographic phrasing only: "…to your monthly household income" (a
   # debt-ratio question in Dec 2022) must not win over the real question
   income_band:     "your total (annual )?household income|total income"
-  urbanicity:      "area where your primary residence|area where you live"
+  urbanicity:      "area where your primary residence|area where you live|area of your primary residence"
   political:       "political philosophy|political party"
   # not "which state" alone: "Which statement…", "Which state did you move from?"
   state_name:      "which state (is your primary residence|do you (currently )?(live|reside))|state is your primary residence"
@@ -226,7 +228,8 @@ income_midpoints_k:
 # Qualtrics spellings) takes the name of the one band holding its whole range ($0-$9,999 and $10,000-$24,999 are both
 # "under $25,000"), so a trend reads one set of groups across the years. A wave with a band that spans two
 # ("Between $15,000 and $29,999") keeps all its own names (etl/survey_map.group_income; the research team, 26 Nov 2026).
-# Applied by python -m etl.legacy_dwh --group-income only, once the data team has checked this mapping.
+# Applied on every profile build (etl/wave_loader.group_income_bands), and once to the waves loaded before
+# (python -m etl.legacy_dwh --group-income, 26 Nov 2026).
 income_bands:
   - {label: "under $25,000",       min: 0,      max: 24999}
   - {label: "$25,000 - $49,999",   min: 25000,  max: 49999}

@@ -166,7 +166,7 @@ def classify_age(label: Optional[str]) -> dict:
     one — '26-41' spans GenZ and Millennials, so it gets neither (China's '26-41 years old' is a band of
     its own, named in age_band_labels). Midpoints of
     the standard bands are the analysts' (age_band_labels)."""
-    value = " ".join(str(label or "").split()).lower()
+    value = " ".join(str(label or "").split()).lower().replace("\u2013", "-")   # "18 – 20" (Metaverse users) is a range too
     for pattern, bounds in _RANGE:
         m = pattern.match(value)
         if not m:

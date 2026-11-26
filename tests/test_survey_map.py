@@ -54,6 +54,17 @@ def test_profile_map_auto_detects_for_an_unknown_family():
     assert resolved == {"gender": "GEN", "income_band": "INC", "age": "AGE"}
 
 
+def test_profile_map_reads_the_metaverse_wording():
+    """Metaverse users (24 Nov 2022) asked "Which of the following …" (26 Nov 2026)."""
+    questions = [Q("Q17", "Which of the following includes your age?"),
+                 Q("Q18", "Which of the following best describes the area of your primary residence?"),
+                 Q("Q22", "Which of the following best describes your gender?")]
+    assert sm.resolve_profile_map(questions, family="METAVERSE_USERS") == {"age": "Q17", "urbanicity": "Q18", "gender": "Q22"}
+    # its ranges use an en dash: a range, not the single age 60 (60-64 spans two bands, so it has none)
+    assert sm.classify_age("60 \u2013 64") == {"age": None, "band": None, "gen": None, "mid": 62.0}
+    assert sm.classify_age("18 \u2013 20")["band"] == "18-29"
+
+
 def test_profile_map_omits_what_it_cannot_find():
     resolved = sm.resolve_profile_map([Q("Z1", "Do you like cheese?")], family="NEW")
     assert resolved == {}

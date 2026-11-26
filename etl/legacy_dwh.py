@@ -14,7 +14,7 @@ imported) are skipped and counted.
 
     python -m etl.legacy_dwh --all            # every Qualtrics-era wave, oldest first
     python -m etl.legacy_dwh --id SV_0IHGTy1GPAlUsGa
-    python -m etl.legacy_dwh --group-income   # once: older waves' income bands named as Forsta's (26 Nov 2026)
+    python -m etl.legacy_dwh --group-income   # once: older waves' income bands named as Forsta's (a load does it itself)
 """
 from __future__ import annotations
 
@@ -262,6 +262,7 @@ def _panel_profiles(survey_id: int, legacy_id: str) -> int:
     where no question did — a respondent's own answer is never overwritten.
     About 2,000 responses have the row twice; one per response is used."""
     from etl import survey_map
+    from etl.wave_loader import group_income_bands
 
     eng = get_engine("etl")
     with eng.connect() as conn:
@@ -306,6 +307,8 @@ def _panel_profiles(survey_id: int, legacy_id: str) -> int:
                     gender = VALUES(gender), age_years = VALUES(age_years), age_band = VALUES(age_band),
                     generation = VALUES(generation), age_mid = VALUES(age_mid), income_band = VALUES(income_band),
                     income_mid_k = VALUES(income_mid_k), census_region = VALUES(census_region)"""), rows)
+        # after the commit above, not inside it: its UPDATE runs on another connection and would wait on these rows
+        group_income_bands(survey_id)
     return len(rows)
 
 

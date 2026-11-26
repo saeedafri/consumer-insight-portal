@@ -198,7 +198,7 @@ function TrendView({ t, column, waveId, from }: { t: Trend; column: Column; wave
       legend: { show: false },
       grid: { left: 8, right: 44, top: 16, bottom: 8, containLabel: true },
       xAxis: { type: "time", axisLabel: { ...valueText(), hideOverlap: true }, axisLine: { lineStyle: { color: C.lineStrong } }, axisTick: { show: true } },
-      yAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.line, type: [2, 3] } },
+      yAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" }, splitLine: { lineStyle: { color: C.line } },
                min: (v: { min: number }) => Math.max(0, Math.floor((v.min - 5) / 10) * 10) },
       series,
     };

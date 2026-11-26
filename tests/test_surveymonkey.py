@@ -126,9 +126,10 @@ def profiles(engine, sid):
 def test_panel_demographics_fill_the_profile_and_a_question_answer_wins(monkey):
     sid = legacy_dwh.load_legacy("900")
     got = profiles(monkey, sid)
-    # 1001 told the survey "Male"; the panel says Female — the respondent's own answer stands
-    assert got["1001"] == ("Male", "30-44", 37.0, "$25,000-$49,999", 37.4995, "West")
-    assert got["1002"] == ("Male", "Over 60", 67.0, "Prefer not to answer", None, "Northeast")
+    # 1001 told the survey "Male"; the panel says Female — the respondent's own answer stands. The panel's income bands
+    # come named as Forsta's (config income_bands), the finer band's midpoint kept
+    assert got["1001"] == ("Male", "30-44", 37.0, "$25,000 - $49,999", 37.4995, "West")
+    assert got["1002"] == ("Male", "Over 60", 67.0, "prefer not to say", None, "Northeast")
     assert got["1003"][0] == "Male" and got["1003"][1:] == (None, None, None, None, None)
 
 

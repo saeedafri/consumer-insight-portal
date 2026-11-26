@@ -199,6 +199,21 @@ def test_banded_ages_reach_the_profile(legacy):
     assert rows[:2] == [("R_1", "18-29", 23.5, None), ("R_2", "Over 60", 67.0, "Boomer")]
 
 
+def test_a_question_income_band_loads_named_as_forsta(legacy):
+    """Every load names income bands as Forsta's (rebuild_profiles), not only the one-off --group-income (26 Nov 2026)."""
+    with legacy.begin() as conn:
+        conn.execute(sa.text("INSERT INTO dwh_smquestion VALUES "
+                             "('QINC', 'multiple_choice', 'What was your total household income last year?', 4, 0, 'SV_T')"))
+        conn.execute(sa.text("INSERT INTO dwh_smanswer VALUES ('A_low', 0, '$10,000 - $24,999', 'QINC', 'SV_T')"))
+        conn.execute(sa.text("INSERT INTO dwh_smresponseqa (answer_text, question_text, answer_othertext, question_id,"
+                             " response_id, answer_id, survey_id) VALUES ('$10,000 - $24,999','',NULL,'QINC','R_1','A_low','SV_T')"))
+    sid = legacy_dwh.load_legacy("SV_T")
+    with legacy.connect() as conn:
+        assert conn.execute(sa.text(
+            "SELECT p.income_band, p.income_mid_k FROM cip_profile p JOIN cip_respondent r ON r.respondent_id = p.respondent_id"
+            " WHERE p.survey_id = :s AND r.forsta_uuid = 'R_1'"), {"s": sid}).one() == ("under $25,000", 17.4995)
+
+
 def test_reloading_a_legacy_wave_replaces_not_duplicates(legacy):
     sid = legacy_dwh.load_legacy("SV_T")
     before = count(legacy, f"SELECT COUNT(*) FROM cip_answer WHERE survey_id = {sid}")

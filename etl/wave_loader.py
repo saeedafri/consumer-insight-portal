@@ -143,7 +143,7 @@ def replace_respondents(survey_id: int, records: list[dict[str, Any]], var_map: 
 
 def rebuild_profiles(survey_id: int, questions: Optional[list] = None,
                       family: Optional[str] = None) -> None:
-    """Flatten the demographic questions into cip_profile.
+    """Flatten the demographic questions into cip_profile, income bands named as Forsta's (group_income_bands).
 
     Which question supplies which cut is resolved per survey — from
     config/survey_map.yml when the family is known, otherwise auto-detected
@@ -254,13 +254,15 @@ def rebuild_profiles(survey_id: int, questions: Optional[list] = None,
             """,
             payload,
         )
+    group_income_bands(survey_id)
     log.info("Rebuilt %d profiles for survey_id=%s", len(payload), survey_id)
 
 
 def group_income_bands(survey_id: int) -> int:
     """Name a wave's older household income bands as Forsta's (survey_map.group_income), so one band is one group across
-    the years; the midpoints stay the finer bands' own. Run only by python -m etl.legacy_dwh --group-income, once the data
-    team has checked the mapping (26 Nov 2026). Returns how many bands were renamed."""
+    the years; the midpoints stay the finer bands' own. Run after every profile build (rebuild_profiles, the SurveyMonkey
+    panel's etl/legacy_dwh._panel_profiles), so a reload keeps the groups; the waves loaded before, once by python -m
+    etl.legacy_dwh --group-income (the research team, 26 Nov 2026). Returns how many bands were renamed."""
     with get_engine("etl").begin() as conn:
         labels = [r[0] for r in conn.execute(text(
             "SELECT DISTINCT income_band FROM cip_profile WHERE survey_id = :sid AND income_band IS NOT NULL"), {"sid": survey_id})]

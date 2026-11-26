@@ -27,7 +27,9 @@ const look = (t: typeof LIGHT) => ({
   bar: { label: { color: t.ink2, textBorderWidth: 0, textShadowBlur: 0 } },
   pie: { label: { color: t.ink2, textBorderWidth: 0, textShadowBlur: 0 } },
   legend: { textStyle: { color: t.ink2, fontSize: 12 }, icon: "roundRect", itemWidth: 10, itemHeight: 10 },
-  tooltip: { backgroundColor: t.raised, borderColor: t.line, borderWidth: 1, textStyle: { color: t.ink, fontSize: 12 } },
+  // the hover guide solid too, ECharts draws it dashed (no dashed lines on any chart: the research team, 26 Nov 2026)
+  tooltip: { backgroundColor: t.raised, borderColor: t.line, borderWidth: 1, textStyle: { color: t.ink, fontSize: 12 },
+             axisPointer: { lineStyle: { type: "solid" } } },
 });
 echarts.registerTheme("cip-light", look(LIGHT));
 echarts.registerTheme("cip-dark", look(DARK));

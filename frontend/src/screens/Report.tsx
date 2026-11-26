@@ -89,8 +89,8 @@ function Sentiment({ report }: { report: WeeklyReport }) {
   const option = useMemo(() => lineChart(names.map((name, i) => ({
     name: `${report.net_name}: ${name.toLowerCase()}`, type: "line", showSymbol: false, color: i === 0 ? "#A3C0CE" : C.red, lineStyle: { width: 2 },
     data: report.sentiment[name].dates.map((d, k) => [time(d), report.sentiment[name].lines.Total[weekly ? "weekly" : "four_week"][k]]),
-    // news events: a thin dashed line each, labelled when hovered; all are listed under the chart too
-    markLine: i ? undefined : { symbol: "none", lineStyle: { color: C.lineStrong, type: [3, 3], width: 1 }, label: { show: false },
+    // news events: a thin solid line each (no dashed lines on any chart: the research team, 26 Nov 2026), labelled when hovered; all are listed under the chart too
+    markLine: i ? undefined : { symbol: "none", lineStyle: { color: C.lineStrong, type: "solid", width: 1 }, label: { show: false },
       emphasis: { label: { show: true, formatter: "{b}", color: C.ink, fontSize: 11 } },
       data: events.map(e => ({ xAxis: time(e.date), name: `${shortDate(e.date)}: ${e.label}` })) },
   }))), [report, weekly, theme]);
@@ -98,7 +98,7 @@ function Sentiment({ report }: { report: WeeklyReport }) {
   return <>
     <h2 className="report-section">Consumer sentiment</h2>
     <Card title={`${names.join(", ")}: ${report.net_name.toLowerCase()}`}
-          sub={`% positive (better) minus % negative (worse), ${weekly ? "single weeks" : "four-week rolling average"}.${events.length ? " Dashed lines mark news events (hover for the event)." : ""}`}
+          sub={`% positive (better) minus % negative (worse), ${weekly ? "single weeks" : "four-week rolling average"}.${events.length ? " Thin grey lines mark news events (hover for the event)." : ""}`}
           aside={<div className="seg" role="group" aria-label="Averaging">
             <button aria-pressed={!weekly} onClick={() => setWeekly(false)}>Four-week average</button>
             <button aria-pressed={weekly} onClick={() => setWeekly(true)}>Weekly</button></div>}>
@@ -135,7 +135,7 @@ function TrendChart({ title, table, events }: { title: string; table: ReportTabl
     const base = lineChart(labels.map((label, i) => ({
       name: label, type: "line", showSymbol: false, lineStyle: { width: 2 },
       data: table.trend.dates.map((d, k) => [time(d), table.trend.lines[label]?.[k] ?? null]),
-      markLine: i ? undefined : { symbol: "none", lineStyle: { color: C.lineStrong, type: [3, 3], width: 1 }, label: { show: false },
+      markLine: i ? undefined : { symbol: "none", lineStyle: { color: C.lineStrong, type: "solid", width: 1 }, label: { show: false },
         emphasis: { label: { show: true, formatter: "{b}", color: C.ink, fontSize: 11 } },
         data: marks.map(e => ({ xAxis: time(e.date), name: `${shortDate(e.date)}: ${e.label}` })) },
     })));
