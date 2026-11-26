@@ -39,7 +39,7 @@ const ROUTES: [string, string, string][] = [
   ["GET /api/v1/ask/suggest", "What the Ask box offers while someone types, ?q=ama prim: corrected (the words put right, or null) and suggestions (up to six survey questions whose analyst name holds the words typed, each with its key: send it with POST /api/v1/ask to answer from that question). From the index in memory, no AI, no cost", "Ask CIP"],
   ["GET /api/v1/ask/history", "This person's own recent Ask CIP questions, newest first, each once and as read (a follow-up as its full question): {\"questions\": [{\"question\", \"asked_at\"}]}, up to 30, from the access log every ask writes. Never anyone else's. The Ask page lists them under \"Your recent questions\" to ask again", "Ask CIP"],
   ["GET /api/v1/datasets/consumer-health", "The Consumer Health workbook (etl/consumer_health.py): the data science team's 73 columns, one row per US weekly respondent, their workbook to 10 Aug 2026 plus every newer US weekly survey, rebuilt by each publish; an .xlsx file", "Consumer Health dataset"],
-  ["POST /api/v1/export/{kind}", "A screen's table as CSV, Excel or PowerPoint; one is built at a time, so a second may get 503 busy (retry after 5 s)", "Export"],
+  ["POST /api/v1/export/{kind}", "A screen's table as CSV, Excel or PowerPoint (a table of weeks is drawn as a line chart of every week); one is built at a time, so a second may get 503 busy (retry after 5 s)", "Export"],
   ["GET /api/v1/keys", "Your keys (name, first characters, date)", "— (portal sign-in)"],
   ["POST /api/v1/keys", "Make a key, {\"name\": \"…\"}", "— (portal sign-in)"],
   ["DELETE /api/v1/keys/{shown}", "Revoke one of your keys", "— (portal sign-in)"],

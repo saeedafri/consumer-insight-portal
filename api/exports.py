@@ -7,6 +7,7 @@ from __future__ import annotations
 import io
 import os
 import re
+from datetime import date
 from pathlib import Path
 
 MAX_ROWS = 2000
@@ -111,12 +112,21 @@ def save(deck) -> bytes:
     return out.getvalue()
 
 
+def read_week(cell) -> date | None:
+    """The date a row's first cell names (2026-11-23), or None: rows that are all dates are a trend's weeks."""
+    try:
+        return date.fromisoformat(cell) if isinstance(cell, str) and len(cell) == 10 else None
+    except ValueError:   # 2026-13-01 is no week: the table is drawn as bars
+        return None
+
+
 def add_slide(deck, spec: dict):
     """The question as title, a bar chart of the % columns (Total in red, the rest in blues), the first rows as a table
-    when there is nothing to chart, and the notes (wave, bases, source) as the footer."""
+    when there is nothing to chart, and the notes (wave, bases, source) as the footer. A trend (rows that are weeks) is a
+    line of every week, labelled once at its end: as bars it showed its first 16 weeks (the research team, 25 Nov 2026)."""
     from pptx.chart.data import CategoryChartData
     from pptx.dml.color import RGBColor
-    from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+    from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION, XL_LEGEND_POSITION, XL_MARKER_STYLE
     from pptx.util import Inches, Pt
     slide = deck.slides.add_slide(deck.slide_layouts[6])
     title = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(12.3), Inches(1.0)).text_frame
@@ -127,27 +137,44 @@ def add_slide(deck, spec: dict):
     numeric = [i for i, h in enumerate(spec["header"]) if i and all(isinstance(r[i], (int, float)) or r[i] in (None, "") for r in spec["rows"])
                and any(isinstance(r[i], (int, float)) for r in spec["rows"])]
     shown = [i for i in numeric if "%" in spec["header"][i]] or numeric
-    rows = spec["rows"][:16]
+    weekly = bool(shown) and all(read_week(r[0]) for r in spec["rows"])
+    rows = sorted(spec["rows"], key=lambda r: r[0]) if weekly else spec["rows"][:16]
     if shown:
         data = CategoryChartData()
-        data.categories = [str(r[0])[:60] for r in rows]
+        data.categories = [read_week(r[0]) for r in rows] if weekly else [str(r[0])[:60] for r in rows]
         for i in shown[:6]:
             data.add_series(spec["header"][i], [r[i] if isinstance(r[i], (int, float)) else None for r in rows])
-        frame = slide.shapes.add_chart(XL_CHART_TYPE.BAR_CLUSTERED, Inches(0.5), Inches(1.4), Inches(12.3), Inches(5.0), data)
+        kind = XL_CHART_TYPE.LINE if weekly else XL_CHART_TYPE.BAR_CLUSTERED
+        frame = slide.shapes.add_chart(kind, Inches(0.5), Inches(1.4), Inches(12.3), Inches(5.0), data)
         chart = frame.chart
         chart.has_legend = len(shown) > 1
         if chart.has_legend:
             chart.legend.position, chart.legend.include_in_layout = XL_LEGEND_POSITION.TOP, False
-        chart.category_axis.reverse_order = True
         chart.category_axis.tick_labels.font.size = Pt(10)
         chart.value_axis.has_major_gridlines = False
         chart.value_axis.tick_labels.font.size = Pt(9)
         plot = chart.plots[0]
-        plot.has_data_labels = True
-        plot.data_labels.font.size, plot.data_labels.number_format, plot.data_labels.number_format_is_linked = Pt(9), '0.0', False
         for k, series in enumerate(plot.series):
-            series.format.fill.solid()
-            series.format.fill.fore_color.rgb = RGBColor.from_string(RED if k == 0 else BLUES[(k - 1) % len(BLUES)])
+            colour = RGBColor.from_string(RED if k == 0 else BLUES[(k - 1) % len(BLUES)])
+            if not weekly:
+                series.format.fill.solid()
+                series.format.fill.fore_color.rgb = colour
+                continue
+            series.smooth, series.marker.style = False, XL_MARKER_STYLE.NONE
+            series.format.line.color.rgb, series.format.line.width = colour, Pt(2)
+            # the latest figure once, at the line's end, not on every week
+            values = [r[shown[k]] for r in rows]
+            end = max((j for j, v in enumerate(values) if isinstance(v, (int, float))), default=None)
+            if end is not None:
+                label = series.points[end].data_label
+                label.position, label.text_frame.text = XL_LABEL_POSITION.RIGHT, f"{values[end]:.1f}%"
+                label.font.size, label.font.bold, label.font.color.rgb = Pt(10), True, colour
+        if weekly:
+            chart.category_axis.tick_labels.number_format, chart.category_axis.tick_labels.number_format_is_linked = "mmm yyyy", False
+        else:
+            chart.category_axis.reverse_order = True
+            plot.has_data_labels = True
+            plot.data_labels.font.size, plot.data_labels.number_format, plot.data_labels.number_format_is_linked = Pt(9), '0.0', False
     else:   # no numbers to chart: the table itself
         table = slide.shapes.add_table(len(rows) + 1, len(spec["header"]), Inches(0.5), Inches(1.4), Inches(12.3), Inches(0.3) * (len(rows) + 1)).table
         for j, h in enumerate(spec["header"]):

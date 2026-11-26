@@ -96,6 +96,30 @@ def test_any_table_exports_as_excel_and_powerpoint(client):
         assert response.status_code == 200 and part in zipfile.ZipFile(io.BytesIO(response.body)).namelist()
 
 
+def test_a_weekly_trend_exports_as_a_line_chart_of_every_week():
+    """In store vs online's trend went to PowerPoint as bars of its first 16 weeks (25 Nov 2026): weeks draw a line,
+    oldest first, every week, the latest figure labelled once at each line's end, a missing week left blank."""
+    import io
+    import re
+    import zipfile
+    from api import exports
+    weeks = [f"2026-{m:02d}-{d:02d}" for m in range(1, 11) for d in (5, 19)]   # 20 weeks, more than a bar slide's 16
+    rows = [[w, 40.0 + k, None if k == 7 else 20.0 + k, 400, 400] for k, w in enumerate(reversed(weeks))]   # newest first
+    spec = exports.check({"name": "trend", "header": ["Week", "In a store %", "Online %", "In a store base", "Online base"],
+                          "rows": rows, "notes": ["Groceries: in a store vs online, Everyone", "Source: test"]})
+    slide = zipfile.ZipFile(io.BytesIO(exports.build_pptx(spec)))
+    chart = next(slide.read(n).decode() for n in slide.namelist() if n.startswith("ppt/charts/chart"))
+    assert "<c:lineChart>" in chart and "<c:barChart>" not in chart
+    assert '<c:dispBlanksAs val="gap"/>' in chart and chart.count('<c:symbol val="none"/>') == 2
+    assert chart.count('<c:ptCount val="20"/>') == 4   # two lines, each its 20 weeks and 20 figures
+    # the end labels: the oldest week first, so the last point is the newest week (in a store 40.0, online 20.0)
+    assert re.findall(r"<a:t>([\d.]+%)</a:t>", chart) == ["40.0%", "20.0%"]
+    # an answer table, or a date that is no week, stays bars
+    for first in ("Yes", "2026-13-01"):
+        bars = zipfile.ZipFile(io.BytesIO(exports.build_pptx(exports.check({"name": "q", "header": ["Answer", "Total %"], "rows": [[first, 47.5]], "notes": []}))))
+        assert b"<c:barChart>" in next(bars.read(n) for n in bars.namelist() if n.startswith("ppt/charts/chart"))
+
+
 def test_mcp_crosstab_reuses_published_cut_files_without_database(client):
     response = client.post("/mcp", {
         "jsonrpc": "2.0",

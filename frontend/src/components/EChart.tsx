@@ -3,13 +3,15 @@ import { useEffect, useRef } from "react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart } from "echarts/charts";
 import { AriaComponent, GridComponent, LegendPlainComponent, LegendScrollComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
+import { LabelLayout } from "echarts/features";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsCoreOption } from "echarts/core";
 import { DARK, FONT, inLight, LIGHT, REDUCED_MOTION, savedTheme, useTheme } from "../theme";
 
-// MarkLine: the news and retail events on the weekly report's charts; LegendScroll: a report table's many answers
+// MarkLine: the news and retail events on the weekly report's charts; LegendScroll: a report table's many answers;
+// LabelLayout: end labels of lines that end close together move apart (In store vs online's trend)
 echarts.use([AriaComponent, BarChart, LineChart, PieChart, GridComponent, LegendPlainComponent, LegendScrollComponent, MarkLineComponent,
-  TooltipComponent, CanvasRenderer]);
+  TooltipComponent, LabelLayout, CanvasRenderer]);
 
 // The house chart look, registered once per theme: 12 px axes (category in ink-2, values in ink-3), no category
 // axis line, a faint solid value grid (the 8 Nov 2026 mockups), the solid series ramp. Screens set only what is particular to their chart.
@@ -84,7 +86,9 @@ const common = (label: string) => ({
 });
 
 export default function EChart({ option, build, height, onClick, label, onReady }:
-  { option: EChartsCoreOption; build?: () => EChartsCoreOption; height: number; onClick?: (p: { name: string; seriesName: string; dataIndex: number }) => void;
+  { option: EChartsCoreOption; build?: () => EChartsCoreOption; height: number;
+    // componentType "yAxis" with value: a category label clicked (the axis's triggerEvent), not a bar
+    onClick?: (p: { name: string; seriesName: string; dataIndex: number; componentType?: string; value?: unknown }) => void;
     label: string; onReady?: (chart: Chart) => void }) {
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts | null>(null);

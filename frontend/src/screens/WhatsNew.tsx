@@ -4,6 +4,13 @@ import { Link } from "react-router";
 
 type Entry = { title: string; body: string; shot?: string; alt?: string; link?: [string, string] };
 const RELEASES: { date: string; entries: Entry[] }[] = [{
+  date: "26 November 2026",
+  entries: [
+    { title: "In store vs online: the chosen category on top, a trend for one group at a time, PNG images and a PowerPoint line chart",
+      body: "The bar chart now puts the chosen category at the top in full colour and the other categories in lighter shades; clicking a category, or its name, opens it in the line chart. When the bars compare a kind's groups side by side (gender, age, income…), clicking a group opens its trend in the line chart instead of changing the whole page. The line chart has its own buttons above it: a kind of group, then Everyone or one group at a time. It shows the in-store (red) and online (blue, dashed) totals by default, week by week over the last year, starts where the group's answers start, and labels each line's latest figure at its end with the gap between the two once (groceries, everyone, 23 Nov 2026: in a store 69.1%, online 28.5%, a 40.6-point gap). Its tooltip gives each week's base (n), as small groups such as Non-binary swing widely. Household income leaves out Prefer not to say, the fourth card is renamed Online share of the category, both charts download as a PNG image, and a trend downloaded as PowerPoint (here and on Trends) is now a line chart of every week instead of bars of the first 16 weeks. The breaks in the gender lines were the data, not the export: 15 US weekly surveys between 8 Jun 2021 and 29 Aug 2022 asked no gender, age or income question and have no panel demographics, so they have totals only; the chart now says how many of its weeks have no answers from the group, where its lines break. The trend's groups come from its own weeks, not the week chosen above.",
+      link: ["/channels", "Open In store vs online"] },
+  ],
+}, {
   date: "25 November 2026",
   entries: [
     { title: "Consumer Health dataset: the data science team's workbook, kept up to date every week",
