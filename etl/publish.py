@@ -358,7 +358,8 @@ def site_facts(out: Path) -> dict:
 
 
 def restore_views(version: Path) -> None:
-    """After a restore: the views rebuilt by this image's code (seconds). A failure (the database out of reach) keeps the
+    """After a restore: the views rebuilt by this image's code while the restored ones serve (186 s in a local test on
+    26 Nov 2026, 146 s of it the Fieldwork record). A failure (the database out of reach) keeps the
     restored version's own views; the next publish writes them anyway."""
     try:
         write_views(version)
@@ -367,26 +368,35 @@ def restore_views(version: Path) -> None:
 
 
 def restore(root: Path = ROOT) -> Path:
+    """The last backup made live as it is, in seconds (6 s locally); main() then rebuilds its views in place. Never over
+    a live version: what is live already (another restore's, a publish's) is returned as it is."""
+    import fcntl
     import requests   # only backups use it; the API imports this module and its image has no requests
     if not BACKUP:
         raise RuntimeError("CIP_PUBLISH_BACKUP_URL is not set: rebuild with `python -m etl.publish` instead")
     root.mkdir(parents=True, exist_ok=True)
-    if BACKUP.startswith("/"):
-        name = (Path(BACKUP) / "latest").read_text().strip()
-        with tarfile.open(Path(BACKUP) / f"{name}.tar") as tar:
-            tar.extractall(root, filter="data")
-        restore_views(root / name)
+    live = root / "current"
+    # one restore at a time on this disk (deploy/start.sh's, etl-loop.sh's hourly one): a second extracting the same tar
+    # would rewrite files the first already serves. No ETL lock: that one is shared with every load and held for hours
+    with open(root / ".restore-lock", "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)   # freed when the file closes or the process dies
+        if live.exists():
+            return live.resolve()
+        if BACKUP.startswith("/"):
+            name = (Path(BACKUP) / "latest").read_text().strip()
+            with tarfile.open(Path(BACKUP) / f"{name}.tar") as tar:
+                tar.extractall(root, filter="data")
+        else:
+            name = requests.get(blob("latest"), timeout=60).text.strip()
+            with requests.get(blob(f"{name}.tar"), stream=True, timeout=600) as r, tempfile.TemporaryFile() as tar_file:
+                r.raise_for_status()
+                shutil.copyfileobj(r.raw, tar_file)
+                tar_file.seek(0)
+                with tarfile.open(fileobj=tar_file) as tar:
+                    tar.extractall(root, filter="data")
+        if live.exists():   # a publish swapped in while this extracted: its version is newer than the backup
+            return live.resolve()
         swap(root, root / name)
-        return root / name
-    name = requests.get(blob("latest"), timeout=60).text.strip()
-    with requests.get(blob(f"{name}.tar"), stream=True, timeout=600) as r, tempfile.TemporaryFile() as tar_file:
-        r.raise_for_status()
-        shutil.copyfileobj(r.raw, tar_file)
-        tar_file.seek(0)
-        with tarfile.open(fileobj=tar_file) as tar:
-            tar.extractall(root, filter="data")
-    restore_views(root / name)
-    swap(root, root / name)
     return root / name
 
 
@@ -540,17 +550,24 @@ def main() -> int:
     p.add_argument("--wait", type=int, default=0, help="seconds to queue for the ETL lock (deploy/start.sh: 6 h)")
     a = p.parse_args()
     from etl.loaders import etl_lock   # one writer of the published files at a time (the scheduled run publishes too)
-    # --wait: the restore at a container's start queues for the lock (a load between waves frees it for a moment): at a
-    # deploy the old container's run, or a load from elsewhere, holds it, and giving up at once left the new container
-    # with no published files (11 Nov 2026: Retailers, Sectors and every prebuilt view 404 on staging for hours)
+    if not a.restore:
+        with etl_lock(wait=a.wait):
+            out = rollback(a.root) if a.rollback else publish(a.root, a.jobs)
+        print(out)
+        return 0
+    # a new container: the backup live, then this image's views over it, before the lock. Both only read the database
+    # and write this container's own disk, each file in one rename (write()); the lock is shared with every load (a
+    # 45-minute income regrouping on 26 Nov 2026 held it), and queuing first kept the deploy's screens blank throughout
+    out = restore(a.root)
+    restore_views(out)
+    # --wait: newer waves queue for the lock (a load between waves frees it for a moment): at a deploy the old
+    # container's run, or a load from elsewhere, holds it (deploy/start.sh waits up to 6 h)
     with etl_lock(wait=a.wait):
-        out = rollback(a.root) if a.rollback else restore(a.root) if a.restore else publish(a.root, a.jobs)
-        if a.restore and behind(out):   # newer waves in the database: build only those, link the rest
+        if behind(out):   # newer waves in the database: build only those, link the rest
             log.info("The restored version is behind the database: publishing the new waves")
             out = publish(a.root, a.jobs)
     print(out)
-    if a.restore:   # outside the lock: refilling the cache must not hold up a scheduled ETL run
-        warm_after_restore(out)
+    warm_after_restore(out)   # outside the lock: refilling the cache must not hold up a scheduled ETL run
     return 0
 
 

@@ -1,7 +1,9 @@
 """Static publishing (etl/publish.py): standard screens become files nginx serves, swapped in atomically."""
 import gzip
 import json
+import sys
 import time
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 
@@ -198,12 +200,43 @@ def test_a_new_container_restores_from_a_folder_backup_instead_of_rebuilding(tmp
         (version / "api" / "v1" / "waves.json.gz").write_bytes(body)
         publish.backup(version)
     assert sorted(p.name for p in keep.iterdir()) == [".build-20261022T000000Z.tar", "latest"]   # only the newest kept
-    rebuilt = []
-    monkeypatch.setattr(publish, "write_views", lambda out: rebuilt.append(out.name) or 0)
     restored = publish.restore(tmp_path / "new-container")
     assert (tmp_path / "new-container" / "current" / "api" / "v1" / "waves.json.gz").read_bytes() == b"new"
     assert restored.name == ".build-20261022T000000Z"
-    assert rebuilt == [restored.name]   # this image's reports, sector tables and expected vs actual: at deploy, not next week
+
+
+def test_a_new_container_serves_the_backup_before_the_lock_and_the_views(tmp_path, monkeypatch):
+    """26 Nov 2026: the restore queued for the shared ETL lock (held 45 minutes by an income regrouping), then rebuilt
+    the views (186 s), before current pointed at the backup: every screen blank after the deploy, which failed its
+    10-minute /readyz wait, although the previous data was on disk in 6 s."""
+    from etl import loaders
+
+    monkeypatch.setattr(publish, "BACKUP", str(tmp_path / "home"))
+    version = tmp_path / "disk" / ".build-20261022T000000Z"
+    (version / "api" / "v1").mkdir(parents=True)
+    (version / "api" / "v1" / "waves.json.gz").write_bytes(b"previous")
+    publish.backup(version)
+    live = tmp_path / "new-container" / "current" / "api" / "v1" / "waves.json.gz"
+    seen = []
+
+    @contextmanager
+    def lock(wait):
+        seen.append(("lock", live.read_bytes()))   # FileNotFoundError here: the screens wait on the lock
+        yield None
+
+    monkeypatch.setattr(loaders, "etl_lock", lock)
+    monkeypatch.setattr(publish, "write_views", lambda out: seen.append(("views", live.read_bytes())) or 0)
+    monkeypatch.setattr(publish, "behind", lambda out: False)
+    monkeypatch.delenv("CIP_NGINX_URL", raising=False)
+    monkeypatch.setattr(sys, "argv", ["publish", "--restore", "--root", str(tmp_path / "new-container")])
+    assert publish.main() == 0
+    assert seen == [("views", b"previous"), ("lock", b"previous")]   # this image's views rebuilt, and before the lock too
+
+    newer = tmp_path / "new-container" / ".build-20261023T000000Z"   # a publish that went live since (or another restore)
+    (newer / "api" / "v1").mkdir(parents=True)
+    (newer / "api" / "v1" / "waves.json.gz").write_bytes(b"newer")
+    publish.swap(tmp_path / "new-container", newer)
+    assert publish.restore(tmp_path / "new-container") == newer and live.read_bytes() == b"newer"   # never the older backup over it
 
 
 def test_a_restored_version_older_than_the_database_is_known_to_be_behind(csi_db, tmp_path):

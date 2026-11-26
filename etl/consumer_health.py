@@ -271,7 +271,15 @@ def save(folder: Path, history: dict, rows: list[dict], qa: list[dict]) -> Path:
     write_sheet(dictionary, history["dictionary"][0], history["dictionary"][1:], DICTIONARY_WIDTHS, 15.95, None, {})
     book.active = 1   # opens on the first year, as theirs does
     path = folder / NAME.format(first=min(years), last=max(years))
-    book.save(path)
+    # saved aside, then renamed: after a restore this is the live folder (etl/publish.py main), so a download never gets
+    # half a file, and a hard link to the version before is replaced, never written through
+    part = path.with_name(path.name + ".part")
+    try:
+        book.save(part)
+        part.replace(path)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -343,9 +351,10 @@ def publish(out: Path) -> int:
     rows, qa = new_weeks(out, history)
     folder = out / FOLDER
     folder.mkdir(parents=True, exist_ok=True)
-    for old in folder.glob("Consumer_Health_*.xlsx"):   # a hard link to the live version's file: never written through
-        old.unlink()
     path = save(folder, history, rows, qa)
+    for old in folder.glob("Consumer_Health_*.xlsx"):   # one named for other years
+        if old != path:
+            old.unlink()
     log.info("Consumer Health dataset: %d history rows + %d new rows (%d weeks), %s", len(history["rows"]), len(rows), len(qa), path.name)
     return path.stat().st_size
 
