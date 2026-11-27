@@ -147,6 +147,7 @@ def test_a_book_exports_as_one_workbook_of_tabs_in_the_house_style(client):
     second = book.worksheets[1]
     assert second["C3"].number_format == '0.0"%"' and second["C4"].number_format == "#,##0"   # a % column's base row is plain
     assert book.worksheets[2]["A3"].value == "'=SUM(A1)"   # a formula stays text
+    assert exports.tab_title("Top products bought on social media", set()) == "Top products bought on social"   # cut at a word
     assert client.post("/api/v1/export/pptx", {"name": "Holiday", "sheets": [tracker, survey]}).status_code == 422
     long = {**tracker, "rows": [["x", 1, 1]] * (exports.MAX_ROWS + 1)}   # longer than one table may be: a tab keeps it all
     assert openpyxl.load_workbook(io.BytesIO(client.post("/api/v1/export/xlsx", {"name": "long", "sheets": [long]}).body)).active.max_row == 3 + exports.MAX_ROWS + 1

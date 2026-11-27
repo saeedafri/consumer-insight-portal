@@ -71,3 +71,18 @@ def test_each_list_carries_its_heading_for_the_trackers_excel_tabs():
     board = dashboards.payload({"dashboard_code": "social_commerce", "wave": None, "prior": None, "ly": None, "waves": [],
                                 "cube_built_at": None}, [])
     assert board["list_heads"]["top"] == "Top platforms" and set(board["list_heads"]) == set(board["lists"])
+
+
+def test_a_published_dashboard_file_gains_its_list_headings_at_the_next_publish(tmp_path):
+    """A stored build has no headings until its tracker's next week is built; write_views gives them at the next
+    publish or deploy (27 Nov 2026), and leaves a file that already has them alone."""
+    import gzip
+    import json
+    from etl.publish import write
+    path = tmp_path / "api/v1/dashboards/social_commerce/1.json.gz"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(gzip.compress(json.dumps({"title": "Social Commerce", "lists": {"top": []}}).encode()))
+    assert dashboards.name_lists(tmp_path, write) > 0
+    doc = json.loads(gzip.decompress(path.read_bytes()))
+    assert doc["list_heads"]["top"] == "Top platforms" and doc["title"] == "Social Commerce"
+    assert dashboards.name_lists(tmp_path, write) == 0

@@ -245,18 +245,24 @@ export function Menu({ label, icon, children, keep = false, name, className = ""
 /** CSV, Excel, PowerPoint (and the chart as PNG) of the same table under one Export menu, and Pin to a board:
  *  every download on every screen carries the same rows and notes. */
 /** The Export menu (CSV, Excel, PowerPoint, PNG) and Pin. deck={false}: no PowerPoint, for a workbook of many tabs
- *  (csv.ts downloadBook), whose slides would chart a few columns of each tab only. */
-export function ExportButtons({ onExport, png, pin = true, deck = true }: { onExport: (format: Format) => unknown; png?: () => unknown; pin?: boolean; deck?: boolean }) {
+ *  (csv.ts downloadBook), whose slides would chart a few columns of each tab only. view: the same screen's one view
+ *  (the tab or week on screen) as Excel or CSV too, beside the whole workbook (the business team, 27 Nov 2026). */
+export function ExportButtons({ onExport, png, pin = true, deck = true, view }: { onExport: (format: Format) => unknown; png?: () => unknown;
+  pin?: boolean; deck?: boolean; view?: { whole: string; one: string; onExport: (format: Format) => unknown } }) {
   const me = useMe().data;
   const [note, setNote] = useState("");
-  const run = (format: Format) => { setNote(""); void Promise.resolve().then(() => onExport(format)).catch((e: Error) => setNote(e.message)); };
+  const run = (format: Format, build = onExport) => { setNote(""); void Promise.resolve().then(() => build(format)).catch((e: Error) => setNote(e.message)); };
   const files = allowed(me, "export");
   const canPin = pin && allowed(me, "boards");
   if (!files && !png && !canPin) return null;
   return <div className="head-actions export" role="group" aria-label="Download">
     {(files || png) && <Menu label="Export" icon={<IconDownload />}>
-      {files && ([["csv", "CSV"], ["xlsx", "Excel"], ["pptx", "PowerPoint"]] as const).filter(([format]) => deck || format !== "pptx").map(([format, label]) =>
-        <button key={format} onClick={() => run(format)} aria-label={`Download this table as ${label}`}>{label}</button>)}
+      {files && ([["csv", "CSV"], ["xlsx", "Excel"], ["pptx", "PowerPoint"]] as const).filter(([format]) => deck || format !== "pptx").map(([format, label]) => {
+        const whole = format !== "pptx" && view?.whole;   // a slide is always the table on screen
+        return <button key={format} onClick={() => run(format)} aria-label={`Download ${whole || "this table"} as ${label}`}>{whole ? `${label}: ${whole}` : label}</button>;
+      })}
+      {files && view && ([["csv", "CSV"], ["xlsx", "Excel"]] as const).map(([format, label]) =>
+        <button key={`one-${format}`} onClick={() => run(format, view.onExport)} aria-label={`Download ${view.one} only as ${label}`}>{label}: {view.one} only</button>)}
       {png && <button onClick={() => void png()} aria-label="Download the chart as a PNG image (light theme, with the source line)">PNG image</button>}
     </Menu>}
     {canPin && <button className="btn" onClick={() => run("board")} aria-label="Pin this table, as it is now, to a board you can share and download as a deck">

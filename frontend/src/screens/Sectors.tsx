@@ -12,7 +12,7 @@ import type { Sector } from "../api";
 import { Card, Empty, ExportButtons, Failure, marketOptions, SkeletonScreen } from "../components/bits";
 import { FigureCard } from "../components/Glance";
 import { downloadBook, downloadTable } from "../csv";
-import type { Sheet } from "../csv";
+import type { Format, Sheet } from "../csv";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtDate } from "../stats";
 
@@ -68,22 +68,24 @@ function sheetOf(sector: Sector, table: Sector["tables"][number]): Sheet {
 const spendSheet = (sector: Sector): Sheet[] => sector.spend ? [{ title: "Median spend", header: ["Median spend", ...sector.waves.map(w => w.date)],
   rows: [[sector.spend.question, ...sector.spend.median]], notes: [`${sector.name}: median spend`, "The middle buyer's spend band in each survey", "Source: Coresight Research US Consumer Survey"] }] : [];
 
-/** One sector as the Databank lays it out, a tab at a time on screen; Export downloads every tab in Excel or CSV (the
- *  business team, 27 Nov 2026), the tab on screen as a slide or a pin. */
+/** One sector as the Databank lays it out, a tab at a time on screen; Export downloads every tab in Excel or CSV, or
+ *  the tab on screen on its own (the business team, 27 Nov 2026), and the tab on screen as a slide or a pin. */
 function SectorTable({ sector, tab, onTab }: { sector: Sector; tab: string | null; onTab: (title: string) => void }) {
   const table = sector.tables.find(t => t.title === tab) ?? sector.tables[0];
   const first = sector.waves[0], last = sector.waves.at(-1)!;
-  const exportTable = (format: Parameters<typeof downloadTable>[0]) => {
-    // Excel and CSV: every tab; PowerPoint and Pin: the tab on screen (a slide charts one table)
-    if (format === "xlsx" || format === "csv") return downloadBook(format, `${sector.name} databank`, [...sector.tables.map(t => sheetOf(sector, t)), ...spendSheet(sector)]);
+  const exportTab = (format: Format) => {
     const shown = sheetOf(sector, table);
-    return downloadTable(format, `${sector.name} - ${table.title}`, shown.header, shown.rows, shown.notes);
+    return downloadTable(format, `${sector.name} - ${table.title}`, shown.header, shown.rows, shown.notes, { unit: shown.unit, plain: shown.plain });
   };
+  // Excel and CSV: every tab, or the tab on screen only; PowerPoint and Pin: the tab on screen (a slide charts one table)
+  const exportTable = (format: Format) => format === "xlsx" || format === "csv"
+    ? downloadBook(format, `${sector.name} databank`, [...sector.tables.map(t => sheetOf(sector, t)), ...spendSheet(sector)])
+    : exportTab(format);
   return <Card title={sector.name}
                sub={`${sector.waves.length} surveys, ${fmtDate(first.date)} to ${fmtDate(last.date)}. About 400 US adults each: margin of error up to ±${sector.margin}% at 95% confidence, wider for the smaller buyer bases.`}
                aside={<div className="toolbar one-row"><Tabs value={table.title} onValueChange={onTab}><TabsList>
                  {sector.tables.map(t => <TabsTrigger key={t.title} value={t.title}>{t.title}</TabsTrigger>)}
-               </TabsList></Tabs><ExportButtons onExport={exportTable} /></div>}>
+               </TabsList></Tabs><ExportButtons onExport={exportTable} view={{ whole: "every tab", one: "this tab", onExport: exportTab }} /></div>}>
     {/* opens on the newest surveys (right); the history is a scroll to the left */}
     <div className="table-wrap" ref={el => { if (el) el.scrollLeft = el.scrollWidth; }}><table className="data report-table">
       <thead><tr><th>{table.title}</th>{sector.waves.map(w => <th key={w.survey_id} className="num">{fmtDate(w.date)}</th>)}</tr></thead>

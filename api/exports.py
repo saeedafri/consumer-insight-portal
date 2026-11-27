@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import textwrap
 from datetime import date
 from pathlib import Path
 
@@ -72,8 +73,10 @@ def build_xlsx(spec: dict) -> bytes:
 
 
 def tab_title(title: str, taken: set[str]) -> str:
-    """An Excel tab name: at most 31 characters, none of [ ] : * ? / \\, and never another tab's (Excel refuses all three)."""
-    first = " ".join(re.sub(r"[\[\]:*?/\\]", " ", title).split())[:31] or "Data"
+    """An Excel tab name: at most 31 characters, cut at a word, none of [ ] : * ? / \\, and never another tab's (Excel
+    refuses all three)."""
+    clean = re.sub(r"[\[\]:*?/\\]", " ", title)
+    first = textwrap.shorten(clean, 31, placeholder="") or clean.strip()[:31] or "Data"
     name, k = first, 2
     while name.lower() in taken:
         name, k = f"{first[:26]} ({k})", k + 1

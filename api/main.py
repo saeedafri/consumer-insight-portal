@@ -52,7 +52,7 @@ from starlette.staticfiles import NotModifiedResponse
 from shared.core import access, api_keys, audit
 from shared.core.database import apply_sql, get_engine
 from shared.data import payloads
-from api import ask_model, assistant, exports, ingest, logs, mcp, metrics, signin, team
+from api import ask_model, assistant, dashboards, exports, ingest, logs, mcp, metrics, signin, team
 from api.ask_index import read_json
 from api.search import SearchIndex
 from api.signin import admin, user
@@ -133,9 +133,11 @@ def load_published() -> None:
             "  FROM cip_dash_published p JOIN cip_dash_payload d ON d.build_id = p.build_id"
             "  JOIN cip_survey s ON s.survey_id = p.survey_id")).all()
         stamp = tuple(conn.execute(text("SELECT COUNT(*), MAX(published_at) FROM cip_dash_published")).one())
-    store, newest = {}, {}
+    store, newest, config = {}, {}, dashboards.load_config()
     for code, survey_id, etag, body, gz, wave_date in rows:
-        store[(code, survey_id)] = Payload(f'"{etag}"', body.encode(), bytes(gz))
+        # with each list's heading as the config has it now: the API answers when nginx has no file (a filtered session)
+        doc = dashboards.add_list_heads(body, code, config)
+        store[(code, survey_id)] = to_payload(doc) if doc else Payload(f'"{etag}"', body.encode(), bytes(gz))
         if code not in newest or wave_date > newest[code][0]:
             newest[code] = (wave_date, survey_id)
     STORE, LATEST, STAMP = store, {c: s for c, (_, s) in newest.items()}, stamp
@@ -146,7 +148,7 @@ def published_changed() -> bool:
     global SERVING, RESULTS, CACHED_BYTES, CATALOGUE, PUBLISHED_VERSION
     with get_engine("app").connect() as conn:
         serving = tuple(conn.execute(text("SELECT COUNT(*), MAX(built_at) FROM srv_wave")).one())
-        dashboards = tuple(conn.execute(text("SELECT COUNT(*), MAX(published_at) FROM cip_dash_published")).one())
+        boards = tuple(conn.execute(text("SELECT COUNT(*), MAX(published_at) FROM cip_dash_published")).one())
     if serving != SERVING:
         CATALOGUE = _load_catalogue()
         SCOPED.clear()
@@ -154,7 +156,7 @@ def published_changed() -> bool:
     with RESULTS_LOCK:
         if serving != SERVING or version != PUBLISHED_VERSION:
             SERVING, PUBLISHED_VERSION, RESULTS, CACHED_BYTES = serving, version, OrderedDict(), 0
-    return dashboards != STAMP
+    return boards != STAMP
 
 
 @contextmanager

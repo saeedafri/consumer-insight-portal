@@ -50,6 +50,7 @@ from sqlalchemy import text
 
 from shared.core.database import get_engine
 from shared.data import payloads
+from api import dashboards   # etl/glance.py imports it too
 from etl import expectations, fieldwork, glance, retailers, sectors, weekly_report
 
 log = logging.getLogger("cip.publish")
@@ -172,8 +173,9 @@ def _build(out: Path, version: str, root: Path, jobs: int) -> Path:
         return written
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         size += sum(pool.map(wave, fresh))
-    for code, survey_id, body in boards:
-        size += write(out / f"api/v1/dashboards/{code}/{survey_id}", body.encode())
+    config = dashboards.load_config()
+    for code, survey_id, body in boards:   # with each list's heading as the config has it now (a build keeps its day's)
+        size += write(out / f"api/v1/dashboards/{code}/{survey_id}", dashboards.add_list_heads(body, code, config) or body.encode())
 
     members: dict = {}
     for sid, (_, family, study) in waves.items():
@@ -327,6 +329,7 @@ def write_views(out: Path) -> int:
     size += retailers.publish(out, write)      # the retailer comparison, from the weeks' respondent bitsets
     size += fieldwork.publish(out, write)      # the admins' Fieldwork screen, from Forsta's kept fieldwork records
     size += write(out / "api/v1/public/facts", site_facts(out))   # the public home page's live figures
+    size += dashboards.name_lists(out, write)   # each tracker list's heading, its tab name in the tracker's Excel
     size += glance.publish(out, write)         # Home's "This week at a glance", from the files written above
     size += expectations.publish(out, write)   # retail events: expected vs actual, plus the spend answers
     try:   # last, the data science team's respondent workbook, with every newer US week: its email waits on no screen

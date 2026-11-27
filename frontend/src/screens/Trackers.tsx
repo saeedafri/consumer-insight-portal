@@ -3,7 +3,8 @@
 // wave's Overview shows) and every headline figure over all the weeks the tracker ran. All from files the ETL already
 // publishes (api/v1/dashboards/<code>/<survey_id>.json.gz, a few KB each, fetched once and cached): nothing is computed
 // on the server. Opened from the left menu (Trackers) and the Home page; topic and week are kept in the address. Export
-// downloads every week as a workbook laid out like the Databank's sheets (trackerBook).
+// downloads every week as a workbook laid out like the Databank's sheets (trackerBook), or the chosen week on its own
+// (weekSheet).
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -12,7 +13,7 @@ import type { Dashboard, Metric } from "../api";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import Glance from "../components/Glance";
 import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
-import { downloadBook } from "../csv";
+import { downloadBook, downloadTable } from "../csv";
 import type { Sheet } from "../csv";
 import { blues, C, useTheme } from "../theme";
 import { fmtDate } from "../stats";
@@ -57,7 +58,12 @@ export default function Trackers() {
       <ExportButtons pin={false} deck={false} onExport={format => {
         if (all.some(q => q.isLoading)) throw new Error("Still loading the weeks: try again in a moment");   // a week that failed is left out
         return downloadBook(format, `${history[0].title} ${weeks[0].wave_date}`, trackerBook(history));
-      }} />
+      }} view={{ whole: "every week", one: "this week", onExport: format => {
+        const d = history.find(board => board.wave.survey_id === week.survey_id);
+        if (!d) throw new Error(all.some(q => q.isLoading) ? "Still loading this week: try again in a moment" : "This week's figures did not load: reload the page");
+        const sheet = weekSheet(d);
+        return downloadTable(format, `${d.title} ${week.wave_date}`, sheet.header, sheet.rows, sheet.notes);
+      } }} />
     </section>
 
     <Glance code={code} id={week.survey_id} />
@@ -107,7 +113,7 @@ function TileDonuts({ code, id }: { code: string; id: number }) {
 function trackerBook(boards: Dashboard[]): Sheet[] {
   const latest = boards[0];   // newest first, as the page loads them
   const oldestFirst = [...boards].reverse();
-  const tab = (name: string, pick: (d: Dashboard) => Metric[], about: string): Sheet => {
+  const tab = (name: string, pick: (d: Dashboard) => Metric[], about?: string): Sheet => {
     const labels = [...new Set(boards.flatMap(d => pick(d).map(m => m.label)))];   // the newest week's order first
     const figure = (d: Dashboard, label: string) => pick(d).find(m => m.label === label);
     const shared = oldestFirst.every(d => new Set(pick(d).map(m => m.base)).size <= 1);
@@ -116,12 +122,31 @@ function trackerBook(boards: Dashboard[]): Sheet[] {
     return { title: name, header: [name, ...oldestFirst.map(d => d.wave.week_of)], unit: "%",
              rows: [...labels.map(l => [l, ...oldestFirst.map(d => figure(d, l)?.pct ?? null)]), ...bases],
              plain: bases.map((_, k) => labels.length + k),
-             notes: [`${latest.title}: ${name}`, `% of those asked (the bottom rows), ${about}, each of the ${boards.length} weeks the tracker ran`,
-                     "Source: Coresight Research US Consumer Survey, weekly tracker. Unweighted."] };
+             notes: [`${latest.title}: ${name}`, `% of those asked (the people asked are the bottom rows), each of the ${boards.length} weeks the tracker ran`,
+                     ...(about ? [about] : []), SOURCE] };
   };
-  // a list keeps each week's top answers only: a blank is an answer outside that week's top, not nobody
-  const top = "each week's top answers (a blank: outside that week's top; every answer is on the question's Trends page)";
-  return [tab("Headline figures", d => Object.entries(d.tiles).flatMap(([k, m]) => m ? [{ ...m, label: latest.tile_labels?.[k] ?? m.label }] : []), "the headline figures"),
-          ...Object.keys(latest.lists).map(k => tab(latest.list_heads?.[k] ?? words(k), d => d.lists[k] ?? [], top)),
-          ...Object.keys(latest.segments).map(k => tab(words(k), d => d.segments[k] ?? [], "by group"))];
+  // a list keeps each week's top answers only (the dashboards'): a blank is an answer outside that week's top, not nobody
+  const top = (pick: (d: Dashboard) => Metric[]) => {
+    const n = Math.max(...boards.map(d => pick(d).length));
+    return `Each week's top ${n} answers. A blank cell is an answer outside that week's top ${n}, not an answer nobody gave; every answer of the question, every week, downloads from its Trends page.`;
+  };
+  const list = (k: string) => (d: Dashboard) => d.lists[k] ?? [];
+  return [tab("Headline figures", d => headlines(d, latest)),
+          ...Object.keys(latest.lists).map(k => tab(latest.list_heads?.[k] ?? words(k), list(k), top(list(k)))),
+          ...Object.keys(latest.segments).map(k => tab(words(k), d => d.segments[k] ?? []))];
+}
+
+const SOURCE = "Source: Coresight Research US Consumer Survey, weekly tracker. Unweighted.";
+/** A week's headline figures under the tile names of `labels` (the newest week's, so every week's row reads alike). */
+const headlines = (d: Dashboard, labels = d) => Object.entries(d.tiles).flatMap(([k, m]) => m ? [{ ...m, label: labels.tile_labels?.[k] ?? m.label }] : []);
+
+/** The chosen week on its own (Export's one-view choice, 27 Nov 2026): every headline figure, list answer and group
+ *  split of that week with its %, the people asked and its change in points against the week before and last year. */
+function weekSheet(d: Dashboard): Pick<Sheet, "header" | "rows" | "notes"> {
+  const prior = (d.prior_label ?? "last week").replace(/^the /, "");
+  const block = (name: string, items: Metric[]) => items.map(m => [name, m.label, m.pct, m.base, m.vs_prior, m.vs_ly]);
+  return { header: ["Figure", "Answer", "%", "People asked", `Change vs ${prior} (pts)`, "Change vs last year (pts)"],
+           rows: [...block("Headline figures", headlines(d)), ...Object.entries(d.lists).flatMap(([k, items]) => block(d.list_heads?.[k] ?? words(k), items)),
+                  ...Object.entries(d.segments).flatMap(([k, items]) => block(words(k), items))],
+           notes: [`${d.title}, week of ${fmtDate(d.wave.week_of)}`, "% of those asked; a list holds the week's top answers; changes in points", SOURCE] };
 }

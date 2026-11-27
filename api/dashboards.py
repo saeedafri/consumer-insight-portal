@@ -4,7 +4,9 @@ The ETL ends at the serving tables (etl/serving.py, sql/005_serving.sql); it kno
 This backend job reads the few serving rows one screen needs, picks its comparison weeks from the
 season calendar, writes the screen's key-takeaway sentences, and stores the finished JSON (gzipped) in
 the backend's own cache tables (sql/006_dashboards.sql). The API holds those bytes in memory.
-The dashboard definition is config/dashboards.yml.
+The dashboard definition is config/dashboards.yml. Its lists' headings reach builds stored before a heading was added
+(add_list_heads): when etl/publish.py writes the files and after a restore (write_views → name_lists), and when
+api/main.py load_published reads the builds for the API.
 
     python -m api.dashboards --build holiday_tracker            # every loaded wave of the series
     python -m api.dashboards --build holiday_tracker --survey 412
@@ -291,13 +293,37 @@ def payload(header: dict, rows: list[dict]) -> dict:
         "segments": {s["code"]: group(s["code"]) for s in cfg.get("segments", [])},
         "takeaways": takeaways(rows, cfg),
         "tile_labels": {t["code"]: t["label"] for t in cfg["tiles"]},
-        "list_heads": {l["code"]: l["head"] for l in cfg["lists"] if l.get("head")},   # each list's tab in the tracker's Excel
+        "list_heads": list_heads(cfg),
         "highlights": [{"list": l["code"], "title": l["tile"], "of": l.get("of", "")} for l in cfg["lists"] if l.get("tile")],
         "prior_label": cfg.get("prior_label", "the previous wave"),
         "small_base": cfg["small_base"],
         "ly_rule": cfg.get("ly_rule", "same_calendar_week"),
         "data_as_of": str(header["cube_built_at"])[:19].replace(" ", "T") if header["cube_built_at"] else None,
     }
+
+
+def list_heads(cfg: dict) -> dict:
+    """A dashboard's lists by their headings (top → Top platforms): each list's tab name in the tracker's Excel."""
+    return {l["code"]: l["head"] for l in cfg["lists"] if l.get("head")}
+
+
+def add_list_heads(body: str, code: str, config: dict) -> Optional[dict]:
+    """A stored build (its JSON) with its lists' headings as config/dashboards.yml has them now, or None when it has
+    them already. A build keeps the config of its day, so a heading added or renamed would otherwise wait for that
+    tracker's next week to be built (27 Nov 2026)."""
+    heads, doc = list_heads(config.get(code) or {"lists": []}), json.loads(body)
+    return {**doc, "list_heads": heads} if heads and doc.get("list_heads") != heads else None
+
+
+def name_lists(out: Path, write) -> int:
+    """Give every published dashboard file its lists' headings (add_list_heads): nginx serves these files. Called by
+    etl/publish.py write_views; after a restore (a deploy) the files are the backup's, as built; after a publish they
+    have them already, so none is rewritten. Returns the bytes written."""
+    size, config = 0, load_config()
+    for path in (out / "api/v1/dashboards").glob("*/*.json.gz"):
+        if doc := add_list_heads(gzip.decompress(path.read_bytes()).decode(), path.parent.name, config):
+            size += write(path.with_name(path.name.removesuffix(".json.gz")), doc)
+    return size
 
 
 def build(code: str, survey_id: int) -> Optional[int]:
