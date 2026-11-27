@@ -866,16 +866,19 @@ async def export(kind: str, request: Request, who: dict = Depends(user)) -> Resp
 
 
 @app.get("/api/v1/datasets/consumer-health")
+@app.head("/api/v1/datasets/consumer-health", include_in_schema=False)   # the left menu asks first (Shell.tsx)
 async def dataset(request: Request, who: dict = Depends(user)) -> Response:
     """The Consumer Health workbook as the last publish wrote it (etl/consumer_health.py): respondent rows, so only for
-    those the super admin gives the "datasets" menu. Sent from disk; nothing is built on the request."""
+    those the super admin gives the "datasets" menu. Sent from disk; nothing is built on the request. A HEAD answers
+    whether it is there without sending it, so a failed download never lands in the browser as consumer-health.json."""
     require_feature(who, "datasets")
     # the folder and name etl/consumer_health.py FOLDER and NAME write; that module is not imported here, as it loads
     # openpyxl (and numpy with it) into every API worker for one folder name
     found = sorted((PUBLISHED / "api/v1/datasets").glob("Consumer_Health_*.xlsx"))
     if not found:
         raise HTTPException(404, "The Consumer Health dataset has not been built yet")
-    audit.record(request, "download", target=found[-1].name)
+    if request.method == "GET":
+        audit.record(request, "download", target=found[-1].name)
     return FileResponse(found[-1], media_type=EXPORT_TYPES["xlsx"], filename=found[-1].name)
 
 

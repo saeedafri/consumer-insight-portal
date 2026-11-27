@@ -573,6 +573,13 @@ def main() -> int:
         if behind(out):   # newer waves in the database: build only those, link the rest
             log.info("The restored version is behind the database: publishing the new waves")
             out = publish(a.root, a.jobs)
+        elif BACKUP and (a.root / "current").resolve() == out.resolve():
+            # kept as this image rebuilt it, so the next deploy restores these views at once: a view new since the last
+            # publish (the Consumer Health workbook) was otherwise missing for ~15 minutes after every deploy (27 Nov 2026)
+            try:
+                backup(out)
+            except Exception as exc:   # the portal is live from disk either way; the next publish backs up
+                log.warning("Backup after the restore failed: %s", str(exc).split("?")[0])
     print(out)
     warm_after_restore(out)   # outside the lock: refilling the cache must not hold up a scheduled ETL run
     return 0

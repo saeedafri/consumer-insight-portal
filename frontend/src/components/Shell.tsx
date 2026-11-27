@@ -1,7 +1,7 @@
 // App frame: the coresight.com header (logo, site links, search, theme, sign-in), a rail with the wave's screens,
 // a wave bar with the wave switcher, and the coresight.com footer.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { setTheme, useTheme } from "../theme";
 import { setWeighted, useWeighted } from "../weight";
 import type { Theme } from "../theme";
@@ -26,6 +26,7 @@ const TOP_FEATURE: Record<string, string> = { library: "library", search: "searc
                                               channels: "channels", retailers: "retailers", sectors: "sectors", expectations: "expectations",
                                               methodology: "methodology", "whats-new": "whats_new", "api-guide": "api", fieldwork: "fieldwork",
                                               ingest: "ingest", logs: "logs" };
+const DATASET = "/api/v1/datasets/consumer-health";   // api/main.py dataset(): the Consumer Health workbook
 /** The feature the screen at this address needs, or undefined when it always shows: a hidden menu also closes its
  *  address, so a link, a bookmark or a typed URL never opens a screen the menus take away (10 Nov 2026). Every left-menu
  *  entry has one since 15 Nov 2026 (config/access.yml menu): a tracker's page its own, a Forsta page its own. */
@@ -154,6 +155,16 @@ export default function Shell() {
     : wave && wave.survey_id === latest?.survey_id ? "us_tracker" : wave && wave.survey_id === china?.survey_id ? "china_tracker" : undefined);
   const badge = (menu: string) =>
     news.fresh.has(menu) ? <span className="rail-new" title="New since your last visit"><span className="sr-only">New</span></span> : null;
+  // the Consumer Health workbook, asked for first (a HEAD): one being rebuilt after a deploy shows a note here instead
+  // of the browser's failed "consumer-health.json" download (27 Nov 2026)
+  const [datasetNote, setDatasetNote] = useState("");
+  const getDataset = async (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    news.see("datasets");
+    const answer = await fetch(DATASET, { method: "HEAD", credentials: "same-origin" }).catch(() => null);
+    setDatasetNote(answer?.ok ? "" : answer?.status === 404 ? "Being rebuilt after an update: ready within minutes." : "Could not reach it: try again.");
+    if (answer?.ok) window.location.assign(DATASET);   // sent as an attachment: the page stays where it is
+  };
   const reportWaves = useReportWaves().data;   // the waves with a weekly report (since Jul 2025: etl/weekly_report.py)
   const hasReport = !!wave && !!reportWaves?.includes(wave.survey_id);
   const rail = useRef<HTMLElement>(null);
@@ -233,7 +244,8 @@ export default function Shell() {
         {allowed(me, "methodology") && <NavLink to="/methodology"><Icon of={Info} />Methodology</NavLink>}
         {allowed(me, "whats_new") && <NavLink to="/whats-new"><Icon of={Star} />What's new{badge("whats_new")}</NavLink>}
         {/* respondent rows: only for those given it (config/access.yml chosen_only), a download from api/main.py dataset() */}
-        {(isAdmin || given(me, "datasets")) && <a href="/api/v1/datasets/consumer-health" download onClick={() => news.see("datasets")}><Icon of={Download} />Consumer Health dataset{badge("datasets")}</a>}
+        {(isAdmin || given(me, "datasets")) && <a href={DATASET} download onClick={getDataset}><Icon of={Download} />Consumer Health dataset{badge("datasets")}</a>}
+        {datasetNote && <p className="small muted" role="status" style={{ margin: "2px 12px 6px" }}>{datasetNote}</p>}
       </RailGroup>}
       {(isAdmin || given(me, "fieldwork") || SECTIONS.some(([path]) => given(me, `forsta_${path}`))) &&
         <RailGroup label="Research operations" closed={!/^\/(fieldwork|forsta)/.test(location.pathname)}>

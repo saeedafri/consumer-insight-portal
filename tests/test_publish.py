@@ -225,12 +225,19 @@ def test_a_new_container_serves_the_backup_before_the_lock_and_the_views(tmp_pat
         yield None
 
     monkeypatch.setattr(loaders, "etl_lock", lock)
-    monkeypatch.setattr(publish, "write_views", lambda out: seen.append(("views", live.read_bytes())) or 0)
+
+    def rebuild(out):   # a view the backup did not have yet (the Consumer Health workbook, 27 Nov 2026)
+        seen.append(("views", live.read_bytes()))
+        return (out / "api" / "v1" / "workbook.xlsx").write_bytes(b"rebuilt")
+
+    monkeypatch.setattr(publish, "write_views", rebuild)
     monkeypatch.setattr(publish, "behind", lambda out: False)
     monkeypatch.delenv("CIP_NGINX_URL", raising=False)
     monkeypatch.setattr(sys, "argv", ["publish", "--restore", "--root", str(tmp_path / "new-container")])
     assert publish.main() == 0
     assert seen == [("views", b"previous"), ("lock", b"previous")]   # this image's views rebuilt, and before the lock too
+    publish.restore(tmp_path / "next-deploy")   # backed up as rebuilt: the next container has the view at once
+    assert (tmp_path / "next-deploy" / "current" / "api" / "v1" / "workbook.xlsx").read_bytes() == b"rebuilt"
 
     newer = tmp_path / "new-container" / ".build-20261023T000000Z"   # a publish that went live since (or another restore)
     (newer / "api" / "v1").mkdir(parents=True)

@@ -34,6 +34,10 @@ Each new China week now sends the team the same new-survey email as a US week, w
 
 The data science team's Consumer Health workbook now also holds every older week of the US weekly survey that CIP has, from 28 December 2020 to August 2023 (SurveyMonkey, then Qualtrics): 119 weeks and 52,435 more people, so it runs from 2020 to 2026 with 120,587 rows in all. Their own rows from 4 September 2023 are unchanged. The older weeks follow their rules: rebuilt the same way, 4,373 people of their own Qualtrics weeks came out identical in every column, with times in the US Mountain time their Qualtrics files used and their 2023 sheet's pattern codes (EM, FF, NONE). SurveyMonkey asked no demographic questions of its own, so those weeks give gender, age and income from CIP's profile of each respondent; five weeks of autumn 2022 that did not ask the activities question are left out. The Read Me's Historical gap note says so. Every publish still adds each new week.
 
+### Consumer Health dataset: no more failed downloads after an update
+
+After each new version of CIP, the Consumer Health download could fail for about 15 minutes, and the browser saved a broken consumer-health.json instead of the workbook: the new server started from a copy of the published files taken before the workbook existed, then rebuilt it. That copy is now refreshed once the views are rebuilt, so from the next version on the workbook is there within seconds of an update. If it is ever being rebuilt, the link says so under it (Being rebuilt after an update: ready within minutes) instead of a failed download.
+
 ## 26 November 2026
 
 ### Screens back within seconds when a new version goes live

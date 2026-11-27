@@ -244,10 +244,14 @@ def test_the_consumer_health_dataset_goes_only_to_those_given_it(portal, monkeyp
     monkeypatch.setattr(access, "rules", lambda: {**RULES, "features": RULES["features"] + ["datasets"],
                                                   "chosen_only": RULES["chosen_only"] + ["datasets"]})
     assert call("/api/v1/datasets/consumer-health", signed("boss@coresight.com"))[0] == 404            # not built yet
+    # the left menu asks first (HEAD): a note, not a failed consumer-health.json download (27 Nov 2026)
+    assert call("/api/v1/datasets/consumer-health", signed("boss@coresight.com"), "HEAD")[0] == 404
     folder = portal / "api/v1/datasets"
     folder.mkdir(parents=True)
     (folder / "Consumer_Health_Raw_Respondent_Data_Chronological_2023_2026.xlsx").write_bytes(b"PK workbook")
     assert call("/api/v1/datasets/consumer-health", signed("ana@coresight.com"))[0] == 403
+    assert call("/api/v1/datasets/consumer-health", signed("ana@coresight.com"), "HEAD")[0] == 403
+    assert call("/api/v1/datasets/consumer-health", signed("boss@coresight.com"), "HEAD")[::2] == (200, b"")   # there, not sent
     status, headers, body = call("/api/v1/datasets/consumer-health", signed("boss@coresight.com"))
     assert status == 200 and body == b"PK workbook" and "Chronological_2023_2026.xlsx" in headers["content-disposition"][0]
 
