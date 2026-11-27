@@ -887,6 +887,16 @@ def test_a_choice_saved_before_the_menus_grew_loses_nothing_and_a_new_one_is_kep
     assert {"library", "tracker_glp1", "channels"} <= set(core) and "logs" not in core
 
 
+def test_the_weekly_topic_menus_go_to_whoever_had_in_store_vs_online():
+    """Activities & retailers, Spending pressure and Consumer sentiment (the roadmap, 27 Nov 2026) grew from In store vs
+    online: a choice saved before them that had it gets all three, one without it gets none."""
+    access.rules.cache_clear()
+    topics = {"activities", "spending", "sentiment"}
+    before = [f for f in access.rules()["features"] if f not in topics]
+    assert topics <= set(access.choice({"on": ["channels"], "offered": before}))
+    assert not topics & set(access.choice({"on": ["retailers"], "offered": before}))
+
+
 def test_a_weekly_tracker_hidden_on_the_access_screen_closes_its_waves(portal, monkeypatch):
     """A weekly tracker in family_menus (none in config since 24 Nov 2026; the US one here, the fixture's wave)
     off for one person: its waves leave the list and do not open, and that person's cached answers are kept apart from

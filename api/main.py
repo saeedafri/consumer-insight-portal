@@ -56,7 +56,7 @@ from api import ask_model, assistant, dashboards, exports, ingest, logs, mcp, me
 from api.ask_index import read_json
 from api.search import SearchIndex
 from api.signin import admin, user
-from etl import launch_schedule
+from etl import launch_schedule, weekly_topics
 from etl.publish import ROOT as PUBLISH_ROOT
 from etl.serving import CUTS
 
@@ -541,7 +541,7 @@ async def tracker_view(request: Request, who: dict, name: str, trim=None) -> Res
     # the databank's own menu decides, not the weekly trackers' (tracker_menus=False): its file mixes their waves (15 Nov 2026)
     if not all(access.sees(who, w, tracker_menus=False) for w in tracker):
         raise HTTPException(403, "Not included in your subscription: this view covers every weekly tracker survey")
-    found = published_file(name)
+    found = published_file(*name.split("/"))
     if found is None:   # a new container restores the published files in the background (~75 s, deploy/start.sh, 12 Nov
         raise HTTPException(503, "Being published: retry in a few seconds", headers={"Retry-After": "5"})   # 2026): the screens retry
     return send_payload(request, to_payload(trim(json.loads(found.body))) if trim else found)
@@ -555,6 +555,16 @@ async def public_facts(request: Request) -> Response:
     if found is None:
         raise HTTPException(404, "Not published yet")
     return send_payload(request, found)
+
+
+@app.get("/api/v1/weekly/{topic}")
+async def weekly_topic(topic: str, request: Request, who: dict = Depends(user)) -> Response:
+    """A weekly topic screen's figures (etl/weekly_topics.py; frontend/src/screens/Weekly.tsx): activities, spending or
+    sentiment, each its own menu (config/weekly_topics.yml)."""
+    if topic not in weekly_topics.settings()["topics"]:
+        raise HTTPException(404, "No such topic")
+    require_feature(who, topic)
+    return await tracker_view(request, who, f"weekly/{topic}")
 
 
 @app.get("/api/v1/retailers")
@@ -672,7 +682,7 @@ async def question(family: str, study_type: str, qcode: str, request: Request, w
     Someone who may not see every wave of the family gets the file without those waves."""
     # the three screens that read a question across waves, and In store vs online, which reads four US weekly ones
     # (frontend/src/screens/Channels.tsx): without Trends it got 403 (24 Nov 2026)
-    require_feature(who, "trends", "compare", "audiences", *(["channels", "activities", "spending", "sentiment"] if (family, study_type) == ("CSI-US", "tracker") else []))
+    require_feature(who, "trends", "compare", "audiences", *(["channels"] if (family, study_type) == ("CSI-US", "tracker") else []))
     scope = access.scope(who)
     def build() -> Payload:
         found = published_file("questions", family, study_type, qcode)

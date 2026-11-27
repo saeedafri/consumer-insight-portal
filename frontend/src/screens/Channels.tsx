@@ -25,12 +25,9 @@ import { downloadTable } from "../csv";
 import type { Format } from "../csv";
 import { C, useTheme } from "../theme";
 import { fmtDate } from "../stats";
-import { shares, SKIP } from "../weekly";
+import { chosenCut, drawnWeeks, EVERYONE, figure, shares, SKIP, time, trendWeeks } from "../weekly";
 
 const pct = (v: number | null | undefined) => v == null ? "–" : `${v.toFixed(1)}%`;
-const time = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
-const YEAR = 365 * 86_400_000;   // the trend's default range: the year up to the chosen week
-const EVERYONE = "total:Total";   // the cut of every respondent: the grey tick on the bars
 
 // Each market's weekly survey: its in-store and online questions (newest code first) and the wording of the weeks that
 // count. The US tracker renumbered the two, and a code also held other questions in other weeks (q2 was "places you are
@@ -91,8 +88,7 @@ export default function Channels() {
   const offered = cuts.filter(c => [...data.storeLabels].some(l => data.inStore(week, c.join(":"), l) != null));
   const kinds = [...new Set(offered.map(c => c[0]))];
   // the group (g): a group this week has no answers from gives way to its kind's first group, then to everyone
-  const asked = params.get("g") ?? "";
-  const cut = (offered.find(c => c.join(":") === asked) ?? offered.find(c => c[0] === asked.split(":")[0]))?.join(":") ?? EVERYONE;
+  const cut = chosenCut(offered, params.get("g") ?? "");
   const kind = cut.split(":")[0];
   const groups = offered.filter(c => c[0] === kind);
   // a group keeps the category on screen (else each group would open on its own biggest category, 27 Nov 2026)
@@ -116,25 +112,16 @@ export default function Channels() {
   const focus = sideBySide ? cut.slice(kind.length + 1) : category;
   // both cards draw at one height, so the trend card has no empty space under its chart beside the long category list
   const height = Math.max(400, rows.length * 30 + 60);
-  const figure = (v: number | null) => v == null ? null : +v.toFixed(1);   // a % as charts and exports show it
   const source = `Source: ${survey.source}. Unweighted.`;
 
   // the trend's date range: the year up to the week chosen above (the Week filter moves it, 27 Nov 2026), unless From /
   // To are chosen; choosing another week clears them
-  const oldestFirst = [...data.weeks].reverse();
-  const yearBefore = oldestFirst.findIndex(w => time(w[1]) >= time(date) - YEAR);
-  // where the address's From or To week sits among the weeks (an unknown week: the default)
-  const place = (key: string, fallback: number) => { const i = oldestFirst.findIndex(w => String(w[0]) === params.get(key)); return i < 0 ? fallback : i; };
-  const [first, last] = [place("from", yearBefore), place("to", oldestFirst.length - 1 - at)].sort((x, y) => x - y);   // From after To: swapped
-  const span = oldestFirst.slice(first, last + 1);
+  const { oldestFirst, span } = trendWeeks(data.weeks, at, params.get("from"), params.get("to"));
   // the line starts and ends where the group has both figures (Non-binary from Aug 2022), so each line's end label and
   // the gap are one week's; a week in between without them (20 US weeks of 2021-22 have no demographics in CIP:
   // docs/CHANGELOG.md, 26 Nov 2026) breaks the line, and the note under it counts them
   const answered = (w: [number, string]) => data.inStore(w[0], cut, category) != null && data.onLine(w[0], cut, category) != null;
-  const start = span.findIndex(answered), end = span.length - [...span].reverse().findIndex(answered);
-  const drawn = start < 0 ? [] : span.slice(start, end);
-  const unanswered = drawn.filter(w => !answered(w)).length;
-  const rangeText = drawn.length ? `${fmtDate(drawn[0][1])} to ${fmtDate(drawn.at(-1)![1])}` : "no weeks";
+  const { drawn, unanswered, rangeText } = drawnWeeks(span, answered);
   const both = drawn.at(-1);   // the last week, where the gap between the two lines is marked
   const bothStore = both && figure(data.inStore(both[0], cut, category)), bothOnline = both && figure(data.onLine(both[0], cut, category));
 

@@ -11,11 +11,10 @@ import type { EventComparison, Outlook, SpendSide } from "../api";
 import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
 import { downloadTable } from "../csv";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { direction, fmtDate } from "../stats";
+import { direction, dollars, fmtDate } from "../stats";
 
 /** A gap in percentage points, signed: +4.9, −8.7. */
 const points = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)}`;
-const dollars = (v: number | undefined) => v == null ? "–" : `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 const label = (c: EventComparison) =>
   `Expected ${fmtDate(c.expected.date)} vs actual ${fmtDate(c.actual.date)}${c.same_season ? "" : " (the year before)"}`;
 

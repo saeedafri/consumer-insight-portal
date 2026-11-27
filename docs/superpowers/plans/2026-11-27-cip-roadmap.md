@@ -98,10 +98,11 @@ key = item label, or `item: label` for a grid row's scale point (as api/ask_figu
 
 ### Task 5: Sector spend insights
 
-**Files:** `etl/sectors.py` (`average_spend(rows) -> float | None`), `tests/test_sectors.py`, `frontend/src/api.ts`
-(`Sector.spend.average`), `frontend/src/screens/Sectors.tsx`.
+**Files:** `etl/sectors.py` (`average_spend(rows) -> int | None`, whole dollars, None under three bands as `median_band`),
+`tests/test_sectors.py`, `frontend/src/api.ts` (`Sector.spend.average`, `Sector.spend.changes`), `frontend/src/screens/Sectors.tsx`.
 
-- [ ] Test: `average_spend` of bands $0-$50 (50%) and $51-$100 (50%) is 50.3 (mid-points 25 and 75.5); open top band at its floor.
+- [ ] Test: `average_spend` of M4 on 9 Nov 2026 (the median test's rows) is $291; "More than $500" counts at $500,
+  "Cannot remember" nowhere; hidden figures or a non-spend question give None.
 - [ ] A card "Spend across sectors": each sector's newest median band, average estimate and change vs its survey before
   and a year earlier; a click opens the sector. The chosen sector's average spend over its surveys as a line.
 

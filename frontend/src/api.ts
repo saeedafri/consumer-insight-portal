@@ -146,6 +146,16 @@ export interface Sector {
 export const useSectors = () =>
   useQuery({ queryKey: ["sectors"], queryFn: () => get<{ sectors: Sector[] }>("/api/v1/sectors"), ...forever });
 
+/** A weekly topic screen's tab (etl/weekly_topics.py): its words and answers (nets in points, a scale kept in order),
+ *  the weeks newest first ([survey_id, date]) and groups ([dim, value]), and per week and group [week, group, people
+ *  asked, each answer's people]: a net's people can be negative, null is an answer not asked of that group. */
+export interface WeeklyTab {
+  name: string; answer: string; all: string; each: string; asked: string; answers: string[]; nets: string[]; scale: boolean;
+  weeks: [number, string][]; cuts: [string, string][]; groups: [number, number, number, (number | null)[]][];
+}
+export const useWeeklyTopic = (topic: string) =>
+  useQuery({ queryKey: ["weekly", topic], queryFn: () => get<{ title: string; lede: string; tabs: WeeklyTab[] }>(`/api/v1/weekly/${encodeURIComponent(topic)}`), ...forever });
+
 /** A figure's change against an earlier one, drawn as a Delta badge ("▲ 0.4 pts vs Aug 17"). */
 export type Change = { d: number | null; label: string; flags?: string[] };
 /** Home's "This week at a glance" (etl/glance.py): a block per weekly survey (US, China), each six cards from its newest

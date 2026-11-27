@@ -14,6 +14,10 @@ The left-menu download and its tick on the Access page are now called ESP datase
 
 An Ask CIP answer now opens with its words and key figures only. The chart waits behind a Show chart button under the figures, and opens at once when the question asks for one (a chart, graph or plot of something). Hide chart closes it again; the chart types, the PNG download and the figures with their sample sizes are as before.
 
+### Activities & retailers, Spending pressure and Consumer sentiment: figures built at publish, one file per screen
+
+The three new weekly screens now get their figures from the publish instead of working them out in your browser: every publish writes one small file per screen (Activities & retailers about 320 KB, Spending pressure about 35 KB, Consumer sentiment about 60 KB, all three in under a second of the publish), with each week's and group's people and each answer's count, and the screen only divides and draws. The figures are the same as before, checked to the decimal against staging; the screens open on one request instead of two question files, and the rules (which questions, which weeks, how a net or a grid row adds up) now live in one settings file, config/weekly_topics.yml, with their own tests. Where they cut back now also lists the real answers that start with Other (Other savings or investments, Other services, Other products); only the catch-all Other is left out.
+
 ### Trackers: the chart over time keeps a headline figure the newest week did not ask
 
 A tracker's Headline figures over time chart drew only the figures its newest week had, so a figure that week skipped lost its whole history: the GenAI tracker's week of 2 Nov 2026 asked no shopping question, and Have shopped with GenAI and Plan to shop with GenAI vanished from the chart. The chart now draws every headline figure any week of the tracker has, each line where it was asked.
