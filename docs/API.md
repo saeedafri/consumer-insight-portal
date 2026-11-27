@@ -78,6 +78,8 @@ what you made. Saving a view, an alert or an audience also needs `"by"`: your na
 | `GET /api/v1/alerts` | Your team's alerts | Alerts |
 | `POST /api/v1/alerts` | Watch an answer for a significant change | Alerts |
 | `DELETE /api/v1/alerts/{alert_id}` | Remove an alert you made | Alerts |
+| `GET /api/v1/alerts/new-surveys` | Whether you are emailed each new survey (My account) | Alerts |
+| `PUT /api/v1/alerts/new-surveys` | Turn the new-survey email on or off (subscribed: true or false) | Alerts |
 | `GET /api/v1/audiences` | Your team's saved audiences | Audiences |
 | `POST /api/v1/audiences` | Save an audience (who answered what) | Audiences |
 | `DELETE /api/v1/audiences/{audience_id}` | Remove an audience you made | Audiences |

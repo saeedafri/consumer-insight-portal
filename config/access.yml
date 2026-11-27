@@ -112,7 +112,7 @@ feature_labels:   # the names the Access screen shows
   retailers: Retailer databank
   expectations: Expected vs actual
   export: Export (CSV, Excel, PowerPoint)
-  alerts: Alerts
+  alerts: Alerts (Alert me on a question, and My account's email for each new survey)
   saved_views: Saved views
   weighted: Weighted figures (the Weighted switch in the header; Census-weighted by gender, age and region)
   api: API keys and MCP (the Account page's keys, the API guide, and every request made with a key)

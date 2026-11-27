@@ -1,7 +1,9 @@
 // My account (/app/account), opened from the account icon at the top right (components/Shell.tsx AccountMenu): who is
-// signed in, what their access includes, their saved items, the questions they asked Ask CIP, and the theme.
+// signed in, what their access includes, their saved items, the new-survey email switch, the questions they asked Ask
+// CIP, and the theme.
+import { useState } from "react";
 import { Link } from "react-router";
-import { allowed, useAlerts, useAskHistory, useMe, useTeamViews } from "../api";
+import { allowed, queries, send, useAlerts, useAskHistory, useMe, useSurveyEmails, useTeamViews } from "../api";
 import ApiKeys from "../components/ApiKeys";
 import { Card } from "../components/bits";
 import { savedViews } from "../saved";
@@ -46,6 +48,7 @@ export default function Account() {
       {row("Saved views", <Link to="/library">{savedViews().length} in the survey library</Link>)}
       {row("Team views", `${teamViews.length} shared with your team`)}
       {row("Alerts", `${alerts.length} watching for changes`)}
+      {allowed(me, "alerts") && row("New surveys", <SurveyEmails />)}
       {row("Boards", <Link to="/boards">Open your boards</Link>)}
     </Card>
 
@@ -60,6 +63,21 @@ export default function Account() {
 
     <p><a className="btn" href="/auth/logout" style={{ color: "var(--red-text)", borderColor: "var(--red)" }}>Sign out</a></p>
   </div>;
+}
+
+/** "Email me each new survey" (PUT /api/v1/alerts/new-surveys, api/team.py): after each new survey the pipeline's
+ * summary goes to this person too, without the team's workbooks (etl/notify.py tell_subscribers). */
+function SurveyEmails() {
+  const setting = useSurveyEmails();
+  const on = setting.data?.subscribed;
+  const [note, setNote] = useState("");
+  if (setting.isError) return <span className="small muted">Could not read this setting: {(setting.error as Error).message}</span>;
+  const flip = (subscribed: boolean) => send<{ subscribed: boolean }>("PUT", "/api/v1/alerts/new-surveys", { subscribed })
+    .then(answer => { queries.setQueryData(["survey-emails"], answer); setNote(""); }, e => setNote((e as Error).message));
+  return <label style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+    <input type="checkbox" checked={!!on} disabled={on === undefined} onChange={e => void flip(e.target.checked)} />
+    Email me each new survey I can open, with its biggest changes{note && <span className="small" role="alert"> · {note}</span>}
+  </label>;
 }
 
 /** The questions this person asked Ask CIP, newest first (GET /api/v1/ask/history): each opens Ask with it again. */

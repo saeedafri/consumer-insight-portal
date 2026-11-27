@@ -19,13 +19,18 @@ def test_every_whats_new_entry_is_in_the_changelog_word_for_word():
     assert len(entries) > 30
     missing = [title for title, body in entries if f"### {title}\n\n{body}" not in changelog]
     assert not missing, f"Add these to docs/CHANGELOG.md as on the What's new page: {missing}"
+    # the left menu's "New" on What's new reads the newest date from frontend/src/news.ts, as the page loads only when opened
+    from datetime import datetime
+    newest = datetime.strptime(re.search(r"^## (\d+ \w+ \d{4})$", changelog, re.M)[1], "%d %B %Y").date().isoformat()
+    marker = re.search(r'LATEST_RELEASE = "([\d-]+)"', (ROOT / "frontend/src/news.ts").read_text())[1]
+    assert marker == newest, f'Set LATEST_RELEASE = "{newest}" in frontend/src/news.ts'
 
 
 def test_the_api_guide_page_and_docs_api_list_every_route_and_tool_alike():
     guide = (ROOT / "docs/API.md").read_text()
     page = (ROOT / "frontend/src/screens/ApiGuide.tsx").read_text()
-    in_guide = set(re.findall(r"\| `((?:GET|POST|DELETE) /api/v1/[^`]+)` \|", guide))
-    in_page = set(re.findall(r'\["((?:GET|POST|DELETE) /api/v1/[^"]+)"', page))
+    in_guide = set(re.findall(r"\| `((?:GET|POST|PUT|DELETE) /api/v1/[^`]+)` \|", guide))
+    in_page = set(re.findall(r'\["((?:GET|POST|PUT|DELETE) /api/v1/[^"]+)"', page))
     assert in_guide == in_page, f"docs/API.md and ApiGuide.tsx differ: {in_guide ^ in_page}"
     served = {f"{method.upper()} {path}" for path, ops in main.app.openapi()["paths"].items()   # every router's routes
               if path.startswith("/api/v1/") and "/admin/" not in path for method in ops}

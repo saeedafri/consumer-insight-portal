@@ -246,7 +246,7 @@ export const useSchedule = () => useQuery({ queryKey: ["schedule"], queryFn: () 
                                             staleTime: 60_000, refetchInterval: 60_000 });
 
 /** A write to the portal's own team store (saved views, alerts, audiences) or a question to Ask CIP. */
-export async function send<T>(method: "POST" | "DELETE", url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+export async function send<T>(method: "POST" | "PUT" | "DELETE", url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const r = await fetch(url, { method, signal, credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: body == null ? undefined : JSON.stringify(body) });
   if (r.status === 401) signIn();
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `${r.status} ${r.statusText}`);
@@ -300,6 +300,9 @@ export const useBoards = (enabled = true) => useQuery({ queryKey: ["boards"], qu
 export const useBoard = (id: number) => useQuery({ queryKey: ["board", id], queryFn: () => get<Board>(`/api/v1/boards/${id}`), ...team });
 export const useTeamViews = () => useQuery({ queryKey: ["team-views"], queryFn: () => get<TeamView[]>("/api/v1/team/views"), ...team });
 export const useAlerts = () => useQuery({ queryKey: ["alerts"], queryFn: () => get<Alert[]>("/api/v1/alerts"), ...team });
+/** Is the signed-in person emailed each new survey (My account's switch, api/team.py)? */
+export const useSurveyEmails = () =>
+  useQuery({ queryKey: ["survey-emails"], queryFn: () => get<{ subscribed: boolean }>("/api/v1/alerts/new-surveys"), ...team });
 export const useAudiences = () => useQuery({ queryKey: ["audiences"], queryFn: () => get<Audience[]>("/api/v1/audiences"), ...team });
 
 /** The signed-in person (api /me). null before the API serves it: every screen then shows every feature. */

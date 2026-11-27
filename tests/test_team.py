@@ -95,6 +95,39 @@ def test_an_alert_stays_quiet_once_whoever_set_it_lost_access(csi_db, monkeypatc
     assert [email for _, email in team.due_alerts([412])] == ["pat@acme.com"]
 
 
+def test_a_new_survey_email_reaches_each_subscriber_who_may_open_it_without_the_teams_files(csi_db, monkeypatch):
+    """My account's switch (api/team.py) and etl/notify.py tell_subscribers: on and off, each person checked as the API
+    checks them (the Alerts menu, the study), the team's own list skipped, and never the workbooks (27 Nov 2026)."""
+    import asyncio
+    import pytest
+    from fastapi import HTTPException
+    from etl import notify
+    monkeypatch.setattr(access, "rules", lambda: {
+        "features": ["explorer", "alerts"], "unknown": "refuse", "staff": {"domains": ["coresight.com"], "tier": "full"},
+        "tiers": {"full": {"features": "*", "study_types": "*"}, "basic": {"features": ["explorer"], "study_types": "*"}},
+        "clients": {"acme": {"domains": ["acme.com"], "tier": "full"}, "zeta": {"domains": ["zeta.com"], "tier": "full"},
+                    "lite": {"domains": ["lite.com"], "tier": "basic"}},
+        "surveys": {"ids": {412: {"client": "acme", "visibility": "client"}}}})   # wave 412 is Acme's own study
+    with csi_db.begin() as conn:
+        seed(conn, 412, date(2026, 10, 12), qualified=400, xm1_yes=200, xm1_base=400)
+    serving.build_wave(412)
+    for email in ("Pat@acme.com", "zed@zeta.com", "team@acme.com"):
+        assert asyncio.run(team.set_survey_emails(Asked(email, {"subscribed": True}))) == {"subscribed": True}
+    with pytest.raises(HTTPException) as refused:   # no Alerts menu, no switch
+        asyncio.run(team.set_survey_emails(Asked("max@lite.com", {"subscribed": True})))
+    assert refused.value.status_code == 403
+    team.set_subscribed("gone@nowhere.org", True)   # ticked before the Access page took them out
+    assert team.survey_emails(Asked("pat@acme.com")) == {"subscribed": True}
+    sent = []
+    monkeypatch.setattr(notify, "report", lambda survey_id, files, missing=(): ("plain", "<p>page</p>"))
+    monkeypatch.setattr(notify, "send", lambda subject, plain, to, attachments=(), page="", copy=True:
+                        sent.append((subject, to, list(attachments), copy)) or True)
+    assert notify.tell_subscribers(412, "New survey ready", ["Team@acme.com"]) == 1
+    assert sent == [("New survey ready", ["pat@acme.com"], [], False)]   # zed may not open Acme's study; team@ had the full one
+    asyncio.run(team.set_survey_emails(Asked("pat@acme.com", {"subscribed": False})))
+    assert team.survey_emails(Asked("pat@acme.com")) == {"subscribed": False}
+
+
 def test_an_audience_is_counted_from_the_cube_rows_and_shown_however_small(csi_db):
     from tests.test_forsta_etl import FakeForsta
     sid = forsta_etl.load_survey(FakeForsta(), "selfserve/58f/260907")

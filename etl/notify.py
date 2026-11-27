@@ -381,12 +381,15 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s | %(message)s")   # show each send
     p = argparse.ArgumentParser(description=main.__doc__)
     p.add_argument("--summary", action="store_true", help="the portal-wide summary, to the `default` list")
-    p.add_argument("--survey", type=int, help="one survey's loaded email (survey_id), to its study type's list")
+    p.add_argument("--survey", type=int, help="one survey's loaded email (survey_id), to its study type's list; with "
+                   "--send alone, as the pipeline sends it (also its Teams line and My account's subscribers)")
     p.add_argument("--send", action="store_true", help="send; without it, write .eml previews to --out")
     p.add_argument("--to", help="comma-separated addresses instead of the configured lists (a test send to yourself)")
     p.add_argument("--no-files", action="store_true", help="leave the workbooks off (a look at the email outside Coresight)")
     p.add_argument("--out", default="data/exports/email-preview")   # git-ignored: attachments hold respondent rows
     a = p.parse_args()
+    if a.survey and a.send and not (a.summary or a.to or a.no_files):   # the Upload survey page's (api/ingest.py)
+        return 0 if survey_loaded(a.survey) else 1
     emails = []
     if a.summary:
         subject, plain, page = summary()

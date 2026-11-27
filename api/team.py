@@ -247,7 +247,7 @@ def survey_emails(request: Request) -> dict:
     who = who_may_use(request, "alerts")
     if "cip_survey_subscriber" not in inspect(get_engine("app")).get_table_names():
         return {"subscribed": False}
-    return {"subscribed": bool(_rows("SELECT 1 FROM cip_survey_subscriber WHERE email = :e", e=who["email"]))}
+    return {"subscribed": bool(_rows("SELECT 1 FROM cip_survey_subscriber WHERE email = :e", e=who["email"].lower()))}
 
 
 @router.put("/alerts/new-surveys")
@@ -256,18 +256,22 @@ async def set_survey_emails(request: Request) -> dict:
     tell_subscribers), or stop. Part of the Alerts menu, so the Access page turns it on and off with alerts."""
     who = who_may_use(request, "alerts")
     on = (await json_body(request)).get("subscribed") is True
-
-    def store() -> None:
-        engine = get_engine("api_write")
-        if "cip_survey_subscriber" not in inspect(engine).get_table_names():   # the first tick makes the table
-            apply_sql(SUBSCRIBERS, engine)
-        with engine.begin() as conn:
-            conn.execute(text("DELETE FROM cip_survey_subscriber WHERE email = :e"), {"e": who["email"]})
-            if on:
-                conn.execute(text("INSERT INTO cip_survey_subscriber (email) VALUES (:e)"), {"e": who["email"]})
-    await run_in_threadpool(store)
+    await run_in_threadpool(set_subscribed, who["email"].lower(), on)
     audit.record(request, "survey_emails", detail={"subscribed": on})
     return {"subscribed": on}
+
+
+def set_subscribed(email: str, on: bool) -> None:
+    """One person on or off the new-survey emails: My account's switch, and offboarding (api/signin.py revoke_person)."""
+    engine = get_engine("api_write")
+    if "cip_survey_subscriber" not in inspect(engine).get_table_names():
+        if not on:
+            return
+        apply_sql(SUBSCRIBERS, engine)   # the first tick makes the table
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM cip_survey_subscriber WHERE email = :e"), {"e": email})
+        if on:
+            conn.execute(text("INSERT INTO cip_survey_subscriber (email) VALUES (:e)"), {"e": email})
 
 
 def due_alerts(survey_ids: list[int]) -> list[tuple[str, str | None]]:

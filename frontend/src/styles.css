@@ -85,6 +85,7 @@ small { font-size: 12px; }
 .rail nav a:hover { background: var(--hover); color: var(--ink); }
 .rail nav a.active { background: var(--red-wash); color: var(--red-text); font-weight: 600; }
 .rail nav a.active::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--red); }
+.rail-new { margin-left: auto; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--red); }   /* news.ts: arrived since this browser last opened the menu; a dot, as a "New" pill wrapped the longer menu names */
 .rail-label { margin: 6px 0 6px; padding: 0 14px; font: 800 10px/1.4 var(--font-head); letter-spacing: .145em; text-transform: uppercase; color: var(--rail-sub); }
 .rail-foot { margin: auto 8px 0; padding: 16px 15px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); }
 .rail-foot b { display: block; font: 800 25px/1 var(--font-head); letter-spacing: -.04em; color: var(--ink); font-variant-numeric: tabular-nums; }

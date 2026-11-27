@@ -6,8 +6,9 @@ import { setTheme, useTheme } from "../theme";
 import { setWeighted, useWeighted } from "../weight";
 import type { Theme } from "../theme";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType, useParams } from "react-router";
-import { allowed, useMe, useReportWaves, useWaves } from "../api";
+import { allowed, useBoards, useMe, useReportWaves, useWaves } from "../api";
 import { SECTIONS } from "../forstaSections";
+import { LATEST_RELEASE, useNews } from "../news";
 import { dashboardFeature, TRACKERS } from "../trackers";
 import PinDialog from "./PinDialog";
 import { Menu, UndoBar } from "./bits";
@@ -140,6 +141,19 @@ export default function Shell() {
   const wave = waves.data?.find(w => String(w.survey_id) === id);
   const latest = waves.data?.find(w => w.survey_family === "CSI-US" && w.rows_built !== 0);   // newest first
   const china = waves.data?.find(w => w.survey_family === "CSI-CN" && w.rows_built !== 0);    // the China Consumer Survey (Baidu)
+  const boards = useBoards(allowed(me, "boards")).data;
+  const path = location.pathname;
+  // "New" on a menu (news.ts): each one's newest survey id or time; a teammate's board, never your own
+  const news = useNews({
+    library: waves.data && Math.max(0, ...waves.data.filter(w => w.rows_built !== 0).map(w => w.survey_id)),
+    us_tracker: latest?.survey_id, china_tracker: china?.survey_id,
+    datasets: latest?.survey_id,   // the workbook gains each new US weekly survey (etl/consumer_health.py)
+    boards: boards && Math.max(0, ...boards.filter(b => b.created_by.toLowerCase() !== me?.email?.toLowerCase()).map(b => Date.parse(b.created_at))),
+    whats_new: Date.parse(LATEST_RELEASE),
+  }, path.startsWith("/library") ? "library" : path.startsWith("/boards") ? "boards" : path.startsWith("/whats-new") ? "whats_new"
+    : wave && wave.survey_id === latest?.survey_id ? "us_tracker" : wave && wave.survey_id === china?.survey_id ? "china_tracker" : undefined);
+  const badge = (menu: string) =>
+    news.fresh.has(menu) ? <span className="rail-new" title="New since your last visit"><span className="sr-only">New</span></span> : null;
   const reportWaves = useReportWaves().data;   // the waves with a weekly report (since Jul 2025: etl/weekly_report.py)
   const hasReport = !!wave && !!reportWaves?.includes(wave.survey_id);
   const rail = useRef<HTMLElement>(null);
@@ -194,18 +208,18 @@ export default function Shell() {
         <NavLink to="/" end><Icon of={House} />Home</NavLink>
         {allowed(me, "ask") && <NavLink to="/ask" title="Ask a question in your own words: the answer, its chart and the survey behind it">
           <Icon of={MessageSquare} />Ask CIP</NavLink>}
-        {allowed(me, "library") && <NavLink to="/library"><Icon of={LibraryBig} />Survey library</NavLink>}
+        {allowed(me, "library") && <NavLink to="/library"><Icon of={LibraryBig} />Survey library{badge("library")}</NavLink>}
         {allowed(me, "search") && <NavLink to="/search"><Icon of={Search} />Search questions</NavLink>}
         {allowed(me, "schedule") && <NavLink to="/schedule"><Icon of={CalendarDays} />Launch schedule</NavLink>}
-        {allowed(me, "boards") && <NavLink to="/boards"><Icon of={Pin} />Boards</NavLink>}
+        {allowed(me, "boards") && <NavLink to="/boards"><Icon of={Pin} />Boards{badge("boards")}</NavLink>}
       </RailGroup>
       <RailGroup label="Core research">
         {latest && allowed(me, "us_tracker") && <NavLink to={`/w/${latest.survey_id}`} className={() => wave?.survey_id === latest.survey_id ? "active" : ""}
           title="The Shopping & Spending survey: about 400 US adults every week since 2020">
-          <Icon of={LayoutDashboard} />US weekly tracker</NavLink>}
+          <Icon of={LayoutDashboard} />US weekly tracker{badge("us_tracker")}</NavLink>}
         {china && allowed(me, "china_tracker") && <NavLink to={`/w/${china.survey_id}`} className={() => wave?.survey_family === "CSI-CN" ? "active" : ""}
           title="The weekly China consumer survey and its weekly report">
-          <Icon of={Globe} />China weekly tracker</NavLink>}
+          <Icon of={Globe} />China weekly tracker{badge("china_tracker")}</NavLink>}
         {allowed(me, "channels") && <NavLink to="/channels" title="Which categories people bought in a store and which online, week by week"><Icon of={Layers} />In store vs online</NavLink>}
         {allowed(me, "retailers") && <NavLink to="/retailers" title="Each retailer: who shops there, how many bought and how positive they feel"><Icon of={Store} />Retailer databank</NavLink>}
         {allowed(me, "sectors") && <NavLink to="/sectors" title="Each retail sector: who bought in it, and its retailers, brands and categories"><Icon of={Database} />Sector databank</NavLink>}
@@ -217,9 +231,9 @@ export default function Shell() {
       </RailGroup>}
       {(allowed(me, "methodology") || allowed(me, "whats_new") || isAdmin || given(me, "datasets")) && <RailGroup label="Reference">
         {allowed(me, "methodology") && <NavLink to="/methodology"><Icon of={Info} />Methodology</NavLink>}
-        {allowed(me, "whats_new") && <NavLink to="/whats-new"><Icon of={Star} />What's new</NavLink>}
+        {allowed(me, "whats_new") && <NavLink to="/whats-new"><Icon of={Star} />What's new{badge("whats_new")}</NavLink>}
         {/* respondent rows: only for those given it (config/access.yml chosen_only), a download from api/main.py dataset() */}
-        {(isAdmin || given(me, "datasets")) && <a href="/api/v1/datasets/consumer-health" download><Icon of={Download} />Consumer Health dataset</a>}
+        {(isAdmin || given(me, "datasets")) && <a href="/api/v1/datasets/consumer-health" download onClick={() => news.see("datasets")}><Icon of={Download} />Consumer Health dataset{badge("datasets")}</a>}
       </RailGroup>}
       {(isAdmin || given(me, "fieldwork") || SECTIONS.some(([path]) => given(me, `forsta_${path}`))) &&
         <RailGroup label="Research operations" closed={!/^\/(fieldwork|forsta)/.test(location.pathname)}>

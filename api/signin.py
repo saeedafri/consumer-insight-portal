@@ -37,7 +37,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import text
 from starlette.concurrency import run_in_threadpool
 
-from api.team import json_body
+from api.team import json_body, set_subscribed
 from shared.core import access, api_keys, audit
 from shared.core.database import get_engine
 from shared.core.session import REVOKED, SESSION_HOURS, digest, issue, read, same, sign
@@ -491,7 +491,8 @@ async def auth_check(who: dict = Depends(user)) -> Response:
 
 @router.post("/api/v1/admin/sessions/revoke")
 async def revoke_person(request: Request, who: dict = Depends(admin)) -> dict:
-    """{email}: sign that person out everywhere and revoke their API keys (offboarding). Admins only."""
+    """{email}: sign that person out everywhere, revoke their API keys and stop their new-survey emails (offboarding).
+    Admins only."""
     email = str((await json_body(request)).get("email") or "").strip().lower()
     if "@" not in email:
         raise HTTPException(422, "Name the email to sign out")
@@ -501,5 +502,6 @@ async def revoke_person(request: Request, who: dict = Depends(admin)) -> dict:
     found = await run_in_threadpool(hashes)
     await run_in_threadpool(revoke, found, email)
     keys = await run_in_threadpool(api_keys.revoke, email)   # a key never passes the identity provider: it outlived the sessions (15 Nov 2026)
+    await run_in_threadpool(set_subscribed, email, False)    # an inbox outlives the sign-in too (27 Nov 2026)
     audit.record(request, "revoke_sessions", target=email, detail={"sessions": len(found), "keys": keys})
     return {"email": email, "revoked": len(found), "keys": keys}

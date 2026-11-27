@@ -40,6 +40,7 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: node src/stats.check.ts   # the statistics self-check (Node strips the types itself)
+      - run: node src/news.check.ts    # the left menu's "New" badges
       - run: npm run build
 
   images:

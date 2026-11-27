@@ -707,8 +707,10 @@ def test_offboarding_also_revokes_the_persons_api_keys(portal, monkeypatch, tmp_
     monkeypatch.setitem(api_keys._cache, "checked", -1e9)
     boss, ana = signed("boss@coresight.com"), signed("ana@coresight.com")
     bearer = {"authorization": "Bearer " + json.loads(call("/api/v1/keys", ana, "POST", b'{"name": "Ana"}')[2])["key"]}
+    team.set_subscribed("ana@coresight.com", True)   # her new-survey emails (My account) end with it (27 Nov 2026)
     status, _, body = call("/api/v1/admin/sessions/revoke", boss, "POST", b'{"email": "ana@coresight.com"}')
     assert status == 200 and call("/api/v1/waves", headers=bearer)[0] == 401 and json.loads(body)["keys"] == 1
+    assert team._rows("SELECT email FROM cip_survey_subscriber") == []
     shown = api_keys.new("ben@coresight.com", "Ben's script")[:8]
     monkeypatch.setattr("sys.argv", ["api_keys", "revoke", shown])
     api_keys.main()
