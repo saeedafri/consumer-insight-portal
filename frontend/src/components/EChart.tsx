@@ -1,7 +1,7 @@
 // One ECharts canvas: only the chart types and components CIP uses are bundled (≈190 KB gzipped, its own cached chunk).
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts/core";
-import { BarChart, LineChart, PieChart } from "echarts/charts";
+import { BarChart, LineChart, PictorialBarChart, PieChart } from "echarts/charts";
 import { AriaComponent, GridComponent, LegendPlainComponent, LegendScrollComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { LabelLayout } from "echarts/features";
 import { CanvasRenderer } from "echarts/renderers";
@@ -9,8 +9,9 @@ import type { EChartsCoreOption } from "echarts/core";
 import { DARK, FONT, inLight, LIGHT, REDUCED_MOTION, savedTheme, useTheme } from "../theme";
 
 // MarkLine: the news and retail events on the weekly report's charts; LegendScroll: a report table's many answers;
-// LabelLayout: end labels of lines that end close together move apart (In store vs online's trend)
-echarts.use([AriaComponent, BarChart, LineChart, PieChart, GridComponent, LegendPlainComponent, LegendScrollComponent, MarkLineComponent,
+// LabelLayout: end labels of lines that end close together move apart (In store vs online's trend); PictorialBar:
+// In store vs online's Everyone tick on each bar
+echarts.use([AriaComponent, BarChart, LineChart, PictorialBarChart, PieChart, GridComponent, LegendPlainComponent, LegendScrollComponent, MarkLineComponent,
   TooltipComponent, LabelLayout, CanvasRenderer]);
 
 // The house chart look, registered once per theme: 12 px axes (category in ink-2, values in ink-3), no category
