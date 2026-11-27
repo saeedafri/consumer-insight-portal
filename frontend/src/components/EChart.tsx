@@ -1,4 +1,4 @@
-// One ECharts canvas: only the chart types and components CIP uses are bundled (≈190 KB gzipped, its own cached chunk).
+// One ECharts canvas: only the chart types and components CIP uses are bundled (≈204 KB gzipped, its own cached chunk).
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PictorialBarChart, PieChart } from "echarts/charts";
