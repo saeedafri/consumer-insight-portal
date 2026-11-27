@@ -8,7 +8,7 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ### In store vs online: Everyone and the line chart's date range are back
 
-Everyone is a choice under Respondent group again, and the page opens on it, as before. The line chart has its own group list (with Everyone), its From and To dates and its group buttons again, all the same choice as the filters above: picking Everyone in either shows Everyone on both charts. The line chart shows the year up to the week chosen above, so changing the Week moves it, and From and To still pick any range. When a group is chosen, Everyone's figure stays the grey tick on each bar.
+Everyone is a choice under Respondent group again, and the page opens on it, as before. The line chart has its own group list (with Everyone), its From and To dates and its group buttons again, all the same choice as the filters above: picking Everyone in either shows Everyone on both charts. The line chart shows the year up to the week chosen above, so changing the Week moves it, and From and To still pick any range. The bar chart is quieter: only the chosen category shows its percentages and, when a group is chosen, Everyone's figure as a grey tick; hovering any category gives its in-store and online figures (and Everyone's). The group and the date (or the trend's dates) now sit in grey chips above each chart, so the filters applied are plain to see.
 
 ### Excel: one view at a time as well as the whole workbook, and tracker tabs named as their lists
 

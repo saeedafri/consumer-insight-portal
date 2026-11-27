@@ -156,11 +156,11 @@ export default function Channels() {
   const withEveryone = cut !== EVERYONE;   // Everyone's figure beside a group's
   const channels = [["In a store", data.inStore, C.red, "store"], ["Online", data.onLine, C.blue, "online"]] as const;
   /** In-store (red) and online (blue) bars, a pair per category for the group, biggest in store first. The category the
-   *  line chart shows stays where it ranks (26 Nov 2026), in full colour with its figures in bold; the others lighter.
-   *  Everyone's figure is a short grey tick across each bar, as the Retailer databank's "Who shops there" marks all
-   *  adults: a bar past its tick is above everyone's (27 Nov 2026). A pictorial bar (a tick at the bar's end) is laid out
-   *  like the bars, so each tick sits on its own bar; each bar's % is in a column on the right, as the Retailer databank
-   *  does, as at the bar's end a tick could cross it. */
+   *  line chart shows stays where it ranks (26 Nov 2026), in full colour; the others lighter. Only the chosen category
+   *  shows its % and Everyone's figure as a short grey tick across each bar (a bar past it is above everyone's); every
+   *  row's figures are in the hover (the user, 27 Nov 2026: on every row they made the chart busy). A pictorial bar (a
+   *  tick at the bar's end) is laid out like the bars, so each tick sits on its own bar; the % sits in a column on the
+   *  right, as the Retailer databank's "Who shops there" does, as at the bar's end a tick could cross it. */
   const barOption = () => ({
     tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "shadow" },
       formatter: ([p]: { name: string }[]) => `${p.name}<br>` + channels.map(([name, fn]) => `${name} <b>${pct(fn(week, cut, p.name))}</b>` +
@@ -172,14 +172,14 @@ export default function Channels() {
               axisLabel: { ...axisText(), width: 190, overflow: "truncate", color: (row?: string) => row === category ? C.ink : C.ink3 } },
             // in a store over online, beside each pair of bars (two 10 px bars 3 px apart: 13 px between their middles)
             { type: "category", inverse: true, data: categories, position: "right", axisLabel: { align: "right", margin: 44, lineHeight: 13,
-              formatter: (r: string) => channels.map(([, fn, , style]) => `{${style}${r === category ? "Bold" : ""}|${pct(figure(fn(week, cut, r)))}}`).join("\n"),
-              rich: Object.fromEntries(channels.flatMap(([, , color, style]) => [[style, { color, fontSize: 11 }], [`${style}Bold`, { color, fontSize: 11, fontWeight: 700 }]])) } }],
+              formatter: (r: string) => r === category ? channels.map(([, fn, , style]) => `{${style}|${pct(figure(fn(week, cut, r)))}}`).join("\n") : "",
+              rich: Object.fromEntries(channels.map(([, , color, style]) => [style, { color, fontSize: 11, fontWeight: 700 }])) } }],
     series: [...channels.map(([name, fn, color]) => ({
       type: "bar", name, barMaxWidth: 10, barGap: "30%", itemStyle: { color, borderRadius: [2, 4, 4, 2] },
       data: categories.map(r => ({ value: figure(fn(week, cut, r)), ...(r === category ? {} : { itemStyle: { opacity: 0.3 } }) })) })),
       ...(withEveryone ? channels.map(([, fn]) => ({
         type: "pictorialBar", name: "Everyone", barMaxWidth: 10, barGap: "30%", symbol: "rect", symbolSize: [2, 12], symbolPosition: "end",
-        itemStyle: { color: C.other }, data: categories.map(r => figure(fn(week, EVERYONE, r))) })) : [])],
+        itemStyle: { color: C.other }, data: categories.map(r => r === category ? figure(fn(week, EVERYONE, r)) : null) })) : [])],
   });
   const barTitle = "All categories, this week";
   const exportBars = (format: Format) => downloadTable(format, `${barTitle} ${date}`,
@@ -257,12 +257,12 @@ export default function Channels() {
 
     <div className="grid g2">
       <Card title={barTitle} aside={<ExportButtons onExport={exportBars} png={() => barChart.current && downloadPng(barChart.current, `${barTitle}: ${groupName}, ${fmtDate(date)}`, source, `${barTitle} ${date}`)} />}
-            sub={<><b>{groupName}</b> · <b>{fmtDate(date)}</b><br />Percentage of respondents who bought each category in a store (red) and
-              online (blue){withEveryone && ", Everyone's as a grey tick"} · click a category to see its trend</>}>
+            sub={<><span className="chip flat">{groupName}</span> <span className="chip flat">{fmtDate(date)}</span><br />Percentage of respondents who bought each category in a store (red) and
+              online (blue){withEveryone && ", Everyone's as a grey tick"} · hover a category for its figures, click it to see its trend</>}>
         <EChart height={height} label={`In store and online buying by category, ${groupName}, ${fmtDate(date)}`}
                 onClick={p => pick("c", String(p.componentType === "yAxis" ? p.value : p.name))} option={barOption()} build={barOption} onReady={c => { barChart.current = c; }} />
       </Card>
-      <Card title={category} sub={<><b>{groupName}</b> · <b>{rangeText}</b><br />Percentage of respondents who bought it each week, in a
+      <Card title={category} sub={<><span className="chip flat">{groupName}</span> <span className="chip flat">{rangeText}</span><br />Percentage of respondents who bought it each week, in a
               store (red) and online (blue)</>}
             aside={<ExportButtons onExport={exportTrend} png={() => lineChart.current && downloadPng(lineChart.current, `${lineTitle}, ${rangeText}`, source, `${category} in store vs online`)} />}>
         <div className="toolbar one-row" style={{ marginBottom: 8 }}>
