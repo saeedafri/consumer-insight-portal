@@ -1,12 +1,15 @@
 // A wave at a glance: the biggest significant moves, then one chart per section. Every number is
-// computed from the wave, so the page works for any survey, not one written by hand.
+// computed from the wave, so the page works for any survey, not one written by hand. Opened as the US and China
+// weekly tracker (left menu) and from the Library; Export downloads the whole survey as a workbook (surveyBook).
 import CountUp from "../components/CountUp";
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router";
 import { allowed, dashboardQuery, useBook, useMe, useWaves } from "../api";
-import type { Question } from "../api";
-import { BaseNote, Card, Change, compared, Failure, SkeletonScreen, SourceLine, SIG_RULE, QuestionCode } from "../components/bits";
+import type { Book, Question } from "../api";
+import { BaseNote, Card, Change, compared, ExportButtons, Failure, SkeletonScreen, SourceLine, SIG_RULE, sourceText, QuestionCode } from "../components/bits";
+import { downloadBook } from "../csv";
+import type { Sheet } from "../csv";
 import Glance from "../components/Glance";
 import QuestionChart from "../components/QuestionChart";
 import { biggest, isProfile, moves } from "../moves";
@@ -50,6 +53,7 @@ export default function Overview() {
           <PrinterIcon size={14} />
           Print report
         </Button>
+        <ExportButtons pin={false} onExport={format => downloadBook(format, `${w.title} ${w.wave_date}`, surveyBook(book))} />
       </div>
     </div>
 
@@ -100,4 +104,22 @@ export default function Overview() {
       </Card>)}
     </div>
   </>;
+}
+
+/** The whole survey as a workbook (the business team, 27 Nov 2026): a tab per section in the survey's order, a row
+ *  per answer with each column's % (Total, gender, generation) and last time's, then the people asked in each column.
+ *  Weighted when the Weighted switch is on, as the book on screen. */
+function surveyBook(book: Book): Sheet[] {
+  const wave = fmtDate(book.wave.wave_date), vs = compared(book.wave);
+  return [...new Set(book.questions.map(q => q.section))].map(section => {
+    const rows: Sheet["rows"] = [], plain: number[] = [];
+    for (const q of book.questions.filter(x => x.section === section)) for (const g of q.groups) {
+      g.rows.forEach(r => rows.push([q.number, q.text, g.label, r.label, ...book.columns.map(c => r[c] ?? null), r.prior]));
+      plain.push(rows.length);
+      rows.push([q.number, q.text, g.label, "Respondents asked", ...book.columns.map(c => g.bases[c] ?? null), g.rows[0]?.prior_base ?? null]);
+    }
+    return { title: section, rows, plain, header: ["Question", "Wording", "Statement", "Answer", ...book.columns.map(c => `${c} %`), `${vs.Prior} %`],
+             notes: [`${book.wave.title}: ${section}`, `Wave of ${wave} · ${book.wave.qualified_n.toLocaleString("en-US")} qualified respondents`,
+                     sourceText(book.wave, wave, `Total n=${book.n.Total}`)] };
+  });
 }

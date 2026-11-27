@@ -37,6 +37,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy import bindparam, inspect, text
 
+from etl import notify
 from etl.harmonise import normalise_text
 from etl.weekly_report import read_waves
 from shared.core.database import apply_sql, get_engine
@@ -222,11 +223,25 @@ def read_history() -> dict | None:
     return json.loads(gzip.decompress(payload)) if payload else None
 
 
-def new_weeks(out: Path, history: dict) -> tuple[list[dict], list[dict]]:
-    """Rows and Source QA lines of every published US weekly wave after the history's last week."""
+def check_wave(wave: dict, people: list[dict], asked: set[str]) -> list[str]:
+    """What a wave asks that the rules do not cover, which would leave its rows quietly wrong: an activity answer they
+    do not know (whoever picks only it counts as skipping Q1), one of the 12 no longer asked by that wording (its
+    column all 0), or a demographic nobody answered (its question reworded). Each is a line in config/consumer_health.yml."""
+    activities = settings()["activities"]
+    known = {a["answer"] for a in activities["original"].values()} | set(activities["added"].values()) | {activities["none"]}
+    week = f"Week of {wave['wave_date']} ({wave['source_ref']})"
+    return ([f"{week}: an answer the rules do not know: {label}" for label in sorted(asked - known - {None})]
+            + [f"{week}: no longer asked: {a['answer']}" for a in activities["original"].values() if a["answer"] not in asked]
+            + [f"{week}: nobody answered {column}; was its question reworded?" for column in settings()["demographics"]
+               if all(p.get(column) is None for p in people)])
+
+
+def new_weeks(out: Path, history: dict) -> tuple[list[dict], list[dict], list[str]]:
+    """Rows and Source QA lines of every published US weekly wave after the history's last week, and what in those
+    waves the rules do not cover (check_wave)."""
     header = history["header"]
     last = max(monday(r[header.index("Survey_Wave_Date")]) for r in history["rows"])
-    rows, qa = [], []
+    rows, qa, problems = [], [], []
     with get_engine("app").connect() as conn:
         for wave in read_waves(out, settings()["family"], "tracker"):
             if monday(wave["wave_date"]) > last:
@@ -235,7 +250,8 @@ def new_weeks(out: Path, history: dict) -> tuple[list[dict], list[dict]]:
                     week = wave_rows(wave, people, asked)
                     rows += week
                     qa.append(qa_line(wave, week))
-    return rows, qa
+                    problems += check_wave(wave, people, asked)
+    return rows, qa, problems
 
 
 def save(folder: Path, history: dict, rows: list[dict], qa: list[dict]) -> Path:
@@ -348,13 +364,17 @@ def publish(out: Path) -> int:
     history = read_history()
     if not history:
         return 0
-    rows, qa = new_weeks(out, history)
+    rows, qa, problems = new_weeks(out, history)
     folder = out / FOLDER
     folder.mkdir(parents=True, exist_ok=True)
     path = save(folder, history, rows, qa)
     for old in folder.glob("Consumer_Health_*.xlsx"):   # one named for other years
         if old != path:
             old.unlink()
+    if problems:   # after the file: a mail server that is down retries for minutes. Each publish rebuilds every newer
+        log.warning("Consumer Health dataset: %s", "; ".join(problems))   # week, so the rule mends the weeks before it
+        notify.failure("the Consumer Health dataset meets answers its rules do not cover", "\n".join(problems),
+                       "The file was still written. Add each to config/consumer_health.yml; the next publish rebuilds those weeks.")
     log.info("Consumer Health dataset: %d history rows + %d new rows (%d weeks), %s", len(history["rows"]), len(rows), len(qa), path.name)
     return path.stat().st_size
 

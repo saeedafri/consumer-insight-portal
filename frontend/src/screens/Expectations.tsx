@@ -51,7 +51,7 @@ export default function Expectations() {
         aside={<div className="toolbar one-row">
           {q.net && <span className="chip flat" title="% more minus % less">Net more: {points(q.net.expected)} expected, {points(q.net.actual)} actual</span>}
           <ExportButtons onExport={format => downloadTable(format, `${event.name} - ${q.expected_code}`,
-            ["Answer", `Expected ${shown.expected.date}`, `Actual ${shown.actual.date}`, "Difference (PPTs)", "Significant"],
+            ["Answer", `Expected %, ${shown.expected.date}`, `Actual %, ${shown.actual.date}`, "Difference (PPTs)", "Significant"],
             q.rows.map(r => [r.label, r.expected, r.actual, r.difference, r.significant ? "yes" : ""]),
             [q.expected_text, `Afterwards: ${q.actual_text}`, `Base: ${q.expected_base} before, ${q.actual_base} after`, "Source: Coresight Research US Consumer Survey"])} />
         </div>}>
@@ -76,7 +76,8 @@ function OutlookTable({ outlook }: { outlook: Outlook }) {
   const pct = (v: number | null) => v == null ? "–" : `${v.toFixed(1)}%`;
   const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, outlook.title,
     ["Answer", ...outlook.dates], [...outlook.rows.map(r => [r.label, ...r.values]), ["Net", ...outlook.net], ["Respondents asked", ...outlook.bases]],
-    [outlook.title, "% of holiday shoppers. Net = more (or better) minus less (or worse).", "Source: Coresight Research US Consumer Survey"]);
+    [outlook.title, "% of holiday shoppers. Net = more (or better) minus less (or worse).", "Source: Coresight Research US Consumer Survey"],
+    { unit: "%", plain: [outlook.rows.length, outlook.rows.length + 1] });   // the net (points) and the people asked are no %
   return <Card title={outlook.title} sub="% of respondents who celebrate the holiday season. Net = a lot or slightly more (better) minus a lot or slightly less (worse)."
                aside={<ExportButtons onExport={exportTable} />}>
     <div className="table-wrap" ref={el => { if (el) el.scrollLeft = el.scrollWidth; }}><table className="data report-table">

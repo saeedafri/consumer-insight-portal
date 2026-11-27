@@ -37,7 +37,7 @@ export interface Dashboard {
   dashboard: string; title: string; wave: WaveRef; prior: WaveRef | null; last_year: WaveRef | null; ly_rule: string;
   tiles: Record<string, Metric | null>; lists: Record<string, Metric[]>; segments: Record<string, Metric[]>;
   takeaways: string[]; small_base: number; data_as_of: string | null;
-  tile_labels?: Record<string, string>; highlights?: { list: string; title: string; of: string }[]; prior_label?: string;
+  tile_labels?: Record<string, string>; list_heads?: Record<string, string>; highlights?: { list: string; title: string; of: string }[]; prior_label?: string;
 }
 export interface Row extends Partial<Record<Column, number | null>> {   // null: under HIDDEN_BASE people, no figure
   label: string; code: number | null; prior: number | null; prior_base: number | null;

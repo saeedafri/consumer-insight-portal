@@ -861,8 +861,9 @@ def test_the_access_menu_tree_holds_every_feature_once_as_the_left_menu_does():
     assert [f"tracker_{c}" for c in trackers] == [k for k in rules["features"] if k.startswith("tracker_")]
     assert [f"forsta_{s}" for s in sections] == [k for k in rules["features"] if k.startswith("forsta_")]
     shell = web.joinpath("components", "Shell.tsx").read_text()
-    named = set(re.findall(r'(?:allowed\(me, |features\?\.includes\()"(\w+)"', shell))
+    named = set(re.findall(r'(?:allowed\(me, |given\(me, |features\?\.includes\()"(\w+)"', shell))
     assert named and named <= set(rules["features"])   # every menu the left menu checks is one the Access screen offers
+    assert {"datasets", "ingest", "logs"} <= named     # given(): the menus only the super admin hands out (27 Nov 2026)
     assert {g["group"] for g in access.tree()} >= {"Explore", "Core research", "Trackers", "Reference", "Research operations", "Administration"}
 
 

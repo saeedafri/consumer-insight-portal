@@ -10,7 +10,8 @@ import { useSectors } from "../api";
 import type { Sector } from "../api";
 import { Card, Empty, ExportButtons, Failure, marketOptions, SkeletonScreen } from "../components/bits";
 import { FigureCard } from "../components/Glance";
-import { downloadTable } from "../csv";
+import { downloadBook, downloadTable } from "../csv";
+import type { Sheet } from "../csv";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtDate } from "../stats";
 
@@ -54,15 +55,23 @@ function SectorCards({ sector, onTab }: { sector: Sector; onTab: (title: string)
   </section>;
 }
 
-/** One sector as the Databank lays it out: the purchase-rate row on top, then the chosen tab's answers, then the base. */
+/** One tab of the sector as the Databank lays it out: the purchase-rate row on top, then the tab's answers, then the base. */
+function sheetOf(sector: Sector, table: Sector["tables"][number]): Sheet {
+  const rows = [...(sector.purchase ? [[sector.purchase.label, ...sector.purchase.values]] : []), ...table.rows.map(r => [r.label, ...r.values]),
+                ["Respondents asked", ...table.bases]];
+  return { title: table.title, header: [table.title, ...sector.waves.map(w => w.date)], rows, unit: "%", plain: [rows.length - 1],
+           notes: [`${sector.name}: ${table.title}`, "% of respondents; retailers, brands and categories are % of the sector's buyers.", "Source: Coresight Research US Consumer Survey"] };
+}
+
+/** One sector as the Databank lays it out, a tab at a time on screen; Export downloads every tab (the business team,
+ *  27 Nov 2026), Pin pins the tab on screen. */
 function SectorTable({ sector, tab, onTab }: { sector: Sector; tab: string | null; onTab: (title: string) => void }) {
   const table = sector.tables.find(t => t.title === tab) ?? sector.tables[0];
   const first = sector.waves[0], last = sector.waves.at(-1)!;
-  const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, `${sector.name} - ${table.title}`,
-    [table.title, ...sector.waves.map(w => w.date)],
-    [...(sector.purchase ? [[sector.purchase.label, ...sector.purchase.values]] : []), ...table.rows.map(r => [r.label, ...r.values]),
-     ["Respondents asked", ...table.bases]],
-    [`${sector.name}: ${table.title}`, "% of respondents; retailers, brands and categories are % of the sector's buyers.", "Source: Coresight Research US Consumer Survey"]);
+  const shown = sheetOf(sector, table);
+  const exportTable = (format: Parameters<typeof downloadTable>[0]) => format === "board"
+    ? downloadTable(format, `${sector.name} - ${table.title}`, shown.header, shown.rows, shown.notes)
+    : downloadBook(format, `${sector.name} databank`, sector.tables.map(t => sheetOf(sector, t)));
   return <Card title={sector.name}
                sub={`${sector.waves.length} surveys, ${fmtDate(first.date)} to ${fmtDate(last.date)}. About 400 US adults each: margin of error up to ±${sector.margin}% at 95% confidence, wider for the smaller buyer bases.`}
                aside={<div className="toolbar one-row"><Tabs value={table.title} onValueChange={onTab}><TabsList>

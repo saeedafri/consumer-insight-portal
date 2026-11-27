@@ -837,14 +837,16 @@ EXPORT_TYPES = {"xlsx": "application/vnd.openxmlformats-officedocument.spreadshe
 
 @app.post("/api/v1/export/{kind}")
 async def export(kind: str, request: Request, who: dict = Depends(user)) -> Response:
-    """The table a screen offers as CSV, as an Excel workbook or a PowerPoint slide (api/exports.py)."""
+    """The table a screen offers as CSV, as an Excel workbook or a PowerPoint slide (api/exports.py); a book of tables
+    (`sheets`: a databank's every tab, a survey's every section) as one workbook of tabs or a deck of slides."""
     if kind not in EXPORT_TYPES:
         raise HTTPException(404, "Exports are xlsx or pptx")
     require_feature(who, "export")
     if not access.spend(who["email"], "export"):
         raise HTTPException(429, "Too many exports: wait a minute", headers={"Retry-After": "60"})
     try:
-        spec = exports.check(await team.json_body(request))
+        body = await team.json_body(request)
+        spec = exports.check_book(body) if "sheets" in body else exports.check(body)
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(422, str(exc))
     try:
@@ -855,7 +857,7 @@ async def export(kind: str, request: Request, who: dict = Depends(user)) -> Resp
         body = await run_in_threadpool(exports.build_xlsx if kind == "xlsx" else exports.build_pptx, spec)
     finally:
         EXPORT_SLOTS.release()
-    audit.record(request, "export", target=spec["name"], detail={"kind": kind, "rows": len(spec["rows"])})
+    audit.record(request, "export", target=spec["name"], detail={"kind": kind, "rows": sum(len(t["rows"]) for t in spec.get("sheets") or [spec])})
     return Response(body, media_type=EXPORT_TYPES[kind], headers={"Content-Disposition": f'attachment; filename="{spec["name"]}.{kind}"'})
 
 

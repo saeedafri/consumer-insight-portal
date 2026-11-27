@@ -6,9 +6,17 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 27 November 2026
 
+### Excel for every databank and tracker, every tab in one workbook in the Coresight style, and one look for every button filter
+
+Every Excel download now comes in the Coresight style: the header row in Coresight red with white text, percentages shown as 61.0%, the people asked as whole numbers, weeks as dates, columns as wide as their text, the header and first column kept in view and a filter on the header. A download that covers several tables now gives them all at once, a tab each. The Sector databank gives every tab of the chosen sector (retailers, brands, categories), laid out as the Databank's own workbooks. The US and China weekly tracker pages, like any survey's overview, have an Export button for the whole survey: a tab per section, every answer with Total, gender, generation and last week's figure, and the people asked. Each tracker (Tariffs & inflation, Financial health, GenAI & AI shopping, GLP-1 impact, Gas prices & geopolitics, Holiday shopping, Holiday outlook, Social commerce) has an Export button for every week it ran: a tab for the headline figures, one per list and one per group split, an answer per row and a week per column; Holiday shopping's holds the 2025 and 2026 seasons. PowerPoint gives the same tables as a deck, a slide each. Expected vs actual and the Retailer databank's shopper profile show their figures as percentages. The chosen button of every button filter and tab (chart types, groups, the Sector databank's tabs) now looks the same everywhere: a red outline and red text, as In store vs online's group buttons.
+
 ### In store vs online: Everyone as a grey tick on each bar, and the line chart follows the filters
 
 Everyone is no longer a choice under Respondent group: the page opens on the first group, for example Gender: Male, and Everyone's figure is a short grey tick across each bar, as in the Retailer databank's Who shops there, so a bar past its tick is above everyone's. Each bar's percentage is in a column on the right, red for in a store over blue for online, where a tick cannot cross it; the hover and the export give the group's figures and Everyone's. The line chart keeps only its group buttons, the same choice as the filters: its own group, From and To lists are gone, and it shows the year up to the week chosen above, so changing the Week moves it. Both charts' notes now give the group and the date, then, on a line of their own, Percentage of respondents who bought. A week of 2021-22 with no demographics still shows Everyone, as it has no groups.
+
+### Consumer Health dataset: their history loaded, and an email when a week's answers change
+
+The data science team's Consumer Health workbook (to 10 August 2026) is now loaded on staging, so each publish writes the download: 68,152 respondents from 4 September 2023 to 23 November 2026, the first 62,109 identical to their workbook cell for cell. Each publish also checks every newer US week against the workbook's rules and emails the pipeline's failure list when a week asks an activity the rules do not know, no longer asks one of the 12 in the same words, or has a demographic nobody answered: such a week would otherwise be counted quietly wrong. Adding the answer to config/consumer_health.yml mends every such week at the next publish. A workbook that fails to build is emailed too.
 
 ## 26 November 2026
 

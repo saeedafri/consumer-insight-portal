@@ -243,10 +243,10 @@ input:focus-visible, select:focus-visible { box-shadow: 0 0 0 3px color-mix(in s
   .seg button { white-space: normal; padding-block: 6px; text-align: left; }
   .switcher .context { display: none; }
 }
-.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 .seg button:hover { color: var(--ink); }
-/* a group picked among many (In store vs online's trend buttons): plain to see, as the Survey filter's chips */
-.seg.picked button[aria-pressed="true"] { background: var(--red-wash); color: var(--red-text); box-shadow: inset 0 0 0 1px var(--red); }
+/* the chosen button of every button filter and tab, one look across the portal (the business team, 27 Nov 2026): red
+   outline and text on a red wash, as In store vs online's group buttons and the Survey filter's chips */
+.seg button[aria-pressed="true"] { background: var(--red-wash); color: var(--red-text); box-shadow: inset 0 0 0 1px var(--red); }
 .toolbar {
   display: flex;
   flex-wrap: wrap;

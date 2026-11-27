@@ -77,6 +77,19 @@ def test_a_waves_rows_are_dated_ordered_and_keyed_as_the_team_does():
     assert (line["File_Date_Diff_Days"], line["Respondents"], line["Recorded_Date_Min"], line["Source_Sheet"]) == (-1, 4, "2026-03-30", "Forsta API")
 
 
+def test_a_wave_the_rules_do_not_cover_is_named_not_quietly_counted():
+    activities = consumer_health.settings()["activities"]
+    every = {a["answer"] for a in activities["original"].values()} | set(activities["added"].values()) | {activities["none"]}
+    people = [person(1, "2026-03-31 09:41:00", "03/31/2026 09:35")]
+    assert consumer_health.check_wave(WAVE, people, every) == []
+    reworded = (every - {"Gone to a bar"}) | {"Gone to a bar or pub", "Gone to a theme park"}
+    problems = consumer_health.check_wave(WAVE, [{**p, "Gender": None} for p in people], reworded)
+    assert problems == ["Week of 2026-03-30 (selfserve/58f/260399): an answer the rules do not know: Gone to a bar or pub",
+                        "Week of 2026-03-30 (selfserve/58f/260399): an answer the rules do not know: Gone to a theme park",
+                        "Week of 2026-03-30 (selfserve/58f/260399): no longer asked: Gone to a bar",
+                        "Week of 2026-03-30 (selfserve/58f/260399): nobody answered Gender; was its question reworded?"]
+
+
 def history_of(rows):
     """A history like the team's workbook: their header, rows, and the other three sheets."""
     header = list(rows[0])
@@ -148,3 +161,5 @@ def test_a_wave_is_read_from_cips_tables_and_the_history_round_trips(csi_db, tmp
     assert consumer_health.publish(out) > 0
     written = load_workbook(next((out / consumer_health.FOLDER).glob("Consumer_Health_*_2026_2026.xlsx")), read_only=True)
     assert len(list(written["2026"].iter_rows())) == 6                           # header, the 4 kept rows, the newer week's one
+    from etl import notify   # that week asks 2 of the activities and only the age: the file is written and the admin told
+    assert notify.sent == [("email", "CIP pipeline FAILED: the Consumer Health dataset meets answers its rules do not cover")]

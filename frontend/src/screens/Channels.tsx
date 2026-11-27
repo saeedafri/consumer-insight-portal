@@ -261,7 +261,7 @@ export default function Channels() {
       <Card title={category} sub={<><b>{groupName}</b> · <b>{rangeText}</b><br />Percentage of respondents who bought it each week, in a
               store (red) and online (blue)</>}
             aside={<ExportButtons onExport={exportTrend} png={() => lineChart.current && downloadPng(lineChart.current, `${lineTitle}, ${rangeText}`, source, `${category} in store vs online`)} />}>
-        {kind !== "total" && <div className="seg picked" role="group" aria-label={`${kindName}: one group at a time`} style={{ marginBottom: 8 }}>
+        {kind !== "total" && <div className="seg" role="group" aria-label={`${kindName}: one group at a time`} style={{ marginBottom: 8 }}>
           {groups.map(c => <button key={c[1]} type="button" aria-pressed={c.join(":") === cut} onClick={() => pick("g", c.join(":"))}>{c[1]}</button>)}
         </div>}
         {drawn.length

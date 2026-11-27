@@ -11,19 +11,40 @@ from datetime import date
 from pathlib import Path
 
 MAX_ROWS = 2000
+MAX_SHEETS, MAX_BOOK_ROWS = 40, 10_000   # a weekly survey's every question is about 600 rows in 10 tabs
 RED, INK, GREY, GRID = "D62E2F", "2D2A29", "6B6A68", "D9D9D9"
 BLUES = ["1F5C99", "4A86C5", "8DB8E2", "C2DAF0"]
 
 
 def check(spec: dict) -> dict:
-    """The table a screen sent: header (strings), rows (strings, numbers, empty), notes (strings). Bounded."""
+    """The table a screen sent: header (strings), rows (strings, numbers, empty), notes (strings), and how its numbers
+    read in Excel: unit "%" (every number a percentage) and plain (the rows that are not: people asked, a net score,
+    by index). Bounded."""
     header = [str(h)[:120] for h in spec.get("header", [])][:60]
     rows = [[c if isinstance(c, (int, float)) or c is None else str(c)[:500] for c in r[:60]] for r in spec.get("rows", [])][:MAX_ROWS]
     notes = [str(n)[:600] for n in spec.get("notes", [])][:12]
     if not header:
         raise ValueError("nothing to export")
     rows = rows or [["No rows match the screen's filters"] + [None] * (len(header) - 1)]   # an empty table still downloads
-    return {"name": re.sub(r"[^\w.-]+", "-", str(spec.get("name", "cip-export")))[:80], "header": header, "rows": rows, "notes": notes}
+    plain = sorted({i for i in spec.get("plain") or [] if isinstance(i, int)})
+    return {"name": file_name(spec.get("name")), "header": header, "rows": rows, "notes": notes,
+            **({"unit": "%"} if spec.get("unit") == "%" else {}), **({"plain": plain} if plain else {})}
+
+
+def check_book(spec: dict) -> dict:
+    """A workbook a screen sent (every tab of a databank, every section of a survey): its name and up to 40 tables,
+    each a tab under its own title. Bounded in all, so one download cannot hold the single API worker for long."""
+    sheets = spec.get("sheets")
+    if not isinstance(sheets, list) or not sheets:
+        raise ValueError("nothing to export")
+    tables = [{**check(sheet), "title": str(sheet.get("title") or f"Sheet {k}")} for k, sheet in enumerate(sheets[:MAX_SHEETS], 1)]
+    if sum(len(t["rows"]) for t in tables) > MAX_BOOK_ROWS:
+        raise ValueError(f"over {MAX_BOOK_ROWS:,} rows in one workbook: export fewer tabs")
+    return {"name": file_name(spec.get("name")), "title": str(spec.get("name") or "CIP export")[:120], "sheets": tables}
+
+
+def file_name(name) -> str:
+    return re.sub(r"[^\w.-]+", "-", str(name or "cip-export"))[:80]
 
 
 def literal(value):
@@ -32,27 +53,63 @@ def literal(value):
 
 
 def build_xlsx(spec: dict) -> bytes:
+    """The table as a workbook of one tab, Data; a book (check_book) as one tab per table, in the screen's order."""
     from openpyxl import Workbook   # imported on use: openpyxl, python-pptx and numpy cost each API worker ~25 MB
-    from openpyxl.styles import Font, PatternFill
     book = Workbook()
-    sheet = book.active
-    sheet.title = "Data"
-    for note in spec["notes"]:
-        sheet.append([literal(note)])
-    sheet.append([])
-    top = len(spec["notes"]) + 2
-    sheet.append([literal(h) for h in spec["header"]])
-    for cell in sheet[top]:
-        cell.font, cell.fill = Font(bold=True, color="FAFAFA"), PatternFill("solid", fgColor="2D2A29")
-    for row in spec["rows"]:
-        sheet.append([literal(c) for c in row])
-    sheet.freeze_panes = sheet.cell(top + 1, 2)
-    sheet.column_dimensions["A"].width = min(60, max(14, max(len(str(r[0] or "")) for r in spec["rows"]) + 2))
-    if spec["notes"]:
-        sheet["A1"].font = Font(bold=True, size=12)
+    book.remove(book.active)
+    taken: set[str] = set()
+    for table in spec.get("sheets") or [spec]:
+        write_sheet(book.create_sheet(tab_title(table.get("title", "Data"), taken)), table)
     out = io.BytesIO()
     book.save(out)
     return out.getvalue()
+
+
+def tab_title(title: str, taken: set[str]) -> str:
+    """An Excel tab name: at most 31 characters, none of [ ] : * ? / \\, and never another tab's (Excel refuses all three)."""
+    first = " ".join(re.sub(r"[\[\]:*?/\\]", " ", title).split())[:31] or "Data"
+    name, k = first, 2
+    while name.lower() in taken:
+        name, k = f"{first[:26]} ({k})", k + 1
+    taken.add(name.lower())
+    return name
+
+
+def write_sheet(sheet, table: dict):
+    """One table in the house style (the business team, 27 Nov 2026): its title in bold and its notes in grey above,
+    the header in Coresight red with white bold text, then the rows. A number is a percentage (61.0%) in a column whose
+    header says % or anywhere in a "%" table, except in a plain row (people asked 1,234, a net score 12.3); a 2026-11-23 is a date
+    (Nov 23, 2026). Columns as wide as their text (long text wraps), the header and first column stay in view, and
+    the header has a filter."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    for k, note in enumerate(table["notes"], 1):
+        sheet.cell(k, 1, literal(note)).font = Font(bold=True, size=13, color=INK) if k == 1 else Font(size=9, color=GREY)
+    top = len(table["notes"]) + 2   # a blank row between the notes and the header
+    header = table["header"]
+    widths = [len(str(h)) for h in header] + [0] * (max(map(len, table["rows"])) - len(header))
+    for j, heading in enumerate(header, 1):
+        cell = sheet.cell(top, j, read_week(heading) or literal(heading))   # a week's date as a date Excel can sort
+        cell.font, cell.fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor=RED)
+        cell.alignment = Alignment(wrap_text=True, vertical="center", horizontal="left" if j == 1 else "right")
+    plain, percent = set(table.get("plain", [])), table.get("unit") == "%"
+    for i, row in enumerate(table["rows"]):
+        for j, value in enumerate(row):
+            cell = sheet.cell(top + 1 + i, j + 1, read_week(value) or literal(value))
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                share = i not in plain and (percent or j < len(header) and "%" in header[j])
+                cell.number_format = '0.0"%"' if share else "#,##0" if isinstance(value, int) else "#,##0.0"
+            widths[j] = max(widths[j], len(f"{value:,.1f}") + 1 if isinstance(value, (int, float)) else len(str(value or "")))
+    for j, width in enumerate(widths, 1):
+        shown = min(60 if j <= 2 else 40, max(10, width + 2))
+        sheet.column_dimensions[get_column_letter(j)].width = shown
+        for (cell,) in sheet.iter_rows(min_row=top, min_col=j, max_col=j):
+            if isinstance(cell.value, date):
+                cell.number_format = "mmm d, yyyy"
+            elif cell.row > top and isinstance(cell.value, str) and len(cell.value) > shown:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+    sheet.freeze_panes = sheet.cell(top + 1, 2)
+    sheet.auto_filter.ref = f"A{top}:{get_column_letter(len(widths))}{top + len(table['rows'])}"
 
 
 # The Coresight logo on a deck's cover: in the server image it sits with the built website (CIP_WEB_DIR), on a
@@ -64,7 +121,9 @@ LOGO = next((p for p in (Path(os.environ.get("CIP_WEB_DIR", "/srv/cip/web")) / "
 
 
 def build_pptx(spec: dict) -> bytes:
-    """One 16:9 slide of one table (add_slide)."""
+    """One 16:9 slide of one table (add_slide); a book (check_book): a cover, then a slide per tab (deck_pptx)."""
+    if "sheets" in spec:
+        return deck_pptx(spec["title"], f"Exported from CIP, {date.today():%d %B %Y}", spec["sheets"])
     deck = new_deck()
     add_slide(deck, spec)
     return save(deck)

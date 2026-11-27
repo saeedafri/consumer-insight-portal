@@ -335,7 +335,7 @@ function ShopperProfile({ data, sides, series }: { data: Data; sides: Side[]; se
                 ...references.map(r => ({ label: r.label, n: r.n, at: (i: number) => r.counts[i] }))];
   const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, "Shopper profile", ["Group", ...rows.map(r => r.label)],
     dims.flatMap(([d, groups], k) => groups.map((g, i) => [`${TITLES[d] ?? d}: ${g}`, ...rows.map(r => share(r.at(start(k) + i) ?? 0, r.n))])),
-    ["Shopper profile: % of each retailer's shoppers in each group", "Source: Coresight Research US Consumer Survey"]);
+    ["Shopper profile: % of each retailer's shoppers in each group", "Source: Coresight Research US Consumer Survey"], { unit: "%" });
   return <Card id="who-shops" title="Who shops there" sub={`% of each retailer's shoppers${hidden.length ? ` · not shown (under ${data.min_buyers} shoppers): ${hidden.map(s => s.label).join(", ")}` : ""}`}
                aside={<ExportButtons onExport={exportTable} />}>
     {shown.length ? <>

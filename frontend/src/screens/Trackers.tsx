@@ -2,20 +2,24 @@
 // inside a wave that carried it. Pick the topic and the week; the page shows that week's "at a glance" (the same Glance a
 // wave's Overview shows) and every headline figure over all the weeks the tracker ran. All from files the ETL already
 // publishes (api/v1/dashboards/<code>/<survey_id>.json.gz, a few KB each, fetched once and cached): nothing is computed
-// on the server. Opened from the left menu (Trackers) and the Home page; topic and week are kept in the address.
+// on the server. Opened from the left menu (Trackers) and the Home page; topic and week are kept in the address. Export
+// downloads every week as a workbook laid out like the Databank's sheets (trackerBook).
 import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { allowed, dashboardQuery, useDashboard, useMe, useWaves } from "../api";
-import type { Dashboard } from "../api";
+import type { Dashboard, Metric } from "../api";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import Glance from "../components/Glance";
-import { Card, Empty, Failure, SkeletonScreen } from "../components/bits";
+import { Card, Empty, ExportButtons, Failure, SkeletonScreen } from "../components/bits";
+import { downloadBook } from "../csv";
+import type { Sheet } from "../csv";
 import { blues, C, useTheme } from "../theme";
 import { fmtDate } from "../stats";
 import { dashboardFeature, SECTOR_DASHBOARDS, TRACKERS } from "../trackers";
 
 const time = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
+const words = (key: string) => key.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());   // started_by_generation → Started by generation
 
 export default function Trackers() {
   const me = useMe().data;
@@ -34,7 +38,7 @@ export default function Trackers() {
   if (!weeks.length) return <Empty>No week has carried this tracker yet. <Link to="/trackers/genai">Open the GenAI tracker</Link>.</Empty>;
   const week = weeks.find(w => String(w.survey_id) === params.get("w")) ?? weeks[0];
   const tiles = history[0] ? Object.keys(history[0].tiles).filter(k => history[0].tiles[k]) : [];
-  const label = (k: string) => history[0]?.tile_labels?.[k] ?? k.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
+  const label = (k: string) => history[0]?.tile_labels?.[k] ?? words(k);
   const colours = [C.red, ...blues(Math.max(1, tiles.length - 1))];
   return <div className="stack">
     <div className="page-head"><div>
@@ -51,6 +55,10 @@ export default function Trackers() {
       <label><span>Week</span><select value={week.survey_id} onChange={e => setParams(p => { p.set("w", e.target.value); return p; }, { replace: true })}>
         {weeks.map(w => <option key={w.survey_id} value={w.survey_id}>{fmtDate(w.wave_date)} · n={w.qualified_n}</option>)}</select></label>
       <Link className="btn" to={`/w/${week.survey_id}`}>Open this week's survey</Link>
+      <ExportButtons pin={false} onExport={format => {
+        if (history.length < weeks.length) throw new Error(`Still loading ${weeks.length - history.length} of ${weeks.length} weeks: try again in a moment`);
+        return downloadBook(format, `${history[0].title} ${weeks[0].wave_date}`, trackerBook(history));
+      }} />
     </section>
 
     <Glance code={code} id={week.survey_id} />
@@ -92,4 +100,28 @@ function TileDonuts({ code, id }: { code: string; id: number }) {
         }} /></figure>;
     })}</div>
   </Card>;
+}
+
+/** The tracker as a workbook laid out like the Databank's sheets (the business team, 27 Nov 2026): a tab for the
+ *  headline figures, one per list and one per group split, an answer per row and a week per column, oldest first, then
+ *  the people asked: one row when every answer that week had the same base (a list's buyers), else one per answer. */
+function trackerBook(weeks: Dashboard[]): Sheet[] {
+  const [latest, oldestFirst] = [weeks[0], [...weeks].reverse()];
+  const tab = (name: string, pick: (d: Dashboard) => Metric[], about: string): Sheet => {
+    const labels = [...new Set(weeks.flatMap(d => pick(d).map(m => m.label)))];   // the newest week's order first
+    const figure = (d: Dashboard, label: string) => pick(d).find(m => m.label === label);
+    const shared = oldestFirst.every(d => new Set(pick(d).map(m => m.base)).size <= 1);
+    const bases = shared ? [["Respondents asked", ...oldestFirst.map(d => pick(d)[0]?.base ?? null)]]
+      : labels.map(l => [`Respondents asked: ${l}`, ...oldestFirst.map(d => figure(d, l)?.base ?? null)]);
+    return { title: name, header: [name, ...oldestFirst.map(d => d.wave.week_of)], unit: "%",
+             rows: [...labels.map(l => [l, ...oldestFirst.map(d => figure(d, l)?.pct ?? null)]), ...bases],
+             plain: bases.map((_, k) => labels.length + k),
+             notes: [`${latest.title}: ${name}`, `% of respondents, ${about}, each of the ${weeks.length} weeks the tracker ran`,
+                     "Source: Coresight Research US Consumer Survey, weekly tracker. Unweighted."] };
+  };
+  // a list keeps each week's top answers only: a blank is an answer outside that week's top, not nobody
+  const top = "each week's top answers (a blank: outside that week's top; every answer is on the question's Trends page)";
+  return [tab("Headline figures", d => Object.entries(d.tiles).flatMap(([k, m]) => m ? [{ ...m, label: latest.tile_labels?.[k] ?? m.label }] : []), "the headline figures"),
+          ...Object.keys(latest.lists).map(k => tab(latest.list_heads?.[k] ?? words(k), d => d.lists[k] ?? [], top)),
+          ...Object.keys(latest.segments).map(k => tab(words(k), d => d.segments[k] ?? [], "by group"))];
 }

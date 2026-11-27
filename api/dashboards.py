@@ -291,6 +291,7 @@ def payload(header: dict, rows: list[dict]) -> dict:
         "segments": {s["code"]: group(s["code"]) for s in cfg.get("segments", [])},
         "takeaways": takeaways(rows, cfg),
         "tile_labels": {t["code"]: t["label"] for t in cfg["tiles"]},
+        "list_heads": {l["code"]: l["head"] for l in cfg["lists"] if l.get("head")},   # each list's tab in the tracker's Excel
         "highlights": [{"list": l["code"], "title": l["tile"], "of": l.get("of", "")} for l in cfg["lists"] if l.get("tile")],
         "prior_label": cfg.get("prior_label", "the previous wave"),
         "small_base": cfg["small_base"],

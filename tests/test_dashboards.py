@@ -64,3 +64,10 @@ def test_takeaways_mention_only_significant_comparable_changes():
         "Tariffs: 44% say tariffs hurt them (down 16.0 pts vs the previous wave, single comparison; 43% a year ago)."]
     row["flags"] = "base_changed_prior"
     assert dashboards.takeaways([row], cfg) == ["Tariffs: 44% say tariffs hurt them (43% a year ago)."]
+
+
+def test_each_list_carries_its_heading_for_the_trackers_excel_tabs():
+    """The tracker's Excel names a list's tab by its heading (Top platforms), not its code (top): 27 Nov 2026."""
+    board = dashboards.payload({"dashboard_code": "social_commerce", "wave": None, "prior": None, "ly": None, "waves": [],
+                                "cube_built_at": None}, [])
+    assert board["list_heads"]["top"] == "Top platforms" and set(board["list_heads"]) == set(board["lists"])

@@ -328,12 +328,16 @@ def write_views(out: Path) -> int:
     size += fieldwork.publish(out, write)      # the admins' Fieldwork screen, from Forsta's kept fieldwork records
     size += write(out / "api/v1/public/facts", site_facts(out))   # the public home page's live figures
     size += glance.publish(out, write)         # Home's "This week at a glance", from the files written above
-    try:   # the data science team's respondent workbook, with every newer US week
+    size += expectations.publish(out, write)   # retail events: expected vs actual, plus the spend answers
+    try:   # last, the data science team's respondent workbook, with every newer US week: its email waits on no screen
         from etl import consumer_health   # openpyxl loads numpy: here, not at the ETL's cold start (tests/test_etl_imports.py)
         size += consumer_health.publish(out)
     except Exception as exc:   # their file waits for the next publish; the portal's own screens never wait on it
         log.warning("The Consumer Health dataset was not written: %s", exc)
-    return size + expectations.publish(out, write)   # retail events: expected vs actual, plus the spend answers
+        from etl import notify   # the API imports this module: the email code loads only when needed
+        notify.failure("writing the Consumer Health dataset", str(exc),
+                       "Its download says it has not been built until the next publish writes it.")
+    return size
 
 
 def site_facts(out: Path) -> dict:
