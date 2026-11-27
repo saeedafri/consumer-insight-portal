@@ -672,7 +672,7 @@ async def question(family: str, study_type: str, qcode: str, request: Request, w
     Someone who may not see every wave of the family gets the file without those waves."""
     # the three screens that read a question across waves, and In store vs online, which reads four US weekly ones
     # (frontend/src/screens/Channels.tsx): without Trends it got 403 (24 Nov 2026)
-    require_feature(who, "trends", "compare", "audiences", *(["channels"] if (family, study_type) == ("CSI-US", "tracker") else []))
+    require_feature(who, "trends", "compare", "audiences", *(["channels", "activities", "spending", "sentiment"] if (family, study_type) == ("CSI-US", "tracker") else []))
     scope = access.scope(who)
     def build() -> Payload:
         found = published_file("questions", family, study_type, qcode)

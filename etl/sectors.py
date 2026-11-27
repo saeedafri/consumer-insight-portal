@@ -8,7 +8,8 @@ files (no database); publish() writes one file for every sector, api/v1/sectors.
 Each sector, as the Databank lays it out: one column per survey the sector ran (sectors rotate, so about every 12
 weeks, back to 2022), a purchase-rate row (% of all respondents who bought in the category in the past three months),
 then one table per tab (retailers, brands, categories), each row an answer's % of the respondents asked (the buyers),
-and the median spend band per survey (the Sector databank's and Home's "Median spend" card, etl/glance.py).
+and the median spend band per survey (the Sector databank's and Home's "Median spend" card, etl/glance.py) with the
+average spend estimated from its bands (the Sector databank's "Spend by sector").
 
 Finding a sector's surveys and questions:
   surveys    tagged with the sector's module since Jul 2025; before that, the survey title names it ("Shopping and
@@ -84,6 +85,18 @@ def median_band(rows: list[dict]) -> str | None:
     if len(bands) < 3 or not sum(shares):
         return None
     return next(label for (_, label, _), running in zip(bands, accumulate(shares)) if running >= sum(shares) / 2)
+
+
+def average_spend(rows: list[dict]) -> int | None:
+    """The average spend in dollars estimated from band mid-points, an open top band ("More than $500") counted at its
+    floor, as Ask estimates one (api/ask_figures.py middle); from one survey's book rows (label, Total %), answers
+    without a dollar amount left out. The Sector databank's "Spend by sector" (the roadmap's Sector Spend Insights,
+    27 Nov 2026). None under three bands."""
+    bands = [(amount, row["Total"] or 0) for row in rows if (amount := band(row["label"]))]
+    total = sum(share for _, share in bands)
+    if len(bands) < 3 or not total:
+        return None
+    return round(sum(share * ((low + high) / 2 if high is not None else low) for (low, high), share in bands) / total)
 
 
 def changes(values: list[float | None], waves: list[dict]) -> list[dict]:
@@ -186,7 +199,9 @@ def build(books: dict[int, dict], waves: list[dict], question_file) -> dict:
         spend = None
         if "spend" in sector:   # each survey's spend question, as its book asked it (found by wording)
             asked = [questions.get(sector["spend"]) for questions in found]
-            spend = {"question": sector["spend"], "median": [q and median_band(q["groups"][0]["rows"]) for q in asked]}
+            average = [q and average_spend(q["groups"][0]["rows"]) for q in asked]
+            spend = {"question": sector["spend"], "median": [q and median_band(q["groups"][0]["rows"]) for q in asked], "average": average,
+                     "changes": changes(average, [{"date": w["wave_date"]} for w in surveys]) if average and average[-1] is not None else []}
         sectors.append({
             "name": sector["name"],
             "buyers": sector.get("buyers", "buyers"),

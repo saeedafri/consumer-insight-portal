@@ -11,7 +11,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowRight, CalendarDays, Check, ChevronDown, Cpu, Fuel, Gauge, Gift, Globe, Layers, MessageSquareText, Percent, Pill, Share2,
-  ShoppingBag, Store, Table2, Wallet } from "lucide-react";
+  Receipt, ShoppingBag, ShoppingBasket, Store, Table2, Wallet } from "lucide-react";
 import MicButton from "../components/MicButton";
 import type { LucideIcon } from "lucide-react";
 import { allowed, useBook, useGlance, useMe, useReportWaves, useWaves } from "../api";
@@ -77,7 +77,11 @@ export default function Home() {
   const areas = ([
     [!!latest && allowed(me, "us_tracker"), "Weekly", ShoppingBag, "Shopping & Spending Survey", `/w/${latest?.survey_id}`, "Where people shop, what they buy and how spending changes, every week."],
     [!!latest && allowed(me, "channels"), "Weekly", Layers, "In store vs online", "/channels", "Which categories people in the US and China bought in a store, and which online, in the past two weeks."],
-    [!!report && allowed(me, "report"), "Weekly", Gauge, "Consumer sentiment & outlook", `/w/${report}/report`, "Personal finances and the economy over the next 12 months, by household income."],
+    [!!latest && allowed(me, "activities"), "Weekly", ShoppingBasket, "Activities & retailers", "/activities", "What people did, and where they bought food and nonfood products, in the past two weeks."],
+    [!!latest && allowed(me, "spending"), "Weekly", Receipt, "Spending pressure", "/spending", "How people's expenses changed in the last twelve months, by category, and where they cut back."],
+    // its own screen (the roadmap, 27 Nov 2026), else the newest weekly report's sentiment section
+    [allowed(me, "sentiment") || (!!report && allowed(me, "report")), "Weekly", Gauge, "Consumer sentiment & outlook", allowed(me, "sentiment") ? "/sentiment" : `/w/${report}/report`,
+     "Personal finances and the economy over the next 12 months, by group."],
     [allowed(me, "retailers"), "Weekly", Store, "Retailer databank", "/retailers", "Any retailer or sector, alone or side by side, over the weeks you choose: how many shop there and who they are."],
     [!!china && allowed(me, "china_tracker"), "Weekly", Globe, "China weekly tracker", `/w/${china?.survey_id}`, "A weekly survey of consumers in China: how they shop and spend."],
     [!!genai, "Monthly", Cpu, "GenAI Survey", "/trackers/genai", `How people use generative AI in their lives and when they shop${genai ? ` (${fmtDate(genai.wave_date)})` : ""}.`],

@@ -16,14 +16,14 @@ import type { Me, Wave } from "../api";
 import { fmtDate } from "../stats";
 import { isSaved, removeView, saveView } from "../saved";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, Download, FileText, Files, Filter, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, MessageSquare, PanelLeftClose, PanelLeftOpen, Pin, ScrollText, Search, ShieldCheck, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
+import { Activity, CalendarDays, ChartColumn, CheckCheck, ChevronDown, Database, Download, FileText, Files, Filter, Gauge, Globe, House, Info, Layers, LayoutDashboard, LibraryBig, MessageSquare, PanelLeftClose, PanelLeftOpen, Pin, Receipt, ScrollText, Search, ShieldCheck, ShoppingBasket, Smartphone, Star, Store, Table2, Trash2, TriangleAlert, Upload, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 // [path, label, icon]; FEATURE names the /me feature a screen needs (config/access.yml): unlisted screens always show
 const FEATURE: Record<string, string> = { questions: "explorer", crosstab: "crosstab", trends: "trends", compare: "compare", audience: "audiences",
                                           changes: "changes", report: "report", survey: "survey" };
 const TOP_FEATURE: Record<string, string> = { library: "library", search: "search", schedule: "schedule", ask: "ask", boards: "boards",
-                                              channels: "channels", retailers: "retailers", sectors: "sectors", expectations: "expectations",
+                                              channels: "channels", activities: "activities", spending: "spending", sentiment: "sentiment", retailers: "retailers", sectors: "sectors", expectations: "expectations",
                                               methodology: "methodology", "whats-new": "whats_new", "api-guide": "api", fieldwork: "fieldwork",
                                               ingest: "ingest", logs: "logs" };
 const DATASET = "/api/v1/datasets/consumer-health";   // api/main.py dataset(): the Consumer Health workbook
@@ -75,7 +75,7 @@ function eyebrow(wave?: Wave): string {
 
 // Each page's name, for the header's breadcrumb and a saved view's name
 const PAGES: Record<string, string> = { "": "Home", library: "Survey library", search: "Search questions", schedule: "Launch schedule", ask: "Ask CIP",
-  boards: "Boards", sectors: "Sector databank", retailers: "Retailer databank", channels: "In store vs online", trackers: "Trackers", expectations: "Expected vs actual", methodology: "Methodology", "whats-new": "What's new",
+  boards: "Boards", sectors: "Sector databank", retailers: "Retailer databank", channels: "In store vs online", activities: "Activities & retailers", spending: "Spending pressure", sentiment: "Consumer sentiment & outlook", trackers: "Trackers", expectations: "Expected vs actual", methodology: "Methodology", "whats-new": "What's new",
   account: "My account", "api-guide": "API guide", fieldwork: "Fieldwork", ingest: "Upload survey", logs: "Logs", access: "Access" };
 function pageName(pathname: string): string {
   const [, first, , screen] = pathname.split("/");
@@ -232,6 +232,9 @@ export default function Shell() {
           title="The weekly China consumer survey and its weekly report">
           <Icon of={Globe} />China weekly tracker{badge("china_tracker")}</NavLink>}
         {allowed(me, "channels") && <NavLink to="/channels" title="Which categories people bought in a store and which online, week by week"><Icon of={Layers} />In store vs online</NavLink>}
+        {allowed(me, "activities") && <NavLink to="/activities" title="What people did, and where they bought food and nonfood products, week by week"><Icon of={ShoppingBasket} />Activities & retailers</NavLink>}
+        {allowed(me, "spending") && <NavLink to="/spending" title="How household expenses changed in the last twelve months, by category, and where people cut back"><Icon of={Receipt} />Spending pressure</NavLink>}
+        {allowed(me, "sentiment") && <NavLink to="/sentiment" title="Whether people expect their finances and the economy to get better or worse, by group"><Icon of={Gauge} />Sentiment & outlook</NavLink>}
         {allowed(me, "retailers") && <NavLink to="/retailers" title="Each retailer: who shops there, how many bought and how positive they feel"><Icon of={Store} />Retailer databank</NavLink>}
         {allowed(me, "sectors") && <NavLink to="/sectors" title="Each retail sector: who bought in it, and its retailers, brands and categories"><Icon of={Database} />Sector databank</NavLink>}
         {allowed(me, "expectations") && <NavLink to="/expectations" title="For a retail event (Halloween, Black Friday…): what people planned against what they did"><Icon of={ChartColumn} />Expected vs actual</NavLink>}
@@ -244,7 +247,7 @@ export default function Shell() {
         {allowed(me, "methodology") && <NavLink to="/methodology"><Icon of={Info} />Methodology</NavLink>}
         {allowed(me, "whats_new") && <NavLink to="/whats-new"><Icon of={Star} />What's new{badge("whats_new")}</NavLink>}
         {/* respondent rows: only for those given it (config/access.yml chosen_only), a download from api/main.py dataset() */}
-        {(isAdmin || given(me, "datasets")) && <a href={DATASET} download onClick={getDataset}><Icon of={Download} />Consumer Health dataset{badge("datasets")}</a>}
+        {(isAdmin || given(me, "datasets")) && <a href={DATASET} download onClick={getDataset}><Icon of={Download} />ESP dataset{badge("datasets")}</a>}
         {datasetNote && <p className="small muted" role="status" style={{ margin: "2px 12px 6px" }}>{datasetNote}</p>}
       </RailGroup>}
       {(isAdmin || given(me, "fieldwork") || SECTIONS.some(([path]) => given(me, `forsta_${path}`))) &&

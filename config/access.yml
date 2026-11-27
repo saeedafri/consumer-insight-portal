@@ -20,7 +20,7 @@
 # Access screen (stored in cip_role_access); `menu` below arranges them as the left menu does. Home and a wave's
 # Overview are always there, and Access is the super admin's alone: whoever had it could give themselves everything.
 features: [library, search, schedule, boards,
-           us_tracker, china_tracker, channels, retailers, sectors, expectations,
+           us_tracker, china_tracker, channels, activities, spending, sentiment, retailers, sectors, expectations,
            dashboards, explorer, crosstab, trends, compare, audiences, changes, report, survey,
            tracker_tariffs_inflation, tracker_financial_health, tracker_genai, tracker_glp1, tracker_mideast_gas,
            tracker_holiday_tracker, tracker_holiday_outlook, tracker_social_commerce,
@@ -42,6 +42,9 @@ grown_from:
   methodology: "*"
   whats_new: "*"
   channels: explorer
+  activities: channels   # whoever had In store vs online (27 Nov 2026)
+  spending: channels
+  sentiment: channels
   tracker_tariffs_inflation: dashboards
   tracker_financial_health: dashboards
   tracker_genai: dashboards
@@ -59,7 +62,7 @@ family_menus: {}
 # (the super admin's alone), {label, children} (a menu with pages of its own)
 menu:
   - {group: Explore, items: [{label: Home, always: true}, ask, library, search, schedule, boards]}
-  - {group: Core research, items: [us_tracker, china_tracker, channels, retailers, sectors, expectations,
+  - {group: Core research, items: [us_tracker, china_tracker, channels, activities, spending, sentiment, retailers, sectors, expectations,
       {label: "A survey wave's screens (its tabs)", children: [{label: Overview, always: true}, dashboards, explorer, crosstab,
                                                             trends, compare, audiences, changes, report, survey]}]}
   - {group: Trackers, items: [tracker_tariffs_inflation, tracker_financial_health, tracker_genai, tracker_glp1,
@@ -74,6 +77,9 @@ feature_labels:   # the names the Access screen shows
   us_tracker: US weekly tracker (the left menu's link to the Shopping & Spending survey's newest wave; its data stays open)
   china_tracker: China weekly tracker (the left menu's link to its newest wave; its data stays open)
   channels: In store vs online
+  activities: Activities & retailers
+  spending: Spending pressure
+  sentiment: Consumer sentiment & outlook
   tracker_tariffs_inflation: Tariffs & inflation
   tracker_financial_health: Financial health
   tracker_genai: GenAI & AI shopping
@@ -84,7 +90,7 @@ feature_labels:   # the names the Access screen shows
   tracker_social_commerce: Social commerce
   methodology: Methodology
   whats_new: What's new
-  datasets: Consumer Health dataset (download)
+  datasets: ESP dataset (download)
   forsta_reports: Team reports (Forsta)
   forsta_check: Forsta vs CIP
   forsta_crosstab: Cross-tab setup (Forsta)

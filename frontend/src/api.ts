@@ -138,7 +138,8 @@ export interface Sector {
   name: string; margin: number;
   waves: { survey_id: number; date: string; respondents: number }[];
   purchase: { label: string; values: (number | null)[] } | null;
-  spend: { question: string; median: (string | null)[] } | null;   // the middle buyer's spend band per survey
+  // the middle buyer's spend band per survey, and the average estimated from the bands (dollars) with its change
+  spend: { question: string; median: (string | null)[]; average?: (number | null)[]; changes?: Change[] } | null;
   cards: { kind: string; title: string; value: string; note: string; changes: Change[]; tab: string | null }[];   // the newest survey's row of cards
   tables: { title: string; question: string; bases: (number | null)[]; rows: { label: string; values: (number | null)[] }[] }[];
 }

@@ -1,20 +1,24 @@
 // The sector databank (/app/sectors): the Databank's sector tables. Per sector, one column per survey the sector ran
 // (sectors rotate through the weekly tracker, so about every 12 weeks): the share who bought in the category, then its
 // retailers, brands and categories as tabs, under three cards from its newest survey (leading retailer, top product,
-// median spend: the research team's row of 23 Nov 2026). Every number is built by the ETL when data is published (etl/sectors.py →
-// api/v1/sectors.json.gz); which sectors and questions: config/sectors.yml. This screen only draws, and lays the tables
-// out for Export: every tab and the median spend in one workbook.
+// median spend: the research team's row of 23 Nov 2026), and below them every sector's spend side by side with the
+// chosen sector's average spend survey by survey (the roadmap's Sector Spend Insights, 27 Nov 2026). Every number is
+// built by the ETL when data is published (etl/sectors.py → api/v1/sectors.json.gz); which sectors and questions:
+// config/sectors.yml. This screen only draws, and lays the tables out for Export: every tab and the median spend in one
+// workbook.
 // Opened from the left menu ("Sector databank"); the sector and tab are kept in the address so a view can be shared.
 // The Market filter offers China but cannot choose it: China's weekly survey asks no sector questions.
 import { useSearchParams } from "react-router";
 import { useSectors } from "../api";
 import type { Sector } from "../api";
+import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import { Card, Empty, ExportButtons, Failure, marketOptions, SkeletonScreen } from "../components/bits";
 import { FigureCard } from "../components/Glance";
 import { downloadBook, downloadTable } from "../csv";
 import type { Format, Sheet } from "../csv";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { fmtDate } from "../stats";
+import { direction, fmtDate } from "../stats";
+import { C, useTheme } from "../theme";
 
 const pct = (v: number | null) => v == null ? "–" : `${v.toFixed(1)}%`;
 
@@ -43,6 +47,7 @@ export default function Sectors() {
     </div>
     <SectorCards sector={sector} onTab={t => pick("tab", t)} />
     <SectorTable sector={sector} tab={params.get("tab")} onTab={t => pick("tab", t)} />
+    <SpendBySector sectors={data.sectors} sector={sector} onPick={name => pick("sector", name)} />
   </div>;
 }
 
@@ -66,7 +71,9 @@ function sheetOf(sector: Sector, table: Sector["tables"][number]): Sheet {
 
 /** The middle buyer's spend band in each survey (etl/sectors.py median_band), as a tab of its own: bands, not %. */
 const spendSheet = (sector: Sector): Sheet[] => sector.spend ? [{ title: "Median spend", header: ["Median spend", ...sector.waves.map(w => w.date)],
-  rows: [[sector.spend.question, ...sector.spend.median]], notes: [`${sector.name}: median spend`, "The middle buyer's spend band in each survey", "Source: Coresight Research US Consumer Survey"] }] : [];
+  rows: [[sector.spend.question, ...sector.spend.median], ...(sector.spend.average ? [["Average spend ($, estimated)", ...sector.spend.average]] : [])],
+  notes: [`${sector.name}: median spend`, "The middle buyer's spend band in each survey, and the average estimated from the bands' mid-points (the top band at its floor)",
+          "Source: Coresight Research US Consumer Survey"] }] : [];
 
 /** One sector as the Databank lays it out, a tab at a time on screen; Export downloads every tab in Excel or CSV, or
  *  the tab on screen on its own (the business team, 27 Nov 2026), and the tab on screen as a slide or a pin. */
@@ -100,4 +107,53 @@ function SectorTable({ sector, tab, onTab }: { sector: Sector; tab: string | nul
       <tfoot><tr><th scope="row">Respondents asked</th>{table.bases.map((b, i) => <td key={i} className="num">{b ?? "–"}</td>)}</tr></tfoot>
     </table></div>
   </Card>;
+}
+
+const SOURCE = "Source: Coresight Research US Consumer Survey";
+const dollars = (v: number | null | undefined) => v == null ? "–" : `$${v.toLocaleString("en-US")}`;
+
+/** Every sector's spend in its newest survey (the roadmap's Sector Spend Insights, 27 Nov 2026): the middle buyer's band
+ *  and the average estimated from the answer bands (etl/sectors.py average_spend) with its change against the survey
+ *  before and a year earlier; beside it, the chosen sector's average survey by survey. A sector's name opens it. */
+function SpendBySector({ sectors, sector, onPick }: { sectors: Sector[]; sector: Sector; onPick: (name: string) => void }) {
+  useTheme();   // a theme switch re-renders, so the line takes the new theme's colours
+  const spent = sectors.filter(s => s.spend?.average?.some(v => v != null));
+  if (!spent.length) return null;   // a file published before 27 Nov 2026 has no averages
+  const newest = (s: Sector) => s.spend!.average!.at(-1) ?? null;
+  const change = (s: Sector, yearAgo: boolean) => s.spend!.changes?.find(c => (c.label === "vs LY") === yearAgo)?.d ?? null;
+  const exportSpend = (format: Format) => downloadTable(format, "Spend by sector",
+    ["Sector", "Newest survey", "Median spend", "Average spend ($, estimated)", "Change vs LY ($)", "Change vs the survey before ($)"],
+    spent.map(s => [s.name, s.waves.at(-1)!.date, s.spend!.median.at(-1) ?? null, newest(s), change(s, true), change(s, false)]),
+    ["Spend by sector: each sector's newest survey, past three months", "Average estimated from the answer bands' mid-points, the top band at its floor", SOURCE]);
+  const own = sector.spend?.average ?? [];
+  const points = sector.waves.map((w, i) => [fmtDate(w.date), own[i] ?? null, sector.spend?.median[i] ?? null] as const);
+  const option = () => ({
+    tooltip: { ...tooltip(), trigger: "axis", formatter: ([p]: { dataIndex: number }[]) =>
+      `${points[p.dataIndex][0]}<br>Average <b>${dollars(points[p.dataIndex][1])}</b><br><span style="color:${C.ink3}">Median band ${points[p.dataIndex][2] ?? "–"}</span>` },
+    grid: { left: 8, right: 24, top: 16, bottom: 8, containLabel: true },
+    xAxis: { type: "category", data: points.map(p => p[0]), axisLabel: { ...axisText(), hideOverlap: true } },
+    yAxis: { type: "value", axisLabel: { ...valueText(), formatter: "${value}" } },
+    series: [{ type: "line", name: "Average spend", color: C.red, symbol: "circle", symbolSize: 6, data: points.map(p => p[1]) }],
+  });
+  return <div className="grid g2">
+    <Card title="Spend by sector" sub="Each sector's newest survey: the middle buyer's spend band and the average estimated from the bands, past three months · a sector opens it"
+          aside={<ExportButtons onExport={exportSpend} pin={false} deck={false} />}>
+      <div className="table-wrap"><table className="data">
+        <thead><tr><th>Sector</th><th>Newest survey</th><th>Median spend</th><th className="num">Average (est.)</th><th>Change</th></tr></thead>
+        <tbody>{spent.map(s => <tr key={s.name}>
+          <th scope="row"><button type="button" className="link-button" aria-current={s.name === sector.name || undefined} onClick={() => onPick(s.name)}>
+            {s.name === sector.name ? <b>{s.name}</b> : s.name}</button></th>
+          <td>{fmtDate(s.waves.at(-1)!.date)}</td><td>{s.spend!.median.at(-1) ?? "–"}</td><td className="num">{dollars(newest(s))}</td>
+          <td>{(s.spend!.changes ?? []).flatMap(({ d, label }) => d == null ? [] : [<span key={label} className={`chip flat ${direction(d)}`}>
+            {d > 0 ? "▲" : d < 0 ? "▼" : "±"} ${Math.abs(d)} <small>{label}</small></span>])}</td>
+        </tr>)}</tbody>
+      </table></div>
+      <p className="muted small">Sectors whose survey asks no spend question (eCommerce, social commerce) are not listed. An average jumps when a
+        sector's answer bands changed (mass merchants' top band was "More than $200" until 2025): read it with the median band.</p>
+    </Card>
+    <Card title={`${sector.name}: average spend`} sub="Each survey the sector ran, estimated from the answer bands; the median band in the hover">
+      {own.some(v => v != null) ? <EChart height={320} label={`${sector.name}: average spend per survey`} option={option()} build={option} />
+        : <Empty>{sector.name}'s survey asks no spend question.</Empty>}
+    </Card>
+  </div>;
 }

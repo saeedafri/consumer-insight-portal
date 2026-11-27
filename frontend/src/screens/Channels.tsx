@@ -8,10 +8,11 @@
 // week, group, category and the trend's date range are kept in the address. Respondent group is one group at a time:
 // Everyone (the default), or a kind (gender, age, income…) and one of its groups, its first by default, with no "All"
 // (the research team, 26 Nov 2026); only groups this week has answers from are offered. The filters above and the line
-// chart's own group list and buttons are the same choice. The bar chart shows every category for that group, biggest in
-// store first, the chosen one highlighted where it ranks, with Everyone's figure as a grey tick on each bar when a group
-// is chosen; the line chart shows the chosen category week by week, over the year up to the chosen week unless From /
-// To are chosen.
+// chart's own group list and buttons are the same choice. The bar chart shows, for Everyone, every category, biggest in
+// store first, the chosen one highlighted where it ranks; for a kind, the chosen category for each of its groups side by
+// side (the manager, 27 Nov 2026), the chosen group highlighted with Everyone's figure as a grey tick; the line chart
+// shows the chosen category for the chosen group week by week, over the year up to the chosen week unless From / To are
+// chosen.
 import { useMemo, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { CUT_NAMES, isFiller, useQuestion, useWaves } from "../api";
@@ -24,10 +25,10 @@ import { downloadTable } from "../csv";
 import type { Format } from "../csv";
 import { C, useTheme } from "../theme";
 import { fmtDate } from "../stats";
+import { shares, SKIP } from "../weekly";
 
 const pct = (v: number | null | undefined) => v == null ? "–" : `${v.toFixed(1)}%`;
 const time = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
-const SKIP = /^(none of|other|don.?t know)/i;
 const YEAR = 365 * 86_400_000;   // the trend's default range: the year up to the chosen week
 const EVERYONE = "total:Total";   // the cut of every respondent: the grey tick on the bars
 
@@ -42,31 +43,6 @@ const SURVEYS = {
         onlineWording: /purchased online/i, source: "Coresight Research China Consumer Survey, weekly, about 550 adults in " +
         "China a week; questions Q5 (in physical stores) and Q6 (online), past two weeks" },
 };
-
-/** Question files as one share lookup, over the weeks that asked `wording`: share(survey_id, "dim:value", answer label)
- *  → % of the group asked, or null; base(survey_id, "dim:value") → people asked; weeks: survey_id → date; labels: every
- *  answer those weeks gave. */
-function shares(files: QuestionFile[], wording: RegExp) {
-  const cells = new Map<string, [number | null, number]>();
-  const bases = new Map<string, number>();
-  const weeks = new Map<number, string>(), labels = new Set<string>();
-  for (const file of files) {
-    const kept = file.waves.map(w => wording.test(file.versions[w[2] - 1] ?? ""));
-    file.waves.forEach((w, i) => kept[i] && weeks.set(w[0], w[1]));
-    file.w.forEach((w, k) => {
-      if (!kept[w]) return;
-      const label = file.answers[file.a[k]][0], group = `${file.waves[w][0]}|${file.cuts[file.c[k]].join(":")}`;
-      labels.add(label);
-      cells.set(`${group}|${label}`, [file.n[k], file.b[k]]);
-      bases.set(group, file.b[k]);   // a multiple-answer question: one base for every answer of a group's week
-    });
-  }
-  const share = (survey: number, cut: string, label: string) => {
-    const cell = cells.get(`${survey}|${cut}|${label}`);
-    return cell && cell[0] != null && cell[1] ? 100 * cell[0] / cell[1] : null;
-  };
-  return { share, base: (survey: number, cut: string) => bases.get(`${survey}|${cut}`) ?? null, weeks, labels };
-}
 
 export default function Channels() {
   const waves = useWaves().data;
@@ -119,7 +95,9 @@ export default function Channels() {
   const cut = (offered.find(c => c.join(":") === asked) ?? offered.find(c => c[0] === asked.split(":")[0]))?.join(":") ?? EVERYONE;
   const kind = cut.split(":")[0];
   const groups = offered.filter(c => c[0] === kind);
-  const chooseKind = (k: string) => pick("g", offered.find(c => c[0] === k)!.join(":"));   // a kind opens on its first group
+  // a group keeps the category on screen (else each group would open on its own biggest category, 27 Nov 2026)
+  const chooseGroup = (g: string) => setParams(p => { p.set("g", g); p.set("c", category); return p; }, { replace: true });
+  const chooseKind = (k: string) => chooseGroup(offered.find(c => c[0] === k)!.join(":"));   // a kind opens on its first group
   const kindOptions = kinds.map(k => <option key={k} value={k}>{k === "total" ? "Everyone" : CUT_NAMES[k] ?? k}</option>);
   // the categories this week asked both ways, biggest in store first
   const categories = [...data.storeLabels].filter(l => data.labels.has(l) && !SKIP.test(l) && data.inStore(week, cut, l) != null)
@@ -129,8 +107,15 @@ export default function Channels() {
   const groupName = cut === EVERYONE ? "Everyone" : `${kindName}: ${cut.slice(kind.length + 1)}`;
   const nowStore = data.inStore(week, cut, category), nowOnline = data.onLine(week, cut, category);
   const change = (fn: typeof data.inStore, now: number | null) => prior && now != null && fn(prior[0], cut, category) != null ? now - fn(prior[0], cut, category)! : null;
+  // a row of the bar chart: a category of the group, or (a kind chosen) a group of the kind for the category; only the
+  // groups with an answer for it this week
+  const sideBySide = kind !== "total";
+  const barCut = (row: string) => sideBySide ? `${kind}:${row}` : cut;
+  const barLabel = (row: string) => sideBySide ? category : row;
+  const rows = sideBySide ? groups.map(c => c[1]).filter(g => data.inStore(week, barCut(g), category) != null) : categories;
+  const focus = sideBySide ? cut.slice(kind.length + 1) : category;
   // both cards draw at one height, so the trend card has no empty space under its chart beside the long category list
-  const height = Math.max(400, categories.length * 30 + 60);
+  const height = Math.max(400, rows.length * 30 + 60);
   const figure = (v: number | null) => v == null ? null : +v.toFixed(1);   // a % as charts and exports show it
   const source = `Source: ${survey.source}. Unweighted.`;
 
@@ -155,37 +140,39 @@ export default function Channels() {
 
   const withEveryone = cut !== EVERYONE;   // Everyone's figure beside a group's
   const channels = [["In a store", data.inStore, C.red, "store"], ["Online", data.onLine, C.blue, "online"]] as const;
-  /** In-store (red) and online (blue) bars, a pair per category for the group, biggest in store first. The category the
-   *  line chart shows stays where it ranks (26 Nov 2026), in full colour; the others lighter. Only the chosen category
-   *  shows its % and Everyone's figure as a short grey tick across each bar (a bar past it is above everyone's); every
-   *  row's figures are in the hover (the user, 27 Nov 2026: on every row they made the chart busy). A pictorial bar (a
-   *  tick at the bar's end) is laid out like the bars, so each tick sits on its own bar; the % sits in a column on the
-   *  right, as the Retailer databank's "Who shops there" does, as at the bar's end a tick could cross it. */
+  const barFigure = (fn: typeof data.inStore, row: string, who = barCut(row)) => figure(fn(week, who, barLabel(row)));
+  /** In-store (red) and online (blue) bars, a pair per row: every category for the group, biggest in store first, or
+   *  the category for each group of a kind. The row the line chart shows stays where it ranks (26 Nov 2026), in full
+   *  colour; the others lighter. Only that row shows its % and Everyone's figure as a short grey tick across each bar (a
+   *  bar past it is above everyone's); every row's figures are in the hover (the user, 27 Nov 2026: on every row they
+   *  made the chart busy). A pictorial bar (a tick at the bar's end) is laid out like the bars, so each tick sits on its
+   *  own bar; the % sits in a column on the right, as the Retailer databank's "Who shops there" does, as at the bar's end
+   *  a tick could cross it. */
   const barOption = () => ({
     tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "shadow" },
-      formatter: ([p]: { name: string }[]) => `${p.name}<br>` + channels.map(([name, fn]) => `${name} <b>${pct(fn(week, cut, p.name))}</b>` +
-        (withEveryone ? ` <span style="color:${C.ink3}">Everyone ${pct(fn(week, EVERYONE, p.name))}</span>` : "")).join("<br>") },
+      formatter: ([p]: { name: string }[]) => `${p.name}<br>` + channels.map(([name, fn]) => `${name} <b>${pct(barFigure(fn, p.name))}</b>` +
+        (withEveryone ? ` <span style="color:${C.ink3}">Everyone ${pct(barFigure(fn, p.name, EVERYONE))}</span>` : "")).join("<br>") },
     legend: { top: 0, left: 0, textStyle: axisText(), data: ["In a store", "Online", ...(withEveryone ? [{ name: "Everyone", icon: "path://M0 0H2V12H0Z" }] : [])] },
     grid: { left: 8, right: 8, top: 32, bottom: 8, containLabel: true },
     xAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" } },
-    yAxis: [{ type: "category", inverse: true, data: categories, triggerEvent: true,
-              axisLabel: { ...axisText(), width: 190, overflow: "truncate", color: (row?: string) => row === category ? C.ink : C.ink3 } },
+    yAxis: [{ type: "category", inverse: true, data: rows, triggerEvent: true,
+              axisLabel: { ...axisText(), width: 190, overflow: "truncate", color: (row?: string) => row === focus ? C.ink : C.ink3 } },
             // in a store over online, beside each pair of bars (two 10 px bars 3 px apart: 13 px between their middles)
-            { type: "category", inverse: true, data: categories, position: "right", axisLabel: { align: "right", margin: 44, lineHeight: 13,
-              formatter: (r: string) => r === category ? channels.map(([, fn, , style]) => `{${style}|${pct(figure(fn(week, cut, r)))}}`).join("\n") : "",
+            { type: "category", inverse: true, data: rows, position: "right", axisLabel: { align: "right", margin: 44, lineHeight: 13,
+              formatter: (r: string) => r === focus ? channels.map(([, fn, , style]) => `{${style}|${pct(barFigure(fn, r))}}`).join("\n") : "",
               rich: Object.fromEntries(channels.map(([, , color, style]) => [style, { color, fontSize: 11, fontWeight: 700 }])) } }],
     series: [...channels.map(([name, fn, color]) => ({
       type: "bar", name, barMaxWidth: 10, barGap: "30%", itemStyle: { color, borderRadius: [2, 4, 4, 2] },
-      data: categories.map(r => ({ value: figure(fn(week, cut, r)), ...(r === category ? {} : { itemStyle: { opacity: 0.3 } }) })) })),
+      data: rows.map(r => ({ value: barFigure(fn, r), ...(r === focus ? {} : { itemStyle: { opacity: 0.3 } }) })) })),
       ...(withEveryone ? channels.map(([, fn]) => ({
         type: "pictorialBar", name: "Everyone", barMaxWidth: 10, barGap: "30%", symbol: "rect", symbolSize: [2, 12], symbolPosition: "end",
-        itemStyle: { color: C.other }, data: categories.map(r => r === category ? figure(fn(week, EVERYONE, r)) : null) })) : [])],
+        itemStyle: { color: C.other }, data: rows.map(r => r === focus ? barFigure(fn, r, EVERYONE) : null) })) : [])],
   });
-  const barTitle = "All categories, this week";
+  const barTitle = sideBySide ? `${category} by ${kindName.toLowerCase()}` : "All categories, this week";
   const exportBars = (format: Format) => downloadTable(format, `${barTitle} ${date}`,
-    ["Category", "In a store %", "Online %", ...(withEveryone ? ["Everyone in a store %", "Everyone online %"] : []), "In a store base", "Online base"],
-    categories.map(r => [r, ...channels.map(([, fn]) => figure(fn(week, cut, r))), ...(withEveryone ? channels.map(([, fn]) => figure(fn(week, EVERYONE, r))) : []),
-                         data.storeBase(week, cut), data.onlineBase(week, cut)]),
+    [sideBySide ? kindName : "Category", "In a store %", "Online %", ...(withEveryone ? ["Everyone in a store %", "Everyone online %"] : []), "In a store base", "Online base"],
+    rows.map(r => [r, ...channels.map(([, fn]) => barFigure(fn, r)), ...(withEveryone ? channels.map(([, fn]) => barFigure(fn, r, EVERYONE)) : []),
+                   data.storeBase(week, barCut(r)), data.onlineBase(week, barCut(r))]),
     [`${barTitle}: ${groupName}, ${fmtDate(date)}`, source]);
 
   const lineOption = () => ({
@@ -236,7 +223,7 @@ export default function Channels() {
       <label><span>Week</span><select value={week} onChange={e => setParams(p => { p.set("w", e.target.value); p.delete("from"); p.delete("to"); return p; }, { replace: true })}>
         {data.weeks.map(w => <option key={w[0]} value={w[0]}>{fmtDate(w[1])}</option>)}</select></label>
       <label><span>Respondent group</span><select value={kind} onChange={e => chooseKind(e.target.value)}>{kindOptions}</select></label>
-      {kind !== "total" && <label><span>{kindName}</span><select value={cut} onChange={e => pick("g", e.target.value)}>
+      {kind !== "total" && <label><span>{kindName}</span><select value={cut} onChange={e => chooseGroup(e.target.value)}>
         {groups.map(c => <option key={c[1]} value={c.join(":")}>{c[1]}</option>)}</select></label>}
       <label><span>Category</span><select value={category} onChange={e => pick("c", e.target.value)}>
         {categories.map(l => <option key={l}>{l}</option>)}</select></label>
@@ -257,10 +244,14 @@ export default function Channels() {
 
     <div className="grid g2">
       <Card title={barTitle} aside={<ExportButtons onExport={exportBars} png={() => barChart.current && downloadPng(barChart.current, `${barTitle}: ${groupName}, ${fmtDate(date)}`, source, `${barTitle} ${date}`)} />}
-            sub={<><span className="chip flat">{groupName}</span> <span className="chip flat">{fmtDate(date)}</span><br />Percentage of respondents who bought each category in a store (red) and
-              online (blue){withEveryone && ", Everyone's as a grey tick"} · hover a category for its figures, click it to see its trend</>}>
-        <EChart height={height} label={`In store and online buying by category, ${groupName}, ${fmtDate(date)}`}
-                onClick={p => pick("c", String(p.componentType === "yAxis" ? p.value : p.name))} option={barOption()} build={barOption} onReady={c => { barChart.current = c; }} />
+            sub={<><span className="chip flat">{groupName}</span> <span className="chip flat">{fmtDate(date)}</span><br />{sideBySide
+              ? <>Percentage of each group who bought it in a store (red) and online (blue), Everyone's as a grey tick · hover a group
+                for its figures, click it to see its trend</>
+              : <>Percentage of respondents who bought each category in a store (red) and online (blue) · hover a category for its
+                figures, click it to see its trend</>}</>}>
+        <EChart height={height} label={sideBySide ? `${category}: in store and online buying by ${kindName.toLowerCase()}, ${fmtDate(date)}` : `In store and online buying by category, ${groupName}, ${fmtDate(date)}`}
+                onClick={p => { const row = String(p.componentType === "yAxis" ? p.value : p.name); if (sideBySide) chooseGroup(barCut(row)); else pick("c", row); }}
+                option={barOption()} build={barOption} onReady={c => { barChart.current = c; }} />
       </Card>
       <Card title={category} sub={<><span className="chip flat">{groupName}</span> <span className="chip flat">{rangeText}</span><br />Percentage of respondents who bought it each week, in a
               store (red) and online (blue)</>}
@@ -276,7 +267,7 @@ export default function Channels() {
             {oldestFirst.map(w => <option key={w[0]} value={w[0]}>To {fmtDate(w[1])}</option>)}</select>
         </div>
         {kind !== "total" && <div className="seg" role="group" aria-label={`${kindName}: one group at a time`} style={{ marginBottom: 8 }}>
-          {groups.map(c => <button key={c[1]} type="button" aria-pressed={c.join(":") === cut} onClick={() => pick("g", c.join(":"))}>{c[1]}</button>)}
+          {groups.map(c => <button key={c[1]} type="button" aria-pressed={c.join(":") === cut} onClick={() => chooseGroup(c.join(":"))}>{c[1]}</button>)}
         </div>}
         {drawn.length
           ? <EChart height={height - (kind !== "total" ? 92 : 48)} label={`${category}: in store vs online over time, ${groupName}`}

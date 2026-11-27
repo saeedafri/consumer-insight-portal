@@ -44,7 +44,7 @@ curl -H "Authorization: Bearer cip_…" "https://<portal>/api/v1/waves/532/resul
 | `GET /api/v1/waves/{survey_id}/crosstab` | One question by two cuts, `?q=XM3&by=generation,gender&weeks=4` | Cross-tab matrix |
 | `GET /api/v1/waves/{survey_id}/report` | The weekly report of a tracker wave: US Consumer Survey Insights or China Consumer Survey Insights | Weekly report |
 | `GET /api/v1/waves/{survey_id}/logic` | When each question was shown, and the screen-out rules | Survey preview |
-| `GET /api/v1/questions/{family}/{study_type}/{qcode}` | One question across every wave and cut | Trends, Compare waves or Audiences (US weekly questions: or In store vs online) |
+| `GET /api/v1/questions/{family}/{study_type}/{qcode}` | One question across every wave and cut | Trends, Compare waves or Audiences (US weekly questions: or In store vs online, Activities & retailers, Spending pressure, Consumer sentiment) |
 | `GET /api/v1/dashboards/{code}` | A topic dashboard for its latest wave | Topic dashboards |
 | `GET /api/v1/dashboards/{code}/{survey_id}` | A topic dashboard for one wave | Topic dashboards |
 | `GET /api/v1/search` | Questions by words, code, answer or survey, `?q=tariffs&limit=40` | Search questions |

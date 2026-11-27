@@ -2,7 +2,7 @@
 // the chart that fits (api/assistant.py, no database). Quick results appear first. An optional AI check can refine
 // the selected question, period or cut. A conversation:
 // each answer appears right under the box, newest first. Both views lead with the answer in one sentence and the
-// figures that matter (stat tiles), then the chart the dataviz forms pick (a line, ranked bars, one segmented bar, 100% stacked bars, a heatmap, a dumbbell),
+// figures that matter (stat tiles), then, only when asked for (Show chart, or "chart" / "graph" in the question), the chart the dataviz forms pick (a line, ranked bars, one segmented bar, 100% stacked bars, a heatmap, a dumbbell),
 // what the figures tell, and questions to continue with; Analyst view adds the exact sentences, notes, how the question
 // was understood and every figure with its base. A question it cannot place shows the closest survey questions.
 import { Fragment, useEffect, useRef, useState } from "react";
@@ -23,6 +23,7 @@ const EXAMPLES = ["How are higher gasoline prices affecting consumer spending?",
                   "Compare the first and latest wave of holiday shopping progress", "Top beauty retailers",
                   "How worried are people about tariffs?", "Top food retailers, last 8 weeks"];
 const FIGURE = /([+−-]?\d[\d,]*(?:\.\d+)?%|[+−-]\d+(?:\.\d+)? percentage points|\d[\d,]* of [\d,]+ respondents)/g;
+const ASKS_CHART = /\b(chart|graph|plot|visuali[sz]e|draw)\b/i;   // the answer is the words; a chart only when asked for (the user, 27 Nov 2026)
 const AUDIENCE = "cip_ask_view";   // this viewer's choice of view, kept in their browser
 type Audience = "client" | "analyst";
 const savedAudience = (): Audience => { try { return localStorage.getItem(AUDIENCE) === "analyst" ? "analyst" : "client"; } catch { return "client"; } };
@@ -185,6 +186,7 @@ function Reply({ question, answer, audience, checking, onAsk }: { question: stri
   const chart = answer.chart;
   const offered = chart ? views(chart) : [];
   const [picked, setView] = useState<View | null>(null);
+  const [chartShown, showChart] = useState(ASKS_CHART.test(question));
   const view = picked && offered.includes(picked) ? picked : offered[0];   // the checked answer may draw differently
   const drawnByHand = view === "heatmap" || view === "dumbbell" || view === "table";
   const height = chart ? (view === "bar" ? Math.max(180, chart.categories.length * (chart.series.length > 1 ? 34 : 26) + 40)
@@ -235,7 +237,7 @@ function Reply({ question, answer, audience, checking, onAsk }: { question: stri
         <button type="button" onClick={e => void copyText(e.currentTarget, writeUp(question, answer, "slide"))}>For a slide</button>
       </Menu>}
       {table && !checking && <ExportButtons pin={false} onExport={exportFigures}
-        png={chart && !drawnByHand ? () => drawn.current && downloadPng(drawn.current, answer.headline || question, answer.source_line ?? "", file) : undefined} />}
+        png={chart && chartShown && !drawnByHand ? () => drawn.current && downloadPng(drawn.current, answer.headline || question, answer.source_line ?? "", file) : undefined} />}
     </div>
     {answer.no_source
       ? <p className="ask-headline">{answer.answer}</p>
@@ -261,17 +263,19 @@ function Reply({ question, answer, audience, checking, onAsk }: { question: stri
         {tiles.length > 0 && <Tiles tiles={tiles} />}
         {!!answer.overview?.length && <ul className="ask-points">{answer.overview.map(o => <li key={o.qcode}><b>{o.name}</b>: <Bold text={o.text} /> <Link to={o.link} className="small">{o.qcode} →</Link></li>)}</ul>}
         {analyst && !!answer.points?.length && <ul className="ask-points">{answer.points.map((p, i) => <li key={i}><Bold text={p} /></li>)}</ul>}
-        {chart && offered.length > 1 && <span className="seg ask-views" role="group" aria-label="Chart type">
+        {chart && <button type="button" className="btn ask-views" aria-expanded={chartShown} onClick={() => showChart(!chartShown)}>
+          {chartShown ? "Hide chart" : "Show chart"}</button>}
+        {chart && chartShown && offered.length > 1 && <span className="seg ask-views" role="group" aria-label="Chart type">
           {offered.map(v => <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>{VIEW_NAMES[v]}</button>)}</span>}
-        {chart && view === "heatmap" && <Heatmap chart={chart} />}
-        {chart && view === "dumbbell" && <Dumbbell chart={chart} />}
-        {chart && !drawnByHand && <EChart key={view} option={option(chart, view)} height={height} label={answer.headline || question} onReady={c => { drawn.current = c; }} />}
-        {chart && view === "table" && answer.table && <div className="table-wrap"><Figures table={answer.table} /></div>}
+        {chart && chartShown && view === "heatmap" && <Heatmap chart={chart} />}
+        {chart && chartShown && view === "dumbbell" && <Dumbbell chart={chart} />}
+        {chart && chartShown && !drawnByHand && <EChart key={view} option={option(chart, view)} height={height} label={answer.headline || question} onReady={c => { drawn.current = c; }} />}
+        {chart && chartShown && view === "table" && answer.table && <div className="table-wrap"><Figures table={answer.table} /></div>}
         {answer.takeaway && answer.takeaway !== answer.headline && <div className="ask-takeaway"><b>What this tells us</b><p><Bold text={answer.takeaway} /></p></div>}
         {!!answer.notes?.length && <ul className="ask-notes small muted">
           {answer.notes?.map((n, i) => <li key={i}>{n}</li>)}
         </ul>}
-        {table && view !== "table" && <details className="ask-figures" open={analyst}><summary>Figures and sample sizes</summary>
+        {table && !(chartShown && view === "table") && <details className="ask-figures" open={analyst}><summary>Figures and sample sizes</summary>
           {source && <p className="small muted">{answer.source_line}</p>}
           <div className="table-wrap"><Figures table={table} /></div></details>}
       </>}

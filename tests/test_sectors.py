@@ -71,3 +71,13 @@ def test_median_spend_is_the_band_the_middle_buyer_falls_in_by_amount_not_by_lis
     assert sectors.median_band([{"label": label, "Total": share} for label, share in book]) == "$201 - $300"
     assert sectors.median_band([{"label": label, "Total": None} for label, _ in book]) is None    # every figure hidden
     assert sectors.median_band([{"label": "Prices were lower", "Total": 40.0}]) is None           # not a spend question
+
+
+def test_average_spend_is_estimated_from_band_mid_points_with_an_open_top_band_at_its_floor():
+    """The same M4 rows: (26.0 x 500 + 17.3 x 400.5 + 20.1 x 250.5 + 17.1 x 150.5 + 9.8 x 75 + 7.6 x 25) / 97.9 = $291,
+    "More than $500" counted at $500 and "Cannot remember" nowhere, as Ask estimates an average (api/ask_figures.py middle)."""
+    book = [("More than $500", 26.0), ("$301 - $500", 17.3), ("$201 - $300", 20.1), ("$101 - $200", 17.1),
+            ("$50 - $100", 9.8), ("Less than $50", 7.6), ("Cannot remember", 2.2)]
+    assert sectors.average_spend([{"label": label, "Total": share} for label, share in book]) == 291
+    assert sectors.average_spend([{"label": label, "Total": None} for label, _ in book]) is None   # every figure hidden
+    assert sectors.average_spend([{"label": "Prices were lower", "Total": 40.0}]) is None          # not a spend question

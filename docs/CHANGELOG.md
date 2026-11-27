@@ -6,6 +6,34 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 27 November 2026
 
+### The Consumer Health dataset is now the ESP dataset
+
+The left-menu download and its tick on the Access page are now called ESP dataset. The workbook, who may download it and its API address (/api/v1/datasets/consumer-health) are as before.
+
+### Ask CIP: the chart only when you ask for it
+
+An Ask CIP answer now opens with its words and key figures only. The chart waits behind a Show chart button under the figures, and opens at once when the question asks for one (a chart, graph or plot of something). Hide chart closes it again; the chart types, the PNG download and the figures with their sample sizes are as before.
+
+### Sector databank: spend by sector, with an average spend for each survey
+
+The Sector databank now ends with Spend by sector: every sector's newest survey side by side, with the middle buyer's spend band, the average spend estimated from the answer bands (each band's mid-point, the top band at its floor, as Ask CIP estimates an average) and its change against a year earlier and the survey before. A sector's name opens it, and beside the table the chosen sector's average spend is drawn survey by survey, its median band in the hover. A note says when to read an average with care: it jumps where a sector's answer bands changed. The table downloads as CSV or Excel, and the sector's workbook (Excel: every tab) now carries the average under the median spend.
+
+### Consumer sentiment & outlook: a new screen for the finances and economy outlook, by group
+
+A new screen under Core research, Consumer sentiment & outlook (Sentiment & outlook in the left menu), follows the US weekly survey's two outlook questions every week since October 2023: whether people expect their household's discretionary income (Personal finances) and the economy (Economy) to be better or worse over the next 12 months. Each tab shows net better (better less worse, in points, as the weekly report counts it), better, about the same, worse and don't know. Choosing a kind of group (gender, age band, generation, household income, region, urbanicity) shows the chosen answer for each of its groups side by side with Everyone's figure as a grey tick: the outlook by demographic group. The line chart follows the answer week by week, and the cards give this week's figure with its change, the same week a year earlier and the people asked. Home's Consumer sentiment & outlook card now opens this screen.
+
+### Spending pressure: a new screen for how expenses changed and where people cut back
+
+A new screen under Core research, Spending pressure, reads the US weekly survey's question on how people's expenses changed in the last twelve months (utilities, insurance, rent or mortgage; asked every week since July 2026) in three tabs: Expenses up (a notable or significant increase), Expenses down (a notable or significant decrease) and Net change (up less down, in points). A fourth tab, Where they cut back, shows where people who cut spending because of higher gas prices cut back (restaurants and bars, travel, savings…), every week since March 2026. It works like Activities & retailers: the week, the respondent group and the category; every category for the group, or the category for each group of a kind side by side with Everyone's figure as a grey tick; the category week by week; this week's figure with its change, and the people asked. It is on Home and on the Access page.
+
+### Activities & retailers: a new screen for what people did and where they bought food and nonfood products
+
+A new screen under Core research, Activities & retailers, follows three questions of the US weekly survey every week since December 2020: the activities people did in the past two weeks (met up with friends, went to a restaurant, a mall, a gym…), the retailers they bought food from, and the retailers they bought nonfood products from, each a tab. It works like In store vs online: pick the week, the respondent group and the activity or retailer; the bar chart ranks every answer for the group, or, with a kind of group chosen (gender, generation, income…), shows the answer for each of its groups side by side with Everyone's figure as a grey tick; the line chart follows the answer week by week over the year up to the chosen week, or between any From and To. Cards give this week's figure with its change, the same week a year earlier and the people asked. Both charts export to CSV, Excel and PowerPoint or as a picture, and the screen is on Home and on the Access page.
+
+### In store vs online: every group of a kind side by side in the bar chart
+
+Choosing a kind of group under Respondent group (gender, age band, generation, income…) now shows, in the bar chart, the chosen category for every group of that kind side by side: Male, Female and Non-binary for Food or beverages, or Gen Z, Millennials, Gen X and Boomers. The group chosen above (Male by default for gender, the first generation for generation) is highlighted with its percentages and Everyone's grey tick, and the line chart shows it week by week. The three stay in step: clicking a group's bar, its button over the line chart or the filter above changes all of them, and the category stays as it was. Everyone shows every category, as before.
+
 ### In store vs online: Everyone and the line chart's date range are back
 
 Everyone is a choice under Respondent group again, and the page opens on it, as before. The line chart has its own group list (with Everyone), its From and To dates and its group buttons again, all the same choice as the filters above: picking Everyone in either shows Everyone on both charts. The line chart shows the year up to the week chosen above, so changing the Week moves it, and From and To still pick any range. The bar chart is quieter: only the chosen category shows its percentages and, when a group is chosen, Everyone's figure as a grey tick; hovering any category gives its in-store and online figures (and Everyone's). The group and the date (or the trend's dates) now sit in grey chips above each chart, so the filters applied are plain to see.
