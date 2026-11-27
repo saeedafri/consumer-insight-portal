@@ -20,3 +20,4 @@ GRANT INSERT, UPDATE, DELETE ON `cip_stg`.`cip_audience`      TO 'cip_app'@'%';
 GRANT INSERT, UPDATE, DELETE ON `cip_stg`.`cip_board`         TO 'cip_app'@'%';
 GRANT INSERT, UPDATE, DELETE ON `cip_stg`.`cip_board_item`    TO 'cip_app'@'%';
 GRANT INSERT, UPDATE, DELETE ON `cip_stg`.`cip_board_comment` TO 'cip_app'@'%';
+GRANT INSERT, UPDATE, DELETE ON `cip_stg`.`cip_survey_subscriber` TO 'cip_app'@'%';   -- after scripts/init_db.py made it

@@ -101,14 +101,14 @@ The system is founded on the conviction that **survey data is sample evidence, n
 
 Coresight 2026 Brand Palette is applied with strict intentionality:
 
-- **Brand Primary (`#D62E2F`)**: Used exclusively for brand identity (the CIP logo badge), active navigation rail indicators, the primary page-level action button, and the left heading accent bar. It is never used as generic decorative background wallpaper or casual text coloring.
+- **Brand Primary (`#D62E2F`)**: Used exclusively for brand identity (the CIP logo badge), active navigation rail indicators, the primary page-level action button, the left heading accent bar, and the chosen button of every segmented control and tab (red outline and red text on the red wash: the business team, 27 Nov 2026). It is never used as generic decorative background wallpaper or casual text coloring.
 - **Ink & Neutral Hierarchy**:
   - `ink` (`#2D2A29` in Light, `#FAFAFA` in Dark): High-contrast primary reading text.
   - `ink-secondary` (`#5F5C5B` in Light, `#C9C5C3` in Dark): Metadata, respondent base counts, footnotes, and inactive labels ($\ge 6.6:1$ contrast ratio).
 - **Backgrounds & Surfaces**:
   - `paper` (`#FAFAFA` / `#1B1918`): The main application background canvas.
   - `surface` (`#FFFFFF` / `#2D2A29`): White content cards with a hairline border (`#E5E5E5`).
-  - `fill` (`#F2F1F0` / `#3A3634`): Segmented controls, chips, and table row hover states.
+  - `fill` (`#F2F1F0` / `#3A3634`): Segmented controls (their track; the chosen button is red, see Brand Primary), chips, and table row hover states.
 - **Data Series & Significance Scale**:
   - `blue` (`#005F8F` / `#A3C0CE`): Standard data series for bar and column charts.
   - `sky` (`#A3C0CE`): Default categorical bar fill.

@@ -1,6 +1,6 @@
 """What the team keeps in the portal (sql/007_team.sql), written through the portal's own account (sql/004_grants.sql: it
 may write only these tables): saved views anyone can open, metric alerts the pipeline checks
-after every load, and audiences — saved groups of respondents (any cuts and answers combined) shown against any
+after every load, who is emailed each new survey (My account), and audiences — saved groups of respondents (any cuts and answers combined) shown against any
 question. Alerts and audiences follow the portal's rules: the same question version only, every figure shown (no significance under 30),
 significance by the two-proportion z-test at 95 %.
 
@@ -18,12 +18,12 @@ from functools import lru_cache
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from sqlalchemy import bindparam, text
+from sqlalchemy import bindparam, inspect, text
 from starlette.concurrency import run_in_threadpool
 
 from api.dashboards import significant
 from shared.core import access, audit
-from shared.core.database import get_engine
+from shared.core.database import apply_sql, get_engine
 from shared.data import payloads
 from etl.harmonise import normalise_text
 from shared.data.payloads import HIDDEN_BASE, TEST_BASE
@@ -236,6 +236,38 @@ async def save_alert(request: Request) -> dict:
 @router.delete("/alerts/{alert_id}", status_code=204)
 def drop_alert(alert_id: int, request: Request) -> None:
     remove("cip_metric_alert", "alert_id", "owner_email", alert_id, request)
+
+
+SUBSCRIBERS = Path(__file__).resolve().parents[1] / "sql" / "012_survey_subscriber.sql"
+
+
+@router.get("/alerts/new-surveys")
+def survey_emails(request: Request) -> dict:
+    """Is the signed-in person emailed each new survey (My account)? No table yet: nobody has ticked it."""
+    who = who_may_use(request, "alerts")
+    if "cip_survey_subscriber" not in inspect(get_engine("app")).get_table_names():
+        return {"subscribed": False}
+    return {"subscribed": bool(_rows("SELECT 1 FROM cip_survey_subscriber WHERE email = :e", e=who["email"]))}
+
+
+@router.put("/alerts/new-surveys")
+async def set_survey_emails(request: Request) -> dict:
+    """{"subscribed": true or false}: email the signed-in person each new survey they may open (etl/notify.py
+    tell_subscribers), or stop. Part of the Alerts menu, so the Access page turns it on and off with alerts."""
+    who = who_may_use(request, "alerts")
+    on = (await json_body(request)).get("subscribed") is True
+
+    def store() -> None:
+        engine = get_engine("api_write")
+        if "cip_survey_subscriber" not in inspect(engine).get_table_names():   # the first tick makes the table
+            apply_sql(SUBSCRIBERS, engine)
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM cip_survey_subscriber WHERE email = :e"), {"e": who["email"]})
+            if on:
+                conn.execute(text("INSERT INTO cip_survey_subscriber (email) VALUES (:e)"), {"e": who["email"]})
+    await run_in_threadpool(store)
+    audit.record(request, "survey_emails", detail={"subscribed": on})
+    return {"subscribed": on}
 
 
 def due_alerts(survey_ids: list[int]) -> list[tuple[str, str | None]]:

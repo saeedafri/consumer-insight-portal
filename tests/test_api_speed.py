@@ -123,13 +123,11 @@ def test_a_weekly_trend_exports_as_a_line_chart_of_every_week():
         assert b"<c:barChart>" in xml and b'formatCode="0.0&quot;%&quot;"' in xml and b"<c:majorGridlines" not in xml
 
 
-
 def test_a_book_exports_as_one_workbook_of_tabs_in_the_house_style(client):
     """Every tab of a databank, every section of a survey, as one download (the business team, 27 Nov 2026): a tab per
     table under its own (Excel-safe, unique) title, the header in Coresight red, percentages as 61.0%, the people asked
-    as counts, weeks as dates; a deck gets a cover and a slide per table; a book too big is refused, not cut."""
+    as plain numbers, weeks as dates; a book is Excel only, and one too big is refused whole, never cut."""
     import io
-    import zipfile
     import openpyxl
     from api import exports
     tracker = {"title": "Headline figures", "header": ["Headline figure", "2025-09-29", "2026-11-23"], "unit": "%", "plain": [1],
@@ -149,10 +147,12 @@ def test_a_book_exports_as_one_workbook_of_tabs_in_the_house_style(client):
     second = book.worksheets[1]
     assert second["C3"].number_format == '0.0"%"' and second["C4"].number_format == "#,##0"   # a % column's base row is plain
     assert book.worksheets[2]["A3"].value == "'=SUM(A1)"   # a formula stays text
-    deck = zipfile.ZipFile(io.BytesIO(client.post("/api/v1/export/pptx", {"name": "Holiday", "sheets": [tracker, survey]}).body))
-    assert len([n for n in deck.namelist() if n.startswith("ppt/slides/slide")]) == 3   # the cover, then a slide per table
-    too_big = {**tracker, "rows": [["x", 1, 1]] * exports.MAX_ROWS}
-    assert client.post("/api/v1/export/xlsx", {"name": "big", "sheets": [too_big] * 6}).status_code == 422
+    assert client.post("/api/v1/export/pptx", {"name": "Holiday", "sheets": [tracker, survey]}).status_code == 422
+    long = {**tracker, "rows": [["x", 1, 1]] * (exports.MAX_ROWS + 1)}   # longer than one table may be: a tab keeps it all
+    assert openpyxl.load_workbook(io.BytesIO(client.post("/api/v1/export/xlsx", {"name": "long", "sheets": [long]}).body)).active.max_row == 3 + exports.MAX_ROWS + 1
+    assert client.post("/api/v1/export/xlsx", {"name": "big", "sheets": [long] * 5}).status_code == 422   # 10,005 rows: refused whole
+    wide = {**tracker, "header": ["x"] * (exports.MAX_COLUMNS + 1)}
+    assert client.post("/api/v1/export/xlsx", {"name": "wide", "sheets": [wide]}).status_code == 422
 
 def test_mcp_crosstab_reuses_published_cut_files_without_database(client):
     response = client.post("/mcp", {

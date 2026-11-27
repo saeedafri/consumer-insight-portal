@@ -4,7 +4,8 @@ Baidu QSS, which fields the China survey, has no API reachable from outside Chin
 from it each week (the raw export and Baidu's topline) and uploads both here.
   POST /api/v1/admin/survey/preview  both files read and every count checked against the topline; writes nothing
   POST /api/v1/admin/survey/publish  the same check, then the wave loaded (etl/baidu_qss_export.py load) and the
-                                     published files rebuilt in the background (python -m etl.publish)
+                                     published files rebuilt in the background (python -m etl.publish), then the
+                                     team's new-survey email sent (python -m etl.notify --survey N --send)
   POST /api/v1/admin/sharepoint/notify  "the China folder changed": Microsoft Graph's webhook, or a Power Automate flow,
                                      calls it; no sign-in, a shared secret instead. It only leaves a note
                                      (data/sharepoint.wanted) that deploy/etl-loop.sh turns into a SharePoint pass
@@ -97,22 +98,25 @@ def publish_survey(raw: UploadFile = File(...), topline: UploadFile = File(...),
              result["survey_id"], raw.filename, topline.filename)
     from etl import notify
     notify.alerts([result["survey_id"]])   # as every other load does: this page is the China path in use (second audit, 15 Nov)
-    start_publish()
+    start_publish(result["survey_id"])
     return result
 
 
-PUBLISH = """for try in 1 2 3 4 5 6; do nice -n 15 "$0" -m etl.publish && exit 0; sleep 300; done; exit 1"""
+# $0 the Python, $1 the survey: published, then its new-survey email, as the weekly run and SharePoint send theirs
+PUBLISH = ("""for try in 1 2 3 4 5 6; do nice -n 15 "$0" -m etl.publish && exec nice -n 15 "$0" -m etl.notify --survey "$1" --send;"""
+           " sleep 300; done; exit 1")
 
 
-def start_publish() -> None:
+def start_publish(survey_id: int) -> None:
     """Rebuild the published files (python -m etl.publish: only the new wave and its family's trends are built, the
     rest is linked from the live version) in its own low-priority process, so the API's memory and CPU stay with
-    visitors. etl.publish takes the ETL lock itself, so it never runs alongside a scheduled run; when one holds the
-    lock it is tried again every 5 minutes for half an hour (until then the API builds the new wave's pages itself)."""
+    visitors, then email the team about the survey (only an alert check before 27 Nov 2026). etl.publish takes the
+    ETL lock itself, so it never runs alongside a scheduled run; when one holds the lock it is tried again every 5
+    minutes for half an hour (until then the API builds the new wave's pages itself)."""
     (ROOT / "logs").mkdir(exist_ok=True)
     with (ROOT / "logs/publish.log").open("ab") as out:
-        subprocess.Popen(["sh", "-c", PUBLISH, sys.executable], cwd=ROOT, stdout=out, stderr=subprocess.STDOUT,
-                         start_new_session=True)
+        subprocess.Popen(["sh", "-c", PUBLISH, sys.executable, str(survey_id)], cwd=ROOT, stdout=out,
+                         stderr=subprocess.STDOUT, start_new_session=True)
 
 
 @hooks.post("/notify")

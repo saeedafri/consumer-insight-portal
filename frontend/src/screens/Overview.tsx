@@ -53,7 +53,7 @@ export default function Overview() {
           <PrinterIcon size={14} />
           Print report
         </Button>
-        <ExportButtons pin={false} onExport={format => downloadBook(format, `${w.title} ${w.wave_date}`, surveyBook(book))} />
+        <ExportButtons pin={false} deck={false} onExport={format => downloadBook(format, `${w.title} ${w.wave_date}`, surveyBook(book))} />
       </div>
     </div>
 

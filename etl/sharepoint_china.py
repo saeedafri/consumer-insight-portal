@@ -29,7 +29,7 @@ import argparse
 import logging
 import os
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
@@ -170,7 +170,7 @@ def run(listing_only: bool = False) -> list[str]:
         return []
     session = sign_in(found)
     drive, folder = open_folder(session, found)
-    done = []
+    done, loaded = [], []
     for path, files in week_folders(session, drive, folder):
         where = "/".join(path) or found["CIP_CHINA_FOLDER"]
         raw, crosstab, why = pick_pair(files)
@@ -214,10 +214,9 @@ def run(listing_only: bool = False) -> list[str]:
             continue
         done.append(f"{where}: loaded week of {result['wave']}, {result['respondents']} respondents, "
                     f"{result['matched']} figures equal to the crosstab")
-        notify.teams(f"China Consumer Survey, week of {date.fromisoformat(result['wave']):%d %b %Y}: "
-                     f"{result['respondents']} respondents loaded from SharePoint")
         notify.alerts([result["survey_id"]])   # the team's metric alerts on China waves too
-    if any(": loaded week" in line for line in done):
+        loaded.append(result["survey_id"])
+    if loaded:
         from etl import publish   # here: only a pass that loaded something rebuilds the published files
         try:
             # under the ETL lock, as python -m etl.publish: without it the 30-minute check, seeing the database ahead,
@@ -226,6 +225,14 @@ def run(listing_only: bool = False) -> list[str]:
                 publish.publish()
         except Locked:   # a scheduled run is publishing or loading; it, or the next load, publishes this week too
             done.append("publish: another CIP run holds the lock; the week opens now and is listed after its publish")
+    # last, as the weekly run's: the team's new-survey email and Teams post (only a Teams line before 27 Nov 2026)
+    for survey_id in loaded:
+        try:
+            notify.survey_loaded(survey_id)
+        except Exception as exc:   # the week stands; the admin is told how to send it by hand
+            log.exception("China survey %s: the new-survey email was not sent", survey_id)
+            notify.failure(f"the new-survey email of China survey {survey_id}", str(exc)[:2000],
+                           f"The week is loaded. Send it by hand: python -m etl.notify --survey {survey_id} --send")
     return done
 
 

@@ -7,6 +7,8 @@ export const TRACKERS: [string, string][] = [
   ["glp1", "GLP-1 impact"], ["mideast_gas", "Gas prices & geopolitics"], ["holiday_tracker", "Holiday shopping"],
   ["holiday_outlook", "Holiday outlook"], ["social_commerce", "Social commerce"],
 ];
+/** A dashboard key as words: started_by_generation → Started by generation (a tile's or list's name when it has none). */
+export const words = (key: string) => key.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
 /** The menu a dashboard needs (config/access.yml): a tracker its own (15 Nov 2026), any other the topic dashboards. */
 export const dashboardFeature = (code: string) => TRACKERS.some(([c]) => c === code) ? `tracker_${code}` : "dashboards";
 export const SECTOR_DASHBOARDS: [string, string][] = [

@@ -2,6 +2,7 @@
 // every number from config/dashboards.yml built by api/dashboards.py (vs prior week and vs last year); drawn by a
 // wave's Overview and the Trackers page. Also FigureCard, one figure as a card, for Home's week at a glance and the
 // Sector and Retailer databanks' cards, and Delta, the change chip Home and In store vs online use.
+import { words } from "../trackers";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import CountUp from "./CountUp";
@@ -63,7 +64,7 @@ export default function Glance({ code, id }: { code: string; id: number }) {
   if (isLoading) return <Skeleton height={236} className="glance-block" label="tracker" />;
   if (error || !d) return <Failure error={error} />;
   const prior = (d.prior_label ?? "prior week").replace(/^the /, "");
-  const label = (k: string) => d.tile_labels?.[k] ?? k.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
+  const label = (k: string) => d.tile_labels?.[k] ?? words(k);
   const highlights = d.highlights ?? [];
   return <>
     <section className="glance-block" aria-label={d.title}>

@@ -40,18 +40,28 @@ def test_publish_loads_the_week_and_starts_one_publish(csi_db, as_admin, monkeyp
     page, the China path in use, never did)."""
     from etl import notify
     started, judged = [], []
-    monkeypatch.setattr(ingest, "start_publish", lambda: started.append(1))
+    monkeypatch.setattr(ingest, "start_publish", lambda survey_id: started.append(survey_id))
     monkeypatch.setattr(notify, "alerts", lambda survey_ids: judged.append(survey_ids))
     monkeypatch.setattr(ingest, "UPLOAD_DIR", tmp_path / "uploads")
     answer = as_admin.post("/api/v1/admin/survey/publish", files=files())
     assert answer.status_code == 200, answer.text
-    assert (answer.json()["wave"], answer.json()["respondents"], started) == ("2026-10-26", 550, [1])
+    assert (answer.json()["wave"], answer.json()["respondents"], started) == ("2026-10-26", 550, [answer.json()["survey_id"]])
     assert judged == [[answer.json()["survey_id"]]]
     assert len(list((tmp_path / "uploads").iterdir())) == 2   # both source files kept
 
 
+def test_the_background_publish_then_sends_that_surveys_email(tmp_path):
+    """start_publish's shell loop with a stand-in Python: etl.publish, and once it succeeds etl.notify (27 Nov 2026)."""
+    import subprocess
+    python = tmp_path / "python"
+    python.write_text('#!/bin/sh\necho "$@" >> "$(dirname "$0")/calls"\n')
+    python.chmod(0o755)
+    subprocess.run(["sh", "-c", ingest.PUBLISH, str(python), "42"], check=True, timeout=10)
+    assert (tmp_path / "calls").read_text().splitlines() == ["-m etl.publish", "-m etl.notify --survey 42 --send"]
+
+
 def test_wrong_files_are_refused_before_anything_loads(csi_db, as_admin, monkeypatch, tmp_path):
-    monkeypatch.setattr(ingest, "start_publish", lambda: pytest.fail("published after a refused load"))
+    monkeypatch.setattr(ingest, "start_publish", lambda survey_id: pytest.fail("published after a refused load"))
     monkeypatch.setattr(ingest, "UPLOAD_DIR", tmp_path)
     swapped = as_admin.post("/api/v1/admin/survey/preview", files=files(raw=TOPLINE, topline=RAW))
     assert swapped.status_code == 400 and "raw must be .csv or .xlsx" in swapped.json()["detail"]

@@ -1,6 +1,9 @@
 """Excel and PowerPoint versions of any table a screen can download as CSV: the same name, header, rows and notes
-(question wording, wave, bases, source), so the three formats can never disagree. Rendered here, not in the browser,
-so the files are real .xlsx (typed numbers, frozen header) and .pptx (a native, editable chart in the Coresight palette).
+(question wording, wave, bases, source), so the three formats can never disagree; and a book of tables (a databank's
+every tab, a survey's every section, a tracker's every week) as one Excel workbook of tabs. Called by api/main.py
+export (the Export button, frontend/src/csv.ts) and api/team.py (a board's pins and deck). Rendered here, not in the
+browser, so the files are real .xlsx (typed numbers, the Coresight house style) and .pptx (a native, editable chart in
+the Coresight palette).
 """
 from __future__ import annotations
 
@@ -10,18 +13,18 @@ import re
 from datetime import date
 from pathlib import Path
 
-MAX_ROWS = 2000
-MAX_SHEETS, MAX_BOOK_ROWS = 40, 10_000   # a weekly survey's every question is about 600 rows in 10 tabs
+MAX_ROWS, MAX_COLUMNS = 2000, 200   # 200 columns: a tracker's every week for almost four years
+MAX_SHEETS, MAX_BOOK_ROWS = 40, 10_000   # the largest survey: 34 sections, 977 rows (27 Nov 2026)
 RED, INK, GREY, GRID = "D62E2F", "2D2A29", "6B6A68", "D9D9D9"
 BLUES = ["1F5C99", "4A86C5", "8DB8E2", "C2DAF0"]
 
 
-def check(spec: dict) -> dict:
+def check(spec: dict, limit: int = MAX_ROWS) -> dict:
     """The table a screen sent: header (strings), rows (strings, numbers, empty), notes (strings), and how its numbers
     read in Excel: unit "%" (every number a percentage) and plain (the rows that are not: people asked, a net score,
     by index). Bounded."""
-    header = [str(h)[:120] for h in spec.get("header", [])][:60]
-    rows = [[c if isinstance(c, (int, float)) or c is None else str(c)[:500] for c in r[:60]] for r in spec.get("rows", [])][:MAX_ROWS]
+    header = [str(h)[:120] for h in spec.get("header", [])][:MAX_COLUMNS]
+    rows = [[c if isinstance(c, (int, float)) or c is None else str(c)[:500] for c in r[:MAX_COLUMNS]] for r in spec.get("rows", [])][:limit]
     notes = [str(n)[:600] for n in spec.get("notes", [])][:12]
     if not header:
         raise ValueError("nothing to export")
@@ -32,18 +35,21 @@ def check(spec: dict) -> dict:
 
 
 def check_book(spec: dict) -> dict:
-    """A workbook a screen sent (every tab of a databank, every section of a survey): its name and up to 40 tables,
-    each a tab under its own title. Bounded in all, so one download cannot hold the single API worker for long."""
+    """A workbook a screen sent (every tab of a databank, every section of a survey): its name and its tables, each a
+    tab under its own title. One too big is refused whole, never cut, so a download never drops weeks or answers
+    unseen; the bounds keep one download from holding the single API worker for long."""
     sheets = spec.get("sheets")
     if not isinstance(sheets, list) or not sheets:
         raise ValueError("nothing to export")
-    tables = [{**check(sheet), "title": str(sheet.get("title") or f"Sheet {k}")} for k, sheet in enumerate(sheets[:MAX_SHEETS], 1)]
-    if sum(len(t["rows"]) for t in tables) > MAX_BOOK_ROWS:
-        raise ValueError(f"over {MAX_BOOK_ROWS:,} rows in one workbook: export fewer tabs")
-    return {"name": file_name(spec.get("name")), "title": str(spec.get("name") or "CIP export")[:120], "sheets": tables}
+    if (len(sheets) > MAX_SHEETS or sum(len(s.get("rows") or []) for s in sheets) > MAX_BOOK_ROWS
+            or any(len(s.get("header") or []) > MAX_COLUMNS for s in sheets)):
+        raise ValueError(f"too big for one workbook: at most {MAX_SHEETS} tabs, {MAX_BOOK_ROWS:,} rows and {MAX_COLUMNS} columns")
+    return {"name": file_name(spec.get("name")),
+            "sheets": [{**check(sheet, MAX_BOOK_ROWS), "title": str(sheet.get("title") or f"Sheet {k}")} for k, sheet in enumerate(sheets, 1)]}
 
 
 def file_name(name) -> str:
+    """A download's file name: letters, digits, dots and dashes only, at most 80 characters."""
     return re.sub(r"[^\w.-]+", "-", str(name or "cip-export"))[:80]
 
 
@@ -121,9 +127,7 @@ LOGO = next((p for p in (Path(os.environ.get("CIP_WEB_DIR", "/srv/cip/web")) / "
 
 
 def build_pptx(spec: dict) -> bytes:
-    """One 16:9 slide of one table (add_slide); a book (check_book): a cover, then a slide per tab (deck_pptx)."""
-    if "sheets" in spec:
-        return deck_pptx(spec["title"], f"Exported from CIP, {date.today():%d %B %Y}", spec["sheets"])
+    """One 16:9 slide of one table (add_slide)."""
     deck = new_deck()
     add_slide(deck, spec)
     return save(deck)

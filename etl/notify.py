@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING
 
 import requests
 import yaml
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 import shared.core.config  # noqa: F401  imported for its side effect: it loads .env (SMTP and Teams settings)
 from shared.core.database import get_engine
@@ -58,6 +58,10 @@ CROSSTAB_NAMES = {"standard": "Cross Tabs", "inflation_sentiment": "Holiday Infl
 CROSSTAB_NEEDS = {"standard": "the demographic questions",
                   "inflation_sentiment": "the Middle East concern, outlook and holiday status questions (D13, CS1, XM3)"}
 RED = "#d62e2f"
+# who completed a survey: Forsta's count, else CIP's own for a survey with no Forsta record (a China week from SharePoint
+# or the Upload survey page, 27 Nov 2026)
+QUALIFIED = ("COALESCE(f.qualified_n, (SELECT COUNT(*) FROM cip_respondent r WHERE r.survey_id = s.survey_id"
+             " AND r.is_qualified = 1)) AS qualified_n")
 
 
 def recipients(kind: str) -> list[str]:
@@ -132,8 +136,8 @@ def query(sql: str, **params) -> pd.DataFrame:
 
 
 def facts(survey_id: int) -> dict:
-    info = query("""
-        SELECT s.title, s.wave_label, s.study_type, f.forsta_path, f.launched_at, f.closed_at, f.qualified_n
+    info = query(f"""
+        SELECT s.title, s.wave_label, s.study_type, f.forsta_path, f.launched_at, f.closed_at, {QUALIFIED}
           FROM cip_survey s LEFT JOIN cip_forsta_survey f ON f.survey_id = s.survey_id WHERE s.survey_id = :s""",
         s=survey_id).iloc[0].to_dict()
     started = int(query("SELECT COUNT(*) AS n FROM cip_respondent WHERE survey_id = :s", s=survey_id)["n"][0])
@@ -181,8 +185,9 @@ def report(survey_id: int, files: list[str], missing: list[str] = ()) -> tuple[s
     since = "last week" if weekly else "the previous wave"
     launched, closed = pd.to_datetime(i["launched_at"]), pd.to_datetime(i["closed_at"])
     hours = f" in {(closed - launched).total_seconds() / 3600:.0f} hours" if pd.notna(launched) and pd.notna(closed) else ""
+    against = "Forsta" if i["forsta_path"] else "the survey's own topline"   # a China week: Baidu's, or SharePoint's crosstab
     who = (f"<b>{int(i['qualified_n']):,} people</b> completed the survey{hours} ({d['started']:,} started). "
-           f"Every answer was checked against Forsta before it reached the portal.")
+           f"Every answer was checked against {against} before it reached the portal.")
     if d["moves"]:
         items = "".join(
             f'<li style="margin:6px 0"><b>{m["pct"]:.0f}%</b> {html.escape(answer_of(m))} '
@@ -191,25 +196,49 @@ def report(survey_id: int, files: list[str], missing: list[str] = ()) -> tuple[s
         news = f'<p style="margin:14px 0 4px"><b>Biggest changes since {since}</b></p><ul style="margin:0;padding-left:18px">{items}</ul>'
     else:
         news = f'<p style="margin:14px 0 4px">No answer changed significantly against {since}.</p>'
-    attached = (f'<p style="color:#6b6a68;font-size:12px;margin-top:14px">Attached: {html.escape(", ".join(files))}.'
-                + "".join(f"<br>Not attached this week: {html.escape(m)}." for m in missing) + "</p>")
+    notes = ([f"Attached: {', '.join(files)}."] if files else []) + [f"Not attached this week: {m}." for m in missing]
+    attached = (f'<p style="color:#6b6a68;font-size:12px;margin-top:14px">{"<br>".join(map(html.escape, notes))}</p>'
+                if notes else "")
     week = f"{pd.to_datetime(i['wave_label']):%-d %b %Y}" if weekly else i["wave_label"]
     page = page_shell(f"New survey ready: week of {week}" if weekly else f"New survey ready: {week}",
                       f'<p style="margin:12px 0 0">{html.escape(i["title"])}</p><p style="margin:6px 0 0">{who}</p>'
                       + news + attached)
     plain = (f"New survey ready: {i['title']} ({i['wave_label']})\n{int(i['qualified_n']):,} people completed it{hours}; "
-             f"every answer checked against Forsta.\n\nWhat changed vs {since}:\n" +
+             f"every answer checked against {against}.\n\nWhat changed vs {since}:\n" +
              ("\n".join(f"  {m['pct']:.0f}% {answer_of(m)} ({m['change']:+.0f} pts) — {m['question']}" for m in d["moves"])
-              or "  nothing significant") +
-             f"\n\nAttached: {', '.join(files)}\n" + "".join(f"Not attached this week: {m}\n" for m in missing))
+              or "  nothing significant") + ("\n\n" + "\n".join(notes) if notes else "") + "\n")
     return plain, page
 
 
 def survey_loaded(survey_id: int) -> bool:
-    """Email the report and the team's workbooks for one freshly loaded survey."""
+    """Email the report and the team's workbooks for one freshly loaded survey, post its Teams line, then tell whoever
+    asked for it on My account (tell_subscribers). Called by the weekly run, a SharePoint China pass and, through
+    `--survey N --send`, the Upload survey page's background publish."""
     subject, plain, to, attachments, page, headline = loaded_email(survey_id)
     teams(headline)
-    return send(subject, plain, to, attachments, page)
+    sent = send(subject, plain, to, attachments, page)
+    tell_subscribers(survey_id, subject, to)
+    return sent
+
+
+def tell_subscribers(survey_id: int, subject: str, team: list[str]) -> int:
+    """The new-survey email for each person who ticked it on My account (api/team.py, cip_survey_subscriber): the same
+    summary without the team's workbooks (they hold respondent rows), one email each so nobody sees another's address.
+    Each is checked as the API checks them: still given the Alerts menu, and may open this survey. Returns how many."""
+    from shared.core import access   # here: the access rules load only when someone may be told
+    with get_engine("etl").connect() as conn:
+        if "cip_survey_subscriber" not in inspect(conn).get_table_names():   # nobody has ticked it yet
+            return 0
+        emails = conn.execute(text("SELECT email FROM cip_survey_subscriber")).scalars().all()
+        wave = conn.execute(text("SELECT survey_id, survey_family, study_type FROM srv_wave WHERE survey_id = :s"),
+                            {"s": survey_id}).mappings().first()
+    on_team = {address.lower() for address in team}   # they had the full email already
+    people = [email for email in emails if email.lower() not in on_team and wave
+              and (who := access.profile(email)) and access.allows(who, "alerts") and access.sees(who, dict(wave))]
+    if not people:
+        return 0
+    plain, page = report(survey_id, [])
+    return sum(send(subject, plain, [email], page=page, copy=False) for email in people)
 
 
 def loaded_email(survey_id: int) -> tuple:
@@ -218,7 +247,7 @@ def loaded_email(survey_id: int) -> tuple:
     from etl.workbook import build_workbook   # pandas and openpyxl: only when an email is built
     from etl import crosstab_export
 
-    info = query("""SELECT s.title, s.wave_label, s.study_type, s.survey_family, f.forsta_path, f.qualified_n
+    info = query(f"""SELECT s.title, s.wave_label, s.study_type, s.survey_family, f.forsta_path, {QUALIFIED}
                       FROM cip_survey s LEFT JOIN cip_forsta_survey f ON f.survey_id = s.survey_id WHERE s.survey_id = :s""",
                  s=survey_id).iloc[0]
     stem = f"{info['wave_label']}"
@@ -229,7 +258,7 @@ def loaded_email(survey_id: int) -> tuple:
     for key in sets:
         attachments.append((f"{CROSSTAB_NAMES[key]} {dated}.xlsx", crosstab_export.build(survey_id, key, wave)))
     missing = [f"{name} (this week's survey did not ask {CROSSTAB_NEEDS[key]})" for key, name in CROSSTAB_NAMES.items()
-               if key not in sets]
+               if key not in sets and info["forsta_path"]]   # the team's files are Forsta surveys': a China week never had them
     if info["forsta_path"]:
         from etl import forsta_etl   # notify is imported by the pipeline, not the other way round
         try:
@@ -243,7 +272,7 @@ def loaded_email(survey_id: int) -> tuple:
             {"Raw Data": line}, f"{info['title']} — wave {stem}", percent_columns=("__none__",),
             notes=[("Survey", info["forsta_path"]), ("Format", "the data team's line-by-line columns (config/tracker_line.yml)")])))
     plain, page = report(survey_id, [name for name, _ in attachments], missing)
-    if info["study_type"] == "tracker":
+    if info["survey_family"] == tracker_line.load_config()["family"]:   # the US weekly; China's title names its own week
         subject = (f"Weekly Consumer Tracker — week of {pd.to_datetime(stem):%-d %b %Y}: {topics(info['title'])}"
                    f" ({int(info['qualified_n']):,} respondents)")
     else:

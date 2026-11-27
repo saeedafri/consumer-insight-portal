@@ -179,8 +179,9 @@ export default function Channels() {
   });
   const barTitle = "All categories, this week";
   const exportBars = (format: Format) => downloadTable(format, `${barTitle} ${date}`,
-    ["Category", "In a store %", "Online %", ...(withEveryone ? ["Everyone in a store %", "Everyone online %"] : [])],
-    categories.map(r => [r, ...channels.map(([, fn]) => figure(fn(week, cut, r))), ...(withEveryone ? channels.map(([, fn]) => figure(fn(week, EVERYONE, r))) : [])]),
+    ["Category", "In a store %", "Online %", ...(withEveryone ? ["Everyone in a store %", "Everyone online %"] : []), "In a store base", "Online base"],
+    categories.map(r => [r, ...channels.map(([, fn]) => figure(fn(week, cut, r))), ...(withEveryone ? channels.map(([, fn]) => figure(fn(week, EVERYONE, r))) : []),
+                         data.storeBase(week, cut), data.onlineBase(week, cut)]),
     [`${barTitle}: ${groupName}, ${fmtDate(date)}`, source]);
 
   const lineOption = () => ({

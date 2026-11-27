@@ -1,5 +1,7 @@
-// Downloads a screen's table as CSV or Excel (the Export button, components/bits.tsx ExportButtons). Excel files are
-// built by the API (api/exports.py). A cell starting with = + - @ is kept as text so Excel never runs it as a formula.
+// Downloads a screen's table as CSV, Excel or PowerPoint, or a book of tables (a databank's every tab, a survey's every
+// section, a tracker's every week) as one Excel workbook of tabs or one CSV (the Export button, components/bits.tsx
+// ExportButtons). Excel and PowerPoint files are built by the API (api/exports.py). A cell starting with = + - @ is
+// kept as text so Excel never runs it as a formula.
 import { signIn } from "./api";
 
 /** Save a blob under a file name; the URL is released after the click is handled (Safari and Firefox cancel it otherwise).
@@ -40,7 +42,7 @@ export async function downloadTable(format: Format, name: string, header: string
     const spec: TableSpec = { name, header, rows: rows.map(r => r.map(c => (c === undefined ? null : c))), notes };
     return void window.dispatchEvent(new CustomEvent<TableSpec>("cip:pin", { detail: spec }));
   }
-  return build(format, name, { name, header, rows: rows.map(r => r.map(c => (c === undefined ? null : c))), notes, ...style });
+  return fetchExport(format, name, { name, header, rows: rows.map(r => r.map(c => (c === undefined ? null : c))), notes, ...style });
 }
 
 /** Every tab of a databank or every section of a survey in one download: an Excel workbook with a tab per table, a
@@ -51,11 +53,11 @@ export async function downloadBook(format: Format, name: string, sheets: Sheet[]
     const text = sheets.map(t => csvText(t.header, t.rows, [t.title, ...t.notes])).join("\n\n");
     return save(new Blob(["﻿" + text], { type: "text/csv" }), `${name}.csv`);
   }
-  return build(format, name, { name, sheets });
+  return fetchExport(format, name, { name, sheets });
 }
 
 /** The Excel workbook or PowerPoint deck the API builds from a table or a book (api/exports.py), saved under its name. */
-async function build(format: string, name: string, body: object) {
+async function fetchExport(format: string, name: string, body: object) {
   const response = await fetch(`/api/v1/export/${format}`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body) });
   if (response.status === 401) signIn();

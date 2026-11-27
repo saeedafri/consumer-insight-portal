@@ -838,15 +838,17 @@ EXPORT_TYPES = {"xlsx": "application/vnd.openxmlformats-officedocument.spreadshe
 @app.post("/api/v1/export/{kind}")
 async def export(kind: str, request: Request, who: dict = Depends(user)) -> Response:
     """The table a screen offers as CSV, as an Excel workbook or a PowerPoint slide (api/exports.py); a book of tables
-    (`sheets`: a databank's every tab, a survey's every section) as one workbook of tabs or a deck of slides."""
+    (`sheets`: a databank's every tab, a survey's every section) as one Excel workbook of tabs."""
     if kind not in EXPORT_TYPES:
         raise HTTPException(404, "Exports are xlsx or pptx")
     require_feature(who, "export")
     if not access.spend(who["email"], "export"):
         raise HTTPException(429, "Too many exports: wait a minute", headers={"Retry-After": "60"})
     try:
-        body = await team.json_body(request)
-        spec = exports.check_book(body) if "sheets" in body else exports.check(body)
+        sent = await team.json_body(request)
+        if "sheets" in sent and kind != "xlsx":
+            raise ValueError("a workbook of tabs downloads as Excel")
+        spec = exports.check_book(sent) if "sheets" in sent else exports.check(sent)
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(422, str(exc))
     try:

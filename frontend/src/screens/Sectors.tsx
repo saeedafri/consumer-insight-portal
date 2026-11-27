@@ -2,7 +2,8 @@
 // (sectors rotate through the weekly tracker, so about every 12 weeks): the share who bought in the category, then its
 // retailers, brands and categories as tabs, under three cards from its newest survey (leading retailer, top product,
 // median spend: the research team's row of 23 Nov 2026). Every number is built by the ETL when data is published (etl/sectors.py →
-// api/v1/sectors.json.gz); which sectors and questions: config/sectors.yml. This screen only draws.
+// api/v1/sectors.json.gz); which sectors and questions: config/sectors.yml. This screen only draws, and lays the tables
+// out for Export: every tab and the median spend in one workbook.
 // Opened from the left menu ("Sector databank"); the sector and tab are kept in the address so a view can be shared.
 // The Market filter offers China but cannot choose it: China's weekly survey asks no sector questions.
 import { useSearchParams } from "react-router";
@@ -63,15 +64,21 @@ function sheetOf(sector: Sector, table: Sector["tables"][number]): Sheet {
            notes: [`${sector.name}: ${table.title}`, "% of respondents; retailers, brands and categories are % of the sector's buyers.", "Source: Coresight Research US Consumer Survey"] };
 }
 
-/** One sector as the Databank lays it out, a tab at a time on screen; Export downloads every tab (the business team,
- *  27 Nov 2026), Pin pins the tab on screen. */
+/** The middle buyer's spend band in each survey (etl/sectors.py median_band), as a tab of its own: bands, not %. */
+const spendSheet = (sector: Sector): Sheet[] => sector.spend ? [{ title: "Median spend", header: ["Median spend", ...sector.waves.map(w => w.date)],
+  rows: [[sector.spend.question, ...sector.spend.median]], notes: [`${sector.name}: median spend`, "The middle buyer's spend band in each survey", "Source: Coresight Research US Consumer Survey"] }] : [];
+
+/** One sector as the Databank lays it out, a tab at a time on screen; Export downloads every tab in Excel or CSV (the
+ *  business team, 27 Nov 2026), the tab on screen as a slide or a pin. */
 function SectorTable({ sector, tab, onTab }: { sector: Sector; tab: string | null; onTab: (title: string) => void }) {
   const table = sector.tables.find(t => t.title === tab) ?? sector.tables[0];
   const first = sector.waves[0], last = sector.waves.at(-1)!;
-  const shown = sheetOf(sector, table);
-  const exportTable = (format: Parameters<typeof downloadTable>[0]) => format === "board"
-    ? downloadTable(format, `${sector.name} - ${table.title}`, shown.header, shown.rows, shown.notes)
-    : downloadBook(format, `${sector.name} databank`, sector.tables.map(t => sheetOf(sector, t)));
+  const exportTable = (format: Parameters<typeof downloadTable>[0]) => {
+    // Excel and CSV: every tab; PowerPoint and Pin: the tab on screen (a slide charts one table)
+    if (format === "xlsx" || format === "csv") return downloadBook(format, `${sector.name} databank`, [...sector.tables.map(t => sheetOf(sector, t)), ...spendSheet(sector)]);
+    const shown = sheetOf(sector, table);
+    return downloadTable(format, `${sector.name} - ${table.title}`, shown.header, shown.rows, shown.notes);
+  };
   return <Card title={sector.name}
                sub={`${sector.waves.length} surveys, ${fmtDate(first.date)} to ${fmtDate(last.date)}. About 400 US adults each: margin of error up to ±${sector.margin}% at 95% confidence, wider for the smaller buyer bases.`}
                aside={<div className="toolbar one-row"><Tabs value={table.title} onValueChange={onTab}><TabsList>

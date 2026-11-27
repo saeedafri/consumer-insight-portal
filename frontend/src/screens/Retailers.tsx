@@ -249,7 +249,10 @@ function SectorOverview({ data, sides }: { data: Data; sides: Side[] }) {
     const ranked = side.market.retailers.map(r => ({ name: r.name, v: share(sum(side.weeks.map(w => r.weeks[String(w)]))[0] ?? 0, asked) ?? 0 }))
       .sort((a, b) => b.v - a.v).slice(0, 15);
     const picked = new Set(side.picked.map(r => r.name));
-    return <Card key={s} id={s ? undefined : "sector-overview"} title={side.market.name} sub={`${side.market.purchase ? `${pct(share(bought, everyone))} ${side.market.purchase.toLowerCase()} · ` : ""}retailers bought from, % of ${asked.toLocaleString("en-US")} ${side.market.base} · ${weekSpan(data, side.weeks)}`}>
+    const sub = `${side.market.purchase ? `${pct(share(bought, everyone))} ${side.market.purchase.toLowerCase()} · ` : ""}retailers bought from, % of ${asked.toLocaleString("en-US")} ${side.market.base} · ${weekSpan(data, side.weeks)}`;
+    return <Card key={s} id={s ? undefined : "sector-overview"} title={side.market.name} sub={sub}
+                 aside={<ExportButtons onExport={format => downloadTable(format, `${side.market.name} retailers`, ["Retailer", "% bought from"],
+                   ranked.map(r => [r.name, r.v]), [`${side.market.name}: ${sub}`, "Source: Coresight Research US Consumer Survey"])} />}>
       <EChart label={`${side.market.name}: retailers`} height={Math.max(200, ranked.length * 24 + 30)} option={{
         tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v: unknown) => `${v}%` },
         grid: { left: 8, right: 48, top: 8, bottom: 8, containLabel: true },
@@ -300,7 +303,10 @@ function Reach({ data, sides, series }: { data: Data; sides: Side[]; series: Ser
                      data: values.map((v, i) => ({ value: v, itemStyle: { color: colour(i) } })).reverse() }],
         }} />
       </Card>
-      <Card title="Week by week" sub="% each week, every week each was asked: the weeks you chose are added together above">
+      <Card title="Week by week" sub="% each week, every week each was asked: the weeks you chose are added together above"
+            aside={<ExportButtons onExport={format => downloadTable(format, "Retailer shoppers week by week", ["Week", ...trend.map(t => `${t.name} %`)],
+              trendWeeks.map((w, i) => [data.weeks[w].date, ...trend.map(t => t.data[i])]),
+              ["Shoppers each week, every week each was asked", "Source: Coresight Research US Consumer Survey"])} />}>
         <EChart label="Shoppers week by week" height={300} option={{
           tooltip: { trigger: "axis", valueFormatter: (v: unknown) => (v == null ? "not asked" : `${v}%`) },
           legend: { bottom: 0, type: "scroll" }, grid: { left: 44, right: 16, top: 12, bottom: 48 },
@@ -382,7 +388,12 @@ function ShopperProfile({ data, sides, series }: { data: Data; sides: Side[]; se
 function Sentiment({ data, sides }: { data: Data; sides: Side[] }) {
   const found = sides.flatMap(side => side.picked.map(r => ({ name: r.name, figure: feeling(data, side, r) })));
   if (!found.some(f => f.figure)) return null;
-  return <Card id="sentiment" title="How positive people feel" sub="Very or somewhat positive, among those asked: each sector's module asks about its own retailers every 12 weeks or so">
+  const exportTable = (format: Parameters<typeof downloadTable>[0]) => downloadTable(format, "How positive people feel",
+    ["Retailer", "Positive %", "Asked", "Survey", "Module"], found.map(f => [f.name, f.figure ? share(f.figure[1], f.figure[2]) : null,
+      f.figure?.[2] ?? null, f.figure?.[0] ?? null, f.figure?.[3] ?? null]),
+    ["How positive people feel: very or somewhat positive, among those asked", "Source: Coresight Research US Consumer Survey"]);
+  return <Card id="sentiment" title="How positive people feel" sub="Very or somewhat positive, among those asked: each sector's module asks about its own retailers every 12 weeks or so"
+               aside={<ExportButtons onExport={exportTable} />}>
     <EChart label="Sentiment" height={Math.max(140, found.length * 44 + 30)} option={{
       tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v: unknown) => (v == null ? "not asked" : `${v}%`) },
       grid: { left: 8, right: 48, top: 8, bottom: 8, containLabel: true },
@@ -405,7 +416,9 @@ function Everywhere({ data, name }: { data: Data; name: string }) {
     return [{ sector: m.name, date: data.weeks[w].date, v: share(r.weeks[String(w)][0], m.asked[m.weeks.indexOf(w)]) ?? 0 }];
   }).sort((a, b) => b.v - a.v);
   if (!rows.length) return null;
-  return <Card title={`${name} in each sector`} sub="% of each sector's shoppers who bought from it, in that sector's newest survey">
+  return <Card title={`${name} in each sector`} sub="% of each sector's shoppers who bought from it, in that sector's newest survey"
+               aside={<ExportButtons onExport={format => downloadTable(format, `${name} in each sector`, ["Sector", "Survey", "% bought from"],
+                 rows.map(r => [r.sector, r.date, r.v]), [`${name}: % of each sector's shoppers who bought from it, in that sector's newest survey`, "Source: Coresight Research US Consumer Survey"])} />}>
     <EChart label={`${name} by sector`} height={Math.max(160, rows.length * 28 + 30)} option={{
       tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v: unknown) => `${v}%` },
       grid: { left: 8, right: 48, top: 8, bottom: 8, containLabel: true },

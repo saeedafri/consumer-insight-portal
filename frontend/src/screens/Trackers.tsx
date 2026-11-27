@@ -16,10 +16,9 @@ import { downloadBook } from "../csv";
 import type { Sheet } from "../csv";
 import { blues, C, useTheme } from "../theme";
 import { fmtDate } from "../stats";
-import { dashboardFeature, SECTOR_DASHBOARDS, TRACKERS } from "../trackers";
+import { dashboardFeature, SECTOR_DASHBOARDS, TRACKERS, words } from "../trackers";
 
 const time = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
-const words = (key: string) => key.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());   // started_by_generation → Started by generation
 
 export default function Trackers() {
   const me = useMe().data;
@@ -55,8 +54,8 @@ export default function Trackers() {
       <label><span>Week</span><select value={week.survey_id} onChange={e => setParams(p => { p.set("w", e.target.value); return p; }, { replace: true })}>
         {weeks.map(w => <option key={w.survey_id} value={w.survey_id}>{fmtDate(w.wave_date)} · n={w.qualified_n}</option>)}</select></label>
       <Link className="btn" to={`/w/${week.survey_id}`}>Open this week's survey</Link>
-      <ExportButtons pin={false} onExport={format => {
-        if (history.length < weeks.length) throw new Error(`Still loading ${weeks.length - history.length} of ${weeks.length} weeks: try again in a moment`);
+      <ExportButtons pin={false} deck={false} onExport={format => {
+        if (all.some(q => q.isLoading)) throw new Error("Still loading the weeks: try again in a moment");   // a week that failed is left out
         return downloadBook(format, `${history[0].title} ${weeks[0].wave_date}`, trackerBook(history));
       }} />
     </section>
@@ -105,10 +104,11 @@ function TileDonuts({ code, id }: { code: string; id: number }) {
 /** The tracker as a workbook laid out like the Databank's sheets (the business team, 27 Nov 2026): a tab for the
  *  headline figures, one per list and one per group split, an answer per row and a week per column, oldest first, then
  *  the people asked: one row when every answer that week had the same base (a list's buyers), else one per answer. */
-function trackerBook(weeks: Dashboard[]): Sheet[] {
-  const [latest, oldestFirst] = [weeks[0], [...weeks].reverse()];
+function trackerBook(boards: Dashboard[]): Sheet[] {
+  const latest = boards[0];   // newest first, as the page loads them
+  const oldestFirst = [...boards].reverse();
   const tab = (name: string, pick: (d: Dashboard) => Metric[], about: string): Sheet => {
-    const labels = [...new Set(weeks.flatMap(d => pick(d).map(m => m.label)))];   // the newest week's order first
+    const labels = [...new Set(boards.flatMap(d => pick(d).map(m => m.label)))];   // the newest week's order first
     const figure = (d: Dashboard, label: string) => pick(d).find(m => m.label === label);
     const shared = oldestFirst.every(d => new Set(pick(d).map(m => m.base)).size <= 1);
     const bases = shared ? [["Respondents asked", ...oldestFirst.map(d => pick(d)[0]?.base ?? null)]]
@@ -116,7 +116,7 @@ function trackerBook(weeks: Dashboard[]): Sheet[] {
     return { title: name, header: [name, ...oldestFirst.map(d => d.wave.week_of)], unit: "%",
              rows: [...labels.map(l => [l, ...oldestFirst.map(d => figure(d, l)?.pct ?? null)]), ...bases],
              plain: bases.map((_, k) => labels.length + k),
-             notes: [`${latest.title}: ${name}`, `% of respondents, ${about}, each of the ${weeks.length} weeks the tracker ran`,
+             notes: [`${latest.title}: ${name}`, `% of those asked (the bottom rows), ${about}, each of the ${boards.length} weeks the tracker ran`,
                      "Source: Coresight Research US Consumer Survey, weekly tracker. Unweighted."] };
   };
   // a list keeps each week's top answers only: a blank is an answer outside that week's top, not nobody

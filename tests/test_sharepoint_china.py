@@ -54,6 +54,8 @@ def graph(monkeypatch, tmp_path, csi_db):
     published = []
     monkeypatch.setattr("etl.publish.publish", lambda: published.append(1))
     fake.published = published
+    fake.emailed = []   # the new-survey email, after the publish (etl/notify.py survey_loaded)
+    monkeypatch.setattr("etl.notify.survey_loaded", lambda survey_id: fake.emailed.append((survey_id, list(published))))
     return fake
 
 
@@ -64,7 +66,9 @@ def test_each_week_folder_loads_once_named_by_its_folder_and_again_when_a_file_i
     done = sharepoint_china.run()
     assert [line.split(": ")[1][:30] for line in done] == ["loaded week of 2026-10-19, 556", "loaded week of 2026-10-26, 550"]
     assert graph.published == [1]
+    assert len(graph.emailed) == 2 and all(after == [1] for _, after in graph.emailed)   # each week emailed, once published
     assert sharepoint_china.run() == [] and graph.published == [1]   # nothing new: nothing loaded, nothing published
+    assert len(graph.emailed) == 2
 
     graph.items["w1"][0]["eTag"] = "v2"                                # the analyst replaces the raw file
     assert sharepoint_china.run()[0].startswith("2026/October/Survey of Oct 26: loaded week of 2026-10-26")

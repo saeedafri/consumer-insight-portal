@@ -187,7 +187,8 @@ export const marketOptions = (available: string[], missing = "not available") =>
 
 /** Who the sample stands for: the wave's own population, else the tracker's universe, never a guess for other studies. */
 export const population = (w: Wave) => w.population || (w.study_type === "tracker" ? "US adults 18+" : "Survey respondents");
-const survey = (w: Wave) => (w.study_type === "tracker" ? "Coresight Research US Consumer Survey" : `Coresight Research · ${w.title}`);
+const survey = (w: Wave) => (w.study_type !== "tracker" ? `Coresight Research · ${w.title}`
+  : `Coresight Research ${w.survey_family === "CSI-CN" ? "China" : "US"} Consumer Survey`);
 const weighting = (w: Wave) => (w.weighting && !/^(none|unweighted)$/i.test(w.weighting) ? `weighted (${w.weighting})` : "unweighted");
 const partial = (w: Wave) => (w.in_field ? " · still in field: partial results" : "");
 
@@ -243,7 +244,9 @@ export function Menu({ label, icon, children, keep = false, name, className = ""
 
 /** CSV, Excel, PowerPoint (and the chart as PNG) of the same table under one Export menu, and Pin to a board:
  *  every download on every screen carries the same rows and notes. */
-export function ExportButtons({ onExport, png, pin = true }: { onExport: (format: Format) => unknown; png?: () => unknown; pin?: boolean }) {
+/** The Export menu (CSV, Excel, PowerPoint, PNG) and Pin. deck={false}: no PowerPoint, for a workbook of many tabs
+ *  (csv.ts downloadBook), whose slides would chart a few columns of each tab only. */
+export function ExportButtons({ onExport, png, pin = true, deck = true }: { onExport: (format: Format) => unknown; png?: () => unknown; pin?: boolean; deck?: boolean }) {
   const me = useMe().data;
   const [note, setNote] = useState("");
   const run = (format: Format) => { setNote(""); void Promise.resolve().then(() => onExport(format)).catch((e: Error) => setNote(e.message)); };
@@ -252,7 +255,7 @@ export function ExportButtons({ onExport, png, pin = true }: { onExport: (format
   if (!files && !png && !canPin) return null;
   return <div className="head-actions export" role="group" aria-label="Download">
     {(files || png) && <Menu label="Export" icon={<IconDownload />}>
-      {files && ([["csv", "CSV"], ["xlsx", "Excel"], ["pptx", "PowerPoint"]] as const).map(([format, label]) =>
+      {files && ([["csv", "CSV"], ["xlsx", "Excel"], ["pptx", "PowerPoint"]] as const).filter(([format]) => deck || format !== "pptx").map(([format, label]) =>
         <button key={format} onClick={() => run(format)} aria-label={`Download this table as ${label}`}>{label}</button>)}
       {png && <button onClick={() => void png()} aria-label="Download the chart as a PNG image (light theme, with the source line)">PNG image</button>}
     </Menu>}
