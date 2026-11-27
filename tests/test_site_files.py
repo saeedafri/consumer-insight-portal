@@ -75,10 +75,20 @@ def test_a_missing_file_is_a_404_and_is_not_cached_for_a_year(tmp_path, monkeypa
     assert miss.status_code == 404 and "immutable" not in miss.headers.get("cache-control", "")
 
 
+def test_a_location_that_picks_a_stored_file_names_its_captures():
+    """$gz comes from a regex map, and working it out empties a location's numbered captures ($1): nginx then looked for
+    /api/v1/.json.gz and sent every wave book, question file, dashboard and view to the API (22-27 Nov 2026, found by
+    running the locations in a test nginx: 7 of 9 files missed, 9 of 9 served once named). Named captures survive it."""
+    locations = (Path(__file__).resolve().parents[1] / "deploy" / "cip_locations.conf").read_text()
+    picks = [line for line in locations.splitlines() if "try_files" in line and "$gz" in line]
+    assert len(picks) == 7 and not [line for line in picks if re.search(r"\$\d", line)]
+
+
 def test_nginx_sends_a_stored_gzip_payload_only_to_a_client_that_accepts_gzip():
     """A plain client (Python's urllib, some tools) was sent gzip bytes it could not read (21 Nov 2026 API test):
     every pre-gzipped payload is picked by $gz, which names no file unless the request accepts gzip."""
     deploy = Path(__file__).resolve().parents[1] / "deploy"
     assert re.search(r"map \$http_accept_encoding \$gz \{ ~\*gzip \.gz; default \.plain; \}", (deploy / "nginx.conf").read_text())
     locations = (deploy / "cip_locations.conf").read_text()
-    assert ".json.gz @api" not in locations and locations.count(".json$gz @api") == locations.count("add_header Content-Encoding gzip") == 6
+    # 7: the weekly topic screens' files (api/v1/weekly/<topic>, 27 Nov 2026) joined the six
+    assert ".json.gz @api" not in locations and locations.count(".json$gz @api") == locations.count("add_header Content-Encoding gzip") == 7
