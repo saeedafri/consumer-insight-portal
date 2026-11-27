@@ -1,12 +1,14 @@
 """etl/weekly_topics.py: the weekly topic screens' figures (Activities & retailers, Spending pressure, Consumer
 sentiment & outlook), from small question files built here in the published layout (shared/data/payloads.question_from:
 waves [survey_id, date, version], answers [item, code, label], cuts [dim, value], cells w/c/a/n/b)."""
+import gzip
+import json
 import re
 
 import yaml
 
 from etl import weekly_topics
-from etl.weekly_topics import build, tab_figures
+from etl.weekly_topics import build, build_tab
 
 TOTAL, MALE, NOT_SAY = ["total", "Total"], ["gender", "Male"], ["income_band", "Prefer not to answer"]
 
@@ -37,7 +39,7 @@ def test_a_multiple_answer_question_keeps_real_other_answers_and_drops_the_non_a
                ["Don't know", None, "Don't know"], ["Real estate", None, "Real estate"]]
     file = question(["Where have you reduced your spending due to higher gas prices?"], [[725, "2026-11-23", 1]], answers, [TOTAL],
                     [(0, 0, 0, 50, 200), (0, 0, 1, 34, 200), (0, 0, 2, 3, 200), (0, 0, 3, 9, 200), (0, 0, 4, 1, 200)])
-    tab = tab_figures({**TAB, "wording": "reduced your spending"}, [file])
+    tab = build_tab({**TAB, "wording": "reduced your spending"}, [file])
     assert tab["answers"] == ["Travel", "Other savings / investments"]   # Real estate never had a cell: never offered
     assert figure(tab, 725, TOTAL, "Other savings / investments") == 17.0
     assert tab["nets"] == [] and not tab["scale"]
@@ -50,14 +52,15 @@ def test_a_scale_sums_its_sides_and_counts_an_answer_nobody_gave_as_zero():
     nb = ["gender", "Non-binary / third gender"]
     file = question(["Considering your discretionary income (what is left over…), better or worse?"], [[725, "2026-11-23", 1]],
                     [["", i + 1, label] for i, label in enumerate(scale)], [TOTAL, nb, MALE],
-                    [(0, 0, 0, 80, 404), (0, 0, 1, 72, 404), (0, 0, 2, 137, 404), (0, 0, 3, 60, 404), (0, 0, 4, 33, 404), (0, 0, 5, 22, 404),
-                     (0, 1, 0, 1, 4), (0, 1, 1, 1, 4), (0, 1, 2, 1, 4), (0, 1, 4, 1, 4)])
+                    [(0, 1, 0, 1, 4), (0, 1, 1, 1, 4), (0, 1, 2, 1, 4), (0, 1, 4, 1, 4),   # Non-binary's cells come first
+                     (0, 0, 0, 80, 404), (0, 0, 1, 72, 404), (0, 0, 2, 137, 404), (0, 0, 3, 60, 404), (0, 0, 4, 33, 404), (0, 0, 5, 22, 404)])
     sums = yaml.safe_load((weekly_topics.CONFIG / "weekly_topics.yml").read_text())["outlook"]
-    tab = tab_figures({**TAB, "wording": "discretionary income", "sums": sums}, [file])
+    tab = build_tab({**TAB, "wording": "discretionary income", "sums": sums}, [file])
     assert tab["answers"] == ["Net better", "Better", "About the same", "Worse", "Don't know"] and tab["nets"] == ["Net better"]
     assert figure(tab, 725, TOTAL, "Net better") == round(100 * (60 + 33 - 80 - 72) / 404, 1) == -14.6
     assert figure(tab, 725, nb, "Better") == 25.0 and figure(tab, 725, nb, "Net better") == -25.0
     assert MALE not in tab["cuts"]   # no cells: never asked of that group
+    assert tab["cuts"] == [TOTAL, nb]   # the file's order (Gen Z before Millennial), not the order cells come in
 
 
 def test_a_grid_adds_up_each_row_and_a_reused_code_counts_only_its_own_weeks():
@@ -70,8 +73,8 @@ def test_a_grid_adds_up_each_row_and_a_reused_code_counts_only_its_own_weeks():
                     [[515, "2026-06-29", 1], [725, "2026-11-23", 2]], answers, [TOTAL, NOT_SAY],
                     [(0, 0, 5, 250, 400), (1, 0, 0, 14, 404), (1, 0, 1, 14, 404), (1, 0, 2, 148, 404), (1, 0, 3, 149, 404),
                      (1, 0, 4, 79, 404), (1, 1, 3, 2, 5)])
-    up = tab_figures({**TAB, "wording": "how have your expenses changed", "rows": {"plus": "increase"}}, [file])
-    net = tab_figures({**TAB, "wording": "how have your expenses changed", "rows": {"plus": "increase", "minus": "decrease"}}, [file])
+    up = build_tab({**TAB, "wording": "how have your expenses changed", "rows": {"plus": "increase"}}, [file])
+    net = build_tab({**TAB, "wording": "how have your expenses changed", "rows": {"plus": "increase", "minus": "decrease"}}, [file])
     assert [w[0] for w in up["weeks"]] == [725] and up["answers"] == ["Utilities"]
     assert figure(up, 725, TOTAL, "Utilities") == 56.4 and figure(net, 725, TOTAL, "Utilities") == 49.5
     assert net["nets"] == ["Utilities"]
@@ -84,7 +87,7 @@ def test_two_files_of_one_question_join_by_wording_newest_week_first():
     met = [["Met up with friends", None, "Met up with friends"]]
     q1 = question([wording], [[725, "2026-11-23", 1], [100, "2023-06-05", 1]], met, [TOTAL], [(0, 0, 0, 242, 404), (1, 0, 0, 230, 400)])
     q3 = question([wording], [[100, "2023-06-05", 1], [90, "2023-05-29", 1]], met, [TOTAL], [(0, 0, 0, 230, 400), (1, 0, 0, 228, 400)])
-    tab = tab_figures({**TAB, "wording": "have you done in the past two weeks"}, [q1, q3])
+    tab = build_tab({**TAB, "wording": "have you done in the past two weeks"}, [q1, q3])
     assert [w[0] for w in tab["weeks"]] == [725, 100, 90]
     assert figure(tab, 725, TOTAL, "Met up with friends") == 59.9 and figure(tab, 90, TOTAL, "Met up with friends") == 57.0
 
@@ -102,3 +105,16 @@ def test_every_topic_is_a_menu_and_every_tab_is_complete():
             assert not ("sums" in tab and "rows" in tab)
     built = build(lambda code: ())   # no files yet (a fresh install): every topic still publishes, empty
     assert all(tab["weeks"] == [] and tab["groups"] == [] for topic in built.values() for tab in topic["tabs"])
+
+
+def test_publish_reads_a_code_in_any_spelling_and_writes_one_file_per_topic(tmp_path):
+    """The server's disk tells q1 from Q1 (the Mac's does not): config's Q1 is read from a file spelled q1."""
+    folder = tmp_path / "api/v1/questions/CSI-US/tracker"
+    folder.mkdir(parents=True)
+    met = [["Met up with friends", None, "Met up with friends"]]
+    file = question(["Which, if any, of these have you done in the past two weeks?"], [[725, "2026-11-23", 1]], met, [TOTAL], [(0, 0, 0, 242, 404)])
+    (folder / "q1.json.gz").write_bytes(gzip.compress(json.dumps(file).encode()))
+    written = {}
+    assert weekly_topics.publish(tmp_path, lambda path, data: written.setdefault(path.name, data) and 1) == 3
+    activities = written["activities"]["tabs"][0]
+    assert set(written) == {"activities", "spending", "sentiment"} and figure(activities, 725, TOTAL, "Met up with friends") == 59.9

@@ -737,6 +737,21 @@ def test_the_api_refuses_exactly_what_the_menus_hide(portal, monkeypatch):
     assert call("/api/v1/questions/CSI-US/tracker/q1", ana)[0] == 403
 
 
+def test_a_weekly_topic_answers_only_with_its_menu_and_an_unknown_one_is_404(portal, monkeypatch):
+    """GET /api/v1/weekly/{topic} (etl/weekly_topics.py): the published file with that topic's menu, 404 for a topic
+    config/weekly_topics.yml does not hold, 403 once the menu is taken away."""
+    monkeypatch.setattr(access, "MANAGED", {"at": -1e9, "roles": {}})
+    monkeypatch.setitem(RULES, "features", [*RULES["features"], "activities"])
+    put(portal, "weekly/activities", {"title": "Activities & retailers", "lede": "", "tabs": []})
+    boss, ana = signed("boss@coresight.com"), signed("ana@coresight.com")
+    status, _, body = call("/api/v1/weekly/activities", ana)
+    assert status == 200 and json.loads(body)["title"] == "Activities & retailers"
+    assert call("/api/v1/weekly/nope", ana)[0] == 404
+    keep = [f for f in access.profile("ana@coresight.com")["features"] if f != "activities"]
+    assert call("/api/v1/admin/roles/person:ana@coresight.com", boss, "PUT", json.dumps({"features": keep}).encode())[0] == 200
+    assert call("/api/v1/weekly/activities", ana)[0] == 403
+
+
 def test_the_demo_sign_in_is_off_wherever_company_sign_in_is_set_up(monkeypatch):
     """On a public address with the identity provider configured, the demo sign-in would let anyone type anyone's
     email (staging, 7 Nov 2026): the provider always wins, whatever CIP_DEMO_LOGIN says."""

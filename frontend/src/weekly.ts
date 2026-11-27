@@ -13,9 +13,10 @@ export const EVERYONE = "total:Total";   // the cut of every respondent: the gre
 const YEAR = 365 * 86_400_000;   // the trend's default range: the year up to the chosen week
 export const time = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
 export const figure = (v: number | null | undefined) => v == null ? null : +v.toFixed(1);   // a figure as charts and exports show it
-/** Answers that are no answer, left out of the rankings: "None of these", the catch-all "Other" ("Other (please
- *  specify)"), "Don't know" / "Don't recall"; a real answer that starts with Other ("Other savings / investments") stays. */
-export const SKIP = /^(none of|other\s*($|[-–(])|don.?t (know|recall))/i;
+/** Answers that are no answer, left out of In store vs online's rankings: "None of these", the catch-all "Other"
+ *  ("Other (please specify)"), "Don't know" / "Don't recall", "Prefer not to say"; a real answer that starts with Other
+ *  ("Other savings / investments") stays. The same rule as config/weekly_topics.yml leave_out, which the ETL reads. */
+export const SKIP = /^(none of|other\s*($|[-–(])|don.?t (know|recall)|prefer not)/i;
 
 /** The group in the address (g, "dim:value"): itself when this week has answers from it, else its kind's first group,
  *  else everyone. */

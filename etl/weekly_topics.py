@@ -32,18 +32,20 @@ def settings() -> dict:
     return yaml.safe_load((CONFIG / "weekly_topics.yml").read_text(encoding="utf-8"))
 
 
-def answer_key(item: str, label: str) -> str:
+def name_answer(item: str, label: str) -> str:
     """An answer as the screens name it: its label, or "row: label" for a grid's row (Utilities: Notable increase), as
     api/ask_figures.py names them."""
     return f"{item}: {label}" if item and item != label else item or label
 
 
-def counts(files: list[dict], wording: str) -> tuple[dict, dict, dict]:
+def count_people(files: list[dict], wording: str) -> tuple[dict, dict, dict, list]:
     """The question files' cells over the weeks asked with `wording`: people[(survey_id, cut, answer)], asked[(survey_id,
-    cut)] and the weeks {survey_id: date}. Two files holding one week (a code's file and the one it borrowed the week
+    cut)], the weeks {survey_id: date} and every group the files list, in their order (Gender before Generation, Gen Z
+    first). Two files holding one week (a code's file and the one it borrowed the week
     from) hold the same counts."""
     pattern = re.compile(wording, re.I)
     people, asked, weeks = {}, {}, {}
+    groups = list(dict.fromkeys(tuple(cut) for file in files for cut in file["cuts"]))
     for file in files:
         kept = [bool(pattern.search(file["versions"][w[2] - 1] or "")) for w in file["waves"]]
         for i, w in enumerate(file["waves"]):
@@ -53,15 +55,15 @@ def counts(files: list[dict], wording: str) -> tuple[dict, dict, dict]:
             if kept[w] and n is not None and b:
                 item, _, label = file["answers"][a]
                 group = (file["waves"][w][0], tuple(file["cuts"][c]))
-                people[(*group, answer_key(item, label))] = n
+                people[(*group, name_answer(item, label))] = n
                 asked[group] = b
-    return people, asked, weeks
+    return people, asked, weeks, groups
 
 
-def parts(tab: dict, answers: list[str]) -> list[tuple[str, list[str], list[str], list[str]]]:
+def define_answers(tab: dict, answers: list[str]) -> list[tuple[str, list[str], list[str], list[str]]]:
     """Each answer of the tab as (name, the answers it counts, those it takes off, the answers that show its group was
     asked it): a multiple-answer question's own answers less the non-answers, a scale's sums, or a grid's rows."""
-    def match(pattern: str | None, among: list[str]) -> list[str]:
+    def match(pattern: str | None, among: list[str]) -> list[str]:   # the answers a sum's or row's words pick
         return [a for a in among if pattern and re.search(pattern, a, re.I)]
     if "sums" in tab:
         return [(s["name"], match(s["plus"], answers), match(s.get("minus"), answers), answers) for s in tab["sums"]]
@@ -78,23 +80,23 @@ def parts(tab: dict, answers: list[str]) -> list[tuple[str, list[str], list[str]
     return [(a, [a], [], [a]) for a in answers if not skip.search(a.strip())]
 
 
-def tab_figures(tab: dict, files: list[dict]) -> dict:
+def build_tab(tab: dict, files: list[dict]) -> dict:
     """One tab as the screen draws it: its words, its answers (nets named), the weeks newest first, the groups, and per
     week and group the people asked and each answer's people (None: not asked of that group that week)."""
-    people, asked, weeks = counts(files, tab["wording"])
+    people, asked, weeks, groups = count_people(files, tab["wording"])
     answers = list(dict.fromkeys(answer for *_, answer in people))
-    shown = parts(tab, answers)
+    shown = define_answers(tab, answers)
     leave = settings().get("leave_out_groups") or {}
-    cuts = [cut for cut in dict.fromkeys(cut for _, cut in asked)
-            if not (cut[0] in leave and re.search(leave[cut[0]], cut[1], re.I))]
+    answered = {cut for _, cut in asked}
+    cuts = [cut for cut in groups if cut in answered and not (cut[0] in leave and re.search(leave[cut[0]], cut[1], re.I))]
     order = sorted(weeks, key=lambda survey: weeks[survey], reverse=True)
     week_at, cut_at = {s: i for i, s in enumerate(order)}, {c: i for i, c in enumerate(cuts)}
     groups = []
     for (survey, cut), base in asked.items():
         if cut not in cut_at:
             continue
-        def figure(plus, minus, own):
-            if not any((survey, cut, a) in people for a in own):
+        def figure(plus, minus, own):   # people on the plus side less the minus side; None: not asked, or no answer to count
+            if not plus or not any((survey, cut, a) in people for a in own):
                 return None
             return sum(people.get((survey, cut, a), 0) for a in plus) - sum(people.get((survey, cut, a), 0) for a in minus)
         groups.append([week_at[survey], cut_at[cut], base, [figure(*part[1:]) for part in shown]])
@@ -108,7 +110,7 @@ def tab_figures(tab: dict, files: list[dict]) -> dict:
 def build(read_files) -> dict:
     """Every topic of config/weekly_topics.yml, from `read_files` (code -> its published question files)."""
     return {key: {"title": topic["title"], "lede": topic["lede"],
-                  "tabs": [tab_figures(tab, [f for code in tab["codes"] for f in read_files(code)]) for tab in topic["tabs"]]}
+                  "tabs": [build_tab(tab, [f for code in tab["codes"] for f in read_files(code)]) for tab in topic["tabs"]]}
             for key, topic in settings()["topics"].items()}
 
 
