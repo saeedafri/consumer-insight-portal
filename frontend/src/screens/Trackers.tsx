@@ -37,8 +37,9 @@ export default function Trackers() {
   const name = [...TRACKERS, ...SECTOR_DASHBOARDS].find(([c]) => c === code)?.[1] ?? code;
   if (!weeks.length) return <Empty>No week has carried this tracker yet. <Link to="/trackers/genai">Open the GenAI tracker</Link>.</Empty>;
   const week = weeks.find(w => String(w.survey_id) === params.get("w")) ?? weeks[0];
-  const tiles = history[0] ? Object.keys(history[0].tiles).filter(k => history[0].tiles[k]) : [];
-  const label = (k: string) => history[0]?.tile_labels?.[k] ?? words(k);
+  // every headline figure any week has: a week that skipped one (GenAI's 2 Nov 2026 asked no shopping question) keeps its line
+  const tiles = [...new Set(history.flatMap(d => Object.keys(d.tiles).filter(k => d.tiles[k])))];
+  const label = (k: string) => history.find(d => d.tile_labels?.[k])?.tile_labels?.[k] ?? words(k);
   const colours = [C.red, ...blues(Math.max(1, tiles.length - 1))];
   return <div className="stack">
     <div className="page-head"><div>
