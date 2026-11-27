@@ -5,12 +5,13 @@
 // CSI-CN/tracker/Q5|Q6.json.gz) are fetched once and cached; every pick of week, group or category is computed here in
 // the browser, so nothing runs on the server when someone changes a filter.
 // Opened from the left menu (Core research) and the Home page's cards (China's widest gap opens it on China); market,
-// week, group and category are kept in the address. Respondent group is one group at a time: a kind (gender, age,
-// income…), then one of its groups, its first by default, with no "All" and no Everyone (the research team, 26 and 27
-// Nov 2026); only groups this week has answers from are offered. The filters above drive both charts; the line chart
-// keeps only its group buttons, the same choice. The bar chart shows every category for that group, biggest in store
-// first, the chosen one highlighted where it ranks, Everyone's figure as a grey tick on each bar; the line chart shows
-// the chosen category week by week, over the year up to the chosen week.
+// week, group, category and the trend's date range are kept in the address. Respondent group is one group at a time:
+// Everyone (the default), or a kind (gender, age, income…) and one of its groups, its first by default, with no "All"
+// (the research team, 26 Nov 2026); only groups this week has answers from are offered. The filters above and the line
+// chart's own group list and buttons are the same choice. The bar chart shows every category for that group, biggest in
+// store first, the chosen one highlighted where it ranks, with Everyone's figure as a grey tick on each bar when a group
+// is chosen; the line chart shows the chosen category week by week, over the year up to the chosen week unless From /
+// To are chosen.
 import { useMemo, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { CUT_NAMES, isFiller, useQuestion, useWaves } from "../api";
@@ -27,7 +28,7 @@ import { fmtDate } from "../stats";
 const pct = (v: number | null | undefined) => v == null ? "–" : `${v.toFixed(1)}%`;
 const time = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
 const SKIP = /^(none of|other|don.?t know)/i;
-const YEAR = 365 * 86_400_000;   // the trend's range: the year up to the chosen week
+const YEAR = 365 * 86_400_000;   // the trend's default range: the year up to the chosen week
 const EVERYONE = "total:Total";   // the cut of every respondent: the grey tick on the bars
 
 // Each market's weekly survey: its in-store and online questions (newest code first) and the wording of the weeks that
@@ -111,18 +112,15 @@ export default function Channels() {
     : `vs ${new Date(`${prior[1]}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
   // household income's "Prefer not to say / answer" is no group: left out of both charts (the research team, 25 Nov 2026)
   const cuts = data.cuts.filter(c => !(c[0] === "income_band" && isFiller(c[1])));
-  const withAnswers = cuts.filter(c => [...data.storeLabels].some(l => data.inStore(week, c.join(":"), l) != null));
-  // Everyone is the grey tick on the bars, not a group to choose (the research team, 27 Nov 2026); only a week with no
-  // demographics (20 US weeks of 2021-22) offers it, as it has nothing else
-  const demographic = withAnswers.filter(c => c[0] !== "total");
-  const offered = demographic.length ? demographic : withAnswers;
+  const offered = cuts.filter(c => [...data.storeLabels].some(l => data.inStore(week, c.join(":"), l) != null));
   const kinds = [...new Set(offered.map(c => c[0]))];
-  // the group (g): a group this week has no answers from gives way to its kind's first group, then to the first group
+  // the group (g): a group this week has no answers from gives way to its kind's first group, then to everyone
   const asked = params.get("g") ?? "";
-  const cut = (offered.find(c => c.join(":") === asked) ?? offered.find(c => c[0] === asked.split(":")[0]) ?? offered[0])?.join(":") ?? EVERYONE;
+  const cut = (offered.find(c => c.join(":") === asked) ?? offered.find(c => c[0] === asked.split(":")[0]))?.join(":") ?? EVERYONE;
   const kind = cut.split(":")[0];
   const groups = offered.filter(c => c[0] === kind);
   const chooseKind = (k: string) => pick("g", offered.find(c => c[0] === k)!.join(":"));   // a kind opens on its first group
+  const kindOptions = kinds.map(k => <option key={k} value={k}>{k === "total" ? "Everyone" : CUT_NAMES[k] ?? k}</option>);
   // the categories this week asked both ways, biggest in store first
   const categories = [...data.storeLabels].filter(l => data.labels.has(l) && !SKIP.test(l) && data.inStore(week, cut, l) != null)
     .sort((x, y) => (data.inStore(week, cut, y) ?? 0) - (data.inStore(week, cut, x) ?? 0));
@@ -136,8 +134,14 @@ export default function Channels() {
   const figure = (v: number | null) => v == null ? null : +v.toFixed(1);   // a % as charts and exports show it
   const source = `Source: ${survey.source}. Unweighted.`;
 
-  // the trend: the year up to the week chosen above, oldest first (the research team, 27 Nov 2026: the Week filter moves it)
-  const span = data.weeks.slice(at).filter(w => time(w[1]) >= time(date) - YEAR).reverse();
+  // the trend's date range: the year up to the week chosen above (the Week filter moves it, 27 Nov 2026), unless From /
+  // To are chosen; choosing another week clears them
+  const oldestFirst = [...data.weeks].reverse();
+  const yearBefore = oldestFirst.findIndex(w => time(w[1]) >= time(date) - YEAR);
+  // where the address's From or To week sits among the weeks (an unknown week: the default)
+  const place = (key: string, fallback: number) => { const i = oldestFirst.findIndex(w => String(w[0]) === params.get(key)); return i < 0 ? fallback : i; };
+  const [first, last] = [place("from", yearBefore), place("to", oldestFirst.length - 1 - at)].sort((x, y) => x - y);   // From after To: swapped
+  const span = oldestFirst.slice(first, last + 1);
   // the line starts and ends where the group has both figures (Non-binary from Aug 2022), so each line's end label and
   // the gap are one week's; a week in between without them (20 US weeks of 2021-22 have no demographics in CIP:
   // docs/CHANGELOG.md, 26 Nov 2026) breaks the line, and the note under it counts them
@@ -229,10 +233,9 @@ export default function Channels() {
     <section className="card compare-bar" aria-label="Choose what to show">
       <label><span>Market</span><select value={market} onChange={e => chooseMarket(e.target.value)}>
         {marketOptions(Object.keys(SURVEYS))}</select></label>
-      <label><span>Week</span><select value={week} onChange={e => pick("w", e.target.value)}>
+      <label><span>Week</span><select value={week} onChange={e => setParams(p => { p.set("w", e.target.value); p.delete("from"); p.delete("to"); return p; }, { replace: true })}>
         {data.weeks.map(w => <option key={w[0]} value={w[0]}>{fmtDate(w[1])}</option>)}</select></label>
-      <label><span>Respondent group</span><select value={kind} onChange={e => chooseKind(e.target.value)}>
-        {kinds.map(k => <option key={k} value={k}>{k === "total" ? "Everyone" : CUT_NAMES[k] ?? k}</option>)}</select></label>
+      <label><span>Respondent group</span><select value={kind} onChange={e => chooseKind(e.target.value)}>{kindOptions}</select></label>
       {kind !== "total" && <label><span>{kindName}</span><select value={cut} onChange={e => pick("g", e.target.value)}>
         {groups.map(c => <option key={c[1]} value={c.join(":")}>{c[1]}</option>)}</select></label>}
       <label><span>Category</span><select value={category} onChange={e => pick("c", e.target.value)}>
@@ -262,11 +265,21 @@ export default function Channels() {
       <Card title={category} sub={<><b>{groupName}</b> · <b>{rangeText}</b><br />Percentage of respondents who bought it each week, in a
               store (red) and online (blue)</>}
             aside={<ExportButtons onExport={exportTrend} png={() => lineChart.current && downloadPng(lineChart.current, `${lineTitle}, ${rangeText}`, source, `${category} in store vs online`)} />}>
+        <div className="toolbar one-row" style={{ marginBottom: 8 }}>
+          <label className="sr-only" htmlFor="trend-kind">Respondent group</label>
+          <select id="trend-kind" value={kind} onChange={e => chooseKind(e.target.value)} title="Respondent group">{kindOptions}</select>
+          <label className="sr-only" htmlFor="trend-from">From</label>
+          <select id="trend-from" value={span[0][0]} onChange={e => pick("from", e.target.value)} title="From">
+            {oldestFirst.map(w => <option key={w[0]} value={w[0]}>From {fmtDate(w[1])}</option>)}</select>
+          <label className="sr-only" htmlFor="trend-to">To</label>
+          <select id="trend-to" value={span.at(-1)![0]} onChange={e => pick("to", e.target.value)} title="To">
+            {oldestFirst.map(w => <option key={w[0]} value={w[0]}>To {fmtDate(w[1])}</option>)}</select>
+        </div>
         {kind !== "total" && <div className="seg" role="group" aria-label={`${kindName}: one group at a time`} style={{ marginBottom: 8 }}>
           {groups.map(c => <button key={c[1]} type="button" aria-pressed={c.join(":") === cut} onClick={() => pick("g", c.join(":"))}>{c[1]}</button>)}
         </div>}
         {drawn.length
-          ? <EChart height={height - (kind !== "total" ? 44 : 0)} label={`${category}: in store vs online over time, ${groupName}`}
+          ? <EChart height={height - (kind !== "total" ? 92 : 48)} label={`${category}: in store vs online over time, ${groupName}`}
                     option={lineOption()} build={lineOption} onReady={c => { lineChart.current = c; }} />
           : <Empty>{groupName} has no answers between these weeks.</Empty>}
         {unanswered > 0 && <p className="muted small">No answers from {groupName} for this category in {unanswered} of these

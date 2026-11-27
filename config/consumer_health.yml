@@ -1,10 +1,17 @@
 # The Consumer Health dataset (etl/consumer_health.py): the data science team's workbook "Consumer Health — Master Raw
 # Respondent Dataset", one row per US weekly respondent, kept up to date by CIP. Their workbook (to 10 Aug 2026) is the
-# history, loaded once; every US weekly wave after it is added here, in their columns and by their rules. Each rule
-# below was checked against all 62,109 rows of their workbook (25 Nov 2026): every derived column matched 100%.
+# history, loaded once; every US weekly wave after it is added here, in their columns and by their rules, and so is
+# every older wave CIP holds from before it (28 Dec 2020 to Aug 2023: SurveyMonkey, then Qualtrics; 27 Nov 2026). Each
+# rule below was checked against all 62,109 rows of their workbook (25 Nov 2026): every derived column matched 100%.
 
 family: CSI-US                     # the US weekly tracker
-source_sheet: Forsta API           # Source_Sheet of a row CIP adds; its Source_File is the Forsta survey (selfserve/58f/261103)
+# By the platform a wave came from: Source QA's Schema, and the Source_Sheet of each row CIP adds (its Source_File is
+# the survey: selfserve/58f/261103 in Forsta, Qualtrics' or SurveyMonkey's own survey id before)
+platforms:
+  forsta: {schema: Forsta, sheet: Forsta API}
+  qualtrics: {schema: Qualtrics, sheet: CIP (Qualtrics), timezone: America/Denver}   # CIP keeps UTC; their Qualtrics
+                                   # files were in the account's US Mountain time (7 h behind in winter, 6 in summer)
+  surveymonkey: {schema: SurveyMonkey, sheet: CIP (SurveyMonkey)}
 
 # The activities question, found by its wording in each wave. Its answers become the 0/1 columns, in the workbook's
 # order; `code` is the answer's part of Activity_Pattern_Code (FRI+MAL+DIN), as the team wrote it from 2024.
@@ -27,6 +34,11 @@ activities:
   added:                           # asked from 13 Jul 2026; blank (not asked) before, never a 0
     Movie_Theater: Gone to a movie theater/cinema
     Live_Performance: "Gone to a live performance (e.g., concert, play, comedy show, etc.)"
+  other_answers:                   # asked in 4 weeks of 2021 (SurveyMonkey), no column of theirs: picking one answers Q1
+    - Bought beauty, grooming or fragrance products
+    - Bought clothing, footwear or accessories in a store
+    - Bought clothing, footwear or accessories online
+    - Bought groceries online
 
 # Each demographic column: the wordings that ask it (the answer's label is the value, as in the team's rows)
 demographics:
@@ -37,7 +49,20 @@ demographics:
   Household_Income: ["What was your total household income last year?"]
   Area_Type: ["Which of the following best describes the area where your primary residence is located?"]
   State: ["In which state is your primary residence?"]
-age_bands:                         # the oldest age of each band; older than the last is "over 60" ("70 or more" too)
+# A wave from before their workbook that asks a demographic in none of those words (SurveyMonkey's panel gave gender,
+# age and income, 2020-22) takes it from CIP's own profile of each respondent (cip_profile, etl/wave_loader.py
+# rebuild_profiles: the same question CIP's filters use, income in Forsta's bands where the wave's allow it)
+profile:
+  Gender: gender
+  Age_Group: age_band
+  Relationship_Status: relationship
+  Ethnicity: ethnicity
+  Household_Income: income_band
+  Area_Type: urbanicity
+  State: state_name                # a full name there, written as its code (config/survey_map.yml state_codes)
+# the oldest age of each band; older than the last is "over 60" ("70 or more" too). A banded answer that sits inside
+# one band is written as it ("18-29", "Over 60", "18 - 25"); one across two ("26 - 41", asked in 2023) stays as asked
+age_bands:
   "18 - 29": 29
   "30 - 44": 44
   "45 - 60": 60
@@ -61,4 +86,14 @@ pairs:
   Arranged_and_Took_Trip: [[Arranged_Trip], [Took_Trip]]
   Gym_and_Sports: [[Gym_Fitness], [Played_Sports]]
   Shopping_and_Dining: [[Enclosed_Mall, Open_Air_Center], [Dine_In_Restaurant, Coffee_Shop, Bar]]
+# Their 2023 sheet wrote two codes and an empty pattern its own way (EM, FF, and NONE for "None of these"; from 2024 MAL,
+# FRI and a blank): the weeks before 2024 that CIP adds follow their 2023 sheet
+codes_before_2024: {Enclosed_Mall: EM, Friends_Family: FF}
+none_before_2024: NONE
 high_activity: 5                   # High_Activity_5Plus and the top band of Activity_Count_Band ("5+")
+# The Read Me's "Historical gap" once CIP adds the weeks before theirs ({start}: CIP's first week, {first}: theirs)
+history_note: >-
+  None since {start}: CIP added the weeks before {first} from its own records of the same weekly survey (SurveyMonkey
+  to 2022, then Qualtrics), by the same rules. Demographics are as each week asked them; SurveyMonkey weeks give
+  gender, age and income only (CIP's respondent profile). Weeks that did not ask Q1 (five in Sep-Oct 2022) are left
+  out, and those platforms kept no start time.

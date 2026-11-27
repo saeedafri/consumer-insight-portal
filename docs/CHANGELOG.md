@@ -6,6 +6,10 @@ The API and the MCP connector are documented in [API.md](API.md).
 
 ## 27 November 2026
 
+### In store vs online: Everyone and the line chart's date range are back
+
+Everyone is a choice under Respondent group again, and the page opens on it, as before. The line chart has its own group list (with Everyone), its From and To dates and its group buttons again, all the same choice as the filters above: picking Everyone in either shows Everyone on both charts. The line chart shows the year up to the week chosen above, so changing the Week moves it, and From and To still pick any range. When a group is chosen, Everyone's figure stays the grey tick on each bar.
+
 ### Excel: one view at a time as well as the whole workbook, and tracker tabs named as their lists
 
 Beside the whole workbook, the Export menu now offers the view on screen on its own, as Excel or CSV. On the Sector databank, Excel: every tab gives every tab and the median spend, Excel: this tab only gives the tab you are looking at. On each tracker, Excel: every week gives every week the tracker ran, Excel: this week only gives the chosen week: every headline figure, list answer and group split with its %, the people asked and its change in points against the week before and last year. A tracker list's tab is named as on screen (Top platforms, not top) from the next publish or deploy, not only once that tracker's next week is built, and its note says it holds each week's top answers: a blank cell is an answer outside that week's top, not one nobody gave, and every answer of the question, every week, downloads from its Trends page.
@@ -25,6 +29,10 @@ The data science team's Consumer Health workbook (to 10 August 2026) is now load
 ### An email for every new survey, a switch for it on My account, and New on the menus
 
 Each new China week now sends the team the same new-survey email as a US week, whether it comes from SharePoint or the Upload survey page: who answered and the biggest changes since last week, checked against the survey's own topline. Before, a SharePoint week only posted to Teams and an uploaded one sent nothing. Anyone given Alerts can tick Email me each new survey I can open on My account, and then gets that summary after each new survey their access opens, without the team's workbooks; signing someone out everywhere stops it. The left menu marks what arrived since you last opened it: Survey library, the US and China weekly trackers, Boards (a teammate's new board), What's new and the Consumer Health dataset show a small red New until you open them. It is kept per browser, so a first visit shows none.
+
+### Consumer Health dataset: every week since December 2020, not only since September 2023
+
+The data science team's Consumer Health workbook now also holds every older week of the US weekly survey that CIP has, from 28 December 2020 to August 2023 (SurveyMonkey, then Qualtrics): 119 weeks and 52,435 more people, so it runs from 2020 to 2026 with 120,587 rows in all. Their own rows from 4 September 2023 are unchanged. The older weeks follow their rules: rebuilt the same way, 4,373 people of their own Qualtrics weeks came out identical in every column, with times in the US Mountain time their Qualtrics files used and their 2023 sheet's pattern codes (EM, FF, NONE). SurveyMonkey asked no demographic questions of its own, so those weeks give gender, age and income from CIP's profile of each respondent; five weeks of autumn 2022 that did not ask the activities question are left out. The Read Me's Historical gap note says so. Every publish still adds each new week.
 
 ## 26 November 2026
 

@@ -5,13 +5,15 @@ raw exports. One row per US weekly respondent, 73 columns: dates, the source tra
 demographics, the 0/1 answers to "Which, if any, of these have you done in the past two weeks?", and counts, pairs and
 patterns derived from them. One sheet per year, plus Read Me, Source QA and Data Dictionary.
 
-How it stays up to date: their workbook (to 10 Aug 2026) is the history, loaded once into cip_dataset_history
-(sql/011_dataset_history.sql) and never changed here. Each published US weekly wave after its last week becomes rows
-the same way, from CIP's own respondents (cip_respondent, cip_answer), and the whole workbook is written again in their
-format: the same sheets, columns, widths, colours, filters and highlights.
+How it stays up to date: their workbook (4 Sep 2023 to 10 Aug 2026) is the history, loaded once into
+cip_dataset_history (sql/011_dataset_history.sql) and never changed here. Each published US weekly wave after its last
+week becomes rows the same way, from CIP's own respondents (cip_respondent, cip_answer), and so does each older wave
+CIP holds from before its first (28 Dec 2020 on: SurveyMonkey, then Qualtrics; demographics the panel gave come from
+cip_profile). The whole workbook is written again in their format: the same sheets, columns, widths, colours, filters
+and highlights.
 
 Who calls it:
-  etl/publish.py write_views()   each publish → api/v1/datasets/Consumer_Health_..._2023_<year>.xlsx
+  etl/publish.py write_views()   each publish → api/v1/datasets/Consumer_Health_..._<first year>_<last year>.xlsx
   api/main.py dataset()          GET /api/v1/datasets/consumer-health sends it to those given "datasets" (config/access.yml)
   python -m etl.consumer_health --history <their workbook.xlsx>   once, and again when they hand over a new copy
 Rules: config/consumer_health.yml. Checked by tests/test_consumer_health.py.
@@ -28,6 +30,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yaml
 from openpyxl import Workbook, load_workbook
@@ -37,7 +40,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy import bindparam, inspect, text
 
-from etl import notify
+from etl import notify, survey_map
 from etl.harmonise import normalise_text
 from etl.weekly_report import read_waves
 from shared.core.database import apply_sql, get_engine
@@ -81,19 +84,24 @@ def monday(day: str) -> date:
 
 
 def age_band(answer: str | None) -> str | None:
-    """An age answer in the team's bands: one of their bands ("30 - 44", "over 60") as it is, else by its first number
-    ("54" → "45 - 60", "70 or more" → "over 60", "Under 18" → "18 - 29", as the team counts the few who say so); one
+    """An age answer in the team's bands: one of their bands ("30 - 44", "over 60") as it is; a single age by its number
+    ("54" → "45 - 60", "70 or more" → "over 60", "Under 18" → "18 - 29", as the team counts the few who say so); an
+    older wave's band inside one of theirs as that band ("18-29", "Over 60", "18 - 25"); one across two ("26 - 41") or
     without a number ("prefer not to say") as it is."""
     bands, oldest = settings()["age_bands"], settings()["oldest_band"]
-    found = re.search(r"\d+", answer or "")
-    if answer in bands or answer == oldest or not found:
+    ages = [int(n) for n in re.findall(r"\d+", answer or "")]
+    if answer in bands or answer == oldest or not ages:
         return answer
-    return next((band for band, last in bands.items() if int(found.group()) <= last), oldest)
+    if re.match(r"\s*(over|above)\b", answer, re.I):   # "Over 60": older than its number
+        ages = [ages[0] + 1]
+    found = {next((band for band, last in bands.items() if age <= last), oldest) for age in ages}
+    return found.pop() if len(found) == 1 else answer
 
 
-def read_people(conn, survey_id: int) -> tuple[list[dict], set[str]]:
+def read_people(conn, survey_id: int, from_profile: bool = False) -> tuple[list[dict], set[str]]:
     """One wave's qualified respondents (record number, Forsta ID, completion and start times, each demographic's
-    answer, each activity 1 or 0, keyed by its answer label) and the activities the wave asked."""
+    answer, each activity 1 or 0, keyed by its answer label) and the activities the wave asked. from_profile (a wave
+    from before their workbook): a demographic nobody answered in their wording comes from CIP's profile instead."""
     rules = settings()
     wanted = {normalise_text(rules["activities"]["question"]): "activities"}
     wanted.update({normalise_text(w): column for column, wordings in rules["demographics"].items() for w in wordings})
@@ -121,13 +129,36 @@ def read_people(conn, survey_id: int) -> tuple[list[dict], set[str]]:
             person[a.item_label] = int(a.value_code == 1)
         else:
             person[questions[a.question_id]] = a.value_label
+    if from_profile:
+        fill_from_profile(conn, survey_id, people)
     return list(people.values()), asked
+
+
+def fill_from_profile(conn, survey_id: int, people: dict) -> None:
+    """Each demographic nobody in the wave answered in the team's wording, from cip_profile (config profile: the
+    SurveyMonkey panel's gender, age and income, 2020-22), a state's name written as its code, as their rows have it."""
+    empty = {column: field for column, field in settings()["profile"].items() if not any(p.get(column) for p in people.values())}
+    if not empty:
+        return
+    codes = {name.lower(): code for code, name in survey_map.load_config()["state_codes"].items()}
+    for r in conn.execute(text(f"SELECT respondent_id, {', '.join(empty.values())} FROM cip_profile WHERE survey_id = :s"),
+                          {"s": survey_id}).mappings():
+        person = people.get(r["respondent_id"])
+        if person is not None:
+            person.update({column: r[field] for column, field in empty.items()})
+            if person.get("State"):
+                person["State"] = codes.get(person["State"].lower(), person["State"])
 
 
 def wave_rows(wave: dict, people: list[dict], asked: set[str]) -> list[dict]:
     """One CIP wave's respondents as the team's rows, ordered and keyed as theirs are (by response time)."""
     rules = settings()
     activities = rules["activities"]
+    others = [answer for answer in activities.get("other_answers", []) if answer in asked]
+    zone = rules["platforms"][wave["platform"]].get("timezone")
+    if zone:   # CIP keeps UTC; their files for this platform were in its account's local time (config platforms)
+        people = [{**p, "done": p["done"].replace(tzinfo=timezone.utc).astimezone(ZoneInfo(zone)).replace(tzinfo=None)}
+                  for p in people]
     done = Counter(p["done"].date() for p in people)
     day = min(done, key=lambda d: (-done[d], d))   # the date most people answered on: the team's Survey_Wave_Date
     label = date.fromisoformat(wave["wave_date"])
@@ -142,7 +173,7 @@ def wave_rows(wave: dict, people: list[dict], asked: set[str]) -> list[dict]:
             "Response_Start_Datetime": f"{start:%Y-%m-%d %H:%M:%S}" if start else None, "Response_End_Datetime": None,
             "Response_Date_vs_Wave_Days": (p["done"].date() - day).days, "Response_Date_Matches_Wave": int(p["done"].date() == day),
             "Survey_Date": str(day), "Week_ID": f"{iso_year}-W{iso_week:02d}", "Source_File": wave["source_ref"],
-            "Source_Sheet": rules["source_sheet"], "Source_Row": row_number,
+            "Source_Sheet": rules["platforms"][wave["platform"]]["sheet"], "Source_Row": row_number,
             "Response_Hash": hashlib.sha256(str(p["uuid"]).encode()).hexdigest()[:18],   # as the team pseudonymised it
             "Panelist_Hash": None, "Panelist_Weeks_Observed": 1, "Repeat_Panelist_Flag": 0, "Completed_Flag": 1, "Progress": 100,
             "Recaptcha_Score": None, "Duplicate_Flag": 0, "Duplicate_Score": None, "Fraud_Score": None,   # Forsta gives none
@@ -150,9 +181,13 @@ def wave_rows(wave: dict, people: list[dict], asked: set[str]) -> list[dict]:
             **{column: p.get(a["answer"], 0) for column, a in activities["original"].items()},
             **{column: p.get(answer, 0) if answer in asked else None for column, answer in activities["added"].items()},
             "None_Selected": p.get(activities["none"], 0),
+            # an answer with no column of theirs (config other_answers): read by derive, never written
+            "Other_Answers_Asked": len(others), "Other_Answer": int(any(p.get(answer) for answer in others)),
         }
         row["Age_Group"] = age_band(row["Age_Group"])
-        rows.append(derive(row))
+        built = derive(row)
+        del built["Other_Answers_Asked"], built["Other_Answer"]   # read by derive; not columns of theirs
+        rows.append(built)
     rows.sort(key=lambda r: (r["Response_Recorded_Datetime"], r["Source_Row"]))   # a minute's ties in export order
     for n, row in enumerate(rows, start=1):
         row["Respondent_Key"] = f"{day}-R{n:04d}"
@@ -167,9 +202,12 @@ def derive(row: dict) -> dict:
     added = sum(row[c] is not None for c in rules["activities"]["added"])
     chosen = {column: row[column] or 0 for column in original + list(rules["activities"]["added"])}
     count, count_all = sum(chosen[c] for c in original), sum(chosen.values())
-    missing, contradiction = int(count_all == 0 and not row["None_Selected"]), int(count_all > 0 and row["None_Selected"] == 1)
+    answered = count_all > 0 or bool(row.get("Other_Answer"))   # an answer with no column answers Q1 all the same (2021)
+    missing, contradiction = int(not answered and not row["None_Selected"]), int(answered and row["None_Selected"] == 1)
+    others = row.get("Other_Answers_Asked")
     return {**row, "Q1_Activities_Available": len(original) + added,
-            "Activity_Question_Version": f"{len(original) + added} activities + None",
+            "Activity_Question_Version": f"{len(original) + added} activities"
+                                         + (f" + {others} other answer{'s' * (others > 1)}" if others else "") + " + None",
             "Activity_Count": count, "Activity_Count_All_Available": count_all, "Any_Activity": int(count_all > 0),
             "Q1_Missing_Flag": missing, "Q1_Contradiction_Flag": contradiction,
             "Core_Valid_Flag": int(row["Completed_Flag"] == 1 and not missing and not contradiction),
@@ -179,7 +217,17 @@ def derive(row: dict) -> dict:
             **{name: int(all(any(chosen[c] for c in group) for group in groups)) for name, groups in rules["pairs"].items()},
             "High_Activity_5Plus": int(count >= high),
             "Activity_Pattern_Bitmask": sum(chosen[c] << bit for bit, c in enumerate(original)),
-            "Activity_Pattern_Code": "+".join(a["code"] for c, a in rules["activities"]["original"].items() if chosen[c]) or None}
+            "Activity_Pattern_Code": pattern_code(row, chosen)}
+
+
+def pattern_code(row: dict, chosen: dict) -> str | None:
+    """The activities done as codes (GYM+DIN+BAR), as their sheet of that year writes them: before 2024 EM, FF and NONE
+    for "None of these" (config codes_before_2024); from 2024 MAL, FRI and a blank."""
+    rules = settings()
+    early = row.get("Survey_Year", 2024) < 2024
+    codes = [rules["codes_before_2024"].get(c, a["code"]) if early else a["code"]
+             for c, a in rules["activities"]["original"].items() if chosen[c]]
+    return "+".join(codes) or (rules["none_before_2024"] if early and row["None_Selected"] == 1 else None)
 
 
 def qa_line(wave: dict, rows: list[dict]) -> dict:
@@ -188,7 +236,7 @@ def qa_line(wave: dict, rows: list[dict]) -> dict:
     recorded = [r["Response_Recorded_Date"] for r in rows]
     return {"Survey_Wave_Date": day, "Survey_Year": rows[0]["Survey_Year"], "File_Label_Date": label,
             "File_Date_Diff_Days": (date.fromisoformat(label) - date.fromisoformat(day)).days, "Source_File": wave["source_ref"],
-            "Source_Sheet": settings()["source_sheet"], "Schema": wave["platform"].capitalize(), "Respondents": len(rows),
+            "Source_Sheet": rows[0]["Source_Sheet"], "Schema": settings()["platforms"][wave["platform"]]["schema"], "Respondents": len(rows),
             "Completed": sum(r["Completed_Flag"] for r in rows), "Core_Valid": sum(r["Core_Valid_Flag"] for r in rows),
             "Q1_Missing": sum(r["Q1_Missing_Flag"] for r in rows), "Q1_Contradiction": sum(r["Q1_Contradiction_Flag"] for r in rows),
             "Q1_Activities_Available": rows[0]["Q1_Activities_Available"], "Recorded_Date_Min": min(recorded),
@@ -228,7 +276,8 @@ def check_wave(wave: dict, people: list[dict], asked: set[str]) -> list[str]:
     do not know (whoever picks only it counts as skipping Q1), one of the 12 no longer asked by that wording (its
     column all 0), or a demographic nobody answered (its question reworded). Each is a line in config/consumer_health.yml."""
     activities = settings()["activities"]
-    known = {a["answer"] for a in activities["original"].values()} | set(activities["added"].values()) | {activities["none"]}
+    known = ({a["answer"] for a in activities["original"].values()} | set(activities["added"].values()) | {activities["none"]}
+             | set(activities.get("other_answers", [])))
     week = f"Week of {wave['wave_date']} ({wave['source_ref']})"
     return ([f"{week}: an answer the rules do not know: {label}" for label in sorted(asked - known - {None})]
             + [f"{week}: no longer asked: {a['answer']}" for a in activities["original"].values() if a["answer"] not in asked]
@@ -236,33 +285,47 @@ def check_wave(wave: dict, people: list[dict], asked: set[str]) -> list[str]:
                if all(p.get(column) is None for p in people)])
 
 
-def new_weeks(out: Path, history: dict) -> tuple[list[dict], list[dict], list[str]]:
-    """Rows and Source QA lines of every published US weekly wave after the history's last week, and what in those
-    waves the rules do not cover (check_wave)."""
-    header = history["header"]
-    last = max(monday(r[header.index("Survey_Wave_Date")]) for r in history["rows"])
+def cip_weeks(out: Path, history: dict) -> tuple[list[dict], list[dict], list[str]]:
+    """Rows and Source QA lines, oldest first, of every published US weekly wave outside the history's weeks: each new
+    week after it, and CIP's older weeks before it (SurveyMonkey, Qualtrics: 28 Dec 2020 to Aug 2023), and what the
+    rules do not cover in a new week (check_wave). A week that did not ask the activities question has no rows (five
+    of autumn 2022); a new one like it is named in the problems."""
+    # ponytail: the 119 older weeks never change but are read again each publish (6 min from India, 27 Nov 2026; staging
+    # sits next to the database); keep them beside the history in cip_dataset_history if publishes slow down
+    dates = [monday(r[history["header"].index("Survey_Wave_Date")]) for r in history["rows"]]
+    first, last = min(dates), max(dates)
     rows, qa, problems = [], [], []
     with get_engine("app").connect() as conn:
         for wave in read_waves(out, settings()["family"], "tracker"):
-            if monday(wave["wave_date"]) > last:
-                people, asked = read_people(conn, wave["survey_id"])
-                if people:
-                    week = wave_rows(wave, people, asked)
-                    rows += week
-                    qa.append(qa_line(wave, week))
-                    problems += check_wave(wave, people, asked)
+            week, older = monday(wave["wave_date"]), monday(wave["wave_date"]) < first
+            if first <= week <= last:
+                continue
+            people, asked = read_people(conn, wave["survey_id"], from_profile=older)
+            if not older and people:
+                problems += check_wave(wave, people, asked)
+            if people and asked:
+                built = wave_rows(wave, people, asked)
+                rows += built
+                qa.append(qa_line(wave, built))
     return rows, qa, problems
 
 
 def save(folder: Path, history: dict, rows: list[dict], qa: list[dict]) -> Path:
     """The whole workbook in the team's format, named for its years: Read Me (its figures recounted), one sheet per
-    year, Source QA, Data Dictionary. openpyxl's write-only mode streams the cells to the file; the rows themselves
-    (~68,000 in Nov 2026) are held once, ~180 MB at the peak, 12 s. Returns the file."""
+    year, Source QA, Data Dictionary; CIP's weeks before theirs first, then theirs as they are, then the newer ones.
+    openpyxl's write-only mode streams the cells to the file; the rows themselves are held once. Returns the file."""
     header = history["header"]
-    all_rows = history["rows"] + [[row.get(c) for c in header] for row in rows]
-    lines = history["source_qa"][1:] + [list(line.values()) for line in qa]
+    first = min(r[header.index("Survey_Wave_Date")] for r in history["rows"])   # their first week
+    cells = lambda row: [row.get(c) for c in header]   # noqa: E731
+    older = [cells(r) for r in rows if r["Survey_Wave_Date"] < first]
+    all_rows = older + history["rows"] + [cells(r) for r in rows if r["Survey_Wave_Date"] >= first]
+    lines = ([list(line.values()) for line in qa if line["Survey_Wave_Date"] < first] + history["source_qa"][1:]
+             + [list(line.values()) for line in qa if line["Survey_Wave_Date"] >= first])
+    figures = read_me_figures(header, all_rows, lines)
+    if older:   # their note said no files before theirs: CIP's own records now fill those years
+        figures["Historical gap"] = settings()["history_note"].format(start=older[0][header.index("Survey_Wave_Date")], first=first)
     book = Workbook(write_only=True)
-    write_read_me(book.create_sheet("Read Me"), history["read_me"], read_me_figures(header, all_rows, lines))
+    write_read_me(book.create_sheet("Read Me"), history["read_me"], figures)
     years = defaultdict(list)
     year_column = header.index("Survey_Year")
     for row in all_rows:
@@ -359,12 +422,12 @@ def make_cell(ws, value, **look) -> WriteOnlyCell:
 
 
 def publish(out: Path) -> int:
-    """Called by etl/publish.py write_views(): the workbook (history plus every newer US weekly wave) in out's
-    api/v1/datasets, replacing the one before. Nothing until the history is loaded. Returns the bytes written."""
+    """Called by etl/publish.py write_views(): the workbook (CIP's older US weekly waves, the history, every newer
+    wave) in out's api/v1/datasets, replacing the one before. Nothing until the history is loaded. Returns the bytes."""
     history = read_history()
     if not history:
         return 0
-    rows, qa, problems = new_weeks(out, history)
+    rows, qa, problems = cip_weeks(out, history)
     folder = out / FOLDER
     folder.mkdir(parents=True, exist_ok=True)
     path = save(folder, history, rows, qa)
@@ -375,7 +438,7 @@ def publish(out: Path) -> int:
         log.warning("Consumer Health dataset: %s", "; ".join(problems))   # week, so the rule mends the weeks before it
         notify.failure("the Consumer Health dataset meets answers its rules do not cover", "\n".join(problems),
                        "The file was still written. Add each to config/consumer_health.yml; the next publish rebuilds those weeks.")
-    log.info("Consumer Health dataset: %d history rows + %d new rows (%d weeks), %s", len(history["rows"]), len(rows), len(qa), path.name)
+    log.info("Consumer Health dataset: %d history rows + %d CIP rows (%d weeks), %s", len(history["rows"]), len(rows), len(qa), path.name)
     return path.stat().st_size
 
 

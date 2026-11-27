@@ -45,6 +45,19 @@ def test_ages_go_in_the_teams_bands():
     assert [consumer_health.age_band(a) for a in ("18", "29", "30", "60", "61", "70 or more", "Under 18", "under 18")] == \
         ["18 - 29", "18 - 29", "30 - 44", "45 - 60", "over 60", "over 60", "18 - 29", "18 - 29"]
     assert [consumer_health.age_band(a) for a in ("30 - 44", "over 60", "prefer not to say", None)] == ["30 - 44", "over 60", "prefer not to say", None]
+    # older waves' bands (SurveyMonkey's panel, 2023's Qualtrics): inside one of theirs, that band; across two, as asked
+    assert [consumer_health.age_band(a) for a in ("18-29", "Over 60", "18 - 25", "over 68", "26 - 41", "58 - 68")] == \
+        ["18 - 29", "over 60", "18 - 29", "over 60", "26 - 41", "58 - 68"]
+
+
+def test_an_answer_with_no_column_still_answers_the_question():
+    """Four 2021 weeks also offered "Bought groceries online" and three like it (config other_answers): no column of
+    theirs, but whoever picked one answered Q1 and stays core-valid (27 Nov 2026)."""
+    only = consumer_health.derive({**answers(), "Other_Answer": 1, "Other_Answers_Asked": 4})
+    assert (only["Q1_Missing_Flag"], only["Core_Valid_Flag"], only["Any_Activity"]) == (0, 1, 0)
+    assert only["Activity_Question_Version"] == "12 activities + 4 other answers + None"
+    both = consumer_health.derive({**answers(none=1), "Other_Answer": 1, "Other_Answers_Asked": 4})
+    assert (both["Q1_Contradiction_Flag"], both["Core_Valid_Flag"]) == (1, 0)
 
 
 def person(record, done, start, **more):
@@ -97,7 +110,8 @@ def history_of(rows):
             "source_qa": [list(consumer_health.qa_line(WAVE, rows)), list(consumer_health.qa_line(WAVE, rows).values())],
             "dictionary": [["Field", "Type / Role", "Source", "Definition / Modeling Use"], ["Survey_Wave_Date", "Model", "Raw", "Date."]],
             "read_me": [["Consumer Health — Master Raw Respondent Dataset", None], [None, None], ["Survey waves", 1],
-                        ["Respondent records", 4], [None, None], ["Important methodology notes", None], ["Model filter", "Use Core_Valid_Flag = 1."]]}
+                        ["Respondent records", 4], ["Historical gap", "No raw files for 2020–2022 have been uploaded yet"],
+                        [None, None], ["Important methodology notes", None], ["Model filter", "Use Core_Valid_Flag = 1."]]}
 
 
 def test_the_workbook_keeps_the_history_and_the_teams_format(tmp_path):
@@ -163,3 +177,74 @@ def test_a_wave_is_read_from_cips_tables_and_the_history_round_trips(csi_db, tmp
     assert len(list(written["2026"].iter_rows())) == 6                           # header, the 4 kept rows, the newer week's one
     from etl import notify   # that week asks 2 of the activities and only the age: the file is written and the admin told
     assert notify.sent == [("email", "CIP pipeline FAILED: the Consumer Health dataset meets answers its rules do not cover")]
+
+
+def test_cips_older_weeks_come_before_theirs_with_the_panels_demographics(csi_db, tmp_path):
+    """A SurveyMonkey week of 2021, from before their workbook: no demographic question in their words, so gender, age,
+    income and state come from CIP's profile; one answer has no column of theirs; its rows go before their history, in
+    their 2023 sheet's codes, and the Read Me says where the years came from. No alert: only new weeks are checked."""
+    activities = "Which, if any, of these have you done in the past two weeks?"
+    with csi_db.begin() as conn:
+        conn.execute(sa.text("INSERT INTO cip_survey (survey_id, forsta_host, forsta_path, title, wave_label, wave_date, survey_family)"
+                             " VALUES (7, 'sm', '298906304', 'Shopping and Spending', '2021-03-01', '2021-03-01', 'CSI-US')"))
+        conn.execute(sa.text("INSERT INTO cip_respondent (respondent_id, survey_id, record_no, forsta_uuid, is_qualified, completed_at)"
+                             " VALUES (11, 7, 1, 'a1', 1, '2021-03-02 15:00:00'), (12, 7, 2, 'a2', 1, '2021-03-02 16:00:00')"))
+        conn.execute(sa.text("INSERT INTO cip_question (question_id, survey_id, qcode, qtext, qtype) VALUES (10, 7, 'Q1', :q, 'multi')"),
+                     {"q": activities})
+        conn.execute(sa.text("INSERT INTO cip_item (item_id, question_id, item_code, item_label) VALUES (10, 10, 'Q1_1', 'Gone to a bar'),"
+                             " (11, 10, 'Q1_2', 'Bought groceries online'), (12, 10, 'Q1_3', 'None of these')"))
+        conn.execute(sa.text("INSERT INTO cip_field (field_id, survey_id, question_id, item_id, field_name, value_type) VALUES"
+                             " (10, 7, 10, 10, 'Q1_1', 'code'), (11, 7, 10, 11, 'Q1_2', 'code'), (12, 7, 10, 12, 'Q1_3', 'code')"))
+        conn.execute(sa.text("INSERT INTO cip_answer (respondent_id, survey_id, field_id, value_code) VALUES (11, 7, 10, 0),"
+                             " (11, 7, 11, 1), (11, 7, 12, 0), (12, 7, 10, 1), (12, 7, 11, 0), (12, 7, 12, 0)"))
+        conn.execute(sa.text("INSERT INTO cip_profile (respondent_id, survey_id, gender, age_band, income_band, state_name) VALUES"
+                             " (11, 7, 'Female', 'Over 60', '$25,000 - $49,999', 'Ohio'), (12, 7, 'Male', '18-29', NULL, NULL)"))
+    consumer_health.load_history(consumer_health.save(tmp_path, history_of(week()), [], []))
+    out = tmp_path / "version"
+    (out / "api/v1").mkdir(parents=True)
+    (out / "api/v1/waves.json.gz").write_bytes(gzip.compress(json.dumps([
+        {"survey_id": 7, "wave_date": "2021-03-01", "source_ref": "298906304", "platform": "surveymonkey",
+         "survey_family": "CSI-US", "study_type": "tracker"}]).encode()))
+    assert consumer_health.publish(out) > 0
+    book = load_workbook(next((out / consumer_health.FOLDER).glob("Consumer_Health_*_2021_2026.xlsx")), read_only=True)
+    assert book.sheetnames[:3] == ["Read Me", "2021", "2026"]
+    sheet = list(book["2021"].iter_rows(values_only=True))
+    rows = [dict(zip(sheet[0], r)) for r in sheet[1:]]
+    first, second = rows
+    assert (first["Gender"], first["Age_Group"], first["Household_Income"], first["State"]) == ("Female", "over 60", "$25,000 - $49,999", "OH")
+    assert (first["Q1_Missing_Flag"], first["Core_Valid_Flag"], first["Activity_Pattern_Code"]) == (0, 1, None)   # groceries only
+    assert first["Activity_Question_Version"] == "12 activities + 1 other answer + None"
+    assert (second["Age_Group"], second["Bar"], second["Activity_Pattern_Code"]) == ("18 - 29", 1, "BAR")
+    assert (first["Source_Sheet"], first["Source_File"], first["Survey_Wave_Date"]) == ("CIP (SurveyMonkey)", "298906304", "2021-03-02")
+    read_me = {r[0]: r[1] for r in book["Read Me"].iter_rows(values_only=True) if r and r[0]}
+    assert read_me["Historical gap"].startswith("None since 2021-03-02: CIP added the weeks before 2026-03-31")
+    assert read_me["Respondent records"] == 6
+    qa = list(book["Source QA"].iter_rows(values_only=True))
+    assert qa[1][qa[0].index("Schema")] == "SurveyMonkey"
+    from etl import notify
+    assert notify.sent == []
+
+
+def test_rows_before_2024_use_their_2023_codes_and_qualtrics_times_their_clock():
+    """Their 2023 sheet writes FF, EM and NONE (2024 on: FRI, MAL and a blank), and their Qualtrics files kept US Mountain
+    time where CIP keeps UTC: 03:00 UTC on 7 Mar 2023 is 20:00 on the 6th, which moves the week's day (27 Nov 2026)."""
+    old = consumer_health.derive({**answers("Friends_Family", "Enclosed_Mall", "Dine_In_Restaurant"), "Survey_Year": 2023})
+    new = consumer_health.derive({**answers("Friends_Family", "Enclosed_Mall", "Dine_In_Restaurant"), "Survey_Year": 2024})
+    assert (old["Activity_Pattern_Code"], new["Activity_Pattern_Code"]) == ("FF+EM+DIN", "FRI+MAL+DIN")
+    assert consumer_health.derive({**answers(none=1), "Survey_Year": 2023})["Activity_Pattern_Code"] == "NONE"
+    assert consumer_health.derive({**answers(none=1), "Survey_Year": 2024})["Activity_Pattern_Code"] is None
+    assert consumer_health.derive({**answers(), "Survey_Year": 2023})["Activity_Pattern_Code"] is None   # skipped, not "none"
+    qualtrics = {**WAVE, "wave_date": "2023-03-06", "source_ref": "SV_x", "platform": "qualtrics"}
+    row = consumer_health.wave_rows(qualtrics, [person(1, "2023-03-07 03:00:00", None)], set())[0]
+    assert (row["Survey_Wave_Date"], row["Response_Recorded_Datetime"], row["Source_Sheet"]) == ("2023-03-06", "2023-03-06 20:00:00", "CIP (Qualtrics)")
+    assert row["Activity_Pattern_Code"] == "FF"   # their 2023 code for Friends_Family
+
+
+def test_a_new_week_without_the_activities_question_is_named_not_built(csi_db, tmp_path, monkeypatch):
+    """A new week whose activities question is not found (reworded, say) gets no rows of zeros: it is named in the alert
+    instead, and the file waits for the rule (27 Nov 2026)."""
+    monkeypatch.setattr(consumer_health, "read_waves", lambda out, family, study: [{**WAVE, "wave_date": "2026-04-06"}])
+    monkeypatch.setattr(consumer_health, "read_people",
+                        lambda conn, survey_id, from_profile=False: ([person(1, "2026-04-07 10:00:00", None)], set()))
+    rows, qa, problems = consumer_health.cip_weeks(tmp_path, history_of(week()))
+    assert rows == [] and qa == [] and problems[0].endswith("no longer asked: Met up with friends or family locally")
