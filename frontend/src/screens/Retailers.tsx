@@ -120,40 +120,53 @@ export default function Retailers() {
 const weekSpan = (data: Data, weeks: number[]) => weeks.length === 1 ? `week of ${fmtDate(data.weeks[weeks[0]].date)}`
   : `${weeks.length} weeks, ${fmtDate(data.weeks[weeks[0]].date)} to ${fmtDate(data.weeks[weeks[weeks.length - 1]].date)}`;
 
+/** Everyone asked in `weeks` (all adults), by group. */
+const adults = (data: Data, weeks: number[]) =>
+  ({ label: "All adults", counts: sum(weeks.map(w => data.weeks[w].profile)), n: weeks.reduce((t, w) => t + data.weeks[w].n, 0) });
+
 /** The group a side's shoppers are set against: all adults over its weeks, or a sector's own shoppers. */
 function reference(data: Data, side: Side) {
+  if (!side.market.sector) return adults(data, side.weeks);
   const at = side.weeks.map(w => side.market.weeks.indexOf(w));
-  const counts = side.market.sector ? sum(at.map(i => side.market.buyers[i])) : sum(side.weeks.map(w => data.weeks[w].profile));
-  const n = side.market.sector ? at.reduce((t, i) => t + side.market.asked[i], 0) : side.weeks.reduce((t, w) => t + data.weeks[w].n, 0);
-  return { label: side.market.sector ? `All ${side.market.name.toLowerCase()} shoppers` : "All adults", counts, n };
+  return { label: `All ${shoppersOf(side.market)}`, counts: sum(at.map(i => side.market.buyers[i])), n: at.reduce((t, i) => t + side.market.asked[i], 0) };
 }
 
-/** A retailer's newest sentiment figure up to its side's last chosen week, else its oldest: [date, positive, asked, module]. */
-const feeling = (data: Data, side: Side, r: RetailMarket["retailers"][number]) =>
-  (r.sentiment ?? []).filter(([d]) => d <= data.weeks[side.weeks[side.weeks.length - 1]].date).pop() ?? r.sentiment?.[0] ?? null;
+/** A retailer's sentiment figure, the newest up to its side's last chosen week (else the oldest): [date, positive, asked,
+ *  sector]. In a sector, from that sector's own grid; in the weekly retailers, from the grid that asked the most people
+ *  about it (Walmart: the mass merchants grid's 294, not the footwear grid's 58 footwear buyers a week later). */
+const feeling = (data: Data, side: Side, r: RetailMarket["retailers"][number]) => {
+  const own = (r.sentiment ?? []).filter(f => !side.market.sector || f[3] === side.market.name);
+  const last = data.weeks[side.weeks[side.weeks.length - 1]].date;
+  const newest = [...new Map(own.filter(([d]) => d <= last).map(f => [f[3], f])).values()];   // each grid's newest: the list is oldest first
+  return newest.sort((a, b) => b[2] - a[2])[0] ?? own[0] ?? null;
+};
 
-/** A side's retailers by their share of shoppers over its chosen weeks, highest first: each over only the weeks it was
- *  asked, so a retailer added to the list later is not ranked down for the weeks before. v: % of those asked. */
-const ranking = (side: Side) => side.market.retailers.map(r => {
+/** A side's retailers asked in its chosen weeks, by their share of shoppers over those weeks, highest first: each over
+ *  only the weeks it was asked, so a retailer added to the list later is not ranked down for the weeks before, and one
+ *  not asked at all is not counted (Foot Locker was "#3 of 30" with 22 asked). v: % of those asked. */
+const ranking = (side: Side) => side.market.retailers.filter(r => side.weeks.some(w => r.weeks[String(w)])).map(r => {
   const asked = side.weeks.filter(w => r.weeks[String(w)]);
   const base = asked.reduce((t, w) => t + side.market.asked[side.market.weeks.indexOf(w)], 0);
   return { name: r.name, v: share(sum(asked.map(w => r.weeks[String(w)]))[0] ?? 0, base) ?? 0 };
 }).sort((a, b) => b.v - a.v);
 
 /** The research team's cards over the chosen weeks: where each retailer ranks in its market (a sector: who leads it),
- *  the generation and the household income most of its shoppers are in (their share of them), and
+ *  the generation and the household income that shop there the most (against all adults, or the sector's shoppers), and
  *  how positive people feel. One line per retailer (or sector) when several are shown; a card scrolls to its chart. */
 function Highlights({ data, sides, series, mode }: { data: Data; sides: Side[]; series: Series[]; mode: Mode }) {
   const dims = Object.keys(data.groups);
   const start = (dim: string) => dims.slice(0, dims.indexOf(dim)).reduce((t, d) => t + data.groups[d].length, 0);   // where a kind of group's counts begin
   type People = { counts: number[]; n: number; from: number };   // counts of each group from `from`, of n people
-  /** the biggest group of `dim` among `shoppers` and its share of them ("35.1% of shoppers", as the mock-ups say it) */
-  const most = (dim: string, shoppers: People) => {
-    const biggest = data.groups[dim]?.map((group, i) => ({ group, n: shoppers.counts[shoppers.from + start(dim) + i] ?? 0 }))
-      .filter(g => !isFiller(g.group)).sort((a, b) => b.n - a.n)[0];
-    const of = biggest && pct(share(biggest.n, shoppers.n));
-    return biggest && shoppers.n >= data.min_buyers ? { value: biggest.group, short: `${biggest.group} · ${of}`, note: `${of} of shoppers` }
-      : { value: "–", note: `fewer than ${data.min_buyers} shoppers: choose more weeks` };
+  /** the group of `dim` that shops the most: the highest share of `shoppers` ÷ share of `base` (all adults, or the sector's
+   *  shoppers), with both shares. Not the biggest group: Costco's was $50K-$99K, 31.4% of its shoppers and 31.5% of adults,
+   *  while $100K-$149K are 24.6% of them and 14.6% of adults (the E2E check of 28 Nov 2026). */
+  const most = (dim: string, shoppers: People, base: { label: string; counts: number[]; n: number }) => {
+    if (shoppers.n < data.min_buyers) return { value: "–", note: `fewer than ${data.min_buyers} shoppers: choose more weeks` };
+    const top = data.groups[dim]?.map((group, i) => ({ group, mine: shoppers.counts[shoppers.from + start(dim) + i] ?? 0, theirs: base.counts[start(dim) + i] ?? 0 }))
+      .filter(g => !isFiller(g.group) && g.theirs).sort((a, b) => b.mine / b.theirs - a.mine / a.theirs)[0];
+    if (!top || top.mine / shoppers.n <= top.theirs / base.n) return { value: "–", note: `no group stands out against ${base.label.toLowerCase()}` };   // mass merchants: every adult asked
+    const [mine, theirs] = [pct(share(top.mine, shoppers.n)), pct(share(top.theirs, base.n))];
+    return { value: top.group, short: `${top.group} · ${mine} vs ${theirs}`, note: `${mine} of shoppers vs ${theirs} of ${base.label.toLowerCase()}` };
   };
   type Line = { who: string; value: string; note: string; colour: string; short?: string };   // short: the value with its share, on a line
   const cards: { title: string; target: string; lines: Line[] }[] = [];
@@ -167,7 +180,7 @@ function Highlights({ data, sides, series, mode }: { data: Data; sides: Side[]; 
          note: `${pct(ranked[0]?.v)} of ${side.market.base}`, colour: colour(s) })) });
     for (const [dim, title] of [["generation", "Generation that shops the most"], ["income", "Income group that shops the most"]] as const)
       cards.push({ title, target: "who-shops", lines: lines.map(({ side, s, ref }) =>
-        ({ who: side.market.name, ...most(dim, { ...ref, from: 0 }), colour: colour(s) })) });
+        ({ who: side.market.name, ...most(dim, { ...ref, from: 0 }, adults(data, side.weeks)), colour: colour(s) })) });
   } else {
     const offset = sides[0].market.sector ? 1 : 3;   // counts start after [shoppers] or [shoppers, food, nonfood]
     const shown = series.map((s, i) => {
@@ -175,18 +188,18 @@ function Highlights({ data, sides, series, mode }: { data: Data; sides: Side[]; 
       return { s, i, side, r, ranked: ranking(side) };
     });
     const market = sides[0].market;   // one side in these views
-    const rankTitle = `Market rank among ${market.sector ? `${shoppersOf(market).replace(/ (shoppers|buyers)$/, "")} retailers` : market.name.toLowerCase()}`;
+    const rankTitle = market.sector ? `Market rank in ${market.name}` : `Market rank among ${market.name.toLowerCase()}`;
     cards.push({ title: rankTitle, target: "reach", lines: shown.map(({ s, i, ranked, r }) => {
       const at = ranked.findIndex(x => x.name === r.name), next = ranked[at === 0 ? 1 : 0];
       return { who: s.label, value: `#${at + 1} of ${ranked.length}`, colour: colour(i), note: "" };
     }) });
     for (const [dim, title] of [["generation", "Generation that shops the most"], ["income", "Income group that shops the most"]] as const)
       cards.push({ title, target: "who-shops", lines: shown.map(({ s, i }) =>
-        ({ who: s.label, ...most(dim, { counts: s.counts, n: s.counts[0] ?? 0, from: offset }), colour: colour(i) })) });
+        ({ who: s.label, ...most(dim, { counts: s.counts, n: s.counts[0] ?? 0, from: offset }, reference(data, sides[0])), colour: colour(i) })) });
     const feelings = shown.map(({ s, i, side, r }) => ({ s, i, figure: feeling(data, side, r) }));
     if (feelings.some(x => x.figure)) cards.push({ title: "Shoppers who feel positive", target: "sentiment", lines: feelings.map(({ s, i, figure }) =>
       ({ who: s.label, value: figure ? pct(share(figure[1], figure[2])) : "not asked", colour: colour(i),
-         note: figure ? `Very or somewhat positive · ${fmtDate(figure[0])}` : "No sector module asked about it" })) });
+         note: figure ? `Very or somewhat positive · ${fmtDate(figure[0])}` : market.sector ? `Not asked in the ${market.name.toLowerCase()} survey` : "No sector module asked about it" })) });
   }
   const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });   // a card's chart
   return <section aria-label="At a glance">

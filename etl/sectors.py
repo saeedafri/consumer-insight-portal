@@ -13,10 +13,13 @@ average spend estimated from its bands (the Sector databank's "Spend by sector")
 
 Finding a sector's surveys and questions:
   surveys    tagged with the sector's module since Jul 2025; before that, the survey title names it ("Shopping and
-             Spending - inc Dept Stores + …", the rule in config/survey_calendar.yml)
-  questions  by code when the wording agrees; older surveys numbered their questions Q1, Q2…, so there by wording. The
-             wording also tells reused codes apart: DS1-DS3 ask about drugstores in drugstore weeks and about dollar
-             stores in off-price weeks, and M1-M2 were reused for Memorial Day in Mar 2026.
+             Spending - inc Dept Stores + …", the rule in config/survey_calendar.yml); or named in config/sectors.yml
+             also_ran, where a title misses a module the survey ran. A survey whose sector questions went unanswered
+             (only the purchase question has answers) is left out
+  questions  by code when the wording agrees; older surveys numbered their questions Q1, Q2…, so there by wording (a
+             question asked in other words: config/sectors.yml older_wordings). The wording also tells reused codes
+             apart: DS1-DS3 ask about drugstores in drugstore weeks and about dollar stores in off-price weeks, and M1-M2
+             were reused for Memorial Day in Mar 2026.
 Which sectors and questions: config/sectors.yml. Checked against the Databank page of 6 Nov 2026 (Department stores):
 tests/test_sectors.py.
 """
@@ -46,24 +49,28 @@ def settings() -> dict:
     return {**rules, "titles": {s["name"]: s["title"] for s in survey_calendar.load_config()["sectors"]}}
 
 
+def ran(wave: dict, sector: dict) -> bool:
+    """Whether a survey ran a sector: tagged with its module, named in config/sectors.yml also_ran (a title that misses a
+    module the survey ran), or, before tags, titled with it. Also used by etl/retailers.py."""
+    tagged = sector["module"] in (wave.get("modules") or []) or sector["name"] in settings()["also_ran"].get(wave["survey_id"], [])
+    return tagged or bool(not wave.get("modules") and re.search(settings()["titles"][sector["module"]], wave.get("title") or "", re.I))
+
+
 def sector_waves(waves: list[dict], sector: dict) -> list[dict]:
-    """The surveys of one sector, oldest first: tagged with its module, or (before tags) titled with it. One per date:
-    a parallel panel fielded the same week (titles ending "- RIWI", Dec 2023) is left out."""
-    title = re.compile(settings()["titles"][sector["module"]], re.I)
+    """The surveys of one sector, oldest first (ran). One per date: a parallel panel fielded the same week (titles ending
+    "- RIWI", Dec 2023) is left out."""
     skip = tuple(settings()["leave_out_titles"])
     found = {}
     for wave in waves:
-        tagged = sector["module"] in (wave.get("modules") or [])
-        titled = not wave.get("modules") and title.search(wave.get("title") or "")
-        if (tagged or titled) and not any(word in (wave.get("title") or "") for word in skip):
+        if ran(wave, sector) and not any(word in (wave.get("title") or "") for word in skip):
             found.setdefault(wave["wave_date"], wave)
     return list(found.values())
 
 
-def find(book: dict, code: str, sentence: str) -> dict | None:
-    """One sector question in a survey's book: by its code when the wording agrees, else by its wording. Open-ended
-    answers coded into themes ("— Other (please specify)") repeat the wording and are skipped."""
-    asked = [q for q in book["questions"] if "coded" not in q and first_sentence(q["text"]) == sentence]
+def find(book: dict, code: str, sentences: set[str]) -> dict | None:
+    """One sector question in a survey's book: by its code when the wording is one of `sentences`, else by its wording.
+    Open-ended answers coded into themes ("— Other (please specify)") repeat the wording and are skipped."""
+    asked = [q for q in book["questions"] if "coded" not in q and first_sentence(q["text"]) in sentences]
     return next((q for q in asked if q["id"] == code), asked[0] if asked else None)
 
 
@@ -87,16 +94,19 @@ def median_band(rows: list[dict]) -> str | None:
     return next(label for (_, label, _), running in zip(bands, accumulate(shares)) if running >= sum(shares) / 2)
 
 
-def average_spend(rows: list[dict]) -> int | None:
+def average_spend(rows: list[dict], question: Question, at: int) -> int | None:
     """The average spend in dollars estimated from band mid-points, an open top band ("More than $500") counted at its
-    floor, as Ask estimates one (api/ask_figures.py middle); from one survey's book rows (label, Total %), answers
-    without a dollar amount left out. The Sector databank's "Spend by sector" (the roadmap's Sector Spend Insights,
-    27 Nov 2026). None under three bands."""
-    bands = [(amount, row["Total"] or 0) for row in rows if (amount := band(row["label"]))]
-    total = sum(share for _, share in bands)
+    floor, as Ask estimates one (api/ask_figures.py middle). The bands: one survey's book rows (its own labels; a reused
+    code's file has other surveys' labels under the same answer code), each counted exactly from wave `at` of its
+    question file by answer code: the book's % rounded to 0.1 put 36 of 182 averages $1 off (Clothing $215 for $214, the
+    E2E check of 28 Nov 2026). Answers without a dollar amount left out. The Sector databank's "Spend by sector" (the
+    roadmap's Sector Spend Insights, 27 Nov 2026). None under three bands."""
+    count = {question.codes[a]: question.counts(at, question.total, [a])[0] for a in question.offered(at)}
+    bands = [(amount, count.get(row["code"], 0)) for row in rows if (amount := band(row["label"]))]
+    total = sum(n for _, n in bands)
     if len(bands) < 3 or not total:
         return None
-    return round(sum(share * ((low + high) / 2 if high is not None else low) for (low, high), share in bands) / total)
+    return round(sum(n * ((low + high) / 2 if high is not None else low) for (low, high), n in bands) / total)
 
 
 def changes(values: list[float | None], waves: list[dict]) -> list[dict]:
@@ -152,13 +162,15 @@ def build(books: dict[int, dict], waves: list[dict], question_file) -> dict:
         tagged = [w for w in surveys if w.get("modules")]
         if not tagged:
             continue
-        sentences = {}   # each question's wording, as the newest tagged survey asked it
+        sentences = {}   # each question's wording, as the newest tagged survey asked it, and its older wordings
         for code in codes:
             asked = [q for w in tagged for q in books[w["survey_id"]]["questions"] if q["id"] == code]
             if asked:
-                sentences[code] = first_sentence(asked[-1]["text"])
-        found = [{code: find(books[w["survey_id"]], code, sentence) for code, sentence in sentences.items()} for w in surveys]
-        keep = [k for k, questions in enumerate(found) if any(questions.values())]
+                sentences[code] = {first_sentence(text) for text in [asked[-1]["text"], *sector.get("older_wordings", {}).get(code, [])]}
+        found = [{code: find(books[w["survey_id"]], code, wording) for code, wording in sentences.items()} for w in surveys]
+        # a survey that asked only the purchase question is left out: its follow-ups went unanswered (Footwear 1 Jun 2026),
+        # and a column of dashes says nothing
+        keep = [k for k, questions in enumerate(found) if any(q for code, q in questions.items() if code != (purchase or {}).get("question"))]
         surveys, found = [surveys[k] for k in keep], [found[k] for k in keep]
         if not surveys:   # none of its questions found (a code mistyped in the config): the other sectors still publish
             continue
@@ -199,7 +211,10 @@ def build(books: dict[int, dict], waves: list[dict], question_file) -> dict:
         spend = None
         if "spend" in sector:   # each survey's spend question, as its book asked it (found by wording)
             asked = [questions.get(sector["spend"]) for questions in found]
-            average = [q and average_spend(q["groups"][0]["rows"]) for q in asked]
+            average = []
+            for q, wave in zip(asked, surveys):
+                hit = locate(question_file, q, wave["survey_id"])
+                average.append(hit and average_spend(q["groups"][0]["rows"], *hit))
             spend = {"question": sector["spend"], "median": [q and median_band(q["groups"][0]["rows"]) for q in asked], "average": average,
                      "changes": changes(average, [{"date": w["wave_date"]} for w in surveys]) if average and average[-1] is not None else []}
         sectors.append({

@@ -45,14 +45,15 @@ export default function Changes() {
   }, {} as Record<string, number>);
   const topSection = Object.entries(sectionCounts).sort(([, a], [, b]) => b - a)[0];
 
-  const routing = all.filter(m => m.routing).length;
+  const then = against === "ly" ? vs.ly : vs.prior;
+  const routing = all.filter(m => m.r.flags.includes(against === "ly" ? "base_changed_ly" : "base_changed_prior")).length;
   const sections = [...new Set(book.questions.map(q => q.section))].sort((a, b) => a.localeCompare(b));
   const noLy = book.wave.ly_status !== "loaded";
 
   return <>
     <div className="page-head"><div>
-      <h1>{rows.length} {onlySig ? "significant " : ""}changes against {against === "ly" ? vs.ly : vs.prior}</h1>
-      <p className="lede">Wave of {fmtDate(book.wave.wave_date)} · Every answer of every question with a comparable figure, tested with a two-proportion z-test and kept as significant only if it survives the Benjamini–Hochberg correction across the {tested} answers that could be tested (5 % false discoveries), so chance moves are not reported as news. Answers whose question was asked of a different group than in {vs.prior} ({routing}), and answers with fewer than 30 people on one side are not tested. Respondent demographics are tested but hidden unless asked for: they shift with each week's sample.</p>
+      <h1>{rows.length} {onlySig ? "significant " : ""}changes against {then}</h1>
+      <p className="lede">Wave of {fmtDate(book.wave.wave_date)} · Every answer of every question with a comparable figure, tested with a two-proportion z-test and kept as significant only if it survives the Benjamini–Hochberg correction across the {tested} answers that could be tested (5 % false discoveries), so chance moves are not reported as news. Answers whose question was asked of a different group than in {then} ({routing}), and answers with fewer than 30 people on one side are not tested. Respondent demographics are tested but hidden unless asked for: they shift with each week's sample.</p>
     </div></div>
 
     <div className="grid g4" style={{ marginBottom: 18 }}>
@@ -63,12 +64,12 @@ export default function Changes() {
       </div>
       <div className="card kpi">
         <div className="k-label">Largest significant increase</div>
-        <div className="k-value" style={{ color: topGainer ? "var(--ok)" : undefined }}><CountUp text={topGainer ? `+${topGainer[key]!.toFixed(1)} pts` : "—"} /></div>
+        <div className="k-value" style={{ color: topGainer ? "var(--ok)" : undefined }}><CountUp text={topGainer ? pts(topGainer[key]!) : "—"} /></div>
         <div className="k-note clamp"><b>{topGainer ? topGainer.label : "No significant increase"}</b>{topGainer ? ` · now ${pct(topGainer.now)}` : ""}</div>
       </div>
       <div className="card kpi">
         <div className="k-label">Largest significant decrease</div>
-        <div className="k-value" style={{ color: topDecliner ? "var(--red-text)" : undefined }}><CountUp text={topDecliner ? `${topDecliner[key]!.toFixed(1)} pts` : "—"} /></div>
+        <div className="k-value" style={{ color: topDecliner ? "var(--red-text)" : undefined }}><CountUp text={topDecliner ? pts(topDecliner[key]!) : "—"} /></div>
         <div className="k-note clamp"><b>{topDecliner ? topDecliner.label : "No significant decrease"}</b>{topDecliner ? ` · now ${pct(topDecliner.now)}` : ""}</div>
       </div>
       <div className="card kpi">

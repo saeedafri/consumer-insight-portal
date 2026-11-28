@@ -32,7 +32,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from functools import lru_cache
+from pathlib import Path
 
+import yaml
 from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.exc import OperationalError
 
@@ -49,9 +51,26 @@ TEST_BASE = 30        # respondents on each side before a difference is tested (
 FDR = 0.05            # Benjamini-Hochberg false-discovery rate for sig_prior / sig_ly
 FILLER = re.compile(r"^(none of (these|the above)|other\s*[-–(]|prefer not)", re.I)   # = frontend/src/api.ts isFiller
 CUTS = tuple(d for d in CUBE_DIMS if d != "total")
+SECTORS = Path(__file__).resolve().parents[1] / "config" / "sectors.yml"
 RESULT_COLUMNS = ("survey_id", "qcode", "dim", "dim_value", "item_id", "option_id", "question_id", "qtype", "item_label",
                   "option_code", "option_label", "sort_order", "concept_option_id", "n", "base_n", "pct", "prior_pct",
                   "prior_base_n", "ly_pct", "ly_base_n", "flags")
+
+
+@lru_cache(maxsize=1)
+def parallel_panel_words() -> tuple[str, ...]:
+    """Words in a survey title that mark a parallel panel fielded the same week as the main survey (the RIWI panel of
+    Dec 2023): config/sectors.yml leave_out_titles, the one rule the sector screens read too (etl/sectors.py). Such a
+    survey keeps its own book, but is never another week's prior week or last year, nor a week in a question's trend
+    (shared/data/payloads.py): read as one more week, it listed Dec 2023 weeks twice and compared a week with its twin."""
+    return tuple(yaml.safe_load(SECTORS.read_text(encoding="utf-8")).get("leave_out_titles") or ())
+
+
+def without_parallel_panels(title: str) -> tuple[str, dict]:
+    """The SQL condition, and its parameters, that leaves out parallel panels by the `title` column given."""
+    words = parallel_panel_words()
+    return ("".join(f" AND COALESCE({title}, '') NOT LIKE :panel{i}" for i in range(len(words))),
+            {f"panel{i}": f"%{word}%" for i, word in enumerate(words)})
 
 
 def _day(value) -> date:
@@ -69,16 +88,18 @@ def schema_has(engine, table: str, column: str, member: str = "") -> bool:
 
 
 def comparison(conn, survey_id: int) -> dict:
-    """The wave, its prior week and its same week last year (or why there is none). An annual or ad hoc study has no
-    prior week; its last year is the family's latest wave YEAR_DAYS earlier, since annual studies do not field on the
-    same week each year."""
+    """The wave, its prior week and its same week last year (or why there is none), never a parallel panel (the RIWI
+    weeks of Dec 2023 were 140's prior week and 186's and 187's last year). An annual or ad hoc study has no prior week;
+    its last year is the family's latest wave YEAR_DAYS earlier, since annual studies do not field on the same week
+    each year."""
     w = conn.execute(text("SELECT survey_id, survey_family, study_type, wave_date, platform, source_ref, field_end"
                           " FROM cip_survey WHERE survey_id = :s"), {"s": survey_id}).mappings().one()
     day = _day(w["wave_date"])
+    panels, words = without_parallel_panels("title")
     pick = lambda lo, hi, latest: conn.execute(text(
         "SELECT survey_id FROM cip_survey s WHERE survey_family = :f AND load_status = 'verified' AND survey_id <> :s"
-        f" AND wave_date BETWEEN :lo AND :hi ORDER BY wave_date {'DESC' if latest else 'ASC'} LIMIT 1"),
-        {"f": w["survey_family"], "s": survey_id, "lo": lo, "hi": hi}).scalar()
+        f"{panels} AND wave_date BETWEEN :lo AND :hi ORDER BY wave_date {'DESC' if latest else 'ASC'} LIMIT 1"),
+        {"f": w["survey_family"], "s": survey_id, "lo": lo, "hi": hi, **words}).scalar()
     prior = pick(day - timedelta(days=PRIOR_DAYS), day - timedelta(days=1), True) if w["study_type"] == "tracker" else None
     target = day - timedelta(days=364)
     if w["study_type"] == "tracker":

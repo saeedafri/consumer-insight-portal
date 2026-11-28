@@ -7,6 +7,11 @@ population:
   study_types: {tracker: US adults 18+}
   families: {CSI-CN: China adults 18+}
   ids: {}
+  # an annual or ad hoc study with fewer qualified respondents is a test or a stub, left out of the Survey Library's list
+  # and counts (28 Nov 2026: Test training n=2, a Holiday Shopping and Spending 2026 stub n=2 beside the real one's
+  # 2,042, Shopping and social media 2022 n=1, Euromonitor internal n=15, Coresight Connect n=35; the smallest real study
+  # has 100). Weekly waves always count.
+  smallest_study: 50
 
 panel: >-
   Respondents come from an online opt-in research panel (sample source 114 in Forsta/Decipher). Coresight's weekly US

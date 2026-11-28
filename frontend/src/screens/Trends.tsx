@@ -3,7 +3,7 @@
 import { useMemo, useRef } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { COLUMNS, CUT_OF, present, useBook, useQuestion, useWaves } from "../api";
-import { cellsOf, toTrend } from "../question";
+import { cellsOf, toTrend, withJoined } from "../question";
 import type { Column, Trend, Wave } from "../api";
 import { Card, copyLink, Empty, Failure, IconLink, Menu, Skeleton, SkeletonScreen, SourceLine, sourceText, ExportButtons , QuestionCode } from "../components/bits";
 import EChart, { downloadPng, tooltip, valueText } from "../components/EChart";
@@ -54,8 +54,9 @@ export default function Trends() {
   const waves = useWaves().data ?? [];
   const familySize = waves.filter(w => w.survey_family === book?.wave.survey_family && w.study_type === book?.wave.study_type && w.rows_built !== 0).length;
   const file = useQuestion(familySize > 1 ? book?.wave : undefined, question?.id ?? "");   // one wave: nothing to trend
-  const cells = useMemo(() => file.data && cellsOf(file.data), [file.data]);
-  const trend = { error: file.error, data: useMemo(() => file.data && cells && toTrend(file.data, cells, dim, value), [file.data, cells, dim, value]) };
+  const joined = useMemo(() => file.data && withJoined(file.data), [file.data]);   // the wording's weeks under other codes too
+  const cells = useMemo(() => joined && cellsOf(joined), [joined]);
+  const trend = { error: file.error, data: useMemo(() => joined && cells && toTrend(joined, cells, dim, value), [joined, cells, dim, value]) };
   if (isLoading) return <SkeletonScreen kind="question" />;
   if (error || !book) return <Failure error={error} />;
   if (!question) return <Empty>This wave has no questions with percentages.</Empty>;
@@ -94,17 +95,19 @@ export default function Trends() {
       </Card>
       {familySize === 1 ? <Card><Empty>This survey was fielded once, so there is no trend. Weekly tracker questions and repeated studies have trends.</Empty></Card>
         : trend.error ? <Failure error={trend.error} /> : !trend.data ? <Skeleton height={560} className="card" label="trend" />
-        : <TrendCard t={trend.data} column={column} waveId={id} from={{ ...book.wave, weighting: "unweighted" }} />}
+        : <TrendCard t={trend.data} column={column} waveId={id} from={{ ...book.wave, weighting: "unweighted" }} own={file.data!.waves.map(w => w[2])} />}
     </div>
   </div>;
 }
 
-function TrendCard({ t, column, waveId, from }: { t: Trend; column: Column; waveId: number; from: Wave }) {
+/** own: the version of each wave the code itself asked (not its wording's weeks under other codes), for the note on
+ *  the other questions this code held. */
+function TrendCard({ t, column, waveId, from, own }: { t: Trend; column: Column; waveId: number; from: Wave; own: number[] }) {
   if (!t.waves.length) return <Card><Empty>No respondents in {column === "Total" ? "this survey" : `the ${column} group`} answered this question. Choose another column or question.</Empty></Card>;
-  return <TrendView t={t} column={column} waveId={waveId} from={from} />;
+  return <TrendView t={t} column={column} waveId={waveId} from={from} own={own} />;
 }
 
-function TrendView({ t, column, waveId, from }: { t: Trend; column: Column; waveId: number; from: Wave }) {
+function TrendView({ t, column, waveId, from, own: ownVersions }: { t: Trend; column: Column; waveId: number; from: Wave; own: number[] }) {
   const [params, setParams] = useSearchParams();
   const chart = useRef<Chart | null>(null);
   const range = rangeOf(params.get("range"))[1];
@@ -115,7 +118,7 @@ function TrendView({ t, column, waveId, from }: { t: Trend; column: Column; wave
   const start = new Date(t.waves[at].wave_date).getTime() - range * DAY;
   const version = t.waves[at].version;   // one question per line: other versions reused this code for something else
   const idx = t.waves.map((w, i) => i).filter(i => t.waves[i].version === version && new Date(t.waves[i].wave_date).getTime() >= start && i <= at);
-  const elsewhere = t.waves.filter(w => w.version !== version).length;
+  const elsewhere = ownVersions.filter(v => v !== version).length;
   // this question's own answers: the other questions that reused the code keep theirs (Q22 once listed US states)
   const own = t.series.filter(s => t.waves.some((w, i) => w.version === version && s.pct[i] != null));
   const ranked = [...own].sort((a, b) => (b.pct[at] ?? -1) - (a.pct[at] ?? -1));

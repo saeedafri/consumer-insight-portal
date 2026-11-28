@@ -6,13 +6,21 @@
 // other weeks counts only the weeks asked with that wording (the weekly topic screens get theirs from the ETL instead,
 // etl/weekly_topics.py, which joins them the same way).
 import type { QuestionFile } from "./api";
-import { fmtDate } from "./stats";
+import { fmtDate, SMALL_BASE } from "./stats";
 
 export type Week = [number, string];   // [survey_id, date]
 export const EVERYONE = "total:Total";   // the cut of every respondent: the grey tick on the bars
 const YEAR = 365 * 86_400_000;   // the trend's default range: the year up to the chosen week
 export const time = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
 export const figure = (v: number | null | undefined) => v == null ? null : +v.toFixed(1);   // a figure as charts and exports show it
+/** A group as the screens name it: the data's GenZ and GenX are "Gen Z" and "Gen X", as on the Retailer databank. */
+export const groupLabel = (value: string) => value.replace(/^Gen([A-Z])$/, "Gen $1");
+/** A group's base for a hover, "n 4", with the small-base caution the rest of CIP gives under SMALL_BASE people. */
+export const baseText = (n: number | null | undefined) => `n ${n ?? "–"}${n != null && n < SMALL_BASE ? " ⚠ small base, read with caution" : ""}`;
+/** A bar's row label, with ⚠ when its group's base is under SMALL_BASE (as the Cross-tab's amber bases). */
+export const rowLabel = (row: string, n: number | null | undefined) => `${groupLabel(row)}${n != null && n < SMALL_BASE ? " ⚠" : ""}`;
+/** A value axis's numbers with a true minus (−10), as every figure writes it: ECharts' own "{value}" writes a hyphen. */
+export const axisNumber = (unit = "") => (v: number) => `${v < 0 ? "−" : ""}${Math.abs(v)}${unit}`;
 /** Answers that are no answer, left out of In store vs online's rankings: "None of these", the catch-all "Other"
  *  ("Other (please specify)"), "Don't know" / "Don't recall", "Prefer not to say"; a real answer that starts with Other
  *  ("Other savings / investments") stays. The same rule as config/weekly_topics.yml leave_out, which the ETL reads. */

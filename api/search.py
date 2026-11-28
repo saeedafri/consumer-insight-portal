@@ -17,6 +17,7 @@ for what it is about.
 from __future__ import annotations
 
 import difflib
+import math
 import re
 import sqlite3
 import threading
@@ -88,33 +89,44 @@ class SearchIndex:
     def search(self, query: str, limit: int = 40, offset: int = 0) -> dict:
         groups, corrections, expansions = self.understand(query)
         how, ids, total = "words", [], 0
+        match = lambda table, expr: self._match(table, expr, limit, offset, query.strip().upper())
         with self.lock:
             if groups:
-                ids, total = self._match("words", self._fts(groups, "AND"), limit, offset)
+                ids, total = match("words", self._fts(groups, "AND"))
                 if not ids and len(groups) > 2:   # a sentence: answers that match most of it, best first
-                    how, (ids, total) = "most words", self._match("words", self._fts(groups, "OR"), limit, offset)
+                    how, (ids, total) = "most words", match("words", self._fts(groups, "OR"))
                 if not ids:
                     fragments = [w for g in groups for t in g for w in WORD.findall(t) if len(w) >= 3]
                     if fragments:
-                        how, (ids, total) = "fragments", self._match("grams", " OR ".join(f'"{w}"' for w in fragments), limit, offset)
+                        how, (ids, total) = "fragments", match("grams", " OR ".join(f'"{w}"' for w in fragments))
                 if not ids:
-                    how, (ids, total) = "any word", self._match("words", self._fts(groups, "OR"), limit, offset)
+                    how, (ids, total) = "any word", match("words", self._fts(groups, "OR"))
         hidden = ("answers", "titles")   # searched, but too long to send back
         return {"results": [{k: v for k, v in self.docs[i].items() if k not in hidden} for i in ids], "total": total, "understood": {"corrected": corrections, "expanded": expansions, "matched_by": how}}
 
-    def _match(self, table: str, expr: str, limit: int, offset: int = 0) -> tuple[list[int], int]:
-        """One page of matches, best first (`limit` from `offset`), and how many match in all ("51–100 of 412")."""
+    def _match(self, table: str, expr: str, limit: int, offset: int = 0, code: str = "") -> tuple[list[int], int]:
+        """One page of matches, best first (`limit` from `offset`), and how many match in all ("51–100 of 412"). Best: the
+        question whose code was typed (`code`), then those that match in their own words (code, text, answers), not only
+        in the titles of the surveys that asked them, then relevance (BM25) raised by the waves that asked it, then the
+        latest asked. Before, the weekly tracker's own questions sank under one-off surveys: the weekly q4 was 53rd of 57
+        for "q4" and 225th of 230 for "Walmart", and XM3 19th of 21 for "holiday shopping status", behind "What is your
+        relationship status?" asked in surveys titled "Holiday Shopping" (the E2E check of 28 Nov 2026)."""
         if not expr:
             return [], 0
         weights = "bm25(words, 10.0, 4.0, 2.0, 1.0)" if table == "words" else "bm25(grams)"
-        try:   # rank by relevance, then the latest-asked wording first among near-ties
-            rows = self.db.execute(f"SELECT rowid, {weights} FROM {table} WHERE {table} MATCH ? ORDER BY 2 LIMIT ?",
-                                   (expr, (offset + limit) * 3)).fetchall()
-            total = self.db.execute(f"SELECT COUNT(*) FROM {table} WHERE {table} MATCH ?", (expr,)).fetchone()[0]
+        try:   # every match is ranked here: a few thousand at most, a few milliseconds
+            rows = self.db.execute(f"SELECT rowid, {weights} FROM {table} WHERE {table} MATCH ?", (expr,)).fetchall()
+            own = {r[0] for r in self.db.execute("SELECT rowid FROM words WHERE words MATCH ?", (f"{{qcode text answers}} : ({expr})",))} \
+                if table == "words" else set()
         except sqlite3.OperationalError:   # a stray operator in user text: treat it as no match
             return [], 0
-        ranked = sorted(rows, key=lambda r: (round(r[1], 1), -_recency(self.docs[r[0]])))
-        return [r[0] for r in ranked[offset:offset + limit]], total
+
+        def rank(row: tuple) -> tuple:   # BM25 is negative, lower is better: x3.3 for a question asked in 200 waves
+            doc = self.docs[row[0]]
+            return (doc["qcode"].upper() != code, row[0] not in own, round(row[1] * (1 + math.log10(doc.get("waves") or 1)), 1),
+                    -_recency(doc))
+        ranked = sorted(rows, key=rank)
+        return [r[0] for r in ranked[offset:offset + limit]], len(rows)
 
 
 def _recency(doc: dict) -> int:

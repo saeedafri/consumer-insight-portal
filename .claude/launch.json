@@ -83,6 +83,38 @@
         "8001"
       ],
       "port": 8001
+    },
+    {
+      "name": "ask-mockups",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8019",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "docs/research/ask-cip-rebuild-2026-11-27/mockups"
+      ],
+      "port": 8019
+    },
+    {
+      "name": "ask-review",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "APP_ENV=LOCAL",
+        "CIP_DEMO_LOGIN=1",
+        "CIP_SESSION_SECRET=local-dev-only-not-a-real-secret",
+        "CIP_WEB_DIR=frontend/out",
+        "CIP_PUBLISH_DIR=/Volumes/cip-cs/published",
+        ".venv/bin/python",
+        "-m",
+        "uvicorn",
+        "api.main:app",
+        "--port",
+        "8021"
+      ],
+      "port": 8021
     }
   ]
 }

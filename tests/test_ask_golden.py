@@ -91,3 +91,14 @@ def test_strict_cli_scores_local_answers_and_fails_regressions(tmp_path, monkeyp
     assert ask_golden.main() == 0
     response["table"]["cell_bases"][1][0] = 601
     assert ask_golden.main() == 1
+
+
+def test_misses_count_by_stem_and_four_outcomes():
+    # the real set is 115 stems with scripted suffixes, and an ask-back holding the right question is not a wrong answer
+    assert ask_golden.stem("Top beauty retailers by income") == ask_golden.stem("Top beauty retailers in all Waves?") == "top beauty retailers"
+    index = type("Index", (), {"docs": {"k": {"text": "Have you purchased any beauty products?"}}})()
+    item = {"q": "beauty buyers", "want": ["beauty products"]}
+    assert ask_golden.outcome(item, {"mode": "figures"}, [], index) == "right"
+    assert ask_golden.outcome(item, {"mode": "choose", "suggestions": [{"key": "k"}]}, ["no answer"], index) == "asked back"
+    assert ask_golden.outcome(item, {"mode": "figures"}, ["wrong question"], index) == "wrong"
+    assert ask_golden.outcome(item, {"mode": "none"}, ["no answer"], index) == "no answer"

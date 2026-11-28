@@ -39,7 +39,7 @@ def test_each_week_keeps_counts_so_any_weeks_add_up():
     assert sum(walmart["weeks"][w][0] for w in "01") == 60 and sum(walmart["weeks"][w][3] for w in "01") == 40
     assert costco["weeks"]["0"][0] == 1 and costco["weeks"]["1"][0] == 2
     assert doc["weeks"][0]["profile"][:gender] == [20, 20]   # everyone, for reference
-    assert walmart["sentiment"] == [["2026-11-02", 6, 10, "Apparel"]] and costco["sentiment"] is None   # 6 of 10 positive
+    assert walmart["sentiment"] == [["2026-11-02", 6, 10, "Clothing"]] and costco["sentiment"] is None   # 6 of 10 positive
 
 
 def test_a_sector_counts_its_buyers_from_its_own_question_in_its_own_weeks():
@@ -63,4 +63,28 @@ def test_sentiment_comes_from_every_sector_grid_not_only_apparel():
                                  "bits": {(7, 1): 0b111, (7, 2): 0b1000}}   # 4 asked about Costco: 3 positive
     costco = next(r for r in retailers.build([({"survey_id": 1, "wave_date": "2026-11-09"}, people)])["markets"][0]["retailers"]
                   if r["name"] == "Costco")
-    assert costco["sentiment"] == [["2026-11-09", 3, 4, "Mass merchants / warehouse clubs"]]
+    assert costco["sentiment"] == [["2026-11-09", 3, 4, "Mass merchants and warehouse clubs"]]
+
+
+def test_two_grids_of_one_week_keep_a_figure_each_named_by_their_sector():
+    """18 Aug 2025 asked the home furnishings and home improvement grids, both about Walmart: one figure per grid, so the
+    screen can read a sector's own (it kept only the first)."""
+    people = week(EVERYONE, 0, 0)
+    for code, bits in (("HF4", 0b11), ("HI4", 0b1)):   # home furnishings: 2 asked, 2 positive; home improvement: 2 asked, 1 positive
+        people["questions"][code] = {"rows": [[7, 1, "Walmart", 1, "Very positive"], [7, 2, "Walmart", 5, "Very negative"]],
+                                     "bits": {(7, 1): bits, (7, 2): 0b11 ^ bits}}
+    walmart = retailers.build([({"survey_id": 421, "wave_date": "2025-08-18"}, people)])["markets"][0]["retailers"][0]
+    assert walmart["sentiment"] == [["2025-08-18", 2, 2, "Home furnishings"], ["2025-08-18", 1, 2, "Home improvement"]]
+
+
+def test_a_sector_asked_of_every_adult_is_not_called_shoppers_and_a_named_survey_counts_as_its_week():
+    """Mass merchants' M1 is asked of everyone; 18 Aug 2025 ran home furnishings under a home-improvement title
+    (config/sectors.yml also_ran)."""
+    people = week(EVERYONE, 0, 0)
+    people["questions"]["M1"] = {"rows": [[90, 0, "Walmart", None, None]], "bits": {(0, 0): EVERYONE, (90, 0): FIRST_HALF}}
+    people["questions"]["HF1"] = {"rows": [[0, 61, "", 1, "Yes"]], "bits": {(0, 0): EVERYONE, (0, 61): 0b111}}
+    people["questions"]["HF2"] = {"rows": [[91, 0, "IKEA", None, None]], "bits": {(0, 0): 0b111, (91, 0): 0b1}}
+    doc = retailers.build([({"survey_id": 421, "wave_date": "2025-08-18", "modules": ["Mass merchants / warehouse clubs", "Home improvement / DIY"]}, people)])
+    markets = {m["name"]: m for m in doc["markets"]}
+    assert (markets["Mass merchants and warehouse clubs"]["base"], markets["Mass merchants and warehouse clubs"]["shoppers"]) == ("adults asked", "adults")
+    assert markets["Home furnishings"]["asked"] == [3] and markets["Home furnishings"]["shoppers"] == "home-furnishing buyers"

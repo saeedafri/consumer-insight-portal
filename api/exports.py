@@ -32,7 +32,8 @@ def check(spec: dict, limit: int = MAX_ROWS) -> dict:
     rows = rows or [["No rows match the screen's filters"] + [None] * (len(header) - 1)]   # an empty table still downloads
     plain = sorted({i for i in spec.get("plain") or [] if isinstance(i, int)})
     return {"name": file_name(spec.get("name")), "header": header, "rows": rows, "notes": notes,
-            **({"unit": "%"} if spec.get("unit") == "%" else {}), **({"plain": plain} if plain else {})}
+            **({"unit": "%"} if spec.get("unit") == "%" else {}), **({"plain": plain} if plain else {}),
+            **({"chart": spec["chart"]} if spec.get("chart") in ("line", "column") else {})}
 
 
 def check_book(spec: dict) -> dict:
@@ -119,6 +120,30 @@ def write_sheet(sheet, table: dict):
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
     sheet.freeze_panes = sheet.cell(top + 1, 2)
     sheet.auto_filter.ref = f"A{top}:{get_column_letter(len(widths))}{top + len(table['rows'])}"
+    if table.get("chart"):
+        add_chart(sheet, table, top)
+
+
+def add_chart(sheet, table: dict, top: int):
+    """A native Excel chart of the table beside it (Ask CIP's export, 27 Nov 2026): a line over time or columns, the first
+    column the categories and each other column a series, the first in Coresight red; editable in Excel like any chart."""
+    from openpyxl.chart import BarChart, LineChart, Reference
+    from openpyxl.utils import get_column_letter
+    columns, last = len(table["header"]), top + len(table["rows"])
+    chart = LineChart() if table["chart"] == "line" else BarChart()
+    if table["chart"] == "column":
+        chart.type, chart.grouping = "col", "clustered"
+    chart.title, chart.height, chart.width = table["notes"][0][:80] if table["notes"] else None, 9, 18
+    chart.y_axis.number_format = '0"%"'
+    chart.add_data(Reference(sheet, min_col=2, max_col=columns, min_row=top, max_row=last), titles_from_data=True)
+    chart.set_categories(Reference(sheet, min_col=1, min_row=top + 1, max_row=last))
+    for k, series in enumerate(chart.series):
+        colour = RED if k == 0 else BLUES[(k - 1) % len(BLUES)]
+        if table["chart"] == "line":
+            series.graphicalProperties.line.solidFill, series.smooth = colour, False
+        else:
+            series.graphicalProperties.solidFill = colour
+    sheet.add_chart(chart, f"{get_column_letter(columns + 2)}{top}")
 
 
 # The Coresight logo on a deck's cover: in the server image it sits with the built website (CIP_WEB_DIR), on a

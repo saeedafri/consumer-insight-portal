@@ -186,6 +186,51 @@ def test_the_book_gives_any_wave_in_the_dashboards_shape_and_the_picker_lists_it
     assert [w["survey_id"] for w in picker] == [412, 266] and picker[0]["prior_survey_id"] == 266
 
 
+def test_the_book_rounds_each_figure_and_change_once_from_the_counts(csi_db):
+    """The E2E check of 28 Nov 2026: srv_result keeps 3-dp percentages and the book rounded them again, so TF4's 81 of 404
+    (20.0495 %) read 20.1, and What changed subtracted the two 1-dp figures (CS2 -0.3 where the change is -0.4)."""
+    with csi_db.begin() as conn:
+        seed(conn, 266, date(2026, 10, 5), qualified=401, xm1_yes=80, xm1_base=401)      # 19.9501 %
+        seed(conn, 412, date(2026, 10, 12), qualified=404, xm1_yes=81, xm1_base=404)     # 20.0495 %
+    serving.build_wave(266), serving.build_wave(412)
+    yes = next(r for r in served(payloads.book(412))["questions"][0]["groups"][0]["rows"] if r["label"] == "Yes")
+    assert (yes["Total"], yes["prior"], yes["change"], yes["ly"], yes["change_ly"]) == (20.0, 20.0, 0.1, None, None)
+    trend = served(payloads.trend(412, "XM1", "total", "Total"))
+    assert next(s for s in trend["series"] if s["label"] == "Yes")["pct"] == [20.0, 20.0]
+
+
+def test_a_parallel_panel_is_no_weeks_prior_or_last_year_and_no_week_of_a_trend(csi_db):
+    """Dec 2023's RIWI panel (titles ending "- RIWI", config/sectors.yml leave_out_titles) fielded beside the main survey:
+    2 Dec 2024's last year was the RIWI survey of 4 Dec 2023 (Personal finances ▼3.4 where the main panel gives ▲3.9),
+    and the question files listed the week twice."""
+    with csi_db.begin() as conn:
+        seed(conn, 135, date(2023, 12, 4), qualified=400, xm1_yes=64, xm1_base=400)
+        conn.execute(sa.text("UPDATE cip_survey SET title = 'Shopping and Spending - inc eCommerce - RIWI', wave_label = 'RIWI'"
+                             " WHERE survey_id = 135"))
+        seed(conn, 136, date(2023, 12, 4), qualified=400, xm1_yes=35, xm1_base=400)
+        seed(conn, 186, date(2024, 12, 2), qualified=400, xm1_yes=50, xm1_base=400)
+    for sid in (135, 136, 186):
+        serving.build_wave(sid)
+    with csi_db.connect() as conn:
+        assert conn.execute(sa.text("SELECT ly_survey_id FROM srv_wave WHERE survey_id = 186")).scalar() == 136
+    assert [w[0] for w in served(payloads.question("CSI-US", "tracker", "XM1"))["waves"]] == [136, 186]
+
+
+def test_a_renamed_answer_is_one_answer_in_the_trackers_question_file(csi_db):
+    """28 Dec 2020 answered "Food or beverages", later weeks "Food or beverages (i.e., groceries)": config/weekly_topics.yml
+    renamed_answers joins them, so the groceries line starts in Dec 2020 (In store vs online, Trends)."""
+    asked = "Which, if any, of these categories have you purchased IN A STORE in the past two weeks?"
+    with csi_db.begin() as conn:
+        for sid, day, label in ((317, date(2020, 12, 28), "Food or beverages"), (318, date(2021, 1, 4), "Food or beverages (i.e., groceries)")):
+            seed(conn, sid, day, qualified=400, xm1_yes=1, xm1_base=400, qtext="Unrelated XM1")
+            add_question(conn, sid, "q2", asked, 300, 400, (label, "None of these"))
+    for sid in (317, 318):
+        serving.build_wave(sid)
+    data = served(payloads.question("CSI-US", "tracker", "q2"))
+    assert [a[2] for a in data["answers"]] == ["Food or beverages (i.e., groceries)", "None of these"]
+    assert sorted((w, n) for w, c, a, n in zip(data["w"], data["c"], data["a"], data["n"]) if c == 0 and a == 0) == [(0, 300), (1, 300)]
+
+
 def test_an_answer_nobody_in_a_group_chose_shows_zero_not_blank(csi_db):
     with csi_db.begin() as conn:   # the cube keeps no cell for an answer nobody gave: Gen Z's "No" here
         seed(conn, 412, date(2026, 10, 12), qualified=404, xm1_yes=125, xm1_base=404)
@@ -267,6 +312,11 @@ def test_the_question_file_follows_its_wording_across_renumbered_codes(csi_db):
                              [306, "2024-02-05", 2]]
     assert data["versions"] == ["Are you currently avoiding public areas?", done] and data["codes"] == ["Q7", "Q8_2"]
     assert data["borrowed"] == [300, 306]   # named, for Ask CIP to read only q1's own waves (20 Nov 2026)
+    # 304 asked q1 for another question and this one as Q8_2: kept apart, so its own question stays and the trend has no
+    # hole (28 Nov 2026: q2 lost 68 in-store weeks to its Covid question); folded in on screen (frontend/src/question.ts)
+    joined = data["joined"]
+    assert joined["waves"] == [[304, "2023-12-25", 2]] and "Q8_2" in data["codes"]
+    assert sorted(zip(joined["w"], joined["c"], joined["n"], joined["b"])) == [(0, 0, 150, 400), (0, 0, 250, 400), (0, 1, 15, 40), (0, 1, 25, 40)]
     # Q7 numbered its answers the other way round: they join q1's Yes and No, not two more rows each half empty
     assert sorted(a[2] for a in data["answers"]) == ["No", "Yes"]
     yes = next(i for i, a in enumerate(data["answers"]) if a[2] == "Yes")

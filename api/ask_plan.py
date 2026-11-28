@@ -368,6 +368,45 @@ def needs_plan(plan: dict) -> bool:
             or (bool(plan.get("test")) and not groups and len(plan["waves"]) == 2))
 
 
+def plan_layout(plan: dict, rows: list[dict], shown: list[dict], subject: str, say: dict, index: Index, published, ids: dict) -> dict | None:
+    """The combined answer in the manager's layout (api/ask_layout.py): groups split by another question's answers (T6), one
+    group against everyone (T6, everyone worked out too), a both/either beside each part (T7), week by week, or a top list;
+    None for a funnel, which keeps its own sentence."""
+    from api import ask_engine, ask_layout, assistant
+    from api.ask_figures import label_date
+    weeks = plan["waves"]
+    latest = [r for r in shown if r["when"] == shown[-1]["when"]]
+    one_week = latest[0]["when"] if latest[0]["when"] != "pooled" else None   # a split or a single figure is one week's
+    start = ask_layout.opening(one_week or weeks[0], one_week or weeks[-1], index.newest)
+    row = lambda r: (r.get("group") or r["label"], r["pct"], r["n"], r["base"])   # noqa: E731
+    who = f"{say['among']} in the US" if say.get("among") else "US adults"
+    op = plan.get("op", "share")
+    if not assistant.subject_of(say.get("ask", "")):   # no plain phrase for it ("Recent retailers: any"): said as the answer chosen
+        subject = f"gave the answer “{subject}”"
+    if op == "chain":
+        found = None
+    elif op in ("top", "counts"):
+        found = ask_layout.ranked_rows([row(r) for r in shown], start, who)
+    elif "by" in plan:
+        found = ask_layout.compared_rows([row(r) for r in latest], subject, start, "T6")
+    elif len(shown) > 1:
+        found = ask_layout.series_rows([(r["when"], r["pct"], r["n"], r["base"]) for r in shown], subject, who, index.newest)
+    elif plan.get("among"):   # the group against everyone asked the same, worked out the same way
+        everyone = [r for r in ask_engine.run({k: v for k, v in plan.items() if k not in ("among", "say")}, published, ids)
+                    if r.get("pct") is not None and r["when"] == shown[0]["when"]]   # the same week as the group's figure
+        found = ask_layout.compared_rows([(say.get("among") or "the group", *row(shown[0])[1:])] + [("all US adults", *row(r)[1:]) for r in everyone[:1]],
+                                         subject, start, "T6") if everyone else None
+    else:   # both / either / not: the result beside each part
+        parts = (plan.get("ask") or {}).get("both") or (plan.get("ask") or {}).get("either") or []
+        figures = [(described(c, index), *row(r)[1:]) for c in parts[:2]
+                   for r in [x for x in ask_engine.run({**plan, "ask": c}, published, ids) if x.get("pct") is not None and x["when"] == shown[0]["when"]][:1]]
+        found = ask_layout.single_row(row(shown[0]), subject, start, who, figures)
+    if not found:
+        return None
+    span = label_date(weeks[0]) if len(weeks) == 1 else f"{label_date(weeks[0])} to {label_date(weeks[-1])}"
+    return {**found, "survey": ask_layout.SURVEYS["CSI-US"], "source": f"{ask_layout.SURVEYS['CSI-US']}, {span}", "title": subject[0].upper() + subject[1:]}
+
+
 def answer(question: str, index: Index, visible: set[int], weighted: bool = False) -> dict | None:
     """Ask's answer to a combined question from its plan and the plan engine's figures, or None to answer it as before."""
     from api import ask_engine, ask_figures as figures, assistant
@@ -455,7 +494,8 @@ def answer(question: str, index: Index, visible: set[int], weighted: bool = Fals
     read_as += [{"label": "Steps", "value": " → ".join(described(c, index) for c in plan["steps"])}] if plan.get("steps") else []
     read_as += [{"label": "Weeks", "value": ", ".join(figures.label_date(w) for w in plan["waves"]) + (" pooled" if plan.get("per") == "pooled" else "")}]
     notes = ["Worked out from each week's respondents: every figure is a share of those asked the question, in the group named."]
-    return {"answer": headline, "headline": headline, "mode": "figures", "no_source": False, "chart": chart,
+    layout = plan_layout(plan, rows, shown, subject, say, index, published, ids)
+    return {"answer": headline, "headline": headline, "mode": "figures", "no_source": False, "chart": chart, "layout": layout,
             "table": {"head": head, "rows": table_rows, "bases": [b[-1] or 0 for b in bases], "cell_bases": bases},
             "sources": sources, "suggestions": [], "notes": notes, "understood": "plan", "read_as": read_as, "plan": plan,
             "source_line": f"From {', '.join(s['qcode'] for s in sources)} ({'; '.join(s['question'][:80] for s in sources)}).",

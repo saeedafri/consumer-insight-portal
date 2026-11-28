@@ -11,6 +11,19 @@ export function cellsOf(f: QuestionFile): Cells {
   return (w, c, a) => map.get((w * nc + c) * na + a);
 }
 
+/** The file with its joined waves (shared/data/payloads.py question_from: one of its wordings asked under another code in
+ *  a week this code asked another question, as in-store buying under Q4 while q2 asked about Covid) folded in, oldest
+ *  first and a week's own question before its joined one: each wording's whole history, for Trends and Compare. */
+export function withJoined(f: QuestionFile): QuestionFile {
+  const j = f.joined;
+  if (!j) return f;
+  const all = [...f.waves.map((wave, i) => ({ wave, i, own: 1 })), ...j.waves.map((wave, i) => ({ wave, i, own: 0 }))]
+    .sort((x, y) => x.wave[1].localeCompare(y.wave[1]) || y.own - x.own);
+  const at = new Map(all.map((x, k) => [`${x.own}|${x.i}`, k]));
+  return { ...f, waves: all.map(x => x.wave), w: [...f.w.map(i => at.get(`1|${i}`)!), ...j.w.map(i => at.get(`0|${i}`)!)],
+           c: [...f.c, ...j.c], a: [...f.a, ...j.a], n: [...f.n, ...j.n], b: [...f.b, ...j.b] };
+}
+
 export const answerLabel = ([item, , label]: QuestionFile["answers"][number]) => (item && item !== label ? `${item} · ${label}` : label);
 
 /** The Trends shape for one cut value: the waves where that group answered, one series per answer. */

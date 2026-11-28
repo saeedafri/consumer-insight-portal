@@ -1,5 +1,7 @@
 // Every survey and wave: the latest tracker wave first, then the archive grouped by year, filterable. The Market filter
 // (US, China) also sets the cards at the top: the latest survey, the weekly surveys, the studies and the respondents.
+// Test and stub studies (fewer respondents than config/methodology.yml smallest_study: shared/data/payloads.describe
+// marks them listed: false) are neither listed nor counted.
 import CountUp from "../components/CountUp";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -17,7 +19,9 @@ const KIND: Record<string, string> = { tracker: "Weekly tracker", annual: "Annua
 const PLATFORM: Record<string, string> = { forsta: "Forsta", qualtrics: "Qualtrics", surveymonkey: "SurveyMonkey" };
 
 export default function Library() {
-  const { data: waves, isLoading, error } = useWaves();
+  const { data: published, isLoading, error } = useWaves();
+  // test and stub studies (a handful of respondents: config/methodology.yml smallest_study) are neither listed nor counted
+  const waves = useMemo(() => published?.filter(w => w.listed !== false), [published]);
   const [params, setParams] = useSearchParams();
   const kind = KIND[params.get("kind") ?? ""] ? params.get("kind")! : "all", year = params.get("year") ?? "all", event = params.get("event") ?? "all";
   const market = MARKETS[params.get("market") ?? ""] ? params.get("market")! : "all";

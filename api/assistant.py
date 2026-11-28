@@ -36,6 +36,7 @@ import yaml
 
 from api import ask_figures, ask_model, ask_plan, ask_reader
 from api.ask_engine import bit_mask, question_in
+from api import ask_layout
 from api.ask_index import FRAME_WORDS, LEARNED, STOP, Index, name_key, read_json, stems
 from etl import weighting
 from etl.serving import p_value
@@ -69,11 +70,21 @@ EVERY_WORD = 1.0                     # keyword match share at which every word o
 # ponytail: a rarity cut, measured on the golden, fresh and researched sets (21 Nov 2026): words missed by right picks
 # were common (bought 2.1, used 2.9, why 3.2), by wrong ones specific (subscription 3.4, progress 3.5, inflation 4.7)
 RARE_WORD = 3.3                      # api/ask_index.py idf: a word at least this specific is a subject, not a verb
-NEAR_EQUAL = 0.8                     # rules only: a match scoring this share of the best counts as near-equal
+# closeness an unsure reader's pick may give up for one using every specific word: 0.02 kept the three right swaps in the
+# five single-question sets and stopped three wrong ones (0.027, 0.09, words only); never for a pick found by words alone (Phase 4, 28 Nov 2026)
+NEAR_SWAP = 0.02
+NEAR_EQUAL = 0.8                    # rules only: a match scoring this share of the best counts as near-equal
 EVENT = re.compile(r"\b(prime day|big deal|deal days|black friday|cyber monday|holidays?|valentine'?s?|easter|halloween|thanksgiving|"
                    r"back.to.school|mother'?s day|father'?s day|labor day|memorial day|super bowl|presidents?'?s? day|fourth of july|"
                    r"4th of july|independence day|new year'?s?|singles?'?s? day|christmas)\b")   # a survey question about one answers only
 # a question naming one ("personal finances quarterly" was the Labor Day question, staging, 14 Nov 2026)
+# respondents of one week followed into another ("also answered the 16 Nov survey", "also took part on 2 Nov"): each
+# week asks different people
+FOLLOWED = re.compile(r"\balso (?:answered|responded(?: to)?|took(?: part)?|did)(?: in| on)? (?:the |a |an )?"
+                      r"(?:\d{1,2} (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b|(?:[\w-]+ )?(?:survey|wave|week)\b)")
+# an amount asked, next to what is counted: "mean" or "typical" alone is not one ("What does this mean for Amazon shoppers?")
+ASKS_AMOUNT = re.compile(r"\b(?:median|average|mean|typical)\b(?:\W+\w+){0,3}?\W+(?:spend|spent|spending|budget|amount|price|cost|order|bill)s?\b"
+                         r"|\bhow much\b.*\bspen[dt]", re.I)   # ask_figures.middle
 GENERIC = re.compile(r"^(yes|no|none of (these|the above)|other.*|don['’]?t know.*|not sure|prefer not to say|n/?a)$", re.I)   # alike in any question
 SAME_ANSWERS = 0.5                   # share of answers alike for two questions to be the same one asked under other codes
 SCALE_ANSWERS = 5                    # an answer list this short (a rating scale) proves nothing alone: the wording must match too
@@ -83,7 +94,10 @@ NOTE_STARTS = ("Note", "Not asked", "Includes the same question", "Shown by")   
 SMALL_BASE = 50                      # config/methodology.yml: a figure on fewer people is marked small base, read with caution
 SPLIT_MAX = 6                        # a single choice of this many answers or fewer is one segmented bar (dataviz: ≤ 6 parts)
 HEATMAP_MIN = 4                      # groups and answers from which a cut is a heatmap: fewer read better as grouped bars
-FOLLOW_CUTS = (("generation", "generation"), ("income_band", "income"))   # the cuts a follow-up offers, in words ask_reader reads
+# the cuts a follow-up offers per country: the cut, the words ask_reader reads, the chip's short text (01 4.4; China has no
+# generations, its income is monthly and in RMB)
+FOLLOW_CUTS = {"US": (("generation", "generation", "By generation"), ("income_band", "income", "By household income"), ("gender", "gender", "By gender")),
+               "CN": (("age_band", "age group", "By age group"), ("urbanicity", "city tier", "By city tier"), ("income_band", "income", "By monthly income"))}
 SHARES = [(1 / 10, "one in ten"), (1 / 8, "one in eight"), (1 / 7, "one in seven"), (1 / 6, "one in six"), (1 / 5, "one in five"), (1 / 4, "one in four"), (1 / 3, "one in three"), (2 / 5, "two in five"),
           (1 / 2, "half"), (3 / 5, "three in five"), (2 / 3, "two in three"), (3 / 4, "three in four"), (4 / 5, "four in five"),
           (9 / 10, "nine in ten")]   # the plain fractions a share is said as (say_share)
@@ -93,6 +107,9 @@ INDEX_LOCK = threading.Lock()
 ANSWERS: OrderedDict = OrderedDict()
 ANSWERS_LOCK = threading.Lock()
 FAMILY = {"CSI-US": "Weekly US consumer tracker", "CSI-CN": "Weekly China consumer tracker"}
+TWINS = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" / "countries.yml").read_text())["CN"].get("ask_twins", {})   # China code → US code
+MARKET_NAMES = {"US": "US", "CN": "China"}
+WHY = re.compile(r"(?i)\s*(why\b|what (made|makes|caused|causes|drove|drives|is driving|explains)\b)")   # a question asking for a reason
 
 
 def index_for(root: Path, version: str, waves: list[dict]) -> Index:
@@ -714,14 +731,14 @@ def follow_ups(plan: dict, fig: dict, doc: dict, named: list[int]) -> list[dict]
     # demographic question is the sample's make-up: its "Age group over time" read "age group" as a cut (15 Nov 2026)
     if names_a_period(subject) or doc.get("area") == "demographics":
         return []
-    questions = []
+    questions = []   # (question, the chip's short label)
     if not plan["cuts"]:
-        questions += [f"{subject} by {words}" for dim, words in FOLLOW_CUTS if dim in doc["cuts"]]
+        questions += [(f"{subject} by {words}", label) for dim, words, label in FOLLOW_CUTS["CN" if doc.get("family") == "CSI-CN" else "US"] if dim in doc["cuts"]]
     if len(fig["periods"]) == 1 and doc["waves"] >= 3:
-        questions.append(f"{subject} over time")
+        questions.append((f"{subject} over time", "Over time"))
     elif len(fig["periods"]) > 2 and len(fig["columns"]) == 1:
-        questions.append(f"{subject} in the first and latest wave")   # the subject first, as written: no capital mid-sentence
-    return [{"question": q, "key": doc["key"]} for q in questions[:3]]
+        questions.append((f"{subject} in the first and latest wave", "First vs latest"))   # the subject first, as written: no capital mid-sentence
+    return [{"question": q, "label": label, "key": doc["key"]} for q, label in questions[:4]]
 
 
 def period_of(when: list[dict]) -> str:
@@ -911,11 +928,17 @@ def side_answers(question: str, fig: dict) -> list[int]:
 ANALYST_WORDS = frozenset("""doing going faring performing performance perform growing declining shrinking trend trends
 trending evolving evolved evolution changing changes vary varies varied often frequently commonly common main key seeing
 used use usage ranked ranking level levels status behavior behaviour segment segments overall popular popularity rate rates
-list lists individuals stats statistics breakdown insights""".split())
+list lists individuals stats statistics breakdown insights median average mean typical""".split())   # the last four: an amount asked (ASKS_AMOUNT)
 
 
 # how a verdict is asked ("How is Amazon doing lately?"): never a subject a survey question must name (22 Nov 2026)
-HOW_IT_IS = frozenset("doing going faring performing performance lately nowadays recently currently".split())
+HOW_IT_IS = frozenset("doing going faring performing performance lately nowadays recently currently affect affects affecting "
+                      "gaining losing".split())   # "how are gas prices affecting spending", "gaining or losing shoppers"
+
+
+def amount_bands(doc: dict) -> bool:
+    """Whether a survey question's answers are amount bands ($50-$99, ...), which ask_figures.middle reads."""
+    return sum(bool(ask_figures.band(label)) for label in doc.get("labels", [])) >= 3
 
 
 def lacking(plan: dict, key: str, index: Index, skip: frozenset = ANALYST_WORDS) -> tuple[list[str], int, bool]:
@@ -1052,7 +1075,7 @@ def topic_verdict(code: str, plan: dict, index: Index, visible: set[int]) -> dic
                      ([f"Note: small base, under {SMALL_BASE} respondents, for {', '.join(small)}: read with caution."] if small else []),
             "sources": sources, "suggestions": [], "weighting": "unweighted",
             "next": [{"question": f"{docs[head_tile['qcode'].upper()][1].get('name') or head_tile['label']} by {words}", "key": docs[head_tile["qcode"].upper()][0]}
-                     for _, words in FOLLOW_CUTS if head_tile["qcode"].upper() in docs]}
+                     for _, words, _ in FOLLOW_CUTS["US"] if head_tile["qcode"].upper() in docs]}
 
 
 def overview(question: str, plan: dict, index: Index, visible: set[int], quick: bool) -> dict | None:
@@ -1314,6 +1337,8 @@ def tested(fig: dict, answer: int) -> str | None:
 def said_as(dim1: str, value1: str, dim2: str, value2: str) -> str:
     """Two groups as people say them: "Gen Z women", "women in the South", "men aged 18-29"."""
     names = {dim1: PEOPLE.get(value1, value1), dim2: PEOPLE.get(value2, value2)}
+    if "gender" in names and names.get("generation", "").endswith("s"):   # "Boomer women", not "Boomers women"
+        names["generation"] = names["generation"][:-1]
     who = " ".join(names[d] for d in ("generation", "income_band", "urbanicity", "gender") if d in names) or ""
     for dim, words in (("census_region", "in the {}"), ("age_band", "aged {}")):
         if dim in names:
@@ -1416,7 +1441,23 @@ def two_groups(question: str, plan: dict, index: Index, visible: set[int], quick
             ([("Census-weighted figures (gender, age, region): counts of people are weighted estimates." if weighting == "weighted"
                else "Unweighted figures: these waves have no respondent file to weight.")] if weighted else []) + \
             ([f"Note: small base, under {SMALL_BASE} respondents in {', '.join(small)}: read with caution."] if small else [])
-    return {**inner, "answer": "\n".join([inner.get("source_line", ""), headline] + notes), "headline": headline, "takeaway": "",
+    # the manager's layout (T20): the pair of groups against all adults over the same pooled surveys, or the pairs compared
+    doc = {**index.docs[source["key"]], "text": source["question"]}
+    what, start = ask_layout.answer_phrase(doc, main), ask_layout.opening(dates[0], dates[-1], index.newest)
+    pairs = [(said_as(first, c.split(" · ")[0], second, c.split(" · ")[1]), cell[main, c][7], cell[main, c][5], cell[main, c][6])
+             for c in combos if (main, c) in cell]
+    if len(pairs) == 1 and weighting == "unweighted":
+        pooled_all = ask_figures.compute(index.counts(source["key"]), {"kind": "share", "grain": None, "cuts": {},
+                                                                        "when": [{"from": dates[0], "to": dates[-1]}]}, set(parts))
+        at = pooled_all["answers"].index(main) if main in pooled_all["answers"] else None
+        if at is not None and pooled_all["periods"]:
+            pairs.append(("all US adults" if plan["country"] == "US" else "all adults in China", float(pooled_all["pct"][0, 0, at]),
+                          int(pooled_all["people"][0, 0, at]), int(pooled_all["bases"][0, 0, at])))
+    layout = ask_layout.compared_rows(pairs, what, start, "T20", notes[:1])
+    if layout:
+        layout.update(survey=ask_layout.survey_name(doc["family"], plan["country"]), source=f"{ask_layout.survey_name(doc['family'], plan['country'])}, {span}",
+                      title=(doc.get("name") or "").strip())
+    return {**inner, "answer": "\n".join([inner.get("source_line", ""), headline] + notes), "headline": headline, "takeaway": "", "layout": layout,
             "points": [], "notes": notes, "tiles": [{"label": c, "value": f"{v:.1f}%", "note": f"{main}, {r[6]:,} respondents"}
                                                      for v, c, r in sorted(sure, reverse=True)[:3]],
             "chart": {"type": chart_type, "categories": listed, "series": series, "bases": bases, "unit": "%"},
@@ -1434,12 +1475,13 @@ def no_figure(message: str, plan: dict, suggestions=()) -> dict:
 
 
 def answer(question: str, index: Index, visible: set[int], quick: bool = False, key: str | None = None, weighted: bool = False,
-           combined: bool = True) -> dict:
+           combined: bool = True, market: str | None = None) -> dict:
     """{answer, chart, table, sources, suggestions, plan, mode, check, tiles, takeaway, next}: mode "figures" when
     answered, "none" when nothing in the surveys matches (then suggestions lists the closest questions, if any). quick:
     the nearest survey question by meaning and the rules, no model (~100 ms); check is then true when the model's reading
     may differ, and the page asks again without quick to have it read (the Ask page shows the quick answer meanwhile).
-    key: a follow-up's survey question (follow_ups), answered from it when this person may see it; else ignored."""
+    key: a follow-up's survey question (follow_ups), answered from it when this person may see it; else ignored. market:
+    the country the page's selector chose (US or CN), unless the question names one; None reads the country from the words."""
     question = index.correct_spelling(" ".join(str(question).split())[:500])   # "walmrt shoppers" is Walmart's
     original = question
     # a question joining survey questions, groups, weeks or a test: its plan, run on each week's respondents
@@ -1483,10 +1525,18 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
                           r"(?:weights|weighting)\b|\b(?:census|survey) weights\b", " ", question, flags=re.I)
         plan = ask_reader.read(question)
         text = plan["question"]
+    if market in ask_reader.COUNTRY_WORDS and not named_country(original):   # the selector's market; a named country wins
+        plan["country"] = market
+    by_age = plan["country"] == "CN" and "generation" in plan["cuts"]   # China records age groups, not generations (01 T12)
+    if by_age:
+        plan["cuts"] = {**{k: v for k, v in plan["cuts"].items() if k != "generation"}, "age_band": "all"}
     # "What about Gen Z?" alone, no topic: a follow-up asked first (ask() joins it to the last question when there is one)
     if re.match(r"\s*(?:what|how) about\b|\s*and (?:for|among|by)\b", original, re.I) and not plan["about"].strip(" ?.") and key is None:
         return no_figure("This reads as a follow-up. Ask it right after another question, or name the topic too, for example "
                          "“Amazon shoppers among Gen Z”.", plan)
+    if FOLLOWED.search(text):   # the same people in two weeks: answered by luck before, from a question not asked then
+        # (hard set H129 "also answered the 16 Nov survey", held-out-2 Y029 "also answered on 2 Nov", 28 Nov 2026)
+        return no_figure("Each week's survey asks different people, so no one can be followed from one week to another. Try comparing the two weeks' answers instead.", plan)
     if re.search(r"\b(?:who also (?:bought|purchased|used|shopped|selected|chose|answered)|"
                  r"(?:bought|purchased|shopped) (?:from|at) both)\b", text):
         return no_figure("This question needs a count of people who did both things. Try Audiences to check for overlap within a survey wave, or ask about each group separately.", plan)
@@ -1495,7 +1545,8 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     if (said := re.match(r"\s*did (?:the )?(.{2,40}?) (?:cause|make|lead) (?:people|consumers|shoppers|you) (?:to )?(.+)", question, re.I)):
         reported = answer(f"{said[1]} {said[2]}", index, visible, quick, key, weighted, combined)
         # only a question that asks about the cause and names the effect: "dine out less" is not in what tariffs changed
-        effect = {w[:5] for w in re.findall(r"[a-z]{4,}", said[2].lower())} - {"less", "more", "fewer"}
+        # its subject, not its period: "spend less? latest wave" asked for "wave" in what tariffs changed (real set, 28 Nov 2026)
+        effect = {w[:5] for w in re.findall(r"[a-z]{4,}", ask_reader.read(said[2])["about"])}
         source = reported.get("sources", [{}])[0].get("question", "").lower() if reported.get("sources") else ""
         shown = f"{source} {reported.get('answer', '')}".lower()
         if reported["mode"] == "figures" and said[1].lower().rstrip("s")[:6] in source and effect and \
@@ -1522,7 +1573,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
                and not any(words.search(w.lower()) for words in ask_reader.COUNTRY_WORDS.values())]
     if missing and key not in index.docs and sum(c.islower() for c in question) > sum(c.isupper() for c in question):
         near = index.find(plan["about"] or plan["question"], plan, 4, visible)
-        return no_figure(f"The surveys do not ask about {missing[0]}. The closest survey questions are below.", plan,
+        return no_figure(f"None of our surveys asks about {missing[0]}. These are the closest questions we have:", plan,
                          [{"qcode": h["qcode"], "text": h["text"][:200], "family": h["family"], "key": h["key"]} for h in near])
     selected = next((sid for sid in reversed(index.docs[key]["surveys"]) if sid in visible), None) if key in index.docs else None
     if selected is not None:   # a follow-up keeps the selected question's country
@@ -1592,7 +1643,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     names_an_answer = lambda: any(d["waves"] >= TREND_FROM * 5 and not visible.isdisjoint(d["surveys"]) and focus(question, d.get("labels", []))   # noqa: E731
                                   for d in index.docs.values())
     if not verified and closeness and max(closeness) < NEAR_FLOOR and hits[0]["match"] < EVERY_WORD and not names_an_answer():   # nothing close in meaning or words ("walmrt" is corrected): free, no model
-        return {"answer": "None of the surveys asks this. The closest questions are below.", "chart": None, "table": None,
+        return {"answer": "None of our surveys asks this. These are the closest questions we have:", "chart": None, "table": None,
                 "sources": [], "plan": plan, "mode": "none", "no_source": True, "understood": "meaning",
                 "suggestions": [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]}
     # "How many people bought Amazon prime?" is the Prime membership question, not "Amazon" in the retailer lists: the
@@ -1656,7 +1707,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     if candidates and not verified:   # the reader's or the AI's pick, or with neither the nearest by meaning
         understood = "reader" if by_reader else "model" if reading else "meaning"
         if reading and reading["pick"] is None:
-            return {"answer": "None of the surveys asks this. The closest questions are below.", "chart": None, "table": None,
+            return {"answer": "None of our surveys asks this. These are the closest questions we have:", "chart": None, "table": None,
                     "sources": [], "plan": plan, "mode": "none", "no_source": True, "understood": understood,
                     "check": quick and not reader_sure and ask_model.ready(),   # an unsure "none": the AI may find one
                     "suggestions": [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]}
@@ -1716,8 +1767,16 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         if by_reader and not reader_sure and any(index.idf.get(index.known(w) or "", 99) >= RARE_WORD for w in lacking(plan, chosen["key"], index)[0]):
             # an unsure reader's pick missing a specific word of the subject: the first candidate that uses every one
             # ("Holiday progress" took the recent purchases question over the shopping status one). Sure picks keep
-            # theirs: for them it broke 14 right answers that miss only a common word ("plans", "bought", 21 Nov 2026)
-            chosen = next((c for c in candidates if not lacking(plan, c["key"], index)[0]), chosen)
+            # theirs: for them it broke 14 right answers that miss only a common word ("plans", "bought", 21 Nov 2026).
+            # Only one found by meaning and about as near: "cutting back on dining out" went to "Why spend less on
+            # clothing?", found by its words alone (Phase 4, 28 Nov 2026)
+            chosen = next((c for c in candidates if "near" in chosen and "near" in c and c["near"] >= chosen["near"] - NEAR_SWAP
+                           and not lacking(plan, c["key"], index)[0]), chosen)
+        if ASKS_AMOUNT.search(original) and not amount_bands(chosen):
+            # an amount asked is answered from a question in dollar bands: "median holiday spend" took the spending-change
+            # question, then refused (real set, 28 Nov 2026)
+            amounts = [c for c in candidates if amount_bands(c)]   # one naming the subject ("holiday", not back-to-school)
+            chosen = next((c for c in amounts if not lacking(plan, c["key"], index)[0]), chosen)
         alternative = alternative if alternative and alternative["key"] != chosen["key"] else None
         # the next question that asks something else: a near-twin from another study (alike wording) is a right answer too
         others = [c["near"] for c in candidates if "near" in c and c["key"] != chosen["key"] and not index.alike(chosen["key"], c["key"])]
@@ -1737,8 +1796,8 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
                     "suggestions": shown, "check": quick and ask_model.ready()}
         if missing := unasked(plan, chosen["key"], index):   # the nearest question, but about something else
             rare = sorted(missing, key=lambda w: (w in ANALYST_WORDS, -index.idf.get(index.known(w) or "", 99)))[:3]   # unknown, then rarest; “used” last
-            return {**no_figure(f"None of the surveys asks this: no survey question covers {' and '.join(f'“{w}”' for w in rare)}. "
-                                "The closest questions are below.", plan,
+            return {**no_figure(f"None of our surveys asks this: no survey question covers {' and '.join(f'“{w}”' for w in rare)}. "
+                                "These are the closest questions we have:", plan,
                                 [{"qcode": c["qcode"], "text": c["text"][:200], "family": c["family"], "key": c["key"]} for c in candidates[:4]]),
                     "understood": understood}
         hits = [chosen] + ([alternative] if alternative else []) + [c for c in candidates if c["key"] not in (chosen["key"], (alternative or {}).get("key"))]
@@ -1748,7 +1807,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         understood = "name"
         hits = [{**index.docs[k], "key": k, "match": 1.0} for k in [first] + [k for k in shared if k != first]] + [h for h in hits if h["key"] not in shared]
     if understood == "rules" and hits and hits[0]["match"] < MIN_MATCH:   # too little matched: the closest, never an answer
-        return {"answer": "No survey question matches this well enough to answer it. The closest questions are below.",
+        return {"answer": "No survey question matches this well enough to answer it. These are the closest questions we have:",
                 "chart": None, "table": None, "sources": [], "plan": plan, "mode": "none", "no_source": True,
                 "suggestions": [{"qcode": h["qcode"], "text": h["text"][:200], "family": h["family"], "key": h["key"]} for h in hits[:4]]}
     offered = {}   # one per wording shown: a question asked by several studies was listed up to four times (Q6_2, 12 Nov)
@@ -1759,7 +1818,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
                                               "alt": bool(alternative) and h["key"] == alternative["key"]})
     suggestions = list(offered.values())[:4]
     if not hits:
-        return {"answer": "No survey question in the portal matches this. Try other words, or browse Search questions.",
+        return {"answer": "None of our surveys asks this. Try other words, or browse Search questions.",
                 "chart": None, "table": None, "sources": [], "suggestions": [], "plan": plan, "mode": "none", "no_source": True}
     if understood == "rules" and hits and hits[0]["waves"] <= 2:   # no model: a near-equal match with history is the better source
         longer = [h for h in hits[1:6] if h["waves"] >= TREND_FROM * 2 and h["score"] >= NEAR_EQUAL * hits[0]["score"]]
@@ -1809,8 +1868,11 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
             not_then = f"Not asked in the last {unit if n == 1 else f'{n} {unit}s'}: these are its latest figures."
             plan, fig = {**plan, "when": [{"latest": 1}]}, latest
     if not fig["periods"]:
-        asked = f"{ask_figures.label_date(fig['asked'][0])} – {ask_figures.label_date(fig['asked'][-1])}" if fig["asked"] else "never"
-        return {"answer": f"“{doc['text'][:200]}” ({doc['qcode']}) was not asked in the period you named: it was asked {asked}.",
+        asked = ("never" if not fig["asked"] else f"only on {ask_figures.label_date(fig['asked'][0])}" if fig["asked"][0] == fig["asked"][-1]
+                 else f"from {ask_figures.label_date(fig['asked'][0])} to {ask_figures.label_date(fig['asked'][-1])}")
+        market_name = MARKET_NAMES.get(plan["country"], plan["country"])
+        return {"answer": f"The {market_name} survey did not ask this in the period you named. “{doc['text'][:200]}” was asked {asked}.",
+                "next": [{"question": f"{(doc.get('name') or doc['text'][:80]).strip().rstrip('?.')}, latest figures", "key": doc["key"]}],
                 "chart": None, "table": None, "sources": [], "suggestions": suggestions, "plan": plan, "mode": "none", "no_source": True}
     said = (reading or {}).get("focus", [])
     if plan["kind"] == "top" or len(said) > 4:   # "top", or the model listing most answers: every answer, ranked
@@ -1826,7 +1888,10 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     rest = question   # words the survey itself uses ("compare to last year", an answer "Spent more than last year") are
     for a in named:   # the question's wording, not a period: without them, the plan is read again
         rest = re.sub(re.escape(fig["answers"][a]), " ", rest, flags=re.I)
-    own = " ".join(re.findall(r"[a-z0-9]+", " ".join([doc["text"]] + fig["answers"]).lower()))   # "than last year" in an answer too
+    # "than last year" in an answer too; only answers these waves offered: Q4's file also holds a reused code's "Much more
+    # than last year", which dropped "vs last year" from "Walmart food shoppers vs last year" (28 Nov 2026)
+    given = [name for a, name in enumerate(fig["answers"]) if not np.all(np.isnan(fig["pct"][:, :, a]))]
+    own = " ".join(re.findall(r"[a-z0-9]+", " ".join([doc["text"]] + given).lower()))
     for phrase in set(re.findall(r"\b(?:this|last|past|previous|next)\s+(?:\d+\s+|two\s+|three\s+|twelve\s+|few\s+)?(?:weeks?|months?|years?|days?|holiday season)\b", rest.lower())):
         if phrase in own:
             rest = re.sub(re.escape(phrase), " ", rest, flags=re.I)
@@ -1846,8 +1911,12 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         named = [net]
     elif sides := side_answers(asked_for, fig):
         named = sides
-    if len(plan["when"]) > 1 and fig["missing"]:
-        return no_figure("At least one requested period has no comparable survey data. Try a single period or choose two available periods in Trends.", plan, suggestions)
+    if len(plan["when"]) > 1 and fig["missing"]:   # "October vs July" with one of them not asked (01 T19): when it was, and the latest
+        asked = (f"only on {ask_figures.label_date(fig['asked'][0])}" if fig["asked"][0] == fig["asked"][-1] else
+                 f"from {ask_figures.label_date(fig['asked'][0])} to {ask_figures.label_date(fig['asked'][-1])}") if fig["asked"] else "never"
+        return {**no_figure(f"The {MARKET_NAMES.get(plan['country'], plan['country'])} survey did not ask this in one of the periods you named. "
+                            f"“{doc['text'][:200]}” was asked {asked}.", plan, suggestions),
+                "next": [{"question": f"{(doc.get('name') or doc['text'][:80]).strip().rstrip('?.')}, latest figures", "label": "Latest figures", "key": doc["key"]}]}
     if plan["cuts"]:
         dimension, groups = next(iter(plan["cuts"].items()))
         groups = list(plan["merge"]) if plan.get("merge") else groups
@@ -1876,6 +1945,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     sentences, shown = write(plan, fig, source_doc, named)
     sentences += [not_then] if not_then else []   # a note (NOTE_STARTS "Not asked")
     glance = {**brief(plan, fig, source_doc, shown, bool(named)), "next": follow_ups(plan, fig, doc, named)}
+    before_survey = None   # the survey before a single latest one, for the layout's "since" (api/ask_layout.py)
     if asks_test and shown and (verdict := tested(fig, shown[0])):
         glance["takeaway"] = verdict
     # one wave alone says nothing of direction: the change since the wave before, tested, as a chat would add (21 Nov 2026)
@@ -1891,6 +1961,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
         if change:
             then = ask_figures.label_date(before[-1])
             was = float(pair["pct"][0, 0, shown[0]])
+            before_survey = (then, was, change[1])
             glance["takeaway"] += f" That is {since(was + change[0], was, then, change[1])} for {quote(fig['answers'][shown[0]])}."
             since_label = then
             if len(glance["tiles"]) < 3:
@@ -1920,14 +1991,20 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     headline = lead or next((x for x in points if "%" in x), points[0] if points else "")
     sizes = [weights_of(index.root.parent / "waves" / str(sid) / "people.json.gz") for sid in last["waves"]]
     lead_on = named or [a for a in answers_given(fig) if fig["answers"][a].lower() == "yes"][:1]   # a yes/no question: its Yes
-    whole = all(w is not None for w in sizes) and lead_on and fig["bases"][-1, 0, lead_on[0]] >= 0.9 * sum(len(w) for w in sizes)
+    # everyone asked, not a sub-group: the base against the respondents of the wave(s), from the weights file, or the
+    # wave's qualified count where there is none (China's waves)
+    asked_all = sum(len(w) if w is not None else int(index.waves.get(sid, {}).get("qualified_n") or 0) for w, sid in zip(sizes, last["waves"]))
+    checked = (lead_on or shown)[:1]   # a scale names no answer: its first shown
+    asked_base = float(np.nansum(fig["bases"][-1, :, checked[0]])) if checked and len(fig["columns"]) > 1 else \
+        float(fig["bases"][-1, 0, checked[0]]) if checked else 0   # by a cut: every group's base together
+    whole = bool(checked) and asked_all > 0 and asked_base >= 0.9 * asked_all
     if not asks_test and (plain := in_words(condition["main"] if condition else original, fig, lead_on, doc["family"], condition, bool(whole))):
         headline = plain
     if by_week := week_by_week(fig, glance.get("series", [])):
         headline += " " + by_week
     # "median holiday spend", "average holiday budget": the middle band and an average from band mid-points, as an analyst
     # (or ChatGPT on the raw file) works it out; the shares by band follow as points (real questions, 23 Nov 2026)
-    middles = ask_figures.middle(fig) if re.search(r"\b(?:median|average|mean|typical)\b", original, re.I) else []
+    middles = ask_figures.middle(fig) if ASKS_AMOUNT.search(original) else []
     if not middles and re.search(r"\b(?:median|average (?:amount|spend(?:ing)?))\b", original, re.I):   # no amounts asked: no stand-in
         return no_figure("Ask CIP cannot calculate that spending or price statistic from its published response shares. Try a spending range or ask what share chose one.", plan)
     if middles:
@@ -1946,6 +2023,29 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
     if last["to"] < str(date.fromisoformat(index.newest) - timedelta(days=CURRENT_DAYS)):   # an old question: said up front
         headline += f" Last asked {ask_figures.label_date(last['to'])}."   # ("worried about losing their job": 2020)
     main_base = int(fig["bases"][0, 0, shown[0]]) if shown and len(fig["periods"]) == 1 and len(fig["columns"]) == 1 else 0
+    # the manager's layout (27 Nov 2026): one direct answer, three cards, the chart kind, the survey and source; None for a
+    # kind not laid out yet; two kinds of group at once are laid out by two_groups
+    everyone_middle = next(((b, m) for c, b, m in middles if fig["columns"][c][0] == "total"), None)
+    layout = None if len(asked_plan["cuts"]) > 1 else ask_layout.build(fig, source_doc, asked_plan, shown, plan["country"], index.newest, bool(whole),
+                                                     before_survey, index.waves.get(source_wave, {}).get("title", ""), everyone_middle)
+    if layout and weighting == "weighted":
+        layout["notes"].append("Census-weighted figures (gender, age and region); changes are tested on the unweighted figures.")
+    if layout and condition:   # a group defined by another question's answer: the sentence names it ("of GLP-1 users"), a note too
+        layout["lead"] = re.sub(r"\b(those asked|US adults|adults in China)\b", condition["text"], layout["lead"], count=1)
+        layout["notes"].insert(0, f"Every figure here is among {condition['text']} only.")
+    if layout and by_age:
+        layout["lead"] = "The China survey records age groups, not generations. " + layout["lead"]
+    # "why": the surveys record what people did and said, not why; the reading asked about and the surveys either side follow
+    # (01 T15): the one in the period the question names, else the biggest move between two surveys. Not for a reasons question
+    if layout and WHY.match(original) and not re.match(r"(?i)\s*(why|what is the main reason|what are the main reasons)\b", source_text):
+        a = shown[0]
+        points = [p for p in range(len(fig["periods"])) if not math.isnan(fig["pct"][p, 0, a])]
+        named = [w for w in asked_plan["when"] if "from" in w]
+        at = next((p for p in points if named and named[0]["from"] <= (fig["periods"][p]["to"] or "") <= named[0].get("to", "9999")), None)
+        if at is None and len(points) > 1:
+            at = max(points[1:], key=lambda p: abs(fig["pct"][p, 0, a] - fig["pct"][points[points.index(p) - 1], 0, a]))
+        moved = ask_layout.around(fig, source_doc, a, ask_layout.PEOPLE.get(plan["country"], "adults") if whole else "those asked", at) if at is not None else None
+        layout.update(moved or {"lead": "The surveys record what people did and said, not why. " + layout["lead"]})
     return {"answer": "\n".join(sentences), "headline": headline, "points": [x for x in points if x != headline], "notes": notes,
             "scope": {"country": plan["country"], "period": period, "waves": waves_used, "base": main_base},
             "source_line": sentences[0], "weighting": weighting, "understood": understood,
@@ -1955,7 +2055,7 @@ def answer(question: str, index: Index, visible: set[int], quick: bool = False, 
             "unsure": understood in ("meaning", "rules", "name") or (understood == "reader" and not reader_sure),
             "verify": {"question": question, "key": doc["key"], "code": doc["qcode"], "family": doc["family"], "focus": [fig["answers"][a] for a in named],
                        "kind": plan["kind"], "cut": next(iter(plan["cuts"]), "none"), "period": period_of(plan["when"])}, "codes": doc.get("codes", [doc["qcode"]]),
-            "chart": drawn, "table": table, "plan": plan, "mode": "figures", "no_source": False,
+            "chart": drawn, "table": table, "plan": plan, "mode": "figures", "no_source": False, "layout": layout,
             "suggestions": suggestions, **glance,
             "sources": [{"id": "S1", "key": doc["key"], "qcode": source_code, "question": source_text, "name": doc.get("name", ""), "family": doc["family"],
                          "survey_id": source_wave, "wave_date": last["to"], "waves": waves_used,
@@ -1980,20 +2080,39 @@ def figure_table(fig: dict, shown: list[int]) -> dict:
     return {"head": head, "rows": rows, "bases": bases, "cell_bases": cell_bases}
 
 
+def named_country(question: str) -> str | None:
+    """The country a question names ("Chinese consumers" → CN), or None."""
+    return next((code for code, words in ask_reader.COUNTRY_WORDS.items() if words.search(question.lower())), None)
+
+
+def twin_of(key: str, index: Index, visible: set[int]) -> str | None:
+    """The other market's question that asks the same (config/countries.yml CN ask_twins), when this person may see it."""
+    doc = index.docs[key]
+    codes = {c.lower() for c in doc.get("codes", [doc["qcode"]])}
+    pairs = [(us, cn) for cn, us in TWINS.items()] if doc["family"] == "CSI-US" else list(TWINS.items()) if doc["family"] == "CSI-CN" else []
+    family = "CSI-CN" if doc["family"] == "CSI-US" else "CSI-US"
+    wanted = {other.lower() for mine, other in pairs if mine.lower() in codes}
+    return next((k for k, d in index.docs.items() if d["family"] == family and wanted & {c.lower() for c in d.get("codes", [d["qcode"]])}
+                 and not visible.isdisjoint(d["surveys"])), None)
+
+
 def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool = False, key: str | None = None,
-        previous: str | None = None, previous_key: str | None = None, weighted: bool = False) -> dict:
+        previous: str | None = None, previous_key: str | None = None, weighted: bool = False, market: str | None = None) -> dict:
     """answer(), kept per published version (the index), access scope, quick or not, follow-up key and question wording; a question
     the AI check settled is learned, so the same or a close question is answered at once next time, with no AI. An answer from
     keywords alone, before the search vectors are ready (the minutes after a deploy), is not kept: it stayed until the next
     publish (15 Nov 2026). previous, previous_key: the question the page's latest answer was for and its survey question,
-    so a typed follow-up ("What about Gen Z?") is read with it (follow_on); the answer then says how it was read (asked_as)."""
+    so a typed follow-up ("What about Gen Z?") is read with it (follow_on); the answer then says how it was read (asked_as).
+    market: the Ask page's selector, US, CN or both (None: the MCP connector, the country read from the words). With Both,
+    a question either survey asks is asked back ("US results or China results?", mode "choose" with `markets`); with one
+    market, a question that market does not ask is answered from the other, the answer saying so up front (`notice`)."""
     question = " ".join(question.split())[:500]
     asked_as = None
     if previous and key is None:
         merged, follow_key = follow_on(question, " ".join(previous.split())[:500], previous_key, index)
         if follow_key:
             question, key, asked_as = merged, follow_key, merged
-    kept = (id(index), scope, quick, key, weighted, question.lower())
+    kept = (id(index), scope, quick, key, weighted, question.lower(), market)
     with ANSWERS_LOCK:
         cache = ANSWERS
         if kept in ANSWERS:
@@ -2002,7 +2121,42 @@ def ask(question: str, index: Index, visible: set[int], scope: str, quick: bool 
     # read before answering, as they can arrive while it runs; an index whose build ended with no vectors (no search model)
     # keeps its answers too, or every repeat was worked out again (second review, 15 Nov 2026)
     vectors_ready = index.vectors is not None or getattr(index, "settled", True)
-    found = answer(question, index, visible, quick, key, weighted)
+    named = named_country(question)
+    found = answer(question, index, visible, quick, key, weighted, market=None if market == "both" else market)
+    if found.get("mode") == "figures" and found.get("sources") and market is not None:   # the page: Same in China, and a related question
+        chips = list(found.get("next", []))
+        if (twin := twin_of(found["sources"][0]["key"], index, visible)) and twin in index.docs:
+            other = index.country.get(index.docs[twin]["surveys"][-1], "US")
+            chips.append({"question": question, "label": f"Same in {'China' if other == 'CN' else 'the US'}", "market": other})
+        mine = index.docs.get(found["sources"][0]["key"], {}).get("name", "")
+        related = next((s for s in found.get("suggestions", []) if s.get("key") in index.docs and s["key"] != found["sources"][0]["key"]), None)
+        if related:   # its name, or its wording when the two share a name
+            name = index.docs[related["key"]].get("name") or ""
+            chips.append({"question": question, "key": related["key"],
+                          "label": f"Related: {(name if name and name != mine else related['text'][:60]).strip().rstrip('?.')}"})
+        found = {**found, "next": chips[:5]}
+    if found.get("mode") == "none" and str(found.get("answer", "")).startswith("None of our surveys asks this.") and (subject := subject_of(question)):
+        found = {**found, "answer": found["answer"].replace("asks this.", f"asks whether people {subject}.", 1)}   # the subject named (01 T17)
+    if market in ("US", "CN") and not named and found.get("mode") != "figures":   # this market does not ask it: the other
+        other = "CN" if market == "US" else "US"
+        moved = answer(question, index, visible, quick, key, weighted, market=other)
+        if moved.get("mode") == "figures":
+            found = {**moved, "notice": f"The {MARKET_NAMES[market]} survey does not ask this, so these are {MARKET_NAMES[other]} results."}
+    elif market == "both" and not named and key is None and found.get("mode") == "figures" and found["sources"] \
+            and (twin := twin_of(found["sources"][0]["key"], index, visible)):
+        mine = index.docs[found["sources"][0]["key"]]
+        sides = sorted([(index.country.get(mine["surveys"][-1], "US"), mine["last"]), (index.country.get(index.docs[twin]["surveys"][-1], "US"), index.docs[twin]["last"])])
+        found = {"answer": "Both the US and China surveys ask this. Which results do you want?", "mode": "choose", "no_source": True,
+                 "chart": None, "table": None, "sources": [], "suggestions": [], "plan": found["plan"],
+                 "markets": [{"market": code, "label": f"{MARKET_NAMES[code]} results (latest {ask_figures.label_date(last)})"}
+                             for code, last in sorted(sides, key=lambda s: s[0] != "US")]}
+    # each other question offered, said plainly: its name, its survey (naming the country) and when it was last asked, no code
+    for offered in found.get("suggestions", []):
+        if (doc := index.docs.get(offered.get("key"))) and doc["surveys"]:
+            country = index.country.get(doc["surveys"][-1], "US")
+            title = index.waves.get(doc["surveys"][-1], {}).get("title", "")
+            offered["label"] = (f"{(doc.get('name') or doc['text'][:120]).strip().rstrip('?.')} "
+                                f"({ask_layout.survey_name(doc['family'], country, title)}, last asked {ask_figures.label_date(doc['last'])})")
     if (fixed := index.correct_spelling(question)) != question:   # the page says so: "answered as …, the spelling put right"
         found = {**found, "corrected": fixed}
     if asked_as:

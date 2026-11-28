@@ -51,3 +51,24 @@ def test_plain_english_questions_search_for_what_they_are_about():
     assert codes("what do people think about holiday shopping")[0] == "XM3"
     assert codes("are consumers cutting spending because of gas prices")[0] == "D14"   # most of the words match
     assert "results" in index.search("what do you think")   # only question words: searched as typed
+
+
+def test_the_typed_code_own_words_and_many_waves_come_first():
+    """The E2E check of 28 Nov 2026: the weekly q4 (asked in about 200 waves) was 53rd of 57 for "q4" and 225th of 230
+    for "Walmart", and XM3 was 19th of 21 for "holiday shopping status", behind "What is your relationship status?" of
+    surveys titled "Holiday Shopping"."""
+    weekly = " · ".join(f"Shopping and Spending - inc Luxury + Dept Stores + Holiday Tracker + GLP1, week {k}" for k in range(20))
+    docs = [{"qcode": "Q4", "text": "Which of these brands of Walmart products do you buy?", "answers": "Great Value · Equate",
+             "titles": "Online Grocery 2026", "waves": 1, "last": "2026-11-24"},
+            {"qcode": "q4", "text": "Which, if any, of these retailers have you bought any food products from in the past two weeks?",
+             "answers": "Walmart · Costco · Target · Kroger · Aldi · Publix · Trader Joe's", "titles": weekly, "waves": 200, "last": "2026-11-23"},
+            {"qcode": "D3", "text": "What is your relationship status?", "answers": "Married · Single",
+             "titles": "Holiday Shopping and Spending 2025 · Holiday Shopping 2026", "waves": 1, "last": "2026-09-07"},
+            {"qcode": "XM3", "text": "What is the current status of your holiday shopping?", "titles": weekly, "waves": 20, "last": "2026-11-23",
+             "answers": "I have not yet started my holiday shopping · I have started but not finished · I am finished"},
+            *({"qcode": f"X{k}", "text": f"Another question {k}?", "answers": "Yes · No", "titles": "Other", "waves": 1, "last": "2026-01-01"}
+              for k in range(8))]   # enough documents for BM25 to weigh a word: in half of four it weighs nothing
+    found = lambda q: [d["qcode"] for d in SearchIndex(docs, []).search(q)["results"]]
+    assert found("q4") == ["q4", "Q4"]                                # the typed code, the one asked in 200 waves first
+    assert found("walmart") == ["q4", "Q4"]
+    assert found("holiday shopping status") == ["XM3", "D3"]         # its own words, not the survey titles

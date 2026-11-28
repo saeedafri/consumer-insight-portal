@@ -705,8 +705,12 @@ def only_waves(doc: dict, shown: set) -> dict:
         raise HTTPException(404, "No such question")
     at = {old: new for new, old in enumerate(keep)}
     cells = [k for k, w in enumerate(doc["w"]) if w in at]
-    return {**doc, "waves": [doc["waves"][i] for i in keep], "w": [at[doc["w"][k]] for k in cells],
-            **{name: [doc[name][k] for k in cells] for name in ("c", "a", "n", "b")}}
+    out = {**doc, "waves": [doc["waves"][i] for i in keep], "w": [at[doc["w"][k]] for k in cells],
+           **{name: [doc[name][k] for k in cells] for name in ("c", "a", "n", "b")}}
+    out.pop("joined", None)   # its wording's waves under other codes (payloads.question_from): cut to the same waves
+    if any(w[0] in shown for w in doc.get("joined", {}).get("waves", ())):
+        out["joined"] = only_waves(doc["joined"], shown)
+    return out
 
 
 app.include_router(team.router, dependencies=[Depends(user)])   # saved views, alerts, audiences (api/team.py)
@@ -757,7 +761,7 @@ async def ask_index(who: dict):
 
 
 async def ask_answer(who: dict, question: str, quick: bool = False, check: bool = False, key: str | None = None,
-                     previous: str | None = None, previous_key: str | None = None, weighted: bool = False) -> dict:
+                     previous: str | None = None, previous_key: str | None = None, weighted: bool = False, market: str | None = None) -> dict:
     """Ask CIP for the page (POST /api/v1/ask) and the MCP connector's ask tool alike: Ask on the person's menu, their
     per-minute limit (config/access.yml limits.ask), and at most ASK_SLOTS questions computed at once per worker, so a
     burst queues briefly, then "busy", never slows the site. check: the page's second pass at a question it asked
@@ -773,7 +777,7 @@ async def ask_answer(who: dict, question: str, quick: bool = False, check: bool 
         raise HTTPException(503, "Ask CIP is busy: try again in a few seconds", headers={"Retry-After": "5"})
     try:
         index, shown = await ask_index(who)
-        return await run_in_threadpool(assistant.ask, question, index, shown, access.scope(who), quick, key, previous, previous_key, weighted)
+        return await run_in_threadpool(assistant.ask, question, index, shown, access.scope(who), quick, key, previous, previous_key, weighted, market)
     finally:
         ASK_SLOTS.release()
 
@@ -832,12 +836,15 @@ async def ask(request: Request, who: dict = Depends(user)) -> dict:
     database. Only from the waves this person may see. {"quick": true}: by meaning and rules alone, in ~100 ms;
     {"check": true}: the same question read by the model, asked after a quick answer that says check; {"key": …}: a
     "Continue the analysis" question, answered from that survey question (if this person may see it); {"previous": …,
-    "previous_key": …}: the question the latest answer was for and its source key, so "What about Gen Z?" is read with it."""
+    "previous_key": …}: the question the latest answer was for and its source key, so "What about Gen Z?" is read with it;
+    {"market": "US" | "CN" | "both"}: the page's market selector (a country the question names wins; Both asks back when
+    either survey asks the question)."""
     body = await team.json_body(request)
     question = str(body.get("question") or "")
     text = lambda name: body.get(name) if isinstance(body.get(name), str) else None   # noqa: E731
     answer = await ask_answer(who, question, quick=body.get("quick") is True, check=body.get("check") is True, key=text("key"),
-                              previous=text("previous"), previous_key=text("previous_key"), weighted=body.get("weighted") is True)
+                              previous=text("previous"), previous_key=text("previous_key"), weighted=body.get("weighted") is True,
+                              market=body.get("market") if body.get("market") in ("US", "CN", "both") else None)
     audit.record(request, "ask", target=question[:300], detail={"mode": answer["mode"], "sources": [s["link"] for s in answer["sources"]],
                                                                **({"asked_as": answer["asked_as"][:300]} if answer.get("asked_as") else {})})
     return answer

@@ -12,6 +12,7 @@
 #             question was asked of everyone (M1)
 #   spend     the "how much did you spend" question (dollar bands): its middle band is the Sector databank's and
 #             Home's "Median spend" card (eCommerce and Social commerce ask none)
+#   older_wordings  a table's question asked in other words in older surveys, as the survey wrote it: found by these too
 #
 # In the Databank's order (Clothing first); Social commerce is CIP's addition.
 
@@ -28,6 +29,9 @@ sectors:
     purchase: {question: BT1, codes: [1], label: Bought beauty products in the past three months}
     tables: {Retailers: BT13, Products: BT7, "Where they discover products": BT3}
     spend: BT15
+    older_wordings:
+      BT13: ["Which, if any, of the following retailers have you purchased beauty products from in the past three months (whether in-store or online)? Select all that apply."]   # 20 Feb 2023
+      BT7: ["Which of the following types of beauty products have you purchased in the past three months. Select all that apply or \"None of these\""]   # May 2023 - May 2025
   - name: Department stores
     buyers: department store shoppers
     module: Department stores
@@ -66,7 +70,7 @@ sectors:
   - name: Home improvement
     buyers: home-improvement buyers
     module: Home improvement / DIY
-    purchase: {question: HI1, codes: [1], label: Bought home-improvement, DIY or garden products in the past three months}
+    purchase: {question: HI1, codes: [1], label: "Bought home-improvement, DIY or garden products in the past three months"}
     tables: {Retailers: HI2, Products: HI3}
     spend: HI5
   - name: Luxury
@@ -94,3 +98,7 @@ sectors:
 
 # surveys left out: a parallel panel fielded the same week as the main survey (Dec 2023), one column per date
 leave_out_titles: ["RIWI"]
+# surveys that ran a sector their title does not name (survey_id: sector names), so the module tag misses it
+also_ran:
+  438: [Footwear]           # 13 Oct 2025, "inc Luxury + Holiday tracker + Big Deal Days Retro": FW1-FW6, 212 buyers
+  421: [Home furnishings]   # 18 Aug 2025, "inc Home improvement + Prime Day + …": HF1-HF5, 182 buyers (11 Aug's went unanswered)

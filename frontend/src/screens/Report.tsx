@@ -17,6 +17,7 @@ import { downloadTable } from "../csv";
 import EChart, { axisText, tooltip, valueText } from "../components/EChart";
 import { direction, fmtDate } from "../stats";
 import { C, useTheme } from "../theme";
+import { axisNumber } from "../weekly";
 
 const shortDate = (iso: string | null) => iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "–";
 const pct = (v: number | null | undefined) => v == null ? "–" : `${v.toFixed(1)}%`;
@@ -31,7 +32,7 @@ const lineChart = (series: object[]) => ({
   legend: { top: 0, left: 0, textStyle: axisText() },
   grid: { left: 8, right: 16, top: 40, bottom: 8, containLabel: true },
   xAxis: { type: "time", axisLabel: valueText() },
-  yAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" } },
+  yAxis: { type: "value", axisLabel: { ...valueText(), formatter: axisNumber("%") } },   // a net goes below 0: a true minus
   series,
 });
 

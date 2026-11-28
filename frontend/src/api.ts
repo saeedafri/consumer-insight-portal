@@ -27,11 +27,13 @@ export interface Wave {
   weighting_available?: string;   // the book carries Census-weighted figures (row.w): what they are weighted on
   in_field?: boolean;    // still collecting: the figures are partial
   client?: string | null; visibility?: string | null; verified?: boolean;
+  listed?: boolean;      // false: a test or stub study, left out of the Survey Library (config/methodology.yml smallest_study)
 }
 
 // A module dashboard (api/dashboards.py, config/dashboards.yml): the business team's "this week at a glance"
 export interface Metric { label: string; segment: string; pct: number | null; n: number | null; base: number;   // pct, n: null under HIDDEN_BASE people
-                          vs_prior: number | null; vs_ly: number | null; ly_pct: number | null; flags: string[] }
+                          vs_prior: number | null; vs_ly: number | null; ly_pct: number | null; flags: string[];
+                          prior_week?: string | null; ly_week?: string | null }   // the week compared with, when not the dashboard's
 export interface WaveRef { survey_id: number | null; wave_no: number; season: number; week_of: string; loaded: boolean }
 export interface Dashboard {
   dashboard: string; title: string; wave: WaveRef; prior: WaveRef | null; last_year: WaveRef | null; ly_rule: string;
@@ -42,6 +44,7 @@ export interface Dashboard {
 export interface Row extends Partial<Record<Column, number | null>> {   // null: under HIDDEN_BASE people, no figure
   label: string; code: number | null; prior: number | null; prior_base: number | null;
   ly: number | null; ly_base: number | null; flags: string;
+  change?: number | null; change_ly?: number | null;   // Total less prior / ly, rounded once from the counts (payloads.book)
   w?: Partial<Record<Column | "prior" | "ly", number | null>>;   // Census-weighted figures (weight.ts)
 }
 export interface Group { label: string; base: number; bases: Partial<Record<Column, number>>; rows: Row[] }
@@ -224,6 +227,8 @@ export interface QuestionFile {
   answers: [string, number | null, string][]; cuts: [string, string][];   // [item_label, code, label]; [dim, value]
   w: number[]; c: number[]; a: number[]; n: (number | null)[]; b: number[];   // n: null under HIDDEN_BASE people
   codes?: string[];   // other codes the same question was asked under in earlier waves, joined in (shared/data/payloads.py)
+  // its wordings asked under other codes in weeks this code asked another question, kept apart (question.ts withJoined)
+  joined?: Pick<QuestionFile, "waves" | "w" | "c" | "a" | "n" | "b">;
 }
 export const CUT_NAMES: Record<string, string> = { gender: "Gender", age_band: "Age band", generation: "Generation", income_band: "Household income",
                                                    census_region: "Census region", urbanicity: "Urbanicity" };
@@ -282,15 +287,25 @@ export interface AskChart { type: "line" | "bar" | "grouped" | "split" | "stacke
                             bases?: Record<string, number> }   // a chart by a cut: each group's n, by the group's name
 /** Ask's answer at a glance (api/assistant.py brief): stat tiles, what the figures tell, and follow-ups by survey question key. */
 export interface AskTile { label: string; value: string; note: string }
+/** The answer in the manager's layout (api/ask_layout.py): a direct answer, three cards, the chart that fits, the survey. */
+export interface AskLayout { type: string; lead: string; cards: (AskTile & { tone: "main" | "up" | "down" | "same" | "" })[];
+                             chart: { kind: "line" | "columns" | "bars" | "paired"; categories: string[]; dates?: string[];
+                                      series: { name: string; data: (number | null)[] }[]; sides?: string[]; small?: boolean[];
+                                      grains?: string[]; grain?: string; ranges?: string[];   // a line's period buttons, by how often it is asked
+                                      unusual?: { date: string; label: string }[] };
+                             notes: string[]; survey: string; source: string; title: string }
 export interface Answer { answer: string; no_source: boolean; mode: "figures" | "none" | "choose"; chart: AskChart | null;
                           headline?: string; points?: string[]; notes?: string[]; source_line?: string; codes?: string[];
                           scope?: { country: string; period: string; waves: number; base?: number };
                           table: { head: string[]; rows: (string | number | null)[][]; bases: number[]; cell_bases?: (number | null)[][] } | null;
                           sources: { id: string; key: string; survey_id: number; wave_date: string; qcode: string; question: string; name?: string; family: string; waves: number; link: string }[];
-                          suggestions: { qcode: string; text: string; family: string; key: string; alt?: boolean }[];
+                          suggestions: { qcode: string; text: string; family: string; key: string; alt?: boolean; label?: string }[];   // label: name, survey, last asked
                           read_as?: { label: string; value: string }[];   // a combined question's plan in words (api/ask_plan.py answer)
                           understood?: string; unsure?: boolean; check?: boolean; changed?: string; verify?: { question: string; key: string; code: string; family: string; focus: string[]; kind: string; cut: string; period: string };
-                          tiles?: AskTile[]; takeaway?: string; next?: { question: string; key: string }[];
+                          tiles?: AskTile[]; takeaway?: string; next?: { question: string; key?: string; label?: string; market?: "US" | "CN" }[];
+                          layout?: AskLayout | null;   // next[].market: a "Same in China" chip
+                          markets?: { market: "US" | "CN"; label: string }[];   // Both markets ask this: which results (api/assistant.py ask)
+                          notice?: string;   // said above the answer: "The China survey does not ask this, so these are US results."
                           corrected?: string;   // the question as answered, its spelling put right (api/assistant.py ask)
                           asked_as?: string; weighting?: string;   // "weighted" when Census-weighted figures answered
                           overview?: { name: string; text: string; qcode: string; link: string }[] }   // "Summarize this week": a line per question (assistant.py overview)   // a typed follow-up read with the question before it (assistant.py follow_on)

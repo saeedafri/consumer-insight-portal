@@ -31,6 +31,10 @@ Screenshots (temporary, scratchpad): `/private/tmp/claude-501/-Users-mohdsaeedaf
    - 15 Aug 2022 (77.8%) was the online question too; 21 Oct 2024 (62.0%) footwear; 18 Nov 2024 (59.9%) department stores.
    - The real beauty series (same wording, Q10 then B1 then BT1): 25 Nov 2024 68.2%, 12 May 2025 69.9%, 4 Aug 2025 74.4%,
      27 Oct 2025 68.4%, 19 Jan 2026 62.5%, 13 Apr 2026 63.9%, 6 Jul 2026 63.6%, 28 Sep 2026 65.5% (264 of 403).
+   - **Correction (27 Nov 2026, Phase M):** the same wording goes back further. The BT1 question file's waves borrowed
+     from Q8 and Q6 (`borrowed`, exact wording) and each wave's book show it from 5 Sep 2022 (68.9%): 18 readings
+     (two surveys on 26 Dec 2023 added together). So "Since 2022" is a real range; only the template's figures were
+     wrong. The first-to-latest change (68.9% to 65.5%) could be chance. `mockups/build_samples.py` reads it.
    - Staging's Ask returns exactly the template's series today ("asked in 22 waves, 8 Aug 2022 – 28 Sep 2026 ... Highest
      88.8% (4 Nov 2024) ... Includes the same question asked under 2 earlier codes (Q10, B1, BT1)").
    - Root cause: `api/ask_index.py:191-208` `wording_groups` joins a wording to a group when it shares half its words

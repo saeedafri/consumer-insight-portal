@@ -903,43 +903,54 @@ code.key { display: block; padding: 8px 10px; margin-bottom: 8px; background: va
 .ask-headline { margin: 0; font-size: 18px; line-height: 1.5; color: var(--ink); }
 .ask-headline b, .ask-points b { color: var(--ink); }
 .ask-points { margin: 0; padding-left: 20px; display: grid; gap: 6px; line-height: 1.55; }
-.ask-notes { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
-.ask-source { margin: 0; }
-.ask-how { margin: 0; }
-.ask-views { align-self: flex-start; }
 /* the answer at a glance (Ask.tsx): stat tiles, what the figures tell, the hand-drawn forms (dataviz specs: dots ≥ 8 px
    with a 2 px surface ring; text in ink, never in the series colour) */
-.ask-audience { align-self: flex-start; }
-.ask-tiles { gap: 10px; }
-.ask-tile { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); min-height: 0; padding: 14px 16px; }
-.ask-tile .k-label { min-height: 0; }
-.ask-takeaway { border-left: 3px solid var(--sky); padding: 2px 0 2px 12px; }
-.ask-takeaway > b { font-size: 12px; color: var(--ink-2); }
-.ask-takeaway p { margin: 2px 0 0; color: var(--ink); line-height: 1.5; }
-.ask-dumbbell { margin: 0; display: flex; flex-direction: column; gap: 10px; }
-.ask-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; font-size: 12px; color: var(--ink-2); }
-.ask-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 .ask-heat td { font-weight: 600; }
 .ask-heat thead th.num { white-space: normal; min-width: 64px; }   /* long group names wrap (beats table.data .num): every group fits the card */
-.dumbbell-row { display: grid; grid-template-columns: minmax(120px, 2fr) minmax(120px, 3fr) auto; align-items: center; gap: 12px; font-size: 13px; }
-.dumbbell-name { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dumbbell-track { position: relative; height: 16px; border-bottom: 1px solid var(--line); }
-.dumbbell-line { position: absolute; top: 7px; height: 2px; background: var(--line-strong); }
-.dumbbell-dot { position: absolute; top: 2px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
-.ask-legend .dumbbell-key { border-radius: 50%; }
-.dumbbell-figures { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink-2); }
-.dumbbell-figures b { color: var(--ink); }
-.ask-next { display: grid; gap: 6px; }
-.ask-next button { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 12px; border: 1px solid var(--line);
-  border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
-.ask-next button:hover { border-color: var(--red); }
-.ask-next button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-@media (max-width: 640px) { .dumbbell-row { grid-template-columns: 1fr auto; } .dumbbell-track { grid-column: 1 / -1; grid-row: 2; } }
 .linklike { background: none; border: 0; padding: 0; color: var(--link, var(--red)); text-decoration: underline; cursor: pointer; font: inherit; }
 .ask-figures summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
 .ask-more p { margin: 0 0 6px; }
 .tagrow { display: flex; flex-wrap: wrap; gap: 7px; }
 .tagrow .tag { margin: 0; }
+/* Ask CIP answer card in the manager's layout (frontend/src/screens/Ask.tsx, 27 Nov 2026) */
+.ask-by { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; }
+.ask-by .muted { font-weight: 500; }
+.ask-mark { width: 24px; height: 24px; border-radius: 7px; background: var(--red); color: #fff; display: inline-grid; place-items: center; flex: none; }
+.ask-tools { display: flex; gap: 6px; align-items: center; }
+.ask-key { color: var(--red-text); }
+.ask-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ask-cards li { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--surface, var(--raised)); min-width: 0; }
+.ask-cards li.main { background: var(--red-wash); border-color: transparent; }
+.ask-cards .k-label { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.ask-cards .k-value { font-size: 26px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; color: var(--ink); }
+.ask-cards li.main .k-value { color: var(--red-text); }
+.ask-cards .k-note { font-size: 12.5px; color: var(--ink-3); }
+.ask-chart { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 10px; min-width: 0; }
+.ask-chart-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.ask-periods { display: flex; gap: 8px; flex-wrap: wrap; }
+.ask-chart-top h3 { margin: 0; font-size: 15px; }
+.ask-chart-top p { margin: 2px 0 6px; }
+.ask-foot { margin: 6px 0 0; }
+.ask-evidence { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; font-size: 13.5px; color: var(--ink-2); }
+.ask-evidence p { margin: 0; }
+.ask-evidence q { color: var(--ink); }
+.ask-evidence .t-lbl { display: inline-block; min-width: 118px; font-weight: 700; color: var(--ink); margin-right: 8px; }
+.ask-dig { font-size: 14px; margin: 0 0 8px; }
+.ask-page-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative; }
+.ask-history-pop { max-height: 60vh; overflow-y: auto; position: absolute; right: 0; top: calc(100% + 6px); width: min(360px, calc(100vw - 32px)); z-index: 5; background: var(--raised); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: var(--shadow-pop); padding: 6px; display: grid; }
+.ask-history-pop button { text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 7px; font: inherit; font-size: 13.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.ask-history-pop button:hover { background: var(--hover); }
+.ask-thread { padding-bottom: 8px; }
+.ask-folded { display: grid; gap: 4px; padding: 12px 16px; }
+.ask-folded p { margin: 0; }
+.ask-folded .linklike { justify-self: start; }
+.ask-dock { position: sticky; bottom: 0; z-index: 4; padding: 10px 0 14px; background: var(--paper); }
+.ask-notice { margin: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink-2); }
+.ask-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.ask-chips button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-strong); background: transparent; color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; text-align: left; }
+.ask-chips button:hover { border-color: var(--red); color: var(--red-text); }
+.ask-chips button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 760px) { .ask-cards { grid-template-columns: minmax(0, 1fr); } .ask-evidence .t-lbl { display: block; margin-bottom: 2px; } }
 .ask-box { display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 8px 0 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--ink-3); }
 .ask-box:focus-within { border-color: var(--red); box-shadow: 0 0 0 4px color-mix(in srgb, var(--red) 16%, transparent); }
 .ask-box input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--ink); font-size: 14px; }

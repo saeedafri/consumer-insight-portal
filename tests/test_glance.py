@@ -34,8 +34,15 @@ BOOK = {"questions": [
     question("SD1", "Singles Day Retro", "Did you shop on Singles Day? Select one.", ("Yes", 23.5), ("No", 70.1), ("Don't know", 6.4)),
     {"id": "q6", "section": "Shopping and Spending", "text": "How have your expenses changed?", "groups": [
         {"label": "Insurance", "rows": rows(("Notable increase", 26.5), ("Significant increase", 17.8))},
-        {"label": "Utilities", "rows": rows(("No meaningful change", 36.1), ("Notable increase", 31.4), ("Significant increase", 25.0))}]},
+        {"label": "Utilities", "rows": rows(("No meaningful change", 36.6), ("Notable increase", 36.9), ("Significant increase", 19.6))}]},
 ]}
+# q6's counts (its cuts file: [item, option, cuts..., people]), 23 Nov 2026: 149 notable and 79 significant increase of 404
+# said utilities went up, 56.4%; the book's rounded rows add to 56.5 (36.9 + 19.6)
+BILLS = {"answers": [{"item_id": 1, "option_id": code, "item_label": "Utilities", "option_label": label} for code, label in
+                     [(1, "Significant decrease"), (2, "Notable decrease"), (3, "No meaningful change"), (4, "Notable increase"),
+                      (5, "Significant increase")]] + [{"item_id": 2, "option_id": 4, "item_label": "Insurance", "option_label": "Notable increase"}],
+         "counts": [[1, 1, "Female", 14], [1, 2, "Male", 14], [1, 3, "Female", 100], [1, 3, "Male", 48], [1, 4, "Female", 80],
+                    [1, 4, None, 69], [1, 5, "Male", 79], [2, 4, "Male", 107]]}
 BOOK["questions"][0]["groups"][0]["rows"][0]["prior"] = 67.5   # last week: groceries 67.5% in a store, 27.5% online
 BOOK["questions"][1]["groups"][0]["rows"][0]["prior"] = 27.5
 REPORT = {"three_points": [{"section": "Activities", "label": "Gone to a coffee-shop", "change": 9.1, "from": 29.8, "to": 38.9},
@@ -48,7 +55,7 @@ HEALTH = {"title": "Consumer Financial Health", "highlights": [], "lists": {}, "
 
 
 def test_the_six_cards_of_the_week_in_the_order_asked_each_with_its_badge():
-    built = glance.build(US, WAVE, BOOK, [MASS], REPORT, {"financial_health": HEALTH})
+    built = glance.build(US, WAVE, BOOK, [MASS], REPORT, {"financial_health": HEALTH}, BILLS)
     assert built["sector"] == "Mass merchants and warehouse clubs"
     assert [(c["badge"], c["title"], c["value"]) for c in built["cards"]] == [
         ("Mass merchants and warehouse clubs", "Leading retailer", "Walmart"),
@@ -66,7 +73,8 @@ def test_the_six_cards_of_the_week_in_the_order_asked_each_with_its_badge():
     assert gap["changes"] == [{"d": 5.3, "label": "vs last week"}]                         # 45.3 pts now, 40.0 last week
     assert gap["link"].startswith("/channels?market=US&w=")
     assert outlook["changes"] == [{"d": 1.8, "label": "vs last week"}]
-    assert outlook["note"].endswith("next 12 months. 56.4% say utilities went up in the past year")
+    assert outlook["note"] == ("net better this week (the weekly report leads with the four-week average): % expecting better minus "
+                               "% worse, next 12 months. 56.4% say utilities went up in the past year")   # 228 of 404, not 56.5
 
 
 def test_without_an_event_the_monthly_topic_shows_with_its_tile_badges_then_the_sectors_median_spend():

@@ -86,3 +86,62 @@ def test_a_published_dashboard_file_gains_its_list_headings_at_the_next_publish(
     doc = json.loads(gzip.decompress(path.read_bytes()))
     assert doc["list_heads"]["top"] == "Top platforms" and doc["title"] == "Social Commerce"
     assert dashboards.name_lists(tmp_path, write) == 0
+
+
+def test_each_figure_is_rounded_once_from_its_counts():
+    """28 Nov 2026 check: 46 of 342 (13.4503%) showed 13.4 after rounding to 3 decimals and then 1; a change of 50/404
+    against 118/401 showed -17.0 (the 3-decimal values' difference), exact -17.05."""
+    wave, prior = WAVES[3], WAVES[2]
+    row = dashboards.metric("shop_used", "Have shopped with GenAI", (46, 342), (118, 401), None, (wave, prior, None), CFG)
+    board = dashboards.payload({"dashboard_code": "genai", "wave": wave, "prior": prior, "ly": None, "waves": [], "cube_built_at": None}, [row])
+    assert board["tiles"]["shop_used"]["pct"] == 13.5
+    row = dashboards.metric("shop_used", "Have shopped with GenAI", (50, 404), (118, 401), None, (wave, prior, None), CFG)
+    board = dashboards.payload({"dashboard_code": "genai", "wave": wave, "prior": prior, "ly": None, "waves": [], "cube_built_at": None}, [row])
+    assert board["tiles"]["shop_used"]["vs_prior"] == -17.1
+
+
+class Questions:
+    """A database connection that answers meanings()' one query: (survey_id, qcode, qtype, value code, label)."""
+    def __init__(self, rows):
+        self.rows = rows
+
+    def execute(self, *_):
+        return self.rows
+
+
+def test_glp1_compares_each_question_with_the_last_week_that_asked_it(monkeypatch):
+    """28 Nov 2026 check. GLP-1's 10 Nov 2025 (446) reused GP2-GP5 for other questions (GP4, GP5 single-choice): its
+    lists showed option codes ("2: 48.4%"), and 16 Nov 2026 (688) took it as last year, so every list row read "last
+    year 0.0%" (+45.3 pts). Now 446 is no wave of the tracker, last year is 20 Oct 2025 (441, which asked them all),
+    an answer last year did not offer has no comparison (GenAI's Claude), and a figure whose question the previous
+    wave skipped compares with the one before and names it (Tariffs' 26 Oct 2026 asked only IN1 and IN2)."""
+    def wave(sid, day):
+        return {"survey_id": sid, "season": None, "series_wave_no": 0, "launched_on": date.fromisoformat(day),
+                "wave_date": date.fromisoformat(day), "qualified": 400}
+    monkeypatch.setattr(dashboards, "series", lambda conn, module: [
+        wave(441, "2025-10-20"), wave(446, "2025-11-10"), wave(265, "2026-09-21"), wave(415, "2026-10-19"), wave(688, "2026-11-16")])
+    usual = [("GP1", "single", 1, "Yes"), ("GP2", "single", 1, "Weight loss"), ("GP3", "single", 4, "Less"),
+             ("GP4", "multi", None, None), ("GP5", "multi", None, None)]
+    questions = [(sid, *q) for sid in (441, 265, 688) for q in usual] + [(415, *usual[0])] + [
+        (446, "GP2", "single", 1, "Fewer items"), (446, "GP4", "single", 1, "Less than $100"), (446, "GP5", "single", 1, "Yes, definitely")]
+    nutrition, vitamins = "I am paying more attention to the nutritional content", "I have started taking more vitamins and supplements"
+    def cell(base, **answers):
+        return {"base": base, "built_at": "2026-11-26 17:23:00", "flags": {}, "answers": answers}
+    cube = {(441, "GP5", "total", "Total"): cell(75, **{nutrition: 27}), (265, "GP5", "total", "Total"): cell(70, **{nutrition: 28}),
+            (688, "GP5", "total", "Total"): cell(64, **{nutrition: 29, vitamins: 20}),
+            (446, "GP5", "total", "Total"): cell(62, **{"1": 18, "2": 30, "3": 14}),
+            (415, "GP1", "total", "Total"): cell(401, **{"1": 60}), (688, "GP1", "total", "Total"): cell(404, **{"1": 64})}
+    monkeypatch.setattr(dashboards, "cells", lambda conn, ids, *_: {k: c for k, c in cube.items() if k[0] in ids})
+    conn = Questions(questions)
+
+    header, rows = dashboards.compute(conn, "glp1", 688)
+    assert (header["prior"]["survey_id"], header["ly"]["survey_id"]) == (415, 441)
+    board = dashboards.payload(header, rows)
+    top, second = board["lists"]["changes"]
+    assert (top["label"], top["pct"], top["ly_pct"], top["vs_ly"]) == (nutrition, 45.3, 36.0, 9.3)
+    assert top["prior_week"] == "2026-09-21" and top["vs_prior"] == 5.3   # 415 asked GP1 only: GP5 compares with 265
+    assert (second["label"], second["ly_pct"], second["vs_ly"]) == (vitamins, None, None)   # not offered in 441: not 0 %
+    assert board["tiles"]["using"]["prior_week"] is None and board["wave"]["wave_no"] == 4   # 446 is not counted
+    assert board["takeaways"][1] == (f"Since starting: {nutrition} (45%), {vitamins} (31%) are the top changes among users (n=64).")
+    # (before: "Biggest significant move vs last year: ... vitamins ... (+31.2 pts" against a 0 % it never had)
+    assert dashboards.compute(conn, "glp1", 446)[1] == []   # its own lists are left out: nothing to publish

@@ -25,8 +25,10 @@ export function moves(book: Book): Move[] {
     piped ||= has(r.flags, "sig_prior") || has(r.flags, "sig_ly");
     if (isFiller(r.label) || r.Total == null) continue;
     const routing = r.flags.includes("base_changed_prior");
-    const d = r.prior == null ? null : r.Total - r.prior;
-    const dLy = r.ly == null ? null : r.Total - r.ly;
+    // the book's change, rounded once from the counts (payloads.book): the two 1-dp figures' difference was 0.1 off in
+    // 150 of 680 rows (CS2 −0.3 for 19.55 − 19.95); the weighted figures have only their own 1-dp values
+    const d = r.prior == null ? null : weighted ? r.Total - r.prior : r.change ?? r.Total - r.prior;
+    const dLy = r.ly == null ? null : weighted ? r.Total - r.ly : r.change_ly ?? r.Total - r.ly;
     // testable, as the pipeline decides it (etl/serving.py): a prior with the same wording and the same group asked,
     // 30+ people each side. Respondent profiles are tested too; they are only kept out of the headlines (isProfile)
     const testable = !weighted && d != null && !routing && !r.flags.includes("wording_changed_prior")

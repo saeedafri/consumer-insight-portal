@@ -54,7 +54,7 @@ CUT_VALUES += [(pattern, "income_band", label) for label, (pattern, _) in INCOME
 CUT_DIMS = [(r"\b(?:by|and) (generation|generations|gen)\b|\b(?:across|each|every|all) generations?\b|\bwhich generations?\b", "generation"),
             (r"\b(?:by|and) (gender|sex)\b|\bmen (and|vs|versus|or) women\b|\bwomen (and|vs|versus|or) men\b", "gender"),
             (r"\b(?:by|and) age( group| band)?s?\b|\bage (group|band)s?\b(?:\s*\([^)]*\))?|\bwhich age( group)?s?\b(?:\s*\([^)]*\))?", "age_band"), (r"\b(?:by|and) (household )?income\b|\bincome (group|band|level)s?\b(?:\s*\([^)]*\))?", "income_band"),
-            (r"\bby region\b|\bregions?\b|\b(the )?south (vs|versus|and|or) (the )?west\b", "census_region"), (r"\burbanicity\b|\burban,? suburban\b", "urbanicity")]
+            (r"\bby region\b|\bregions?\b|\b(the )?south (vs|versus|and|or) (the )?west\b", "census_region"), (r"\burbanicity\b|\burban,? suburban\b|\bcity tiers?\b", "urbanicity")]
 KINDS = [(r"\bhow many (people|respondents|users|consumers|shoppers|adults|americans)\b|\bnumber of (people|respondents)\b", "count"),
          (r"\b(top|winner|won|most popular|leading|leader|highest|best|biggest|largest|most common(ly)?|rank|ranking|favou?rite)\b|\bwhich\b(?=[^?]*\bmost\b)", "top"),   # "which retailers do people shop at most?" ranks; only "which" leaves the
                                                        # subject ("which five retailers were most used" lost "retailers", 22 Nov 2026)

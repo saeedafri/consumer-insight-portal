@@ -15,8 +15,9 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 const RULE: Record<string, string> = { same_wave_number: "same wave number last season", same_calendar_week: "same calendar week last year",
                                        nearest_year_ago: "closest wave a year earlier" };
 
-export function Delta({ d, label, flags }: { d: number | null; label: string; flags: string[] }) {
-  if (flags.includes(`base_changed_${label === "vs LY" ? "ly" : "prior"}`)) {
+/** A change chip; `kind` says which comparison it is when the label is a date ("vs Sep 28, 2026"). */
+export function Delta({ d, label, flags, kind = label === "vs LY" ? "ly" : "prior" }: { d: number | null; label: string; flags: string[]; kind?: "ly" | "prior" }) {
+  if (flags.includes(`base_changed_${kind}`)) {
     return (
       <Tooltip>
         <TooltipTrigger render={<span className="chip warn">{label}: base changed</span>} />
@@ -35,7 +36,9 @@ function Tile({ title, m, value, note, prior, lead }: { title: string; m: Metric
     <div className="k-label">{title}</div>
     <div className={`k-value${value && value.length > 14 ? " k-text" : ""}`}>{value ?? (m.pct == null ? `n<${HIDDEN_BASE}` : <CountUp text={`${m.pct.toFixed(1)}%`} />)}</div>
     {note && <div className="k-note">{note}</div>}
-    <div className="k-note"><Delta d={m.vs_ly} label="vs LY" flags={m.flags} /> <Delta d={m.vs_prior} label={`vs ${prior}`} flags={m.flags} /></div>
+    {/* a figure whose question the header's week skipped compares with an earlier week, and says which */}
+    <div className="k-note"><Delta d={m.vs_ly} label={m.ly_week ? `vs ${fmtDate(m.ly_week)}` : "vs LY"} flags={m.flags} kind="ly" />{" "}
+      <Delta d={m.vs_prior} label={m.prior_week ? `vs ${fmtDate(m.prior_week)}` : `vs ${prior}`} flags={m.flags} kind="prior" /></div>
     {m.flags.includes("small_base") && <div className="k-note" style={{ marginTop: 2 }}>
       <span style={{ color: "var(--warn)", fontWeight: 600 }}>Small base (n={m.base})</span>
     </div>}
@@ -78,7 +81,7 @@ export default function Glance({ code, id }: { code: string; id: number }) {
       <div className="glance-tiles" style={columns(Object.values(d.tiles).filter(Boolean).length + highlights.length)}>
         {Object.entries(d.tiles).map(([k, m], i) => <Tile key={k} title={label(k)} m={m} prior={prior} lead={i === 0} />)}
         {highlights.map(h => { const top = d.lists[h.list]?.[0]; return top && <Tile key={h.list} title={h.title} m={top} value={top.label} prior={prior}
-          note={`${top.pct == null ? `n<${HIDDEN_BASE}` : `${top.pct.toFixed(1)}%`} ${h.of}${top.ly_pct != null ? ` · last year ${top.ly_pct.toFixed(1)}%` : ""}`} />; })}
+          note={`${top.pct == null ? `n<${HIDDEN_BASE}` : `${top.pct.toFixed(1)}%`} ${h.of}${top.ly_pct != null && !top.flags.includes("base_changed_ly") ? ` · last year ${top.ly_pct.toFixed(1)}%` : ""}`} />; })}
       </div>
       {d.takeaways.length > 0 && <div className="card glance-takeaways">
         <h3>Key takeaways</h3>

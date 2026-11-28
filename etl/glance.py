@@ -105,8 +105,9 @@ def topic_card(wave: dict, dashboards: dict[str, dict]) -> dict | None:
         badge = "Monthly topic" if modules.get(code) in topics else "Seasonal"
         prior = f"vs {(board.get('prior_label') or 'prior week').removeprefix('the ')}"
 
-        def moves(m: dict) -> list[dict]:   # the tile's own badges, as its tracker page shows them
-            return [{"d": m["vs_ly"], "label": "vs LY", "flags": m["flags"]}, {"d": m["vs_prior"], "label": prior, "flags": m["flags"]}]
+        def moves(m: dict) -> list[dict]:   # the tile's own badges, as its tracker page shows them (its own earlier week, if named)
+            return [{"d": m["vs_ly"], "label": "vs LY", "flags": m["flags"]},
+                    {"d": m["vs_prior"], "label": f"vs {short_day(m['prior_week'])}" if m.get("prior_week") else prior, "flags": m["flags"]}]
         for h in board.get("highlights") or []:
             top = (board["lists"].get(h["list"]) or [None])[0]
             if top and top["pct"] is not None:
@@ -201,10 +202,12 @@ def gap_card(survey: dict, wave: dict, book: dict) -> dict | None:
                 changes=changes, link=link, feature=feature)
 
 
-def outlook_card(survey: dict, wave: dict, report: dict | None, book: dict) -> dict | None:
+def outlook_card(survey: dict, wave: dict, report: dict | None, bills: dict | None) -> dict | None:
     """The personal-finances outlook this week: % better minus % worse over the next 12 months, the survey before it
     (China's skip a week now and then), and the share who say a bill went up in the past year (config/glance.yml
-    bills: utilities, from the US q6)."""
+    bills: utilities, from the US q6), counted from `bills`, the question's published counts (its cuts file): people
+    who said any increase over everyone who answered that row. Adding the book's rounded rows was 0.1 off (36.9 + 19.6
+    = 56.5, where 228 of 404 is 56.4, 23 Nov 2026)."""
     line = report and report.get("sentiment", {}).get(survey["outlook"])
     if not line or wave["wave_date"] not in line["dates"]:
         return None
@@ -214,19 +217,21 @@ def outlook_card(survey: dict, wave: dict, report: dict | None, book: dict) -> d
         return None
     earlier = [j for j in range(at) if weekly[j] is not None and line["dates"][j]]
     before = [{"d": round(weekly[at] - weekly[j], 1), "label": compare_label(line["dates"][j], wave["wave_date"])} for j in earlier[-1:]]
-    bills = survey.get("bills")
-    asked = bills and next((q for q in book["questions"] if q["id"] == bills["question"]), None)
-    group = asked and next((g for g in asked["groups"] if g["label"] == bills["group"]), None)
-    rose = group and sum(r["Total"] or 0 for r in group["rows"] if "increase" in r["label"].lower())
-    went_up = f". {rose:.1f}% say {bills['group'].lower()} went up in the past year" if rose else ""
+    row = survey.get("bills", {}).get("group")
+    answers = {(a["item_id"], a["option_id"]): a["option_label"] for a in (bills or {}).get("answers", []) if a["item_label"] == row}
+    counts = [(answers[(c[0], c[1])], c[-1]) for c in (bills or {}).get("counts", []) if (c[0], c[1]) in answers]
+    rose = counts and 100 * sum(n for label, n in counts if "increase" in label.lower()) / sum(n for _, n in counts)
+    went_up = f". {rose:.1f}% say {row.lower()} went up in the past year" if rose else ""
     return dict(badge="Consumer sentiment", title=f"{survey['outlook']} outlook", value=f"{weekly[at]:+.1f}",
                 note=f"{survey['outlook_note']}{went_up}", changes=before, link=f"/w/{wave['survey_id']}/report", feature="report")
 
 
-def build(survey: dict, wave: dict, book: dict, sectors: list[dict], report: dict | None, dashboards: dict[str, dict]) -> dict:
-    """The six cards of `wave` (the survey's newest weekly wave) from its book, the sector tables, its weekly report and
-    its dashboards (code → published dashboard). The week's sector: the one whose newest survey is this wave; when two
-    share it, the one the title names first (Off-price leads "inc Off Price + Dollar Stores")."""
+def build(survey: dict, wave: dict, book: dict, sectors: list[dict], report: dict | None, dashboards: dict[str, dict],
+          bills: dict | None = None) -> dict:
+    """The six cards of `wave` (the survey's newest weekly wave) from its book, the sector tables, its weekly report,
+    its dashboards (code → published dashboard) and its bills question's counts (outlook_card). The week's sector: the
+    one whose newest survey is this wave; when two share it, the one the title names first (Off-price leads "inc Off
+    Price + Dollar Stores")."""
     title = re.sub(r"[^a-z]", "", wave.get("title", "").lower())
     wave = {**wave, "vs": compare_label(wave.get("prior_date"), wave["wave_date"])}   # every badge against the survey before
 
@@ -237,7 +242,7 @@ def build(survey: dict, wave: dict, book: dict, sectors: list[dict], report: dic
     first = ([question_card(survey, wave, book, card) for card in survey["first_row"]] if survey.get("first_row") else
              [sector and sector_card(sector, "leader"), sector and sector_card(sector, "product"),
               event_card(wave, book) or topic_card(wave, dashboards) or (sector and sector_card(sector, "spend"))])
-    found = [*first, change_card(survey, wave, report, book), gap_card(survey, wave, book), outlook_card(survey, wave, report, book)]
+    found = [*first, change_card(survey, wave, report, book), gap_card(survey, wave, book), outlook_card(survey, wave, report, bills)]
     return {"name": survey["name"], "people": survey["people"], "survey_id": wave["survey_id"],
             "wave_date": wave["wave_date"], "respondents": wave["qualified_n"], "sector": sector and sector["name"],
             "cards": [c or None for c in found]}
@@ -264,5 +269,6 @@ def publish(out: Path, write) -> int:
         dashboards = {code: board for code in wave.get("dashboards") or []
                       if (board := read(files / "dashboards" / code / f"{wave['survey_id']}.json.gz"))}
         report = read(files / "waves" / str(wave["survey_id"]) / "report.json.gz")
-        blocks.append(build(survey, {**wave, "prior_date": prior}, book, sectors, report, dashboards))
+        bills = survey.get("bills") and read(files / "waves" / str(wave["survey_id"]) / "cuts" / f"{survey['bills']['question']}.json.gz")
+        blocks.append(build(survey, {**wave, "prior_date": prior}, book, sectors, report, dashboards, bills))
     return write(files / "glance", {"surveys": blocks}) if blocks else 0

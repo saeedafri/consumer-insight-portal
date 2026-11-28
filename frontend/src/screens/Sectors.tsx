@@ -72,7 +72,7 @@ function sheetOf(sector: Sector, table: Sector["tables"][number]): Sheet {
 
 /** The middle buyer's spend band in each survey (etl/sectors.py median_band), as a tab of its own: bands, not %. */
 const spendSheet = (sector: Sector): Sheet[] => sector.spend ? [{ title: "Median spend", header: ["Median spend", ...sector.waves.map(w => w.date)],
-  rows: [[sector.spend.question, ...sector.spend.median], ...(sector.spend.average ? [["Average spend ($, estimated)", ...sector.spend.average]] : [])],
+  rows: [["Median spend band", ...sector.spend.median], ...(sector.spend.average ? [["Average spend ($, estimated)", ...sector.spend.average]] : [])],
   notes: [`${sector.name}: median spend`, "The middle buyer's spend band in each survey, and the average estimated from the bands' mid-points (the top band at its floor)",
           SOURCE] }] : [];
 
@@ -148,7 +148,7 @@ function SpendBySector({ sectors, sector, onPick }: { sectors: Sector[]; sector:
         </tr>)}</tbody>
       </table></div>
       <p className="muted small">Sectors whose survey asks no spend question (eCommerce, social commerce) are not listed. An average jumps when a
-        sector's answer bands changed (mass merchants' top band was "More than $200" until 2025): read it with the median band.</p>
+        sector's answer bands changed (mass merchants' top band was "More than $200" until April 2024): read it with the median band.</p>
     </Card>
     <Card title={`${sector.name}: average spend`} sub="Each survey the sector ran, estimated from the answer bands; the median band in the hover">
       {averages.some(v => v != null) ? <EChart height={320} label={`${sector.name}: average spend per survey`} option={option()} build={option} />

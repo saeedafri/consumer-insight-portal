@@ -88,7 +88,7 @@ def test_a_historical_answer_links_to_the_code_that_its_wave_used(tmp_path):
 
 
 def test_a_calculation_that_finishes_after_cache_reset_stays_uncached(index, monkeypatch):
-    def calculate(*_):
+    def calculate(*_, **__):   # ask() passes the market by name
         with assistant.ANSWERS_LOCK:
             assistant.clear_answers()
         return {"mode": "none", "answer": "Test"}
@@ -136,8 +136,8 @@ def test_a_month_pools_its_waves_exactly(index):
     ("Did tariffs cause shoppers to dine out less?", "cannot establish what caused"),
     ("Do you know how many people bought groceries online who also bought them in-store?", "people who did both things"),
     ("How many people shopped at both Amazon and Walmart?", "people who did both things"),
-    ("Compare retailers bought in Q4 2026 vs Q1 2027", "one requested period"),
-    ("What share bought from Amazon in 2030?", "was not asked"),
+    ("Compare retailers bought in Q4 2026 vs Q1 2027", "one of the periods you named"),
+    ("What share bought from Amazon in 2030?", "did not ask this"),
     ("What share of women bought from Amazon?", "demographic group is unavailable"),
     ("Compare Gen Z and Boomers who bought from Amazon", "demographic group is unavailable"),
 ])
@@ -270,7 +270,7 @@ def test_an_empty_index_is_built_again(tmp_path, index):
 
 def test_a_question_not_asked_then_never_borrows_an_unrelated_one(index):
     found = assistant.answer("ways to save money in October 2026", index, EVERYONE)   # Q14 asked only in September
-    assert found["mode"] == "none" and "was not asked in the period" in found["answer"]
+    assert found["mode"] == "none" and "did not ask this in the period" in found["answer"]
 
 
 def test_a_dollar_question_loaded_without_its_amounts_is_never_quoted(tmp_path):
@@ -372,6 +372,43 @@ def test_a_question_reads_only_its_countrys_waves_and_marks_a_small_base(tmp_pat
     assert "small base" not in us["answer"] and "as few as 30 respondents" in china["answer"]   # config/methodology.yml: under 50
     followed = assistant.answer("What share bought from Amazon over time", index, {100, 900}, key="CSI-CN/tracker/XQ1")
     assert followed["sources"][0]["family"] == "CSI-CN"   # a follow-up names no country: its key's, not the US
+
+
+def test_market_both_asks_back_for_a_question_both_surveys_ask(tmp_path):
+    # 27 Nov 2026 (the manager's decision): with the market set to Both, a question the US and China surveys both ask is
+    # asked back with each survey's latest date; one only the US asks is answered at once; one market answers from it
+    economy = "And thinking about the economy overall over the next 12 months, do you think things will be better or worse?"
+    files = (("CSI-US", "CS2", 100, economy, ["Much better", "Much worse"]),
+             ("CSI-CN", "Q9", 900, "What are your expectations for the economy over the next 12 months?", ["Positive", "Negative"]),
+             ("CSI-US", "BT1", 100, "Have you purchased any beauty products in the past three months?", ["Yes", "No"]))
+    for family, code, sid, text, answers in files:
+        root = tmp_path / "questions" / family / "tracker"
+        root.mkdir(parents=True, exist_ok=True)
+        (root / f"{code}.json.gz").write_bytes(gzip.compress(json.dumps({**question_file(
+            [[sid, DATES[-1], 1]], [text], [["", 1, answers[0]], ["", 2, answers[1]]], [["total", "Total"]],
+            [(0, 0, 0, 150, 400), (0, 0, 1, 250, 400)]), "codes": [code]}).encode()))
+    waves = [{"survey_id": 100, "wave_date": DATES[-1], "title": "US", "modules": [], "country": "US"},
+             {"survey_id": 900, "wave_date": DATES[-2], "title": "China", "modules": [], "country": "CN"}]
+    index = Index(tmp_path / "questions", waves)
+    index.add_vectors()
+    both = assistant.ask("What do people expect for the economy over the next 12 months?", index, {100, 900}, "all", True, market="both")
+    assert both["mode"] == "choose" and [m["market"] for m in both["markets"]] == ["US", "CN"]
+    assert both["markets"][1]["label"] == f"China results (latest {ask_figures.label_date(DATES[-2])})"
+    china = assistant.ask("What do people expect for the economy over the next 12 months?", index, {100, 900}, "all", True, market="CN")
+    assert china["mode"] == "figures" and china["sources"][0]["family"] == "CSI-CN"
+    beauty = assistant.ask("Did people buy beauty products?", index, {100, 900}, "all", True, market="both")
+    assert beauty["mode"] == "figures" and beauty["sources"][0]["family"] == "CSI-US"
+
+
+def test_follow_ups_offer_each_countrys_own_groups_and_china_by_city_tier():
+    # 28 Nov 2026 (01 G17): China has no generations; its chips are age group, city tier and monthly income
+    assert [label for _, _, label in assistant.FOLLOW_CUTS["CN"]] == ["By age group", "By city tier", "By monthly income"]
+    assert ask_reader.read("Economy outlook by city tier")["cuts"] == {"urbanicity": "all"}
+
+
+def test_no_survey_names_the_subject(index):
+    found = assistant.ask("How many people own a submarine?", index, EVERYONE, "all", True, market="both")
+    assert found["mode"] == "none" and found["answer"].startswith("None of our surveys asks whether people own a submarine.")
 
 
 def test_asks_are_answered_by_words_while_the_vectors_are_built(index):
@@ -919,6 +956,39 @@ def test_wordings_join_by_their_own_words_never_by_a_shared_frame_or_across_holi
                            "Which categories have you purchased online in the past two weeks (i.e., groceries)?"]) == [[1, 2]]
 
 
+def test_only_the_same_question_joins_never_a_chain_of_half_alike_ones():
+    # 27 Nov 2026: Q10's footwear, online, department-store and beauty questions each shared half their words with the one
+    # before, so Ask's beauty trend began with footwear (Aug 2022, 54.8%) and peaked on "bought anything online" (88.8%)
+    from api.ask_index import wording_groups
+    asked = "Have you purchased any {} in the past three months?"
+    assert wording_groups([asked.format("footwear"), asked.format("products online"),
+                           asked.format("products from a department store") + " (whether online or in-store)",
+                           asked.format("beauty products (whether for men or women)")]) == [[1], [2], [3], [4]]
+    # an expectation is not what happened, and one product is not another
+    assert wording_groups(["What is the main reason you expect to spend more this Halloween?",
+                           "What is the main reason you spent more this Halloween?"]) == [[1], [2]]
+    care = "Which of the following are most important to you when selecting the {} products you buy? (select up to three)"
+    assert wording_groups([care.format("hair care"), care.format("skin care")]) == [[1], [2]]
+    assert wording_groups(["Which of the following have you heard of? Select all that apply", "Have you heard of Web 3?"]) == [[1], [2]]
+    # the code review's pairs (27 Nov 2026): a word that changes what is asked never joins
+    for one, other in [("How did you shop before the pandemic?", "How did you shop after the pandemic?"),
+                       ("Did you spend more than $100 on gifts?", "Did you spend more than $500 on gifts?"),
+                       ("Do you anticipate spending more this holiday season?", "Did you spend more this holiday season?"),
+                       ("Have you used GenAI tools?", "Have you used GenAI tools for shopping?"),
+                       ("Looking back, how did your spending compare?", "Looking forward, how will your spending compare?")]:
+        assert wording_groups([one, other]) == [[1], [2]], one
+    assert wording_groups(["Have you bought footwear in the past three months?", "Have you bought footwear in the past 3 months?"]) == [[1, 2]]
+    # most answers shared, or as many answers: a different list of answers is a different question
+    assert wording_groups(["Which do you use?", "Which do you use?"], [{"tiktok", "instagram", "none"}, {"walmart", "target"}]) == [[1], [2]]
+    # a lead-in, a year or "generative AI" for "GenAI" leaves one series
+    assert wording_groups(["Are you allowed to use generative AI tools at work?", "Are you allowed to use GenAI tools at work?",
+                           "On a different topic, are you allowed to use GenAI tools at work?"]) == [[1, 2, 3]]
+    assert wording_groups(["Now we would like to focus on your holiday shopping (gifts, decorations, etc). What is the current "
+                           "status of your holiday shopping?", "What is the current status of your holiday shopping?"]) == [[1, 2]]
+    assert wording_groups(["How did your spending for the 2022 holiday season compare to 2021?",
+                           "Looking back, how did your spending for the 2023 holiday season compare to 2022?"]) == [[1, 2]]
+
+
 def test_which_with_most_ranks_and_most_people_does_not():
     assert ask_reader.read("Which retailers do people shop at most?")["kind"] == "top"
     assert ask_reader.read("What do most people think about tariffs?")["kind"] == "share"
@@ -1339,3 +1409,83 @@ def test_did_x_cause_people_to_do_y_answers_what_people_reported(monkeypatch):
             return text
     found = assistant.answer("Did the tariffs cause people to spend less?", Spelling(), set(), True)
     assert calls == ["tariffs spend less?"] and found["notes"][0].startswith("What people said about tariffs")
+    calls.clear()   # a period after it is the period, not part of what tariffs changed ("latest wave", real set, 28 Nov 2026)
+    found = assistant.answer("Did the tariffs cause people to spend less? latest wave", Spelling(), set(), True)
+    assert found["notes"][0].startswith("What people said about tariffs")
+
+
+def test_vs_last_year_stays_a_period_when_an_unused_answer_says_last_year(tmp_path):
+    # a code's file holds every answer it was reused for: "Much more than last year", never offered here, dropped the
+    # period from "Walmart vs last year" (Phase 4, 28 Nov 2026)
+    root = tmp_path / "questions" / "CSI-US" / "tracker"
+    root.mkdir(parents=True)
+    dates = ["2025-10-06", "2025-10-13", "2026-10-05", "2026-10-12"]
+    cells = [(i, 0, a, n, 400) for i in range(4) for a, n in ((0, 100 + 10 * i), (1, 200))]
+    (root / "XQ1.json.gz").write_bytes(gzip.compress(json.dumps(question_file(
+        [[100 + i, d, 1] for i, d in enumerate(dates)], ["Which of these retailers have you bought from in the past two weeks?"],
+        [["", 1, "Amazon"], ["", 2, "Walmart"], ["", 3, "Much more than last year"]], [["total", "Total"]], cells)).encode()))
+    waves = [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping and Spending", "modules": []} for i, d in enumerate(dates)]
+    found = assistant.answer("Amazon shoppers vs last year", Index(tmp_path / "questions", waves), {100, 101, 102, 103})
+    assert len(found["plan"]["when"]) == 2 and found["layout"]["type"] == "T5"
+
+
+def test_an_amount_asked_is_answered_from_a_question_in_dollar_bands(index, monkeypatch, tmp_path):
+    if index.vectors is None:
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    root = tmp_path / "questions" / "CSI-US" / "tracker"   # beside the fixture's questions: a holiday budget in bands
+    bands = ["$1-$99", "$100-$299", "$300-$499", "$500 or more"]
+    (root / "HB1.json.gz").write_bytes(gzip.compress(json.dumps(question_file(
+        [[107, DATES[7], 1]], ["What is your estimated total budget for holiday spending this year?"],
+        [["", i + 1, b] for i, b in enumerate(bands)], [["total", "Total"]],
+        [(0, 0, i, n, 400) for i, n in enumerate((50, 150, 120, 80))])).encode()))
+    waves = [{"survey_id": 100 + i, "wave_date": d, "title": "Shopping and Spending", "modules": []} for i, d in enumerate(DATES)]
+    again = Index(tmp_path / "questions", waves)
+    again.add_vectors()
+    # the reader takes another question ("median holiday spend" took the spending-change one, then refused)
+    monkeypatch.setattr(assistant.ask_model, "read_pick", lambda q, c: (next(x["number"] for x in c if "budget" not in x["text"]), 0.5))
+    found = assistant.answer("What was the median holiday spend?", again, EVERYONE, quick=True)
+    assert found["sources"][0]["qcode"] == "HB1" and found["layout"]["type"] == "T8"
+    assert not assistant.ASKS_AMOUNT.search("What does this mean for Amazon shoppers?")   # not an amount: no move
+    assert assistant.ASKS_AMOUNT.search("average holiday budget") and assistant.ASKS_AMOUNT.search("typical amount spent on gifts")
+
+
+def test_an_unsure_pick_gives_way_only_to_a_question_found_by_meaning_about_as_near(index, monkeypatch):
+    if index.vectors is None:
+        pytest.skip("search model not downloaded (deploy/ask-model-download.py)")
+    xq1, q14 = index.docs["CSI-US/tracker/XQ1"], next(d for k, d in index.docs.items() if "Q14" in k and "save" in d["text"])
+    monkeypatch.setattr(assistant, "lacking", lambda plan, key, *rest: (["worry"] if key == xq1["key"] else [], 1, False))
+    monkeypatch.setattr(assistant.ask_model, "read_pick", lambda q, c: (next(x["number"] for x in c if "retailers" in x["text"]), 0.5))
+    shown = {"q14": {**q14}}   # found by its words alone ("cutting back on dining out" went to "why spend less on clothing?")
+    monkeypatch.setattr(index, "retrieve", lambda *a, **k: [{**xq1, "near": 0.80}, shown["q14"]])
+    question = "What share bought from Amazon in the latest wave?"   # lacking (above) says XQ1 misses "worry"
+    assert assistant.answer(question, index, EVERYONE, quick=True)["sources"][0]["qcode"] == "XQ1"
+    shown["q14"] = {**q14, "near": 0.79}   # found by meaning, within NEAR_SWAP: it uses every specific word
+    assert assistant.answer(question, index, EVERYONE, quick=True)["sources"][0]["qcode"] == "Q14"
+    shown["q14"] = {**q14, "near": 0.70}   # much further: the reader's pick stands
+    assert assistant.answer(question, index, EVERYONE, quick=True)["sources"][0]["qcode"] == "XQ1"
+
+
+def test_how_a_change_is_asked_is_not_the_subject(index):
+    key = "CSI-US/tracker/XQ1"   # "gas prices affecting consumer spending", "Walmart gaining or losing shoppers"
+    assert assistant.unasked({"about": "amazon affecting consumer"}, key, index) == []
+    assert assistant.unasked({"about": "walmart gaining losing"}, key, index) == []
+
+
+def test_respondents_of_one_week_are_never_followed_into_another(index):
+    for question in ("Which respondents in the 9 Nov survey also answered the 16 Nov survey?",   # hard set H129
+                     "Which of the 9 Nov respondents also answered on 2 Nov?"):                    # held-out-2 Y029
+        found = assistant.answer(question, index, EVERYONE)
+        assert found["mode"] == "none" and found["answer"].startswith("Each week's survey asks different people")
+    assert not assistant.FOLLOWED.search("who also answered yes to q5?")   # an answer, not another week
+    assert not assistant.FOLLOWED.search("which retailers did gen z also shop at?")
+
+
+def test_a_weekly_question_opens_by_month_and_others_by_survey():
+    from datetime import date, timedelta
+    weeks = [str(date(2026, 1, 5) + timedelta(weeks=i)) for i in range(16)]   # 16 weekly surveys, January to April
+    assert ask_figures.auto_grain(list(range(16)), weeks) == "month"
+    assert ask_figures.auto_grain(list(range(8)), weeks) == "wave"             # two months only: each survey
+    months = [f"{2024 + i // 12}-{i % 12 + 1:02d}-01" for i in range(20)]   # monthly surveys: each survey while readable
+    assert ask_figures.auto_grain(list(range(20)), months) == "wave"
+    years = [str(date(2021, 1, 4) + timedelta(weeks=i)) for i in range(260)]  # five years of weeks: still by month
+    assert ask_figures.auto_grain(list(range(260)), years) == "month"

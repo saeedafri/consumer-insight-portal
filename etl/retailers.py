@@ -13,7 +13,7 @@ the last four, any twelve) is the sum of their counts, which the screen adds in 
            weeks that ran the sector (its module tag): % of those buyers, and the sector's purchase rate
 For each retailer and week: its shoppers and their split by gender, generation, household income, region and area
 (config/retailers.yml profile); for each week, everyone's split for reference. Sentiment: each sector module's
-retailer grid (config/retailers.yml sentiment), % positive per week asked, with the module's name. Rules: config/retailers.yml and config/sectors.yml. Checked by tests/test_retailers.py.
+retailer grid (config/retailers.yml sentiment), % positive per week asked, with its sector's name. Rules: config/retailers.yml and config/sectors.yml. Checked by tests/test_retailers.py.
 """
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from pathlib import Path
 import yaml
 
 from etl import weekly_report
+from etl.sectors import ran
 from etl.weekly_report import read_waves
 
 CONFIG = Path(__file__).resolve().parents[1] / "config"
@@ -75,7 +76,7 @@ def answers(question: dict, skip: tuple) -> dict:
 
 def week_markets(wave: dict, people: dict) -> dict:
     """One week's markets: {market name: {asked, bought, shops {key: (name, {kind: bits})}}}; weekly first, then each
-    sector the week ran (its module tag)."""
+    sector the week ran (etl/sectors.py ran: its module tag, or config/sectors.yml also_ran)."""
     rules, skip = settings(), tuple(weekly_report.settings()["leave_out_answers"])
     questions, out = people["questions"], {}
     asked, shops = 0, {}
@@ -88,7 +89,7 @@ def week_markets(wave: dict, people: dict) -> dict:
         out["weekly"] = {"asked": asked, "bought": None, "shops": shops}
     for sector in rules["sectors"]:
         code = sector["tables"]["Retailers"]
-        if sector["module"] not in (wave.get("modules") or []) or code not in questions:
+        if not ran(wave, sector) or code not in questions:
             continue
         purchase = sector.get("purchase")
         bought = None
@@ -102,8 +103,9 @@ def week_markets(wave: dict, people: dict) -> dict:
 
 
 def sentiment(wave: dict, people: dict) -> dict:
-    """{retailer key: [positive, asked, module]} from the week's retailer grids (config/retailers.yml sentiment), {} if
-    none was asked. A week runs one sector, so a retailer is in one grid; the off-price weeks ask two (O4, DS8) of different retailers."""
+    """{(retailer key, sector): [positive, asked, sector]} from the week's retailer grids (config/retailers.yml sentiment),
+    {} if none was asked. A retailer can be in two grids of one week (18 Aug 2025: home furnishings and home improvement
+    both asked about Walmart), each its own figure, so a sector's view reads its own grid."""
     rules = settings()["sentiment"]
     aliases = {key(grid): key(weekly) for weekly, grid in settings()["aliases"].items()}
     found = {}
@@ -116,7 +118,7 @@ def sentiment(wave: dict, people: dict) -> dict:
                 asked |= grid["bits"].get((row[0], row[1]), 0)
             liked = sum(grid["bits"].get((row[0], row[1]), 0).bit_count() for row in rows if row[4] in rules["positive"])
             if asked:
-                found.setdefault(aliases.get(key(rows[0][2]), key(rows[0][2])), [liked, asked.bit_count(), module])
+                found[(aliases.get(key(rows[0][2]), key(rows[0][2])), module)] = [liked, asked.bit_count(), module]
     return found
 
 
@@ -147,7 +149,7 @@ def build(people_by_week: list[tuple[dict, dict]]) -> dict:
                 shop["name"] = label   # the newest spelling
                 kinds = [bits["food"] | bits["nonfood"], bits["food"], bits["nonfood"]] if name == "weekly" else [bits["any"]]
                 shop["weeks"][at] = [b.bit_count() for b in kinds] + profile(kinds[0], people["cuts"])
-        for k, figure in sentiment(wave, people).items():
+        for (k, _), figure in sentiment(wave, people).items():
             liked.setdefault(k, []).append([wave["wave_date"], *figure])
     order = ["weekly"] + [s["name"] for s in rules["sectors"]]
     out_markets = []
@@ -155,9 +157,10 @@ def build(people_by_week: list[tuple[dict, dict]]) -> dict:
         m = markets[name]
         newest = m["weeks"][-1]
         sector = next((s for s in rules["sectors"] if s["name"] == name), None)
+        asked_all = bool(sector) and not sector.get("purchase")   # no purchase question: every adult was asked (mass merchants' M1)
         out_markets.append({"name": "Weekly retailers" if name == "weekly" else name, "sector": name != "weekly",
-                            "base": "all respondents" if name == "weekly" else f"{name.lower()} shoppers asked",
-                            "shoppers": sector.get("buyers") if sector else None,   # titles: "department store shoppers"
+                            "base": "all respondents" if name == "weekly" else "adults asked" if asked_all else f"{name.lower()} shoppers asked",
+                            "shoppers": "adults" if asked_all else (sector or {}).get("buyers"),   # titles: "department store shoppers"
                             "purchase": (sector.get("purchase") or {}).get("label") if sector else None,
                             "weeks": m["weeks"], "asked": m["asked"], "bought": m["bought"], "buyers": m["buyers"],
                             "retailers": [{"name": r["name"], "weeks": {str(w): c for w, c in r["weeks"].items()},

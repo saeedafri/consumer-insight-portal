@@ -41,6 +41,9 @@ export default function Trackers() {
   const tiles = [...new Set(history.flatMap(d => Object.keys(d.tiles).filter(k => d.tiles[k])))];
   const label = (k: string) => history.find(d => d.tile_labels?.[k])?.tile_labels?.[k] ?? words(k);
   const colours = [C.red, ...blues(Math.max(1, tiles.length - 1))];
+  // a week asked of another group than the week it compares with (Holiday's "bought in past 7 days" asked only of those who
+  // had started, 28 Sep and 5 Oct 2026: 61.7% then 30.9% of everyone) is drawn hollow, so a step is not read as a change
+  const rebased = (m: Metric | null | undefined) => !!m?.flags.some(f => f.startsWith("base_changed"));
   return <div className="stack">
     <div className="page-head"><div>
       <h1>{history[0]?.title ?? name}</h1>
@@ -70,7 +73,8 @@ export default function Trackers() {
     <Glance code={code} id={week.survey_id} />
     <TileDonuts code={code} id={week.survey_id} />
 
-    {tiles.length > 0 && history.length > 1 && <Card title="Headline figures over time" sub={`% of respondents, each week the tracker ran (${history.length} of ${weeks.length} loaded)`}>
+    {tiles.length > 0 && history.length > 1 && <Card title="Headline figures over time" sub={`% of respondents, each week the tracker ran (${history.length} of ${weeks.length} loaded)${
+      history.some(d => tiles.some(k => rebased(d.tiles[k]))) ? "; a hollow point was asked of a different group than the week it is compared with" : ""}`}>
       <EChart height={320} label={`${name}: headline figures over time`}
               option={{
                 tooltip: { ...tooltip(), trigger: "axis", valueFormatter: (v: number | null) => v == null ? "–" : `${v.toFixed(1)}%` },
@@ -80,7 +84,10 @@ export default function Trackers() {
                 yAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" } },
                 series: tiles.map((k, i) => ({
                   type: "line", name: label(k), color: colours[i], symbol: "circle", symbolSize: 6, lineStyle: { width: i ? 1.8 : 2.5 },
-                  data: [...history].reverse().map(d => [time(d.wave.week_of), d.tiles[k]?.pct ?? null]) })),
+                  data: [...history].reverse().map(d => {
+                    const point = [time(d.wave.week_of), d.tiles[k]?.pct ?? null];
+                    return rebased(d.tiles[k]) ? { value: point, symbol: "emptyCircle", symbolSize: 9 } : point;
+                  }) })),
               }} />
     </Card>}
   </div>;
@@ -102,7 +109,7 @@ function TileDonuts({ code, id }: { code: string; id: number }) {
                      label: { position: "center", formatter: () => `${m!.pct!.toFixed(1)}%`, color: C.ink, fontSize: 20, fontWeight: 700 },
                      emphasis: { scaleSize: 4, label: { show: true } },
                      data: [{ name, value: m!.pct!, itemStyle: { color: i ? C.s2 : C.red } },
-                            { name: "Everyone else asked", value: 100 - m!.pct!, itemStyle: { color: C.line }, label: { show: false } }] }],
+                            { name: "Everyone else asked", value: Math.round(1000 - 10 * m!.pct!) / 10, itemStyle: { color: C.line }, label: { show: false } }] }],
         }} /></figure>;
     })}</div>
   </Card>;
@@ -149,5 +156,6 @@ function weekSheet(d: Dashboard): Pick<Sheet, "header" | "rows" | "notes"> {
   return { header: ["Figure", "Answer", "%", "People asked", `Change vs ${prior} (pts)`, "Change vs last year (pts)"],
            rows: [...block("Headline figures", headlines(d)), ...Object.entries(d.lists).flatMap(([k, items]) => block(d.list_heads?.[k] ?? words(k), items)),
                   ...Object.entries(d.segments).flatMap(([k, items]) => block(words(k), items))],
-           notes: [`${d.title}, week of ${fmtDate(d.wave.week_of)}`, "% of those asked; a list holds the week's top answers; changes in points", SOURCE] };
+           notes: [`${d.title}, week of ${fmtDate(d.wave.week_of)}`, "% of those asked; a list holds the week's top answers; changes in points, "
+                   + "each against the latest earlier week and the week a year earlier that asked its question", SOURCE] };
 }

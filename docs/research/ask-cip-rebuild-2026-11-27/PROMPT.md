@@ -12,14 +12,19 @@ people may ask, so everything you build must work for every question, not for a 
 
 1. `CLAUDE.md` (hard rules: never commit or push; never stop, restart or call the live server on 127.0.0.1:8000 or cloudflared;
    test on another port; how code is written; docs sync; status file; ponytail review; full tests before finishing).
-2. `status/README.md` (what is done, pending, stuck; update it when you start, finish or get stuck on an item).
+2. `status/README.md` (what is done, pending, stuck; update it when you start, finish or get stuck on an item). Two rows
+   meet this plan: "Ask plan writer" (In progress, waiting for the Colab run, then llama.cpp on the server) is superseded,
+   since the plan writer stays offline: move it to Pending when you start. "Ask CIP without AI per answer" (Pending, the
+   user's go) is this work: set it to In progress. The "Ask rebuild" row's rule still holds: a trained model only where a
+   fresh held-out set shows a gap rules cannot close.
 3. The findings of the previous session, all in `docs/research/ask-cip-rebuild-2026-11-27/`:
    - `01-template-spec.md`: the manager's template reverse-engineered with REA, the full layout for every answer type, conflicts,
      open questions, and 34 gaps (G1-G34) with file:line and the smallest change for each.
    - `02-research.md`: independent outside research with sources (how ChatGPT/Claude/Gemini and data products answer; CPU
      latency of small models; retrieval; templates vs LLM text; chart choice; honest evaluation).
    - `03-codebase-facts.md`: the current pipeline, data, models, test sets, logs, memory and speed, with file:line and commands.
-   - `04-council-verdict.md`: the LLM council's review of this plan (apply what it says before starting).
+   - `04-council-verdict.md`: the council's review of this plan (27 Nov 2026). Where it and this file differ, it wins. If it
+     is missing, stop and ask the user. Do not run another council on this plan.
 4. The manager's template: `~/Downloads/ask-cip-in-platform-v4.html` (open it in a browser, light and dark). Its chart numbers
    are wrong data (see section 3); use its layout, not its figures.
 
@@ -30,8 +35,12 @@ Every number below came from the previous session. Re-measure anything you rely 
 **The user's goal (27 Nov 2026):** "We planned to train our model with our own data so that everything could be answered without
 AI's help. AI would only be used in rare cases where we can't get an answer; otherwise, everything should rely on the trained
 model." Any number of questions, each answered fast, with minimum RAM, CPU, response time and server latency. Google Colab Pro
-is ready for training. The OpenAI key must barely be used: the current cap of $0.50 a month stays; quote and cap any API job
-over about $1 and ask first.
+is ready for training. The OpenAI key must barely be used: the cap is $0.50 a month in code (`CIP_ASK_BUDGET_USD`,
+`api/ask_model.py:149`), but staging's Azure setting is $10 (status/README.md, the "Ask after the 13 Nov live test" row):
+ask the user to lower it, and until then never count on the cap. The cap counts only OpenAI models: NVIDIA and Gemini are
+priced at $0 (`api/ask_model.py:62`), so they never reach it, and both may keep what they are sent (Google's free tier,
+NVIDIA's trial terms). The fallback is OpenAI's gpt-4o-mini under the cap, or none. Quote and cap any API job over about $1
+and ask first.
 
 **The manager's decisions (meeting notes, 27 Nov; they override the template where they differ):**
 - One view: remove Client view / Analyst view.
@@ -68,7 +77,12 @@ LLM as fallback) and it changes two earlier ideas:
 - **Do not put the generative "plan writer" (Qwen 0.5-1.7B) on the live path.** On one CPU it needs about 1.5-2 s (0.5B) to
   5-7 s (1.5B) per plan. Use it, or a bigger open model on Colab, offline: to label real questions and to write training
   questions and phrases.
-- **The main loss is in finding the right question, not in choosing between candidates.** Fix the search first.
+- **On single questions the main loss is in choosing, not finding.** Ask's own search (`index.retrieve`) has the right
+  question in its top 10 for 91% (210/231) and its top 20 for 95% of the real set, yet Ask is right on 79%. Of the 48 real
+  misses, at most about 21 had the right question outside the reader's list; at least about 27 were lost in the choice (a
+  wrong reader pick, a rule override, a refusal). `02-research.md`'s "the loss is in retrieval" used the plan path's
+  weaker row (85% in the top 20). For combined questions (the plan path, `api/ask_plan.py`) finding is the loss. So fix the
+  choice first for single questions, and the plan path's search for combined ones. Measure the split per miss in Phase 0.
 
 ## 3. What has been done, what went wrong, and why retraining did not help
 
@@ -107,75 +121,145 @@ LLM as fallback) and it changes two earlier ideas:
   nginx, the API and the publish together, so it is slower.
 - **Process errors to avoid repeating:** an AI writer for every answer was built and removed the same day (the user rejected the
   cost); there is no paid OpenAI key on this Mac and the free Gemini tier may keep what it is sent, so Coresight figures must
-  never go to it; other sessions edit the same files, so never `git checkout`/reset files, use patches; local test servers take
-  a while to start (wait for /healthz 200).
+  never go to it; local test servers take a while to start (wait for /healthz 200).
+- **Every local test API writes to staging's access log.** It reads staging's database, and `shared/core/audit.py record`
+  has no off switch, so its sign-ins and asks land in `cip_access_log`, the only source of real questions. Score with the
+  scorers (they call the engine, not the route). For browser checks, write the account and the start and end times in your
+  report and leave those rows out of every export of real questions. Do not add an off switch to the audit log unasked.
+- **Other sessions edit the same files.** Never `git checkout`/reset files. Before your first edit of a file, copy it to the
+  scratchpad; build the cip-stg patch from those copies for your files only (paths relative to the repo root), then
+  `git apply --check` and `git apply` in cip-stg's working tree. The user may commit mid-session, so never diff against HEAD.
 
 ## 4. What to do, in order, with a gate at each step
 
-Do every phase with tests, then report numbers to the user before the next phase. Use the skills named.
+Do every phase with tests, then report numbers to the user and wait for their go before the next phase. Use the skills named.
 
-**Phase 0: verify and research (no code).**
-- Re-read sections 1-3 against the code and data. Take a fresh baseline (golden, fresh, researched, real, no-answer, hard,
-  held-out, generated bench) on case-correct data. Record it in `status/README.md`.
-- Research anything still open with the `agent-reach` skill (its CLI is not installed on this Mac; ask the user before
-  installing, otherwise use WebSearch/WebFetch) and the `reverse-engineer-anything` (REA) skill to study live competitor answer
-  pages (layout, follow-ups, ask-back) and the manager's template. Never put Coresight data, names or figures into outside
-  requests.
-- Run the `llm-council` skill on your phase plan before coding.
+**Phase M (first; due Monday 30 Nov 2026): the manager's deliverables. Nothing else comes before it.**
+- Layout files: static HTML in `docs/research/ask-cip-rebuild-2026-11-27/mockups/`, built from the v4 template's look (never
+  its figures), light and dark, phone width. One answer card per answer type the sample questions use, each with its chart
+  design (line for time, vertical bars for categories). For one long ranked list (retailers) draw vertical and horizontal
+  bars side by side so the manager can choose (01-template-spec.md C17). Do not touch `Ask.tsx` in this phase.
+- Sample set: 10-15 questions with expected answers in the new layout (easy, hard, complex; one China, one Both-markets
+  ask-back, one follow-up, one "why", one no-survey-asks-this). Read each figure from one survey's published file: every
+  trend Ask draws today goes through the broken `wording_groups` (section 3). For a trend, check that every wave's wording
+  is the same (01-template-spec.md section 0 lists the real beauty series). Use `data/published/preview/current` (it has
+  China; `current` does not) and avoid the weekly core questions q1-q6 / Q1-Q6, which differ from staging's on this Mac.
+  Write each figure's survey, date and file next to it. Mark the set "awaiting analyst check" and ask the user who checks
+  it. Keep these questions out of every tuning set and out of `config/ask_verified.yml`.
+- Send the open questions of section 5 with them, each with the default you used.
+- Done when the user has opened the files in a browser in both themes.
+
+**Phase 0: verify and baseline (no code; about half a day).**
+- Re-read sections 1-3 against the code and data. Set meanings are in `03-codebase-facts.md` section 4.1, thresholds in
+  section 1.5, the commands in section 4.2 (always `--quick`, so no paid key is read).
+- Case-correct data: make a case-sensitive disk image (`hdiutil create -size 10g -type SPARSE -fs "Case-sensitive APFS"
+  -volname cip-cs ~/cip-cs`) and copy staging's published files into it; ask the user how to get them. Do not publish from
+  staging's database on this Mac without the user's yes: a publish holds the shared `cip_etl` lock for about 20 minutes
+  (1,203 s on 27 Nov), and on 26 Nov a long local run made a staging deploy fail (pipeline #96). If they say yes, check
+  `SELECT IS_USED_LOCK('cip_etl')` first and never run it during a deploy.
+- Take the baseline (golden, fresh, researched, real, no-answer, hard, held-out-1, held-out-2, generated bench) and the
+  speed and memory baseline of Phase 5 in the same container. For each real-set miss, record whether the right question
+  was missing from the reader's list (a finding loss) or in it (a choosing loss). Record it all in `status/README.md`.
+- Take the baseline again after Phase 1: the wording_groups fix changes series, so Phase 5 compares against the second one.
+- `02-research.md` is the research and `04-council-verdict.md` is the review: do no new outside research unless a question
+  they leave open blocks you, and run no new council on this plan.
 
 **Phase 1: correct data and the test sets (highest priority).**
 - Fix `wording_groups` so only the same question joins over the years (same answers and same meaning, not half the words);
   audit every joined series and list the ones that change; leave a test that fails if two different questions join again.
-- The manager's sample set (due first): 10-15 questions with expected answers in the new layout (easy, hard, complex, one
-  China, one Both-markets ask-back, one follow-up, one "why", one no-survey-asks-this). Exact figures from the data; an analyst
-  checks them. Do not use the template's beauty figures except the latest (65.5%, 28 Sep 2026).
-- An honest real-question test set: the 116 browser questions plus analysts' questions, split by date, frozen, never used for
-  tuning (aim for about 700 over time; report the noise). The scripted and generated sets remain floors only.
+- After the fix, recompute every figure of the Phase M sample set and tell the user which changed. Do not use the
+  template's beauty figures except the latest (65.5%, 28 Sep 2026).
+- The 116 browser questions are a development set, not a test: 112 of them come from the two super admins (two thirds
+  from the product owner, 03-codebase-facts.md section 6), and some may be in `scripts/ask_fresh.yml` (50 questions from
+  the same log, used to find fixes since 15 Nov). Use them to find and check fixes.
+- The frozen test set: ask the user for 3-5 analysts to write about 50 questions each without seeing Ask or the question
+  list, keyed by a second person; plus browser questions after 27 Nov from other accounts. Freeze it in one file; never
+  read its misses to find fixes. Until it exists, held-out-2 (30) is the only unseen set: call every result provisional.
+- Score every set as three counts: right; asked back with the right question among the choices; wrong (answered, but the
+  wrong question or figure). Count real-set misses by stem (179 of its 232 are scripted suffixes of 115 stems), not by
+  question. The scripted and generated sets remain floors only.
 
 **Phase 2: the answer layout for every question (no model needed).**
-- Implement the layout from `01-template-spec.md` for every answer type it defines (latest value, trend, compare groups, rank
-  answers, two periods, one group within another question, two answers combined, grids, multi-select, ranges, nets, China,
-  Both-markets ask-back, typed follow-up, "why" and unusual readings, ambiguous ask-back, no survey asks it, small samples, a
-  period the survey did not run). Work through G1-G34.
-- The headline is one sentence from a pattern per answer type; "rose"/"fell" only when the change is significant, otherwise
-  "about the same" (at about 400 people the margin is about +/-4.9 points).
+- First sort the 116 browser questions by answer type (T1-T20 in `01-template-spec.md` section 4.4) and count questions
+  that fit none (for example "which surveys do you have?"). Build the types in that order, one at a time, each with its
+  gaps from G1-G34, and report the order before you start. Every type in 01 is in scope; the order is not.
+- The headline is one sentence from a pattern per answer type; "rose"/"fell" only when the change is significant by the
+  existing two-proportion test (`api/dashboards.py:86` significant, 01-template-spec.md section 4.2), otherwise "about the
+  same". Never hard-code a margin: +/-4.9 points is one figure at 400 people; a change between two such surveys needs about
+  +/-6.9.
+- Leave one test per answer type that checks the market, period, group, chart type and headline verb, not only which
+  survey question was picked.
 - Chart: line for time, bars for categories, shown in every answer (remove `ASKS_CHART`). Excel export holds the chart and the
   numbers (openpyxl is installed; today only the table is exported).
 - Market selector (API input + screen), ask-back when both markets match (list the US/China question pairs in config, since
   China asks only Q1-Q9), China by age group (no generation cut), one view, New question, placeholder, internals hidden.
 - Docs in the same words in `WhatsNew.tsx` and `docs/CHANGELOG.md`; API changes also in `docs/API.md` and `ApiGuide.tsx`.
 
-**Phase 3: text written once, offline, on Colab (open models only, no paid API).**
-- For every survey question (concept): one plain phrase for the headline, a chart title, and 15-30 short questions in users'
-  words (intent-style, about 7 words, not survey wording). Filter, spot-check by a person, store in config or produce in the ETL
-  at publish so new surveys get theirs automatically.
+**Phase 3: one plain phrase per survey question, written once, offline (open models on Colab, no paid API).**
+- Already built: `config/ask_semantic.json` holds, per wording, a `name` (a noun label such as "Spending on apparel from
+  livestreams"), 6,027 aliases and 16,050 analyst-style questions, written by gpt-4o-mini in `etl/ask_semantic.py` and
+  embedded as a second index; `config/ask_verified.yml` (39 entries) answers near-repeats exactly (`VERIFIED_NEAR` 0.91,
+  `api/ask_index.py:55`). Do not regenerate the questions: ask_cip_v2 (21-22 Nov) added 6 more wordings per question for
+  +0.4 points and about 140 MB. Never add a test-set question to `ask_verified.yml`.
+- Add only what Phase 2's sentence patterns need: for every survey question (after the wording_groups fix) one phrase that
+  fits a sentence ("bought beauty products in the past three months") and a chart title. Store them next to the existing
+  fields; a person checks a random 100 and every phrase the sample set uses. A new survey falls back to its `name` until
+  the next run: `etl/ask_semantic.py` uses the paid key, so it does not write them at publish.
+- Add more user-style questions only for words a miss list shows are missing.
+- You cannot run Colab: write the notebook, the user runs it on Colab Pro, and tell them which output file to download where.
 
-**Phase 4: understanding (Colab training, small models on the server).**
-- Search first: hybrid keyword (BM25) + embedding search fused by reciprocal rank, plus the Phase 3 questions indexed; fine-tune
-  bge-small on real and checked questions. Target: right question in the top 20 for at least 98% of the frozen real set.
-- Reranker retrained on real and checked labels without the old teacher-prompt bias; a confident first search hit is never
-  overridden by a rule or the reader without stronger evidence.
+**Phase 4: understanding (choice first; training only where a measured loss needs it).**
+- Choice first, no training: a confident first search hit is never overridden by a rule or the reader without stronger
+  evidence (the TF8 and q4 cases in section 3). Score each change in minutes with `scripts/ask_golden.py --quick` on the
+  development set. Then retrain the reader only on labels a person checked: a model's labels (Qwen offline or any other)
+  are proposals, and a person checks every one that disagrees with today's reader (v6 learned its teacher's bias).
+- Search second, only where Phase 0's split shows finding losses: first the plan path (`ask_plan.candidates`, 85% in the
+  top 20; `scripts/ask_hard.py --candidates`), then single-question misses outside the reader's list. Try hybrid keyword
+  (BM25) + embedding search fused by reciprocal rank before any training. Fine-tune bge-small only if that falls short,
+  and score it inside Ask, never alone: v1, v3 and v8 were each better alone and worse inside Ask.
+- Combined questions stay on the rule-filled plan path (the plan writer is offline). Find fixes on the hard set and
+  held-out-1; held-out-2 (15/30 today) only measures. Read each held-out-2 headline yourself: `ask_hard.py` counts a case
+  right when the figures appear anywhere (03-codebase-facts.md section 4.2).
 - Slots (market, period, group, answer type): rules and synonym lists in `config/*.yml`, plus a small classifier for answer type
   if rules fall short. Do not classify the survey question itself (the question set keeps growing).
-- Confidence decides: one clear candidate → answer; 2-4 close → "Did you mean" ask-back; none → the capped LLM fallback, which
-  only picks among candidates, else "no survey asks this".
+- Make confidence work again: today every pick is labelled "reader", so GATE never fires (0 of 393). One clear candidate →
+  answer. Two to four close candidates → what Ask does is the manager's open question (section 5); until answered, keep
+  today's choice (answer the best match and offer the others under "Not what you meant?", 01-template-spec.md C24). Many
+  weak candidates, none clear → the capped fallback (section 1), which may only pick among them, never write a figure.
+  Nothing above the floor, or no fallback → "no survey asks this" with the closest questions. Never two ask-backs in one
+  answer.
 - The plan writer only offline (labelling, training data), unless it is shown to meet the latency budget below.
 
 **Phase 5: measure, gate, ship.**
-- Budgets on a 1-vCPU, 4 GB limit (e.g. `docker run --cpus=1 --memory=4g`): new question p95 at most 300 ms server time;
-  repeat under 5 ms; API peak memory no higher than today's (about 626 MB) plus 100 MB; no slowdown for other pages.
-- Accuracy: beat the Phase 0 baseline on the frozen real set by more than its noise; no drop on golden and no-answer; the
-  paid fallback answers under 5% of questions and stays under $0.50 a month.
+- Budgets, measured like-for-like: run today's code and the new code in the same container (`docker run --cpus=1
+  --memory=4g`), same data, same question list, 1 and 4 clients. New question p95 no worse than today's in that container
+  and under 500 ms; repeat under 5 ms; API peak memory no more than today's in that container plus 100 MB, counting every
+  new index, phrase and model. The Mac figures (290 ms, 626 MB) and Azure's 771 MB peak are not the baseline. Staging's
+  one core also runs nginx and a publish every 30 minutes (peak 398 MB): leave that headroom. No slowdown for other pages.
+- Accuracy, paired against the second Phase 0 baseline (after the wording_groups fix): on the frozen set and held-out-2,
+  list every question fixed and every question newly broken. Ship only if fixed outnumber broken, wrong answers fall, the
+  ask-back rate stays at or under 15% of questions, and golden and no-answer do not drop. Claim a gain only if a paired
+  test on fixed vs broken (McNemar) gives p < 0.05; otherwise say "no measurable change". The paid fallback answers under
+  5% of questions and stays within the cap of section 1.
 - Run the `llm-council` skill on the results, `/code-review`, the ponytail review, the full test suite and the frontend
-  type-check; check the screens in a browser (light, dark, phone width) on a separate port; sync to cip-stg by patch; update
+  type-check; check the screens in a browser (light, dark, phone width) on a separate port; sync to cip-stg by patch
+  (section 3), the Ask screen only after the user approves it; update
   `status/README.md`. Tell the user what to commit; never commit yourself.
 
-## 5. Open questions to ask the user (the manager decides)
-From `01-template-spec.md`: show "unweighted"? keep the number of people asked in Excel? horizontal bars for long ranked lists
-(the chart guides recommend them)? a weekly view for weekly questions? a side-by-side option for Both? does a country named in
-the question override the selector? neutral or green/red arrows? always ask back when two questions fit, or answer the best
-match first and offer the other (today's choice, 12 Nov)? how to warn about small samples without showing the base?
+## 5. Open questions for the manager (send them with the Monday deliverables; build with the default until answered)
+From `01-template-spec.md`: show "unweighted"? [no; say "Census-weighted" only when it applies] keep the number of people
+asked in Excel? [no] horizontal bars for long ranked lists (the chart guides recommend them)? [vertical, as decided; the
+mock-ups show both] a weekly view for weekly questions? [no] a side-by-side option for Both? [no: US and China buttons]
+does a country named in the question override the selector? [yes] neutral or green/red arrows? [neutral] always ask back
+when two questions fit, or answer the best match first and offer the other? [answer the best match and offer the others,
+today's choice] how to warn about small samples without showing the base? ["Fewer than 50 people answered here: read
+with caution", 01 section 4.3] a market and a question ask-back in the same answer? [ask the market only, then answer the
+best match and offer the others]
 
 ## 6. How to report
 After each phase: what changed (files), the numbers before and after, what was cut in the ponytail review, what is left, and
 any decision needed. Plain words, short. Never claim a gain you did not measure.
+In your first report, tell the user plainly what "our trained model" means here: small models on our server pick which
+survey question, market, group and period a question means; code computes every figure; fixed patterns write every
+sentence; no model writes text. Today it picks right for 79% of the real set and 15 of 30 unseen combined questions. The
+honest aim is fewer wrong answers, with "Not what you meant?" or "no survey asks this" for the rest, not 100%.

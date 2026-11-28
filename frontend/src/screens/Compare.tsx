@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { CUT_NAMES, useBook, useQuestion, useWaves } from "../api";
 import type { QuestionFile } from "../api";
-import { answerLabel, cellsOf } from "../question";
+import { answerLabel, cellsOf, withJoined } from "../question";
 import type { Cell, Cells } from "../question";
 
 type Shown = Cell & { pct: number };
@@ -30,7 +30,8 @@ export default function Compare() {
   const question = useMemo(() => book?.questions.find(x => x.id === code) ?? book?.questions[0], [book, code]);
   const dim = params.get("cut") && CUT_NAMES[params.get("cut")!] ? params.get("cut")! : "total";
   const file = useQuestion(book?.wave, question?.id ?? "");   // every wave and cut: picking waves or a cut is local
-  const cells = useMemo(() => file.data && cellsOf(file.data), [file.data]);
+  const joined = useMemo(() => file.data && withJoined(file.data), [file.data]);   // the wording's weeks under other codes too
+  const cells = useMemo(() => joined && cellsOf(joined), [joined]);
   const waves = useWaves().data;
   if (isLoading) return <SkeletonScreen kind="question" />;
   if (error || !book) return <Failure error={error} />;
@@ -68,8 +69,8 @@ export default function Compare() {
         </div>
         <QuestionTabs id={id} q={question.id} />
       </Card>
-      {file.error ? <Failure error={file.error} /> : !file.data || !cells ? <Skeleton height={420} className="card" label="waves to compare" />
-        : <Table f={file.data} cell={cells} dim={dim} current={id} events={events} titles={new Map(waves?.map(w => [w.survey_id, w]) ?? [])} from={{ ...book.wave, weighting: "unweighted" }} />}
+      {file.error ? <Failure error={file.error} /> : !joined || !cells ? <Skeleton height={420} className="card" label="waves to compare" />
+        : <Table f={joined} cell={cells} dim={dim} current={id} events={events} titles={new Map(waves?.map(w => [w.survey_id, w]) ?? [])} from={{ ...book.wave, weighting: "unweighted" }} />}
     </div>
   </div>;
 }
@@ -80,7 +81,8 @@ function Table({ f, cell, dim, current, events, titles, from }: { f: QuestionFil
   const me = f.waves.findIndex(w => w[0] === current);
   const version = f.waves[me]?.[2];
   const eligible = f.waves.map(([survey_id, wave_date, v], i) => ({ survey_id, wave_date, v, i })).filter(w => w.v === version && w.i <= me);
-  const others = f.waves.filter(w => w[2] !== version).map(([survey_id, wave_date, v]) => ({ survey_id, wave_date, text: f.versions[v - 1] }));
+  const joined = new Set(f.joined?.waves.map(w => w.join("|")));   // the wording's weeks under other codes: not this code's
+  const others = f.waves.filter(w => w[2] !== version && !joined.has(w.join("|"))).map(([survey_id, wave_date, v]) => ({ survey_id, wave_date, text: f.versions[v - 1] }));
   const d = { qcode: f.qcode, dim, not_comparable: others };
   const pick = PICKS.includes(params.get("pick") ?? "") ? params.get("pick")! : "4";
   const listed = (params.get("waves") ?? "").split(",").map(Number).filter(Boolean);

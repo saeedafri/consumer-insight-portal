@@ -15,7 +15,8 @@ import sqlalchemy as sa
 from etl import forsta_etl, survey_calendar
 
 
-def modules(title, questions=()):
+def modules(title, questions=None):
+    """A survey's modules from its title, and once loaded (questions: its wordings) from what it asked."""
     return {(m["code"], m["kind"], m["is_lead"]) for m in survey_calendar.classify(title, questions)}
 
 
@@ -31,6 +32,24 @@ def test_the_holiday_tracker_is_found_by_its_question_even_when_the_title_misses
     assert ("HOLIDAY_TRACKER", "seasonal", False) in modules(
         title, ["Now we would like to focus on your holiday shopping. What is the current status of your holiday shopping?"])
     assert ("HOLIDAY_TRACKER", "seasonal", False) in modules("Shopping and Spending - inc Luxury + Holiday tracker + Big Deal Days Retro")
+
+
+def test_a_loaded_wave_carries_the_topics_it_asked_whatever_its_title_says():
+    """28 Nov 2026 check: the gas-price tracker showed 17 of the 34 weeks that asked its questions (725's title names no
+    gas topic, 688 says "Middle East Gas Shock"), financial health missed 438 and 256, holiday outlook 456, and GenAI
+    counted 10 Aug 2026, which asked none of its questions."""
+    gas = ["How much attention are you paying to the military conflict in the Middle East?",
+           "Where have you reduced your spending due to higher gas prices?"]
+    drugstore = "Shopping and Spending - inc Drugstore/Pharmacy + Holiday Tracker + Shrink + Tariffs + Inflation"
+    assert ("MIDEAST_GAS", "topic", False) in modules(drugstore, gas)
+    assert ("MIDEAST_GAS", "topic", False) in modules("Shopping and Spending - inc Footwear + Middle East Gas Shock")   # not loaded yet
+    assert ("HOLIDAY", "topic", False) in modules("Shopping and Spending - inc Footwear + Holiday Planning + Holiday Tracking + GLP1", [
+        "Looking ahead, please provide your best guess for how your holiday spending in 2026 will compare to 2025."])
+    assert ("FINANCIAL_HEALTH", "topic", False) in modules("Shopping and Spending - inc Luxury + Holiday tracker + Big Deal Days Retro", [
+        "How likely are you to receive an economic windfall like student loan forgiveness in the coming 12 months?"])
+    genai = "Shopping and Spending - inc Apparel + GenAI + MidEast Gas Price Shock + Big Deal Days"
+    assert {m[0] for m in modules(genai, gas)} == {"APPAREL", "MIDEAST_GAS", "BIG_DEAL_DAYS"}   # no GenAI question: no GenAI
+    assert ("GENAI", "topic", False) in modules(genai)                                          # until loaded, its title
 
 
 def test_the_rotation_predicts_the_next_lead_sector():

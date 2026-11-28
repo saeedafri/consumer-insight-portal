@@ -7,7 +7,8 @@
 #              buyers a week, too few to split by income on its own (the weekly report pools 4 weeks for the same reason)
 #   min_buyers a retailer's shopper profile is shown only from this many buyers in the pooled weeks (HIDDEN_BASE)
 #   sentiment  each sector module's "How do you feel about each of the following retailers?" (a grid of that sector's
-#              retailers, asked in its weeks every ~12 weeks): code: the module's name shown with the figure; positive =
+#              retailers, asked in its weeks every ~12 weeks): code: its sector (config/sectors.yml name), shown with the
+#              figure; a sector's view reads only its own grid, the weekly view the grid that asked the most; positive =
 #              these answers among those asked. Until 16 Nov 2026 only the apparel grid (AP8) was read, so a retailer
 #              outside apparel (Costco, Dollar General, Dollar Tree, Family Dollar) showed "not asked". Left out: DS4 (the
 #              drugstore module's pharmacy counters, "Costco pharmacy") and BT14 (became a question about beauty channels)
@@ -22,8 +23,8 @@ pool: 4
 min_buyers: 30
 sentiment:
   questions:
-    AP8: Apparel
-    M3: Mass merchants / warehouse clubs
+    AP8: Clothing
+    M3: Mass merchants and warehouse clubs
     DS8: Dollar stores
     O4: Off-price
     EC5: eCommerce

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 
 /** The newest What's new date (screens/WhatsNew.tsx loads only when opened, so the menu cannot read it there).
  *  tests/test_docs.py fails until it equals docs/CHANGELOG.md's newest date. */
-export const LATEST_RELEASE = "2026-11-27";
+export const LATEST_RELEASE = "2026-11-28";
 
 type Markers = Record<string, number | undefined>;   // each menu's newest survey id or time
 const KEY = "cip-seen";

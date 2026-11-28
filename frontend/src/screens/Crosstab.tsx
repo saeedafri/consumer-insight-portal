@@ -83,7 +83,7 @@ export default function Crosstab() {
       </Card>
       {!profiled && <p className="muted">This survey has no respondent profile (gender, age, generation…), so only the Total column is available.</p>}
       {mode === "banner" ? (
-        <Banner question={question} n={book.n} wave={fmtDate(book.wave.wave_date)} cols={cols} from={book.wave} />
+        <Banner question={question} wave={fmtDate(book.wave.wave_date)} cols={cols} from={book.wave} />
       ) : (
         <TwoCuts id={id} question={question} />
       )}
@@ -91,7 +91,7 @@ export default function Crosstab() {
   </div>;
 }
 
-function Banner({ question, n, wave, cols, from }: { question: Question; n: Record<Column, number>; wave: string; cols: Column[]; from: Wave }) {
+function Banner({ question, wave, cols, from }: { question: Question; wave: string; cols: Column[]; from: Wave }) {
   const [params, setParams] = useSearchParams();
   const ref = (cols.includes(params.get("ref") as Column) ? params.get("ref") : "Total") as Column;
   const marks = params.get("marks") === "arrows" ? "arrows" : "letters";
@@ -117,7 +117,7 @@ function Banner({ question, n, wave, cols, from }: { question: Question; n: Reco
         </TabsList>
       </Tabs>
       <ExportButtons onExport={exportAs} /></div>}>
-    {question.groups.map(g => <Matrix key={g.label} g={g} q={question} n={n} cols={cols} refCol={ref} marks={marks} hover={on} onRef={c => set("ref", c)} />)}
+    {question.groups.map(g => <Matrix key={g.label} g={g} q={question} cols={cols} refCol={ref} marks={marks} hover={on} onRef={c => set("ref", c)} />)}
     <div className="legend-line">
       <span className="heat-legend" aria-label="Shade: share of the table's largest figure, in six steps">low{C.heat.map(c => <i key={c} style={{ background: c }} />)}high share</span>
       <span style={{ color: "var(--warn)" }}>Amber base = fewer than {SMALL_BASE} respondents: read with caution</span>
@@ -127,7 +127,7 @@ function Banner({ question, n, wave, cols, from }: { question: Question; n: Reco
   </Card>;
 }
 
-function Matrix({ g, q, n, cols, refCol, marks, hover, onRef }: { g: Group; q: Question; n: Record<Column, number>; cols: Column[]; refCol: Column; marks: string;
+function Matrix({ g, q, cols, refCol, marks, hover, onRef }: { g: Group; q: Question; cols: Column[]; refCol: Column; marks: string;
   hover: (body: ReactNode) => object; onRef: (c: Column) => void }) {
   const max = Math.max(1, ...g.rows.flatMap(r => cols.map(c => r[c] ?? 0)));
   const base = (c: Column) => g.bases[c] ?? 0;
@@ -150,7 +150,7 @@ function Matrix({ g, q, n, cols, refCol, marks, hover, onRef }: { g: Group; q: Q
     <table className="data xt">
       <thead><tr><th>Answer</th>{cols.map((c, i) =>
         <th key={c} className={`num ${c === refCol && marks === "arrows" ? "ref" : ""}`}>
-          <button onClick={() => onRef(c)} title={`Compare against ${c}`}>{c}<small>{LETTERS[i]} · n={n[c] ?? base(c)}</small></button></th>)}</tr></thead>
+          <button onClick={() => onRef(c)} title={`Compare against ${c}`}>{c}<small>{LETTERS[i]} · n={base(c)}</small></button></th>)}</tr></thead>
       <tbody>
         <tr className="base-row"><th scope="row">Base (answered)</th>{cols.map(c =>
           <td key={c} className="num" style={base(c) < SMALL_BASE ? { color: "var(--warn)" } : undefined}>{base(c)}{base(c) < SMALL_BASE ? " ⚠" : ""}</td>)}</tr>

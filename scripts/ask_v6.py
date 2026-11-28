@@ -2,6 +2,7 @@
 
     python scripts/ask_v6.py export ~/Downloads/cip-colab     # v6-train.json, v6-tests.json into that folder
     python scripts/ask_v6.py export-search ~/Downloads/cip-colab   # v8-search.json, v8-tests.json: the v8 notebook's data
+    python scripts/ask_v6.py export-reader ~/Downloads/cip-colab   # reader-v9.json: scripts/colab/train_reader_v9.ipynb's data
     python scripts/ask_v6.py score replies.json golden        # Ask's score with these picks in the AI's place
     python scripts/ask_v6.py score replies.json bank          # the same on the big exam's 3,000 (seed 11)
     python scripts/ask_v6.py score replies.json golden --reader   # Ask as served: its reader (models/ask-reader) picks,
@@ -26,14 +27,16 @@ import gzip
 import json
 import os
 import random
+import re
 import sys
+import zlib
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from ask_golden import GOLDEN, score  # noqa: E402  (it reads the key from .env: removed below)
+from ask_golden import GOLDEN, score, stem  # noqa: E402  (it reads the key from .env: removed below)
 
 from api import ask_index, ask_model, ask_reader, assistant  # noqa: E402
 
@@ -73,9 +76,9 @@ def without_api(replies: dict | None, scratch: Path, reader: bool = False) -> di
     return last
 
 
-def load_index():
-    waves = json.loads(gzip.decompress((PUBLISHED / "waves.json.gz").read_bytes()))
-    index = assistant.Index(PUBLISHED / "questions", waves)
+def load_index(published: Path = PUBLISHED):
+    waves = json.loads(gzip.decompress((published / "waves.json.gz").read_bytes()))
+    index = assistant.Index(published / "questions", waves)
     index.add_vectors()
     return index, {w["survey_id"] for w in waves}, {w["survey_id"]: w.get("country") or "US" for w in waves}
 
@@ -180,6 +183,66 @@ def export_search(folder: Path, train: Path) -> None:
           + ", ".join(f"{t} {len(tests[t])} ({len(reads[t])} reach the AI step)" for t in tests))
 
 
+TRAIN_SHARE = 7   # of 10 stems of the real and dev sets trained on; the other 3 stay back to score the reader inside Ask
+POOL_PER = 2      # analysts' asks a survey question wording gives the anchor pool (config/ask_semantic.json "asks")
+
+
+def export_reader(folder: Path, published: Path) -> None:
+    """reader-v9.json into folder, for scripts/colab/train_reader_v9.ipynb (Phase 4 part 2, 28 Nov 2026): for every real
+    and dev question, and an anchor pool of analysts' asks, exactly what Ask's reader reads (the question as
+    ask_reader.by_cut gives it, each candidate's line from ask_model.describe_candidate), the survey key and wording of
+    each line, and today's pick and lead. Real and dev are split by stem (TRAIN_SHARE of 10 trained on); every other test
+    set, and the manager's sample questions, are kept out of the pool."""
+    without_api(None, folder, reader=True)
+    index, visible, _ = load_index(published)
+    seen = {}
+    read_pick = ask_model.read_pick
+
+    def recording(question, candidates):
+        found = read_pick(question, candidates)
+        seen.update(reads=question, candidates=candidates, found=found)
+        return found
+    ask_model.read_pick = recording
+    by_text = collections.defaultdict(list)
+    for k, d in index.docs.items():
+        by_text[d["text"]].append(k)
+
+    def item(question, **extra):
+        seen.clear()
+        assistant.answer(question, index, visible, True)
+        if not seen.get("candidates") or seen["found"] is None:
+            return None   # names, verified answers or the rules answered it: the reader never read it
+        cands = seen["candidates"]
+        keys = [next((k for k in by_text.get(c["text"], []) if index.docs[k]["waves"] == c["waves"] and index.docs[k]["first"] == c["first"]), None)
+                for c in cands]
+        pick, lead = seen["found"]
+        return {"q": question, "reads": seen["reads"], "lines": [ask_model.describe_candidate(c) for c in cands], "keys": keys,
+                "texts": [c["text"] for c in cands], "today": pick, "lead": round(lead, 3), **extra}
+
+    tests = {name: yaml.safe_load((ROOT / "scripts" / f"ask_{name}.yml").read_text()) for name in ("real", "dev")}
+    kept_out = {str(c.get("q") or c.get("question", "")).lower() for name in ("golden", "fresh", "researched", "hard", "heldout", "heldout2", "real", "dev")
+                for c in yaml.safe_load((ROOT / "scripts" / f"ask_{name}.yml").read_text())}
+    samples = ROOT / "docs/research/ask-cip-rebuild-2026-11-27/mockups/samples.js"
+    kept_out |= {q.lower() for q in re.findall(r'"question": "([^"]+)"', samples.read_text())}
+    items = []
+    for name, cases in tests.items():
+        for c in cases:
+            split = "train" if zlib.crc32(stem(c["q"]).encode()) % 10 < TRAIN_SHARE else "held"
+            if (found := item(c["q"], set=name, stem=stem(c["q"]), want=c["want"], split=split)):
+                items.append(found)
+    rng = random.Random(9)
+    semantic = json.loads(ask_index.SEMANTIC.read_text())
+    for entry in semantic.values():
+        asks = [a for a in entry.get("asks", []) if a.lower() not in kept_out]
+        for a in rng.sample(asks, min(POOL_PER, len(asks))):
+            if (found := item(a, set="pool", split="held" if rng.random() < 0.1 else "train")):
+                items.append(found)
+    (folder / "reader-v9.json").write_text(json.dumps({"items": items, "reader_sure": assistant.READER_SURE,
+                                                       "reads": "api/ask_model.py describe_candidate; read_pick's question is ask_reader.by_cut"}))
+    counts = collections.Counter((i["set"], i["split"]) for i in items)
+    print(f"{len(items)} questions read by the reader: " + ", ".join(f"{s} {sp} {n}" for (s, sp), n in sorted(counts.items())))
+
+
 def score_replies(replies_file: Path, test: str, reader: bool) -> None:
     """Ask's final answers with the replies in the AI's place: right of the golden set or the big-exam sample."""
     replies = json.loads(replies_file.read_text())
@@ -220,6 +283,9 @@ def main() -> int:
     x = sub.add_parser("export-search")
     x.add_argument("folder", type=Path)
     x.add_argument("--train", type=Path, default=Path("~/Downloads/cip-colab/v7-train.json"), help="the practice questions, labelled")
+    r = sub.add_parser("export-reader")
+    r.add_argument("folder", type=Path)
+    r.add_argument("--published", type=Path, default=PUBLISHED, help="another publish's api/v1 (staging's, on the case-sensitive disk)")
     s = sub.add_parser("score")
     s.add_argument("replies", type=Path)
     s.add_argument("test", choices=("golden", "bank"))
@@ -228,6 +294,8 @@ def main() -> int:
     assistant.GATE = -1.0   # always the best answer: no "which did you mean?" in a score
     if args.do == "export":
         export(args.folder.expanduser(), args.per)
+    elif args.do == "export-reader":
+        export_reader(args.folder.expanduser(), args.published.expanduser())
     elif args.do == "export-search":
         export_search(args.folder.expanduser(), args.train.expanduser())
     else:

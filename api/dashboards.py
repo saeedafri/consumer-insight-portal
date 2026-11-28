@@ -21,7 +21,7 @@ import hashlib
 import json
 import logging
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -48,7 +48,7 @@ def load_config() -> dict:
 def series(conn, module: str) -> list[dict]:
     """Every wave of the module, loaded or not (hibernated waves have no survey_id)."""
     rows = [dict(r) for r in conn.execute(text(
-        "SELECT w.forsta_path, w.season, w.series_wave_no, w.launched_on, s.survey_id, s.wave_label,"
+        "SELECT w.forsta_path, w.season, w.series_wave_no, w.launched_on, s.survey_id, s.wave_label, s.wave_date,"
         "       (SELECT SUM(r.is_qualified) FROM cip_respondent r WHERE r.survey_id = s.survey_id) AS qualified"
         "  FROM cip_wave_module w"
         "  LEFT JOIN cip_forsta_survey f ON f.forsta_path = w.forsta_path"
@@ -56,22 +56,30 @@ def series(conn, module: str) -> list[dict]:
         " WHERE w.module_code = :m AND w.launched_on IS NOT NULL ORDER BY w.launched_on"), {"m": module}).mappings()]
     for r in rows:   # MySQL returns a date, SQLite a string
         r["launched_on"] = date.fromisoformat(str(r["launched_on"])[:10])
+        r["wave_date"] = r["wave_date"] and date.fromisoformat(str(r["wave_date"])[:10])
     return rows
+
+
+def week_of(wave: Optional[dict]) -> Optional[str]:
+    """The week a wave is shown under: its survey's date, as the week picker and every other screen show it (Forsta's
+    launch can be days earlier: 4 Jul vs 7 Jul 2025); the launch for a wave not loaded."""
+    return wave and (wave.get("wave_date") or wave["launched_on"]).isoformat()
 
 
 LY_RULES = ("same_wave_number", "same_calendar_week", "nearest_year_ago")
 
 
 def comparisons(waves: list[dict], wave: dict, ly_rule: str = "same_calendar_week") -> tuple[Optional[dict], Optional[dict]]:
-    """Prior: the previous wave of the module (same season for seasonal ones). Last year, by the module's rule:
+    """Prior: the latest earlier wave of `waves` (same season for seasonal ones). Last year, by the module's rule:
       same_wave_number    wave N of last season (the business team's Databank: wave 3 2026 vs wave 3 2025)
       same_calendar_week  the wave launched in the same calendar week one year earlier (±3 days)
       nearest_year_ago    the wave launched closest to one year earlier, within a month (monthly topic modules)
-    Loaded or not — so a missing one is reported, not skipped."""
+    Loaded or not — so a missing one is reported, not skipped. compute() passes only the waves that asked the
+    question (or are not loaded), so a week that skipped it is never the comparison."""
     if ly_rule not in LY_RULES:
         raise ValueError(f"ly_rule must be one of {LY_RULES}")
-    prior = next((w for w in waves if w["season"] == wave["season"]
-                  and w["series_wave_no"] == wave["series_wave_no"] - 1), None)
+    prior = max((w for w in waves if w["season"] == wave["season"] and w["launched_on"] < wave["launched_on"]),
+                key=lambda w: w["launched_on"], default=None)
     target = wave["launched_on"] - timedelta(days=364)
     if ly_rule == "same_wave_number":
         ly = next((w for w in waves if w["season"] == wave["season"] - 1 and w["series_wave_no"] == wave["series_wave_no"]), None)
@@ -144,10 +152,13 @@ def tested(cube: dict, wave: Optional[dict], qcode: str, answers: list) -> Optio
 
 
 def metric(code, label, now, prior, ly, waves, cfg, segment="Total", rank=0) -> dict:
-    """One number with its comparisons and the flags that warn a reader before they compare."""
+    """One number with its comparisons (and the week each compares with) and the flags that warn a reader before
+    they compare. Percentages stay unrounded: payload() rounds each figure and change once (rounding to 3 decimals
+    first put 13.4503% on screen as 13.4, and Tariffs' 6 Jul 2026 change of -3.9 as -3.8: 28 Nov 2026 check)."""
     (n, base), (wave, prior_wave, ly_wave) = now, waves
     row = {"metric_code": code, "segment": segment, "rank_no": rank, "label": label, "n": n, "base_n": base,
-           "pct": round(100 * n / base, 3), "prior_pct": None, "prior_base_n": None, "ly_pct": None, "ly_base_n": None}
+           "pct": 100 * n / base, "prior_pct": None, "prior_base_n": None, "ly_pct": None, "ly_base_n": None,
+           "prior_week": None, "ly_week": None}
     flags = ["small_base"] if base < cfg["small_base"] else []
     if base < HIDDEN_BASE:
         flags.append("suppressed")
@@ -155,7 +166,7 @@ def metric(code, label, now, prior, ly, waves, cfg, segment="Total", rank=0) -> 
         if other is None:
             flags.append(f"{key}_missing")
             continue
-        row[f"{key}_pct"], row[f"{key}_base_n"] = round(100 * other[0] / other[1], 3), other[1]
+        row[f"{key}_pct"], row[f"{key}_base_n"], row[f"{key}_week"] = 100 * other[0] / other[1], other[1], week_of(other_wave)
         if abs(100 * base / wave["qualified"] - 100 * other[1] / other_wave["qualified"]) > BASE_SHIFT:
             flags.append(f"base_changed_{key}")
     row["flags"] = ",".join(flags)
@@ -163,43 +174,57 @@ def metric(code, label, now, prior, ly, waves, cfg, segment="Total", rank=0) -> 
 
 
 def compute(conn, code: str, survey_id: int) -> tuple[dict, list[dict]]:
-    """Every number of one dashboard for one wave → (build header, metric rows)."""
+    """Every number of one dashboard for one wave → (build header, metric rows). Each tile, list and segment compares
+    with the latest earlier wave and the last-year wave that asked its own question in its usual meaning (meanings()):
+    a week that asked part of the tracker (GenAI's shopping question alone, May-Aug 2026) or none of it (GLP-1's
+    10 Nov 2025 asked other questions under its codes) is never compared as if it had. The header's prior and last
+    year are the dashboard's as a whole, and a figure compared with another week names it (payload)."""
     cfg = load_config()[code]
-    waves = series(conn, cfg["module"])
-    wave = next(w for w in waves if w["survey_id"] == survey_id)
-    prior, ly = comparisons(waves, wave, cfg.get("ly_rule", "same_calendar_week"))
-    trio = (wave, prior, ly)
-    qcodes = sorted({t["qcode"] for t in cfg["tiles"]} | {l["qcode"] for l in cfg["lists"]})
+    rule = cfg.get("ly_rule", "same_calendar_week")
+    specs = cfg["tiles"] + cfg["lists"]
+    every = series(conn, cfg["module"])
+    usual = meanings(conn, [w["survey_id"] for w in every if w["survey_id"]], specs, cfg.get("aliases"))
+    def asked(spec, w):   # a wave whose code means something else counts as not asked
+        return usual.get((spec["code"], w["survey_id"]), False)
+    waves = [w for w in every if not w["survey_id"] or any(asked(s, w) for s in specs)]
+    count: Counter = Counter()
+    for w in waves:   # "Wave N": the Nth week (of the season) that asked its questions, as the tracker page counts them
+        count[w["season"]] += 1
+        w["series_wave_no"] = count[w["season"]]
+    wave = next(w for w in every if w["survey_id"] == survey_id)
+    prior, ly = comparisons(waves, wave, rule)
+    trios = {s["code"]: (wave, *comparisons([w for w in waves if not w["survey_id"] or asked(s, w)], wave, rule)) for s in specs}
+    qcodes = sorted({s["qcode"] for s in specs})
     dims = ["total"] + [s["dim"] for s in cfg.get("segments", [])]
-    loaded = [w["survey_id"] for w in trio if w and w["survey_id"]]
+    loaded = sorted({w["survey_id"] for trio in [*trios.values(), (wave, prior, ly)] for w in trio if w and w["survey_id"]})
     cube = cells(conn, loaded, qcodes, dims, cfg.get("aliases"))
-    usual = meanings(conn, [w["survey_id"] for w in waves if w["survey_id"]], cfg["tiles"], cfg.get("aliases"))
     tiles = {t["code"]: t for t in cfg["tiles"]}
-    def same(t, w):   # a wave whose codes mean something else counts as not asked
-        return w if w and usual.get((t["code"], w["survey_id"])) else None
     rows = []
     for t in cfg["tiles"]:
-        now = share(cube, same(t, wave), t["qcode"], t["codes"])
+        trio = trios[t["code"]]
+        now = asked(t, wave) and share(cube, wave, t["qcode"], t["codes"])
         if now:
-            rows.append(metric(t["code"], t["label"], now, share(cube, same(t, prior), t["qcode"], t["codes"]),
-                               share(cube, same(t, ly), t["qcode"], t["codes"]), trio, cfg))
+            rows.append(metric(t["code"], t["label"], now, *(share(cube, w, t["qcode"], t["codes"]) for w in trio[1:]), trio, cfg))
             rows[-1]["sig"] = tested(cube, wave, t["qcode"], t["codes"])
     for spec in cfg["lists"]:
-        cell = cube.get((survey_id, spec["qcode"], "total", "Total"))
+        trio = trios[spec["code"]]
+        def offered(w, label):   # an answer that week did not offer (GenAI's Claude, Nov 2025) has no comparison, not 0 %
+            other = w and cube.get((w["survey_id"], spec["qcode"], "total", "Total"))
+            return share(cube, w, spec["qcode"], [label]) if other and label in other["answers"] else None
+        cell = asked(spec, wave) and cube.get((survey_id, spec["qcode"], "total", "Total"))
         ranked = sorted(((n, label) for label, n in (cell or {"answers": {}})["answers"].items()
                          if label not in spec.get("exclude", []) and not filler(label)), key=lambda x: (-x[0], x[1]))
         for rank, (n, label) in enumerate(ranked[:spec["top"]], 1):
-            rows.append(metric(spec["code"], label, (n, cell["base"]), share(cube, prior, spec["qcode"], [label]),
-                               share(cube, ly, spec["qcode"], [label]), trio, cfg, rank=rank))
+            rows.append(metric(spec["code"], label, (n, cell["base"]), *(offered(w, label) for w in trio[1:]), trio, cfg, rank=rank))
             rows[-1]["sig"] = tested(cube, wave, spec["qcode"], [label])
     for seg in cfg.get("segments", []):
         tile = tiles[seg["of"]]
+        trio = trios[tile["code"]]
         for value in seg["order"]:
-            now = share(cube, same(tile, wave), tile["qcode"], tile["codes"], seg["dim"], value)
+            now = asked(tile, wave) and share(cube, wave, tile["qcode"], tile["codes"], seg["dim"], value)
             if now:
-                rows.append(metric(seg["code"], value, now,
-                                   share(cube, same(tile, prior), tile["qcode"], tile["codes"], seg["dim"], value),
-                                   share(cube, same(tile, ly), tile["qcode"], tile["codes"], seg["dim"], value), trio, cfg, segment=value))
+                rows.append(metric(seg["code"], value, now, *(share(cube, w, tile["qcode"], tile["codes"], seg["dim"], value)
+                                                              for w in trio[1:]), trio, cfg, segment=value))
     built = [c["built_at"] for k, c in cube.items() if k[0] == survey_id]
     header = {"dashboard_code": code, "survey_id": survey_id, "wave": wave, "waves": waves,
               "prior": prior, "ly": ly, "cube_built_at": max(built) if built else None}
@@ -270,7 +295,9 @@ def takeaways(rows: list[dict], cfg: dict) -> list[str]:
 
 
 def payload(header: dict, rows: list[dict]) -> dict:
-    """The browser's whole dashboard in one small document: no further requests, no client maths."""
+    """The browser's whole dashboard in one small document: no further requests, no client maths. Every figure and
+    change is rounded here, once, from the counts. prior_week / ly_week name the week a figure compares with when it
+    is not the header's (the previous wave skipped its question: Tariffs' 26 Oct 2026 asked only IN1 and IN2)."""
     w, prior, ly = header["wave"], header["prior"], header["ly"]
     def number(r):
         if "suppressed" in r["flags"]:   # fewer than HIDDEN_BASE people: the base only, as on every other screen
@@ -279,11 +306,13 @@ def payload(header: dict, rows: list[dict]) -> dict:
         return {"label": r["label"], "segment": r["segment"], "pct": round(r["pct"], 1), "n": r["n"], "base": r["base_n"],
                 "vs_prior": point_change(r["pct"], r["prior_pct"]), "vs_ly": point_change(r["pct"], r["ly_pct"]),
                 "ly_pct": None if r["ly_pct"] is None else round(r["ly_pct"], 1),
+                "prior_week": None if r.get("prior_week") == week_of(prior) else r.get("prior_week"),
+                "ly_week": None if r.get("ly_week") == week_of(ly) else r.get("ly_week"),
                 "flags": [f for f in r["flags"].split(",") if f]}
     group = lambda code: [number(r) for r in rows if r["metric_code"] == code]
     cfg = load_config()[header["dashboard_code"]]
     wave_info = lambda x: x and {"survey_id": x["survey_id"], "wave_no": x["series_wave_no"], "season": x["season"],
-                                 "week_of": x["launched_on"].isoformat(), "loaded": bool(x["survey_id"])}
+                                 "week_of": week_of(x), "loaded": bool(x["survey_id"])}
     return {
         "dashboard": header["dashboard_code"], "title": cfg["title"],
         "wave": wave_info(w), "prior": wave_info(prior), "last_year": wave_info(ly),
@@ -345,7 +374,7 @@ def build(code: str, survey_id: int) -> Optional[int]:
             "INSERT INTO cip_dash_metric (build_id, metric_code, segment, rank_no, label, n, base_n, pct,"
             " prior_pct, prior_base_n, ly_pct, ly_base_n, flags) VALUES (:b, :metric_code, :segment, :rank_no,"
             " :label, :n, :base_n, :pct, :prior_pct, :prior_base_n, :ly_pct, :ly_base_n, :flags)"),
-            [{"b": build_id, **r} for r in rows])
+            [{"b": build_id, **r, **{k: r[k] and round(r[k], 3) for k in ("pct", "prior_pct", "ly_pct")}} for r in rows])   # DECIMAL(6,3)
         conn.execute(text("INSERT INTO cip_dash_payload (build_id, etag, payload_json, payload_gz) VALUES (:b, :e, :j, :g)"),
                      {"b": build_id, "e": hashlib.sha256(body.encode()).hexdigest()[:16], "j": body,
                       "g": gzip.compress(body.encode(), 9)})
@@ -357,35 +386,40 @@ def build(code: str, survey_id: int) -> Optional[int]:
     return build_id
 
 
-def meanings(conn, ids: list[int], tiles: list[dict], aliases: Optional[dict] = None) -> dict:
-    """{(tile code, survey_id): True when the tile's answer codes carry their usual labels in that wave}.
-    "Usual" is the most common labelling across the module's waves: a wave that reused the question code
-    for another question (GLP1 wave of 10 Nov 2025: GP2/GP3 asked about groceries) is left out, not misread."""
-    labels: dict = defaultdict(dict)
+def meanings(conn, ids: list[int], specs: list[dict], aliases: Optional[dict] = None) -> dict:
+    """{(tile or list code, survey_id): True when its question means what it usually does in that wave}: the same
+    question type and, for a tile, the same labels on its answer codes. "Usual" is the most common across the module's
+    waves: a wave that reused the code for another question (GLP-1, 10 Nov 2025: GP2-GP5 asked about groceries and the
+    drug's price, single-choice where GP4 and GP5 are lists) is left out of that tile or list, not misread."""
+    found: dict = {}
     aliases = aliases or {}
+    qcodes = {s["qcode"] for s in specs}
     if ids:
-        for sid, qcode, value, label in conn.execute(text(
-                "SELECT q.survey_id, q.qcode, o.value_code, o.value_label FROM cip_question q"
-                " JOIN cip_option o ON o.question_id = q.question_id WHERE q.survey_id IN :s AND q.qcode IN :q")
+        for sid, qcode, qtype, value, label in conn.execute(text(
+                "SELECT q.survey_id, q.qcode, q.qtype, o.value_code, o.value_label FROM cip_question q"
+                " LEFT JOIN cip_option o ON o.question_id = q.question_id WHERE q.survey_id IN :s AND q.qcode IN :q")
                 .bindparams(bindparam("s", expanding=True), bindparam("q", expanding=True)),
-                {"s": ids, "q": sorted({t["qcode"] for t in tiles} | {o for o, n in aliases.items() if n in {t["qcode"] for t in tiles}}) or ["-"]}):
-            labels[(sid, aliases.get(qcode, qcode))][value] = " ".join(label.lower().replace("’", "'").split())
+                {"s": ids, "q": sorted(qcodes | {o for o, n in aliases.items() if n in qcodes}) or ["-"]}):
+            question = found.setdefault((sid, aliases.get(qcode, qcode)), {"type": qtype, "labels": {}})
+            if value is not None:
+                question["labels"][value] = " ".join(label.lower().replace("’", "'").split())
     out = {}
-    for t in tiles:
-        seen = {sid: tuple(labels[(sid, t["qcode"])].get(c) for c in t["codes"]) for sid in ids if (sid, t["qcode"]) in labels}
+    for s in specs:
+        seen = {sid: (q["type"], *(q["labels"].get(c) for c in s.get("codes", []))) for (sid, qcode), q in found.items() if qcode == s["qcode"]}
         usual = Counter(seen.values()).most_common(1)[0][0] if seen else None
-        out.update({(t["code"], sid): key == usual for sid, key in seen.items()})
+        out.update({(s["code"], sid): key == usual for sid, key in seen.items()})
     return out
 
 
 def check(conn) -> list[str]:
-    """Waves whose tile codes mean something else (left out of that tile, listed here for the data team)."""
+    """Waves whose tile or list codes mean something else (left out of it, listed here for the data team)."""
     problems = []
     for code, cfg in load_config().items():
         ids = [w["survey_id"] for w in series(conn, cfg["module"]) if w["survey_id"]]
-        usual = meanings(conn, ids, cfg["tiles"], cfg.get("aliases"))
-        problems += [f"{code}.{tile}: {next(t['qcode'] for t in cfg['tiles'] if t['code'] == tile)} means something else in survey {sid}"
-                     for (tile, sid), ok in sorted(usual.items()) if not ok]
+        specs = {s["code"]: s for s in cfg["tiles"] + cfg["lists"]}
+        usual = meanings(conn, ids, list(specs.values()), cfg.get("aliases"))
+        problems += [f"{code}.{spec}: {specs[spec]['qcode']} means something else in survey {sid}"
+                     for (spec, sid), ok in sorted(usual.items()) if not ok]
     return problems
 
 

@@ -28,7 +28,8 @@ surveys:
     change_sections: [Food retailers, Nonfood retailers, Bought in store, Bought online]
     change_period: three months
     outlook: Personal finances
-    outlook_note: "net better: % expecting better minus % worse, next 12 months"
+    # this week's own net: the weekly report leads with the four-week average (-7.0 against this week's -14.6, 23 Nov 2026)
+    outlook_note: "net better this week (the weekly report leads with the four-week average): % expecting better minus % worse, next 12 months"
     bills: {question: q6, group: Utilities}
 
   - name: China

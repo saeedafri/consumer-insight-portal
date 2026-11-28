@@ -21,6 +21,13 @@ study_type: tracker
 leave_out: "^(none of|other\\s*($|[-–(])|don.?t (know|recall)|prefer not)"
 # groups that are no group (the research team, 25 Nov 2026): household income's "Prefer not to say / answer"
 leave_out_groups: {income_band: "^prefer not"}
+# answers the tracker renamed, joined under today's name: shared/data/payloads.py question applies this to every US weekly
+# tracker question file, so In store vs online, these screens, Trends and Compare draw one line (the E2E check of 28 Nov
+# 2026: groceries began on 4 Jan 2021, Kroger stopped on 8 Aug 2022). Old label: today's label, exactly as the survey wrote them.
+# Not here: "Dollar Tree/Family Dollar", split into "Dollar Tree" and "Family Dollar" from 21 Jul 2025, is two retailers now.
+renamed_answers:
+  "Food or beverages": "Food or beverages (i.e., groceries)"   # 28 Dec 2020 only
+  "Kroger/City Market/Fred Meyer/Harris Teeter/King Soopers/Ralphs/Smith’s Food & Drug": "Kroger/City Market/Fred Meyer/Harris Teeter/King Soopers/Ralphs/Smith’s Food & Drug/Dillons/Fry's"   # until 8 Aug 2022
 
 outlook: &outlook
   - {name: Net better, plus: better, minus: worse}
@@ -45,21 +52,21 @@ topics:
         answer: Activity
         all: Percentage of respondents who did each in the past two weeks
         each: Percentage of each group who did it
-        asked: question q1 (asked as Q3 from August 2022 to December 2023), past two weeks
+        asked: question q1 (asked as Q10_1, Q8_1, Q8_2 and Q4_2 from December 2020 to July 2022, Q3 to December 2023, Q1 to April 2025 and q0003 in May 2025), past two weeks
       - name: Food retailers
         codes: [Q4, Q6]
         wording: bought any FOOD products from in the past two weeks
         answer: Retailer
         all: Percentage of respondents who bought food from each retailer in the past two weeks
         each: Percentage of each group who bought food there
-        asked: question q4 (asked under other codes in earlier weeks), past two weeks
+        asked: question q4 (asked as Q12_1, Q10_1 and Q6_1 from December 2020 to July 2022, Q6 to December 2023, Q4 to April 2025 and q0006 in May 2025), past two weeks
       - name: Nonfood retailers
         codes: [Q5, Q7]
         wording: bought any NONFOOD products from in the past two weeks
         answer: Retailer
         all: Percentage of respondents who bought nonfood products from each retailer in the past two weeks
         each: Percentage of each group who bought nonfood products there
-        asked: question q5 (asked under other codes in earlier weeks), past two weeks
+        asked: question q5 (asked as Q12_2, Q10_2 and Q6_2 from December 2020 to July 2022, Q7 to December 2023, Q5 to April 2025 and q0007 in May 2025), past two weeks
   spending:
     title: Spending pressure
     lede: How people say their household expenses changed in the last twelve months, by category, and where they cut back.
@@ -97,7 +104,7 @@ topics:
         sums: *outlook
         all: Whether respondents expect their household's discretionary income to be better or worse over the next 12 months; net better in points
         each: Each group's answer; net better in points
-        asked: question CS1 (q009 until May 2025), next 12 months
+        asked: question CS1 (asked as Q11 to Q45, the code changing most weeks, from October 2023 to April 2025 and as q009 in May 2025), next 12 months
       - name: Economy
         codes: [CS2]
         wording: economy overall over the next 12 months
@@ -105,4 +112,4 @@ topics:
         sums: *outlook
         all: Whether respondents expect the economy to be better or worse over the next 12 months; net better in points
         each: Each group's answer; net better in points
-        asked: question CS2 (q010 and others until 2025), next 12 months
+        asked: question CS2 (asked as Q12 to Q46, the code changing most weeks, from October 2023 to April 2025 and as q010 in May 2025), next 12 months

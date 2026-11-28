@@ -17,8 +17,8 @@ from sqlalchemy import bindparam, text
 from shared.core import access
 from shared.core.database import get_engine
 from etl.harmonise import normalise_text
-from etl import open_ends, survey_calendar, weighting
-from etl.serving import CUTS, SMALL_BASE, TEST_BASE  # noqa: F401  TEST_BASE: one significance rule, read here by etl/publish.py
+from etl import open_ends, survey_calendar, weekly_topics, weighting
+from etl.serving import CUTS, SMALL_BASE, TEST_BASE, without_parallel_panels  # noqa: F401  TEST_BASE: one significance rule, read here by etl/publish.py
 
 COLUMNS = ("qcode", "dim", "dim_value", "item_label", "option_code", "option_label", "n", "base_n",
            "pct", "prior_pct", "prior_base_n", "ly_pct", "ly_base_n", "flags")
@@ -46,13 +46,15 @@ def populations() -> dict:
 def describe(wave: dict) -> dict:
     """The wave with its provenance, for every screen's source line and export: population (config/methodology.yml),
     weighting, in_field (still collecting answers), verified (its load was checked against Forsta; srv_wave holds
-    only verified waves, so a file without load_status is verified), client (who commissioned it, or None) and
-    visibility (config/access.yml). Needs survey_id, survey_family and study_type."""
+    only verified waves, so a file without load_status is verified), client (who commissioned it, or None),
+    visibility (config/access.yml) and listed (the Survey Library lists and counts it: a study under config/methodology.yml
+    smallest_study respondents is a test or a stub). Needs survey_id, survey_family and study_type."""
     found = populations()
     population = (found.get("ids") or {}).get(wave["survey_id"]) or (found.get("families") or {}).get(wave.get("survey_family")) \
         or (found.get("study_types") or {}).get(wave.get("study_type")) or found["default"]
     return {**wave, "population": population, "weighting": "unweighted", "in_field": bool(wave.get("in_field")),
-            "verified": wave.get("load_status", "verified") == "verified", **access.owner(wave)}
+            "verified": wave.get("load_status", "verified") == "verified", **access.owner(wave),
+            "listed": wave.get("study_type") == "tracker" or (wave.get("qualified_n") or 0) >= found["smallest_study"]}
 
 
 def encode(data) -> bytes:
@@ -156,8 +158,7 @@ def book(survey_id: int) -> dict:
             group = groups.setdefault(group_label, {"label": group_label, "base": 0, "bases": {}, "rows": {}})
             group["bases"][name] = r["base_n"]
             row = group["rows"].setdefault(row_label, {"label": row_label, "code": r["option_code"]})
-            shown = lambda pct, base: None if pct is None or (base or 0) < HIDDEN_BASE else round(float(pct), 1)   # noqa: E731
-            row[name] = shown(r["pct"], r["base_n"])
+            row[name] = share(r["n"], r["base_n"])
             if mine:   # Census-weighted: the same answer, each person counted by their weight (etl/weighting.py)
                 row.setdefault("w", {})[name] = mine.get((r["qcode"], r["item_id"], r["option_id"]), {}).get(name, 0.0)
             if mine and name == "Total":
@@ -167,10 +168,11 @@ def book(survey_id: int) -> dict:
                     row["w"][field] = round(found, 1) if found is not None and r[f"{field}_pct"] is not None else None
             if name == "Total":
                 group["base"] = r["base_n"]
-                row["prior"] = shown(r["prior_pct"], r["prior_base_n"])
-                row["prior_base"] = r["prior_base_n"]
-                row["ly"] = shown(r["ly_pct"], r["ly_base_n"])
-                row["ly_base"] = r["ly_base_n"]
+                for field in ("prior", "ly"):   # the week compared with, and the change from it, each rounded once
+                    then, base = count_back(r[f"{field}_pct"], r[f"{field}_base_n"]), r[f"{field}_base_n"]
+                    row[field], row[f"{field}_base"] = share(then, base), base
+                    row["change" if field == "prior" else "change_ly"] = None if row[name] is None or row[field] is None \
+                        else round(100 * r["n"] / r["base_n"] - 100 * then / base, 1)
                 row["flags"] = r["flags"] or ""
         for g in groups.values():   # the cube keeps no cell for an answer nobody gave: a group that was asked shows 0 %
             for row in g["rows"].values():
@@ -189,6 +191,18 @@ def book(survey_id: int) -> dict:
     return {"wave": wave, "columns": [name for name, _, _ in BANNER], "n": n, "questions": out}
 
 
+def share(n, base) -> float | None:
+    """A percentage as every screen shows it, rounded once from its count: srv_result's pct is already rounded to 3 dp,
+    and rounding that again read 81 of 404 (20.0495 %) as 20.1 (the E2E check of 28 Nov 2026). None under HIDDEN_BASE."""
+    return None if n is None or (base or 0) < HIDDEN_BASE else round(100 * n / base, 1)
+
+
+def count_back(pct, base) -> int | None:
+    """The people behind a prior week's or last year's %: srv_result keeps that week's % (3 dp) and base, not its count.
+    Exact while a base stays under 100,000 (the 3-dp % is off by at most 0.0005, so by base / 200,000 people)."""
+    return None if pct is None or base is None else round(float(pct) * base / 100)
+
+
 def open_group(coded: dict, groups_of: dict) -> dict:
     """One chart group from an open-ended question's coding: each theme's share of those who wrote an answer."""
     bases, counts = defaultdict(int), defaultdict(int)
@@ -196,7 +210,8 @@ def open_group(coded: dict, groups_of: dict) -> dict:
         for name in ["Total", *groups_of.get(int(rid), [])]:
             bases[name] += 1
             counts[(theme, name)] += 1
-    rows = [{"label": label, "code": i + 1, "prior": None, "prior_base": None, "ly": None, "ly_base": None, "flags": "",
+    rows = [{"label": label, "code": i + 1, "prior": None, "prior_base": None, "ly": None, "ly_base": None, "change": None,
+             "change_ly": None, "flags": "",
              **{name: round(100 * counts[(i, name)] / b, 1) for name, b in bases.items()}}
             for i, label in enumerate(coded["themes"])]
     rows.sort(key=lambda r: -r["Total"] if r["label"] not in (open_ends.NOTHING, open_ends.OTHER) else 1)
@@ -282,20 +297,24 @@ def _trend(qcode: str, dim: str, value: str, waves: list[dict], rows: list, vers
         s = series.setdefault((r["item_label"], r["option_code"]), {
             "item_label": r["item_label"], "code": r["option_code"], "label": r["option_label"] or r["item_label"],
             "sort": r["sort_order"], "pct": [None] * len(waves), "base": [None] * len(waves)})
-        s["pct"][at[r["survey_id"]]] = None if (r["base_n"] or 0) < HIDDEN_BASE else round(float(r["pct"]), 1)
+        s["pct"][at[r["survey_id"]]] = share(r["n"], r["base_n"])
         s["base"][at[r["survey_id"]]] = r["base_n"]
     return {"qcode": qcode, "dim": dim, "value": value, "waves": waves, "versions": [texts[v] for v in sorted(texts)],
             "series": sorted(series.values(), key=lambda s: s["sort"])}
 
 
 def _family(conn, family: str, study_type: str) -> list[dict]:
+    """A family's built waves, oldest first, for its trends and question files: a parallel panel fielded the same week
+    as the main survey is left out (etl/serving.without_parallel_panels), or the week showed twice."""
+    panels, words = without_parallel_panels("s.title")
     return [dict(w) for w in conn.execute(text(
-        "SELECT survey_id, wave_date FROM srv_wave WHERE survey_family = :f AND study_type = :t ORDER BY wave_date, survey_id"),
-        {"f": family, "t": study_type}).mappings()]
+        "SELECT w.survey_id, w.wave_date FROM srv_wave w JOIN cip_survey s ON s.survey_id = w.survey_id"
+        f" WHERE w.survey_family = :f AND w.study_type = :t{panels} ORDER BY w.wave_date, w.survey_id"),
+        {"f": family, "t": study_type, **words}).mappings()]
 
 
 TREND_COLUMNS = [(dim, value) for _, dim, value in BANNER]   # the trends the ETL publishes (etl/publish.py)
-_TREND_ROWS = ("SELECT survey_id, dim, dim_value, item_label, option_code, option_label, sort_order, base_n, pct, concept_option_id"
+_TREND_ROWS = ("SELECT survey_id, dim, dim_value, item_label, option_code, option_label, sort_order, n, base_n, concept_option_id"
                " FROM srv_result WHERE survey_id IN :ids AND qcode = :q AND dim IN :d")
 
 
@@ -524,9 +543,11 @@ def same_wording_rows(conn, wordings: dict, qcode: str, rows: list[dict]) -> tup
     from Compare and Trends). Adds the rows of every wave that never asked `qcode` but asked one of its wordings under
     another code. Only the exact wording joins (normalise_text: "dollar store" never joins "drug store"), and only when
     most of the wave's answers are the question's own (SAME_ANSWERS): a generic wording over another list stays out.
-    A wave that asked `qcode` for another question keeps its own rows: a file holds each wave once."""
+    A wave that asked `qcode` for another question keeps its own rows, and the wording's rows come too, marked `joined`:
+    q2 was a Covid question from Aug 2022 to Dec 2023 while Q4 asked in-store buying, and the in-store trend lost those
+    68 weeks (the E2E check of 28 Nov 2026). question_from keeps them apart, so a file still holds each wave once."""
     answer = lambda r: (normalise_text(r["item_label"]), normalise_text(r["option_label"] or r["item_label"]))   # noqa: E731  row and label: a grid's retailer counts
-    asked = {r["survey_id"] for r in rows}
+    asked = {r["survey_id"]: normalise_text(r["qtext"]) for r in rows}   # each wave's own wording of `qcode`
     own: dict = defaultdict(set)   # the question's wordings, each with the answers its own waves gave
     coded: dict = {}               # each answer as the question's own waves code it
     for r in rows:
@@ -536,7 +557,7 @@ def same_wording_rows(conn, wordings: dict, qcode: str, rows: list[dict]) -> tup
     picked: dict = {}   # survey_id -> (code, wording): the first code, in order, that asked one of its wordings
     for wording in own:
         for sid, code, raw in wordings.get(wording, ()):
-            if sid not in asked and code.lower() != qcode.lower():
+            if asked.get(sid) != wording and code.lower() != qcode.lower():
                 picked.setdefault(sid, (code, raw))
     if not picked:
         return [], []
@@ -559,7 +580,7 @@ def same_wording_rows(conn, wordings: dict, qcode: str, rows: list[dict]) -> tup
             # and kept apart the answer showed twice, each half empty
             for r in wave_rows:
                 item, option = coded.get(answer(r), (r["item_label"], r["option_code"]))
-                kept.append({**r, "qtext": picked[sid][1], "item_label": item, "option_code": option})
+                kept.append({**r, "qtext": picked[sid][1], "item_label": item, "option_code": option, "joined": sid in asked})
             codes.add(picked[sid][0])
     return kept, sorted(codes)
 
@@ -568,7 +589,8 @@ def question(family: str, study_type: str, qcode: str, wordings: dict | None = N
     """One question across every wave of its family, for every cut at once: what Compare and Trends draw from, so
     picking waves or a cut on screen needs no further request. The ETL publishes one per question (etl/publish.py),
     passing the family's wordings; it holds the waves that asked the same question under another code too, and names
-    those codes in "codes" for the screens' source line."""
+    those codes in "codes" for the screens' source line. On the US weekly tracker an answer renamed over the years is
+    one answer under today's name (config/weekly_topics.yml renamed_answers: Kroger gained "/Dillons/Fry's")."""
     wordings = family_wordings(family, study_type) if wordings is None else wordings
     with get_engine("app").connect() as conn:
         waves = _family(conn, family, study_type)
@@ -576,21 +598,30 @@ def question(family: str, study_type: str, qcode: str, wordings: dict | None = N
                             {"ids": [w["survey_id"] for w in waves] or [-1], "q": qcode}).mappings().all()
         rows = worded(conn, rows, qcode)
         borrowed, codes = same_wording_rows(conn, wordings, qcode, rows)
+    topics = weekly_topics.settings()
+    names = (topics.get("renamed_answers") or {}) if (family, study_type) == (topics["family"], topics["study_type"]) else {}
+    rows = [{**r, "item_label": names.get(r["item_label"], r["item_label"]),
+             "option_label": names.get(r["option_label"], r["option_label"])} for r in [*rows, *borrowed]]
     country = next((code for code, c in countries().items() if c.get("family") == family), "US")
-    data = question_from(qcode, waves, rows + borrowed, countries().get(country, {}).get("cuts", {}))
+    data = question_from(qcode, waves, rows, countries().get(country, {}).get("cuts", {}))
     # the waves taken from other codes, by survey: Ask CIP joins a wording across codes itself and reads only a file's own
     # (api/ask_index.py), or Q10_1 became the activities question it once was for four weeks (20 Nov 2026)
-    return {**data, "codes": codes, "borrowed": sorted({r["survey_id"] for r in borrowed})} if codes else data
+    return {**data, "codes": codes, "borrowed": sorted({r["survey_id"] for r in borrowed if not r["joined"]})} if codes else data
 
 
 def question_from(qcode: str, waves: list[dict], rows: list[dict], order: dict) -> dict:
     """Compact columns, small after gzip: waves [[survey_id, date, version]], each version's wording, answers
     [[item_label, code, label]], cuts [[dim, value]] in display order, then one entry per cell in w, c, a (indexes
-    into those lists), n (people who chose it) and b (its base). A percentage is 100 * n / b."""
+    into those lists), n (people who chose it) and b (its base). A percentage is 100 * n / b.
+    The `joined` rows (same_wording_rows: one of the file's wordings asked under another code in a wave that asked this
+    code for another question) go apart, in "joined" with its own waves, w, c, a, n and b and the same answers and cuts:
+    readers of a code's own waves (Ask CIP, the weekly report, the sector tables) still see each wave once, and Trends
+    and Compare add them for each wording's whole history (frontend/src/question.ts withJoined)."""
     rows = [r for r in rows if r["dim_value"] != ""]          # no value for the cut: not a group
-    version = versions([r for r in rows if r["dim"] == "total"])
-    asked = {r["survey_id"] for r in rows}
-    wording = {r["survey_id"]: r["qtext"] for r in rows}
+    own = [r for r in rows if not r.get("joined")]
+    version = versions([r for r in own if r["dim"] == "total"])
+    asked = {r["survey_id"] for r in own}
+    wording = {r["survey_id"]: r["qtext"] for r in own}
     number: dict = {}
     texts: dict = {}
     out_waves = []
@@ -601,15 +632,25 @@ def question_from(qcode: str, waves: list[dict], rows: list[dict], order: dict) 
             out_waves.append([w["survey_id"], str(w["wave_date"])[:10], v])
     at = {w[0]: i for i, w in enumerate(out_waves)}
     version_of = {w[0]: w[2] for w in out_waves}
-    newest_first = sorted(rows, key=lambda r: -at[r["survey_id"]])
+    # a joined wave takes its wording's version among the file's own waves; one that is the wave's own version adds nothing
+    of_wording = {normalise_text(wording[w[0]]): w[2] for w in out_waves}
+    joined_wording = {r["survey_id"]: normalise_text(r["qtext"]) for r in rows if r.get("joined")}
+    joined_waves = [[w["survey_id"], str(w["wave_date"])[:10], of_wording[joined_wording[w["survey_id"]]]] for w in waves
+                    if of_wording.get(joined_wording.get(w["survey_id"])) not in (None, version_of.get(w["survey_id"]))]
+    joined_of = {w[0]: w[2] for w in joined_waves}
+    joined = [r for r in rows if r.get("joined") and r["survey_id"] in joined_of]
+    rows = own + joined
+    version_at = lambda r: (joined_of if r.get("joined") else version_of)[r["survey_id"]]   # noqa: E731
+    newest = {w["survey_id"]: -i for i, w in enumerate(waves)}
+    newest_first = sorted(rows, key=lambda r: (newest[r["survey_id"]], bool(r.get("joined"))))
     # A code is reused for other questions over the years (Q22: facial recognition one week, Thanksgiving spending
     # another), so an answer is its code AND the label its own question last gave it: no wave borrows another
     # question's label, and a reworded answer of one question ("Walmart", later "Walmart.com") stays one answer.
     named: dict = {}
     for r in newest_first:
-        named.setdefault((version_of[r["survey_id"]], r["item_label"], r["option_code"]), r["option_label"] or r["item_label"])
+        named.setdefault((version_at(r), r["item_label"], r["option_code"]), r["option_label"] or r["item_label"])
     key = lambda r: (r["item_label"], r["option_code"],   # noqa: E731
-                     normalise_text(named[(version_of[r["survey_id"]], r["item_label"], r["option_code"])]))
+                     normalise_text(named[(version_at(r), r["item_label"], r["option_code"])]))
     answers: dict = {}
     for r in newest_first:   # the latest wording of each answer
         answers.setdefault(key(r), (r["sort_order"], r["option_label"] or r["item_label"]))
@@ -620,9 +661,14 @@ def question_from(qcode: str, waves: list[dict], rows: list[dict], order: dict) 
     cuts = [("total", "Total")] + sorted((c for c in present if c[0] != "total"),
                                          key=lambda c: (CUTS.index(c[0]) if c[0] in CUTS else 99, *rank(*c)))
     cut = {c: i for i, c in enumerate(cuts)}
-    cells = sorted((at[r["survey_id"]], cut[(r["dim"], r["dim_value"])], answer[key(r)],
-                    int(r["n"]), int(r["base_n"])) for r in rows)
-    return {"qcode": qcode, "waves": out_waves, "versions": [texts[v] for v in sorted(texts)],
-            "answers": [[k[0], k[1], answers[k][1]] for k in keys], "cuts": [list(c) for c in cuts],
-            **{name: [c[i] for c in cells] for i, name in enumerate(("w", "c", "a", "n", "b"))},
-            "n": [c[3] if c[4] >= HIDDEN_BASE else None for c in cells]}   # under HIDDEN_BASE only the base is published
+
+    def columns(block: list[dict], place: dict) -> dict:   # one block's cells: w, c, a, n, b
+        cells = sorted((place[r["survey_id"]], cut[(r["dim"], r["dim_value"])], answer[key(r)],
+                        int(r["n"]), int(r["base_n"])) for r in block)
+        return {**{name: [c[i] for c in cells] for i, name in enumerate(("w", "c", "a", "n", "b"))},
+                "n": [c[3] if c[4] >= HIDDEN_BASE else None for c in cells]}   # under HIDDEN_BASE only the base is published
+    out = {"qcode": qcode, "waves": out_waves, "versions": [texts[v] for v in sorted(texts)],
+           "answers": [[k[0], k[1], answers[k][1]] for k in keys], "cuts": [list(c) for c in cuts], **columns(own, at)}
+    if joined_waves:
+        out["joined"] = {"waves": joined_waves, **columns(joined, {w[0]: i for i, w in enumerate(joined_waves)})}
+    return out

@@ -3,9 +3,11 @@
 Built from the register (cip_forsta_survey) after every discovery and every
 load, so it covers hibernated and unloaded surveys too: one row per survey ×
 module in cip_wave_module. A module is found from the survey title; once the
-wave is loaded, a seasonal tracker is found from its own questions instead
-(titles miss it: the Sep 28 2026 wave says only "Holiday", yet carries the
-holiday tracker). Seasonal waves are numbered within their season, which is
+wave is loaded, a seasonal tracker or topic with a `question` rule is found from
+its own questions instead (titles miss them: the Sep 28 2026 wave says only
+"Holiday", yet carries the holiday tracker; 14 gas-price weeks of 2026 never say
+"gas"). The dashboards (api/dashboards.py series) take their weeks from here.
+Seasonal waves are numbered within their season, which is
 what "wave 2 vs last year's wave 2" compares. Rules: config/survey_calendar.yml.
 
     python -m etl.survey_calendar            # the calendar and the next 12 expected lead sectors
@@ -53,9 +55,11 @@ def events(title: str) -> list[str]:
     return [e["name"] for e in load_config().get("events", []) if re.search(e["title"], str(title or ""), re.I)]
 
 
-def classify(title: str, questions: Iterable[str] = (), tags: Iterable[str] = ()) -> list[dict]:
+def classify(title: str, questions: Optional[Iterable[str]] = None, tags: Iterable[str] = ()) -> list[dict]:
     """[{code, name, kind, is_lead}] for one survey. kind: sector, topic,
-    seasonal, event (a one-off "+ X" in a tracker title), annual, adhoc."""
+    seasonal, event (a one-off "+ X" in a tracker title), annual, adhoc.
+    questions: a loaded wave's question wordings (None: not loaded); then a seasonal or topic rule with a `question`
+    is decided by them alone, not by the title."""
     cfg = load_config()
     title = " ".join(str(title or "").split())
     found: dict[str, dict] = {}
@@ -77,14 +81,16 @@ def classify(title: str, questions: Iterable[str] = (), tags: Iterable[str] = ()
         for kind in ("sectors", "seasonal", "topics"):
             for rule in cfg[kind]:
                 if re.search(rule["title"], part, re.I):
-                    add(rule["code"], rule["name"], {"sectors": "sector", "seasonal": "seasonal", "topics": "topic"}[kind],
-                        lead=i == 0 and kind == "sectors")
+                    if questions is None or "question" not in rule:   # a loaded wave's own questions decide (below)
+                        add(rule["code"], rule["name"], {"sectors": "sector", "seasonal": "seasonal", "topics": "topic"}[kind],
+                            lead=i == 0 and kind == "sectors")
                     hit = True
         if not hit:
             add(_slug(re.sub(r"\bretro\b", "", part, flags=re.I)), part, "event")
-    for rule in cfg["seasonal"]:
-        if any(re.search(rule["question"], q, re.I) for q in questions):
-            add(rule["code"], rule["name"], "seasonal")
+    for kind in ("seasonal", "topics"):
+        for rule in cfg[kind]:
+            if questions is not None and "question" in rule and any(re.search(rule["question"], q, re.I) for q in questions):
+                add(rule["code"], rule["name"], {"seasonal": "seasonal", "topics": "topic"}[kind])
     return list(found.values())
 
 
@@ -100,29 +106,7 @@ def rebuild(conn=None) -> int:
     if conn is None:
         with get_engine("etl").begin() as own:
             return rebuild(own)
-    patterns = [r["question"] for r in load_config()["seasonal"]]
-    register = conn.execute(text(
-        "SELECT forsta_path, title, tags, launched_at, created_on, survey_id FROM cip_forsta_survey")).all()
-    asked: dict[int, list[str]] = defaultdict(list)
-    for sid, qtext in conn.execute(text(
-            "SELECT q.survey_id, q.qtext FROM cip_question q JOIN cip_forsta_survey r ON r.survey_id = q.survey_id")):
-        if any(re.search(p, qtext or "", re.I) for p in patterns):
-            asked[sid].append(qtext)
-    rows = []
-    for path, title, tags, launched, created, sid in register:
-        day = _day(launched)
-        for m in classify(title, asked.get(sid, ()), (tags or "").split(", ")):
-            rows.append({"path": path, "code": m["code"], "name": m["name"][:120], "kind": m["kind"],
-                         "lead": 1 if m["is_lead"] else 0, "day": day, "sid": sid,
-                         "season": season(day) if m["kind"] in ("seasonal", "annual") else None,
-                         "by": "questions" if sid in asked and m["kind"] == "seasonal" else "title"})
-    counter: dict[tuple, int] = defaultdict(int)
-    for r in sorted(rows, key=lambda r: (r["day"] is None, r["day"] or date.max, r["path"])):
-        if r["day"] is not None:
-            counter[(r["code"], r["season"])] += 1
-            r["no"] = counter[(r["code"], r["season"])]
-        else:
-            r["no"] = None
+    rows = wave_modules(conn)
     conn.execute(text("DELETE FROM cip_wave_module"))
     if rows:
         conn.execute(text(
@@ -130,6 +114,37 @@ def rebuild(conn=None) -> int:
             " series_wave_no, survey_id, detected_by)"
             " VALUES (:path, :code, :name, :kind, :lead, :day, :season, :no, :sid, :by)"), rows)
     return len(rows)
+
+
+def wave_modules(conn) -> list[dict]:
+    """cip_wave_module's rows as rebuild writes them, read only (tests and a dry run call it too)."""
+    cfg = load_config()
+    patterns = [r["question"] for kind in ("seasonal", "topics") for r in cfg[kind] if "question" in r]
+    register = conn.execute(text(
+        "SELECT forsta_path, title, tags, launched_at, created_on, survey_id FROM cip_forsta_survey")).all()
+    asked: dict[int, list[str]] = {}   # every loaded wave, with the wordings a rule's `question` names (maybe none)
+    for sid, qtext in conn.execute(text(
+            "SELECT q.survey_id, q.qtext FROM cip_question q JOIN cip_forsta_survey r ON r.survey_id = q.survey_id")):
+        found = asked.setdefault(sid, [])
+        if any(re.search(p, qtext or "", re.I) for p in patterns):
+            found.append(qtext)
+    by_question = {r["code"] for kind in ("seasonal", "topics") for r in cfg[kind] if "question" in r}
+    rows = []
+    for path, title, tags, launched, created, sid in register:
+        day = _day(launched)
+        for m in classify(title, asked.get(sid), (tags or "").split(", ")):
+            rows.append({"path": path, "code": m["code"], "name": m["name"][:120], "kind": m["kind"],
+                         "lead": 1 if m["is_lead"] else 0, "day": day, "sid": sid,
+                         "season": season(day) if m["kind"] in ("seasonal", "annual") else None,
+                         "by": "questions" if sid in asked and m["code"] in by_question else "title"})
+    counter: dict[tuple, int] = defaultdict(int)
+    for r in sorted(rows, key=lambda r: (r["day"] is None, r["day"] or date.max, r["path"])):
+        if r["day"] is not None:
+            counter[(r["code"], r["season"])] += 1
+            r["no"] = counter[(r["code"], r["season"])]
+        else:
+            r["no"] = None
+    return rows
 
 
 def main() -> int:

@@ -30,7 +30,7 @@ export type Format = "csv" | "xlsx" | "pptx" | "board";
 export type TableSpec = { name: string; header: string[]; rows: (string | number | null)[][]; notes: string[] };
 /** How Excel shows a table's numbers (api/exports.py write_sheet): unit "%" for a table of percentages, plain for the
  *  rows that are not (people asked, a net score; by index). A column whose header says % is percentages anyway. */
-export type Style = { unit?: "%"; plain?: number[] };
+export type Style = { unit?: "%"; plain?: number[]; chart?: "line" | "column" };   // chart: a native Excel chart beside the table
 /** One tab of a workbook: its title, table and style. */
 export type Sheet = Style & { title: string; header: string[]; rows: (string | number | null)[][]; notes: string[] };
 

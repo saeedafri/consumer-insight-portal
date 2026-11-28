@@ -14,8 +14,8 @@ config/sectors.yml, and the synonyms of config/search_synonyms.yml. Nothing here
             "walmart"), toward the answers of long-running retailer, brand and store lists only; api/assistant.py
             answer calls it first, for every question.
   versions  a code that older surveys reused for a different question (Q14 was once GenAI at work, once ways to save)
-            is split by wording: wordings at least SAME_WORDING alike stay one question (a year or a brand changed in
-            the text), others become their own entry, each with only its own waves and answers.
+            is split by wording: wordings that differ only by a year or a lead-in ("Looking back,") and share their answers
+            stay one question (wording_groups), others become their own entry, each with only its own waves and answers.
   counts()  a question file's cells as numpy arrays, parsed on first use and kept in a byte-capped cache
             (COUNT_CACHE_MB), so a question read again costs nothing and memory never grows past the cap.
 """
@@ -24,6 +24,7 @@ from __future__ import annotations
 import difflib
 import gzip
 import hashlib
+import html
 import json
 import os
 import logging
@@ -57,7 +58,7 @@ VERIFIED_NEAR = float(ask_model.calibration().get("verified_near", 0.91))   # cl
 STANDING = float(ask_model.calibration().get("standing", 0.06))   # retrieval: up to this added to a closeness (~0.5–0.8) for a question asked a year of waves and still asked
 SAME_ANSWERS = 0.6   # share of a wave's answers that must be the question's own for the wave to join its series
 BRAND_WAVES = 15     # a retailer, brand or store list asked this often holds the names a misspelt word is put right to (correct_spelling)
-SAME_WORDING = 0.5   # shared words / all words: "holiday 2025" vs "holiday 2026" stays one question, a reused code does not
+SAME_WORDING = 0.5   # shared words / all words: two questions sharing a name are alike (Index.alike, the ambiguous names)
 UNIT_ONLY = {"$", "%", "#"}   # a typed-number question loaded without its numbers: its one "answer" is the unit, chosen by 100%
 COUNT_CACHE_MB = 48   # parsed question files kept in memory; the largest (q1, every tracker wave) is ~4 MB
 FIELDS = {"name": 3.5, "text": 3.0, "topic": 2.5, "answers": 2.0, "older": 1.5}   # name: the semantic layer's business name and aliases
@@ -66,7 +67,7 @@ FIELDS = {"name": 3.5, "text": 3.0, "topic": 2.5, "answers": 2.0, "older": 1.5} 
 # words that tell two questions apart though the reader drops them from a subject ("spend more" vs "spend less" on categories)
 DIRECTION_WORDS = frozenset("more less fewer increase increased decrease decreased higher lower".split())
 FRAME_WORDS = frozenset("""should we act say said says chose choose chosen answers answer among over indexes index grown grow rising
-falling going up down trend top numbers number base figures latest about consumers people think feel different differ likely
+falling going up down trend top numbers number base figures latest about consumer consumers people think feel different differ likely
 tell change changed over-indexes over-index""".split())
 # etl/ask_semantic.py: a business name, aliases and topic per question wording; CIP_ASK_SEMANTIC another file (the Colab
 # replay compares two: scripts/colab/ask_cip_v2.py)
@@ -183,28 +184,50 @@ def in_period(spec: dict, dates: list[str]) -> bool:
     return any(lo <= d <= hi for d in dates)
 
 
-EVENT_WORDS = {"thanksgiving", "easter", "christmas", "valentine", "halloween", "mother", "father", "independence", "labor",
-               "memorial", "president", "presidents", "hanukkah", "kwanzaa", "diwali", "ramadan", "lunar", "prime", "black",
-               "cyber", "singles", "school", "super", "bowl", "graduation"}
+# A code reused for a new question is split by wording (Index.__init__). Two wordings are one question only when, once the
+# parts that never change what is asked are set aside, the same words are left. Set aside: a year ("Halloween 2025" /
+# "2026"), a lead-in ("Looking back,", "On a different topic,", "Now we would like to focus on your holiday shopping."),
+# the answer instructions ("Select all that apply", "- Selected Choice"), a bracketed example or year ("(i.e., groceries)",
+# "(2024)"), word endings ("week" / "weeks") and grammar words; "will" and "did" too, as a holiday's weekly question turns
+# "Will you spend…" into "Did you spend…" once it has passed. Any other word is part of the question: "footwear" /
+# "beauty", "expect to spend" / "spent", "before" / "after", "$100" / "$500". Found by auditing every join on 27 Nov 2026:
+# at half the words alike, 172 joins, most of them different questions chained one to the next (Q10's footwear, online,
+# department-store and beauty questions made one beauty trend from Aug 2022); this rule keeps 41, each one question
+LEAD_IN = re.compile(r"^(now we( would|'d) like to (focus on|ask (you )?about|turn to)[^.?]*[.?]|on a different topic|looking back|now)[,.]?\s*")
+INSTRUCTION = re.compile(r"\bselect (all|one|up to|only)\b[^.?]*|\bnone of (these|the above)\b|- selected choice")
+ASIDE = re.compile(r"\((?:e\.?g\.?|i\.?e\.?|incl\.?|for example)[^)]*\)|\((?:[a-z]+ )?(?:19|20)\d\d\)")
+NUMBERS = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+           "ten": "10", "twelve": "12"}
+GRAMMAR = frozenset("""a an and any are as at be been by can could did do does e etc for from g had has have how i ie if in into is it
+    its me my of on or our so than that the their them then there these they this those to us was we were what when where which
+    while who will with would you your""".split())
 
 
-def wording_groups(versions: list[str]) -> list[list[int]]:
-    """Version numbers (1-based, as the waves carry them) grouped by alike wording, in first-asked order."""
-    # its meaningful words only: "Which, if any, of these ... in the past two weeks? Select all that apply" is the frame of
-    # many questions, and at half the words shared it joined the activities question to the food retailers one (Q10_1);
-    # once the 15 Nov cross-code join gave the activities wording 211 more waves, food retailers left the index (20 Nov 2026)
-    words = [set(re.findall(r"[a-z]{4,}", text.lower())) - STOP for text in versions]   # "and", "the", "you" made q3's online and activities wordings half alike
-    # and never two holidays or events: "How do you expect your Thanksgiving 2024 spending to compare…" and "…Easter 2025…"
-    # share all but one word, and Thanksgiving read Easter's figures (20 Nov 2026); years are not words here, so the
-    # same holiday's yearly question stays one series
-    alike_words = lambda a, b: len(a & b) / max(len(a | b), 1) >= SAME_WORDING and a & EVENT_WORDS == b & EVENT_WORDS   # noqa: E731
+def meaning_words(text: str) -> set[str]:
+    """A wording's words that say what it asks (wording_groups): lead-ins, instructions, asides, years and grammar left out,
+    number words as digits, endings cut ("weeks" is "week", "changed" is "change")."""
+    text = html.unescape(text).lower().replace("generative ai", "genai").replace("’", "'")
+    text = INSTRUCTION.sub(" ", ASIDE.sub(" ", LEAD_IN.sub("", text.strip())))
+    words = re.findall(r"\$?[a-z0-9]+", text.replace("'", ""))
+    return {NUMBERS.get(w) or re.sub(r"(ing|ed|es|e|s)$", "", w)[:6] for w in words   # "change", "changed", "changes" alike
+            if w not in GRAMMAR and not re.fullmatch(r"(19|20)\d\d", w)}
+
+
+def wording_groups(versions: list[str], answers: list[set[str]] | None = None) -> list[list[int]]:
+    """Version numbers (1-based, as the waves carry them) grouped by the same question, in first-asked order: a wording joins
+    a group only when it has the same meaning words as every member (against the last member only, three different
+    questions chained into one) and, where `answers` (each version's answer labels) are given, shares most of their answers."""
+    words = [meaning_words(text) for text in versions]
+    # most answers shared, or as many answers: a holiday question's answers change tense with it ("I will spend" / "I spent")
+    alike_answers = lambda a, b: not a or not b or len(a) == len(b) or len(a & b) >= SAME_ANSWERS * min(len(a), len(b))   # noqa: E731
     groups: list[list[int]] = []
-    for v, text in enumerate(versions, start=1):
-        alike = next((g for g in groups if alike_words(words[g[-1] - 1], words[v - 1])), None)
-        if alike is None:
+    for v in range(1, len(versions) + 1):
+        same = next((g for g in groups if all(words[m - 1] == words[v - 1] and
+                                              (answers is None or alike_answers(answers[m - 1], answers[v - 1])) for m in g)), None)
+        if same is None:
             groups.append([v])
         else:
-            alike.append(v)
+            same.append(v)
     return groups
 
 
@@ -232,7 +255,11 @@ class Index:
                 log.warning("Ask CIP: unreadable question file %s", path)
                 continue
             file = f"{family}/{study_type}/{qcode}"
-            groups = wording_groups(data["versions"])
+            asked_answers = [set() for _ in data["versions"]]   # each wording's answers, from the waves that asked it
+            for w, c, a in zip(data["w"], data["c"], data["a"]):
+                if c == 0:
+                    asked_answers[data["waves"][w][2] - 1].add(data["answers"][a][2].lower())
+            groups = wording_groups(data["versions"], asked_answers)
             borrowed = set(data.get("borrowed", ()))   # waves of other codes (shared/data/payloads.py question): Ask joins
             for g, versions in enumerate(groups):      # a wording across codes below, from each file's own waves
                 asked = [known[w[0]] for w in data["waves"] if w[0] in known and w[2] in versions and w[0] not in borrowed]
@@ -263,7 +290,8 @@ class Index:
         named = {**read_json(SEMANTIC), **read_json(SEMANTIC_ADDED)}   # a publish's new names and renames (etl/ask_semantic.py) over the config
         for part in parts.values():   # the semantic layer: what analysts call it, how else they say it, its topic
             entry = named.get(digest(part["text"]), {})
-            part.update(name=entry.get("name", ""), aliases=entry.get("aliases", []), area=entry.get("topic", ""), asks=entry.get("asks", []))
+            part.update(name=entry.get("name", ""), aliases=entry.get("aliases", []), area=entry.get("topic", ""), asks=entry.get("asks", []),
+                        phrase=entry.get("phrase", ""), title=entry.get("title", ""))   # the answer's plain phrase and chart title (api/ask_layout.py)
             part_words[part["key"]]["name"] = " ".join([part["name"], *part["aliases"]])
         # one entry per question whatever code it was asked under: the same wording in the same study (q5 since 2024, Q5
         # before) is one series, so "all waves" means all of them

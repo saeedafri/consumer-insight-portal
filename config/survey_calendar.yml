@@ -9,21 +9,32 @@ sectors:
   - {code: DRUGSTORE,        name: "Drugstore / pharmacy",          title: 'drug ?stores?|pharmacy'}
   - {code: ECOMMERCE,        name: "eCommerce",                     title: 'e-?commerce'}
   - {code: LUXURY,           name: "Luxury",                        title: 'luxury'}
-  - {code: DEPT_STORES,      name: "Department stores",             title: 'dept\.? stores?|department stores?'}
+  - {code: DEPT_STORES,      name: "Department stores",             title: 'dept\.? store?s?|department stores?'}   # "Dept stors", 2 Oct 2023
   - {code: BEAUTY,           name: "Beauty",                        title: 'beauty'}
   - {code: HOME_FURNISHINGS, name: "Home furnishings",              title: 'home furnishings?'}
-  - {code: HOME_IMPROVEMENT, name: "Home improvement / DIY",        title: 'home improvement'}
+  - {code: HOME_IMPROVEMENT, name: "Home improvement / DIY",        title: 'home[- ]improvement'}
   - {code: SOCIAL_COMMERCE,  name: "Social commerce",               title: 'social commerce'}
   - {code: OFF_PRICE,        name: "Off-price / dollar stores",     title: 'off[- ]?price|dollar stores?'}
-  - {code: APPAREL,          name: "Apparel",                       title: 'apparel'}
+  - {code: APPAREL,          name: "Apparel",                       title: 'apparel|clothing'}   # 2022: "incl. clothing shopping"
   - {code: MASS_WAREHOUSE,   name: "Mass merchants / warehouse clubs", title: 'mass merch|warehouse'}
   - {code: FOOTWEAR,         name: "Footwear",                      title: 'footwear'}
 topics:            # recurring add-ons, paired with sectors
-  - {code: TARIFFS_INFLATION, name: "Tariffs + inflation", title: 'tariffs?|inflation'}
-  - {code: GLP1,              name: "GLP-1",               title: 'glp-?1'}
-  - {code: GENAI,             name: "GenAI",               title: 'genai'}
-  - {code: FINANCIAL_HEALTH,  name: "Financial health",    title: 'financial health'}
-  - {code: MIDEAST_GAS,       name: "MidEast gas price shock", title: 'mideast gas'}
+  # `question`: the wording of the topic's own questions (its tracker's, config/dashboards.yml). Once a wave is loaded
+  # it decides, not the title: most titles do not name every topic they carry (725 asked the gas questions under
+  # "Drugstore/Pharmacy + Holiday Tracker + Shrink + Tariffs + Inflation"), and some name one they did not ask (GenAI,
+  # 10 Aug 2026). The title decides only for a wave not loaded yet. Checked 28 Nov 2026 against every loaded wave.
+  - {code: TARIFFS_INFLATION, name: "Tariffs + inflation", title: 'tariffs?|inflation',
+     question: 'recent price changes in retail|habits in response to price increases|tariffs have on|concerns about tariffs|effects of tariffs'}
+  - {code: GLP1,              name: "GLP-1",               title: 'glp-?1',
+     question: 'currently (using|taking) a GLP-1 drug|before taking GLP-1|eat less due to weight loss medication|since taking GLP-1 medication'}
+  - {code: GENAI,             name: "GenAI",               title: 'genai',
+     question: 'heard of artificial intelligence|your use of GenAI|worries you about the use of GenAI'}
+  - {code: FINANCIAL_HEALTH,  name: "Financial health",    title: 'financial health',
+     question: 'bills and expenses using just your personal savings|unsecured debt to your monthly household income|economic windfall'}
+  - {code: MIDEAST_GAS,       name: "MidEast gas price shock", title: 'mideast gas|middle east gas',
+     question: 'military conflict in the Middle East|higher gas(oline)? prices'}
+  - {code: HOLIDAY,           name: "Holiday outlook",     title: '^holiday( retro)?$',   # the Holiday outlook tracker
+     question: 'best guess for how your holiday spending|between now and December|better or worse for holiday'}
 seasonal:          # weekly through a season; waves numbered within the season
   - code: HOLIDAY_TRACKER
     name: "Holiday tracker"

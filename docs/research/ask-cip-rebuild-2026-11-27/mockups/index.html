@@ -1,0 +1,562 @@
+<!doctype html>
+<!--
+  Ask CIP mock-ups for the manager (Phase M of the Ask CIP rebuild, due 30 Nov 2026).
+  What it is: a static page in the look of the manager's v4 template (ask-cip-in-platform-v4.html), drawing the 13 sample
+  questions of samples.js (written by build_samples.py from the published survey files) in the layout decided on 27 Nov 2026:
+  one view, market selector, direct answer, three cards, a chart that fits the question, then the evidence and dig-deeper chips.
+  Who opens it: the manager and the user, in a browser (open the file directly; no server needed). Light and dark: the moon
+  button, or index.html?theme=dark. A sample opens by its number: index.html#s5. Nothing here is the live product (Ask.tsx).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask CIP mock-ups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme: light;
+  --bg:#F4F5F7; --surface:#FFFFFF; --surface-2:#F7F8FA; --line:#E3E5EA; --line-2:#CDD1D8;
+  --ink:#1B1D21; --ink-2:#4A515C; --ink-3:#6B727E;
+  --red:#C8102E; --red-dark:#9E0B22; --red-soft:#FBEBEE;
+  --navy:#2A6496; --series2:#2A6496; --neutral-bar:#B4BAC4;
+  --fill:#C8102E; --fill-hover:#9E0B22; --bubble:#2A6496;
+  --grid:#E9EBEF; --axis:#6B727E;
+  --shadow:0 1px 2px rgba(20,24,32,.05), 0 2px 8px rgba(20,24,32,.04);
+  --shadow-lg:0 -4px 24px rgba(20,24,32,.08);
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#131519; --surface:#1B1E23; --surface-2:#22262C; --line:#2E333B; --line-2:#3D434D;
+  --ink:#ECEEF1; --ink-2:#BCC2CB; --ink-3:#98A0AB;
+  --red:#F0505E; --red-dark:#FF7A85; --red-soft:rgba(240,80,94,.14);
+  --navy:#6FA8D8; --series2:#4A9AE0; --neutral-bar:#5A616C;
+  --fill:#C42A3B; --fill-hover:#A8202F; --bubble:#2B5A85;
+  --grid:#2A2F37; --axis:#98A0AB;
+  --shadow:none; --shadow-lg:0 -4px 24px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--navy);outline-offset:2px;border-radius:6px}
+.sr{position:absolute;left:-9999px}
+.shell{display:grid;grid-template-rows:56px minmax(0,1fr);grid-template-columns:minmax(0,1fr);height:100vh}
+.topbar{display:flex;align-items:center;gap:14px;padding:0 18px;background:var(--surface);border-bottom:1px solid var(--line)}
+.tb-btn{width:34px;height:34px;border:1px solid var(--line);border-radius:8px;background:var(--surface);display:grid;place-items:center;color:var(--ink-2)}
+.logo{width:84px;height:28px;border:1px dashed var(--line-2);border-radius:6px;font-size:11px;color:var(--ink-3);display:grid;place-items:center;flex:none}
+.crumb{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.crumb span{font-weight:500;color:var(--ink-3);font-size:13.5px}
+.theme{margin-left:auto;flex:none}
+.theme .sun{display:none}
+:root[data-theme="dark"] .theme .sun{display:block}
+:root[data-theme="dark"] .theme .moon{display:none}
+.body{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:0}
+.nav{background:var(--surface);border-right:1px solid var(--line);padding:18px 12px;overflow-y:auto;font-size:13.5px}
+.nav h2{font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--ink-2);margin:18px 10px 6px}
+.nav h2:first-child{margin-top:2px}
+.nav a{display:block;padding:7px 10px;border-radius:8px;color:var(--ink);text-decoration:none}
+.nav a[aria-current]{background:var(--red-soft);color:var(--red-dark);font-weight:600;box-shadow:inset 3px 0 0 var(--red)}
+.page{display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+.wrap{max-width:1000px;width:100%;margin:0 auto;padding:0 32px}
+
+/* Mock-up guide: not part of the product */
+.guide{margin-top:18px;border:1.5px dashed var(--line-2);border-radius:12px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:13px;color:var(--ink-2);background:var(--surface)}
+.guide b{color:var(--ink)}
+.guide select{flex:1 1 260px;min-width:0;max-width:100%;min-height:34px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);padding:0 8px;font-size:13px}
+.oq{display:none;margin-top:8px;border:1.5px dashed var(--line-2);border-radius:12px;padding:12px 16px;background:var(--surface);font-size:13.5px;color:var(--ink-2)}
+.oq.open{display:block}
+.oq h2{font-size:15px;margin:0 0 8px;color:var(--ink)}
+.oq ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.oq li b{color:var(--ink)}
+.meta-tag{font-size:11.5px;font-weight:600;color:var(--ink-3);border:1px dashed var(--line-2);border-radius:999px;padding:1px 8px;white-space:nowrap}
+
+.ph{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding-top:20px;padding-bottom:18px}
+.ph h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.015em;line-height:1.15}
+.ph p{margin:6px 0 0;font-size:14.5px;color:var(--ink-2)}
+.ph-tools{display:flex;gap:8px;align-items:center;position:relative;flex-wrap:wrap}
+.seg{display:inline-flex;gap:2px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:3px}
+.seg button{border:1px solid transparent;background:none;padding:6px 12px;border-radius:7px;font-size:13px;font-weight:600;color:var(--ink-2);min-height:32px}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--red);border-color:var(--red)}
+.seg-label{font-size:12.5px;font-weight:600;color:var(--ink-3);margin-right:-2px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);background:var(--surface);border-radius:8px;padding:0 12px;min-height:36px;font-size:13px;font-weight:600;color:var(--ink)}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--fill);border-color:var(--fill);color:#fff}
+.btn.primary:hover{background:var(--fill-hover)}
+.hist{position:absolute;right:0;top:calc(100% + 6px);width:min(360px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line-2);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.12);padding:8px;z-index:5;display:none}
+.hist.open{display:block}
+.hist button{display:block;width:100%;text-align:left;border:0;background:none;padding:9px 10px;border-radius:7px;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist button:hover{background:var(--surface-2)}
+.hist button[aria-current="true"]{color:var(--red-dark);background:var(--red-soft);font-weight:600}
+
+.thread{display:flex;flex-direction:column;gap:16px;padding-bottom:32px;flex:1}
+.q{align-self:flex-end;max-width:80%;background:var(--bubble);color:#fff;padding:10px 16px;border-radius:16px 16px 4px 16px;margin:0;font-weight:500}
+.read-as{align-self:flex-end;margin:-10px 4px 0;font-size:12.5px;color:var(--ink-3)}
+.past{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;box-shadow:var(--shadow)}
+.past p{margin:0;font-size:14px;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.past strong{color:var(--ink)}
+.link{background:none;border:none;color:var(--red);font-weight:600;font-size:13px;padding:6px 8px;border-radius:6px;white-space:nowrap}
+.link:hover{background:var(--red-soft)}
+.mark{width:26px;height:26px;border-radius:7px;background:var(--fill);color:#fff;display:grid;place-items:center;flex:none}
+
+.ans{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.ans-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.by{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink-2);flex-wrap:wrap}
+.by b{color:var(--ink);font-weight:700}
+.by-src{color:var(--ink-3);font-weight:500;margin-left:4px}
+.tools{display:flex;gap:6px}
+.ans-body{padding:22px 20px 20px;display:flex;flex-direction:column;gap:18px}
+.notice{margin:0;font-size:13px;color:var(--ink-2);background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.headline{margin:0;font-size:22px;line-height:1.4;font-weight:700;letter-spacing:-.01em;max-width:36em}
+.headline em{font-style:normal;color:var(--red)}
+.facts{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.facts li{display:flex;flex-direction:column;gap:4px;border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--surface);min-width:0}
+.facts li.main{background:var(--red-soft);border-color:transparent}
+.f-k{font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.f-v{display:flex;align-items:center;gap:6px;font-size:28px;font-weight:800;line-height:1.15;letter-spacing:-.01em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.facts li.main .f-v{color:var(--red-dark)}
+.f-s{font-size:12.5px;color:var(--ink-3)}
+.chart-card{border:1px solid var(--line);border-radius:12px;padding:16px 18px 12px;min-width:0}
+.chart-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.chart-top h3{font-size:15px;font-weight:700;margin:0}
+.chart-top p{margin:2px 0 0;font-size:12.5px;color:var(--ink-3)}
+.ctrls{display:flex;gap:8px;flex-wrap:wrap}
+.range{display:inline-flex;gap:2px;padding:3px;background:var(--surface-2);border:1px solid var(--line);border-radius:9px}
+.range button{border:1px solid transparent;background:transparent;border-radius:6px;padding:5px 11px;font-size:12.5px;font-weight:600;color:var(--ink-2);min-height:30px;white-space:nowrap}
+.range button[aria-pressed="true"]{background:var(--surface);color:var(--ink);border-color:var(--line-2)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2);margin:0 0 6px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:14px;height:4px;border-radius:2px;display:inline-block}
+.legend i.box{height:10px;width:10px;border-radius:2px}
+.svgwrap{position:relative}
+.svgwrap svg{display:block;overflow:visible}
+.svgwrap svg text{font-family:inherit}
+.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.pair h4{margin:0 0 6px;font-size:13px;font-weight:700;color:var(--ink-2)}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line-2);border-radius:8px;padding:7px 10px;font-size:12.5px;white-space:nowrap;transform:translate(-50%,-120%);display:none;box-shadow:0 6px 18px rgba(0,0,0,.12);z-index:3}
+.foot{font-size:12.5px;color:var(--ink-3);margin:8px 0 0}
+.trust{border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:var(--ink-2)}
+.trust p{margin:0}
+.trust q{color:var(--ink)}
+.t-lbl{display:inline-block;min-width:118px;font-weight:700;color:var(--ink);margin-right:8px}
+.trust details{border:none;background:none}
+.trust summary{list-style:none;cursor:pointer;padding:4px 0;font-size:13.5px;font-weight:600;color:var(--red);display:flex;align-items:center;gap:6px}
+.trust summary::-webkit-details-marker{display:none}
+.trust summary svg{transition:transform .15s}
+.trust details[open] summary svg{transform:rotate(90deg)}
+.tbl-wrap{overflow-x:auto;margin-top:8px;max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:8px 12px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{font-weight:600;color:var(--ink-2);position:sticky;top:0;background:var(--surface)}
+tbody tr:last-child td{border-bottom:0}
+.wrong{font-size:12.5px;color:var(--ink-3)}
+.wrong button{background:none;border:0;padding:0;color:var(--red);font-weight:600;font-size:12.5px}
+.alts{margin:6px 0 0;padding-left:18px;font-size:13px}
+.next h3{font-size:14px;font-weight:700;margin:0 0 10px}
+.chips-row{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;min-height:38px;padding:0 14px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);font-size:13.5px;font-weight:600;color:var(--ink);text-align:left}
+.chip:hover{border-color:var(--red);color:var(--red)}
+.askback{display:flex;flex-direction:column;gap:12px}
+.askback p{margin:0;font-size:18px;font-weight:700}
+.askback .chips-row .chip{border-color:var(--red);color:var(--red)}
+.askback .chip[aria-pressed="true"]{background:var(--red-soft)}
+
+.dock{position:sticky;bottom:0;background:var(--bg);padding:10px 32px 16px}
+.composer{max-width:936px;margin:0 auto;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow-lg);padding:10px 10px 8px}
+.box{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line-2);border-radius:12px;padding:6px 6px 6px 16px;background:var(--surface)}
+.box:focus-within{border-color:var(--red);box-shadow:0 0 0 3px var(--red-soft)}
+.box input{flex:1;border:none;outline:none;padding:9px 0;font-size:15px;background:transparent;min-width:0}
+.box input::placeholder{color:var(--ink-3)}
+.icon-btn{width:42px;height:42px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);display:grid;place-items:center;color:var(--ink-2);flex:none}
+.ask{height:42px;padding:0 18px;border:none;border-radius:10px;background:var(--fill);color:#fff;font-weight:700;display:inline-flex;align-items:center;gap:8px;flex:none}
+.ask:hover{background:var(--fill-hover)}
+.hint{font-size:12px;margin:6px 6px 0;min-height:0}
+.hint:empty{display:none}
+.hint.err{color:var(--red-dark);font-weight:600}
+.toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:13px;font-weight:600;display:none;z-index:9;max-width:calc(100vw - 32px)}
+.toast.show{display:block}
+@media (max-width:960px){.body{grid-template-columns:minmax(0,1fr)}.nav{display:none}}
+@media (max-width:760px){.facts{grid-template-columns:minmax(0,1fr)}.headline{font-size:19px}.t-lbl{display:block;margin-bottom:2px}.pair{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:640px){.wrap{padding:0 16px}.dock{padding:8px 12px 12px}.ph h1{font-size:25px}.crumb span{display:none}.ans-head,.ans-body{padding-left:14px;padding-right:14px}.chart-card{padding:14px 12px 10px}.ask span{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <span class="logo">Coresight</span>
+    <span class="crumb">Consumer Intelligence Platform <span>/ Ask CIP</span></span>
+    <button class="tb-btn theme" type="button" id="themeBtn" aria-label="Switch light or dark mode" title="Switch light or dark mode"><svg class="moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><svg class="sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+  </header>
+  <div class="body">
+    <nav class="nav" aria-label="Platform">
+      <h2>EXPLORE</h2><a href="#">Home</a><a href="#" aria-current="page">Ask CIP</a><a href="#">Survey library</a><a href="#">Search questions</a>
+      <h2>CORE RESEARCH</h2><a href="#">US weekly tracker</a><a href="#">China weekly tracker</a><a href="#">In store vs online</a><a href="#">Retailer databank</a><a href="#">Sector databank</a>
+      <h2>REFERENCE</h2><a href="#">Methodology</a><a href="#">What’s new</a>
+    </nav>
+    <main class="page">
+      <div class="wrap">
+        <div class="guide" role="region" aria-label="Mock-up guide">
+          <span class="meta-tag">Mock-up for review</span>
+          <span>Figures from Coresight’s published survey files, <b>checked against the survey files (27 Nov 2026)</b>.</span>
+          <label for="pick"><b>Sample question:</b></label>
+          <select id="pick"></select>
+          <button class="btn" type="button" id="oqBtn" aria-expanded="false" aria-controls="oq">Open questions</button>
+        </div>
+        <section class="oq" id="oq" aria-label="Open questions"><h2>Open questions for you (the mock-ups use each default)</h2><ol id="oqList"></ol></section>
+      </div>
+      <div class="wrap ph">
+        <div>
+          <h1>What would you like to understand?</h1>
+          <p>Ask a question in your own words.</p>
+        </div>
+        <div class="ph-tools">
+          <span class="seg-label" id="mktLabel">Market</span>
+          <div class="seg" role="group" aria-labelledby="mktLabel" id="market">
+            <button type="button" data-market="US" aria-pressed="false">US</button>
+            <button type="button" data-market="CN" aria-pressed="false">China</button>
+            <button type="button" data-market="both" aria-pressed="true">Both</button>
+          </div>
+          <button class="btn" type="button" id="histBtn" aria-expanded="false" aria-controls="hist"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span id="histLabel">History</span></button>
+          <button class="btn primary" type="button" id="newQ"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New question</button>
+          <div class="hist" id="hist"></div>
+        </div>
+      </div>
+      <section class="wrap thread" id="thread" aria-live="polite"></section>
+      <div class="dock">
+        <div class="composer">
+          <div class="box">
+            <label for="ask" class="sr">Your question</label>
+            <input id="ask" type="text" placeholder="Ask a question in your own words" autocomplete="off">
+            <button class="icon-btn" type="button" aria-label="Ask by voice"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+            <button class="ask" type="button" id="send"><span>Ask</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          </div>
+          <p class="hint" id="hint"></p>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--red-soft)"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--red);stroke-width:2"/></pattern>
+</defs></svg>
+<script src="samples.js"></script>
+<script>
+(function () {
+  var SAMPLES = window.SAMPLES, BY_ID = {}, svgNS = 'http://www.w3.org/2000/svg';
+  SAMPLES.forEach(function (s) { BY_ID[s.id] = s; });
+  var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var state = { id: 's2', market: 'both', choice: null };
+  var thread = document.getElementById('thread'), tipTimer;
+  var drawers = [];   // charts redraw at their own width when the window resizes, so labels stay readable on a phone
+
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function plain(html) { var d = document.createElement('div'); d.innerHTML = html; return d.textContent; }
+  function h(tag, attrs, html) { var e = document.createElement(tag); for (var k in attrs || {}) e.setAttribute(k, attrs[k]); if (html != null) e.innerHTML = html; return e; }
+  function day(iso) { var d = new Date(iso + 'T00:00:00'); return d.getDate() + ' ' + MON[d.getMonth()] + ' ' + d.getFullYear(); }
+  function toast(text) { var t = document.getElementById('toast'); t.textContent = text; t.classList.add('show'); clearTimeout(tipTimer); tipTimer = setTimeout(function () { t.classList.remove('show'); }, 2600); }
+  function icon(path) { return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">' + path + '</svg>'; }
+  var MARK = '<span class="mark" aria-hidden="true">' + icon('<path d="M4 5h16v11H8l-4 4z"/>') + '</span>';
+
+  /* ---------- charts: plain SVG drawn at the container's own pixel width ---------- */
+  function svgEl(svg, name, attrs, style) { var e = document.createElementNS(svgNS, name); for (var k in attrs) e.setAttribute(k, attrs[k]); if (style) e.setAttribute('style', style); svg.appendChild(e); return e; }
+  function text(svg, x, y, str, opts) {
+    opts = opts || {};
+    var t = svgEl(svg, 'text', { x: x, y: y, 'text-anchor': opts.anchor || 'middle', 'font-size': opts.size || 11, 'font-weight': opts.weight || 400 }, 'fill:' + (opts.fill || 'var(--axis)'));
+    t.textContent = str; return t;
+  }
+  function tipFor(wrap, svg, mark, x, y, html) {
+    var tip = wrap.querySelector('.tip');
+    var show = function () { tip.innerHTML = html; tip.style.left = x + 'px'; tip.style.top = y + 'px'; tip.style.display = 'block'; };
+    var hide = function () { tip.style.display = 'none'; };
+    mark.setAttribute('tabindex', '0'); mark.style.cursor = 'pointer';
+    mark.addEventListener('mouseenter', show); mark.addEventListener('focus', show);
+    mark.addEventListener('mouseleave', hide); mark.addEventListener('blur', hide);
+  }
+  function wrapLabel(label, maxChars, maxLines) {   // a long answer label in up to maxLines lines, the rest cut with an ellipsis
+    var words = label.split(' '), lines = [''];
+    words.forEach(function (w) { var cur = lines[lines.length - 1]; if ((cur + ' ' + w).trim().length > maxChars && cur) lines.push(w); else lines[lines.length - 1] = (cur + ' ' + w).trim(); });
+    if (lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] = lines[maxLines - 1].replace(/.{0,2}$/, '') + '…'; }
+    return lines;
+  }
+  function pool(points, grain) {   // readings added up per month / quarter / year: everyone asked in that period's surveys
+    if (grain === 'Each survey') return points.map(function (p) { return { date: p.date, label: day(p.date), pct: 100 * p.n / p.b }; });
+    var groups = {}, order = [];
+    points.forEach(function (p) {
+      var y = p.date.slice(0, 4), m = +p.date.slice(5, 7);
+      var key = grain === 'Yearly' ? y : grain === 'Quarterly' ? 'Q' + Math.ceil(m / 3) + ' ' + y : MON[m - 1] + ' ' + y;
+      if (!groups[key]) { groups[key] = { n: 0, b: 0, date: p.date }; order.push(key); }
+      groups[key].n += p.n; groups[key].b += p.b; groups[key].date = p.date;
+    });
+    return order.map(function (k) { return { date: groups[k].date, label: k, pct: 100 * groups[k].n / groups[k].b }; });
+  }
+
+  function drawLine(wrap, chart, view) {
+    var svg = wrap.querySelector('svg'), W = wrap.clientWidth, H = W < 500 ? 230 : 270, L = 40, R = 56, T = 26, B = 30;
+    svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.innerHTML = '';
+    var grain = view.grain === 'Monthly' && chart.cadence === 'monthly' ? 'Each survey' : view.grain === 'Quarterly' && chart.cadence === 'quarterly' ? 'Each survey' : view.grain;
+    var all = chart.series[0].points, lastDate = new Date(all[all.length - 1].date);
+    var cutoff = chart.ranges[view.range] === 'Last 12 months' ? new Date(lastDate.getTime() - 365 * 864e5) : null;
+    var series = chart.series.map(function (s) { return pool(s.points.filter(function (p) { return !cutoff || new Date(p.date) > cutoff; }), grain); });
+    var pts = series[0], t0 = new Date(pts[0].date).getTime(), t1 = new Date(pts[pts.length - 1].date).getTime();
+    var pad = Math.max((t1 - t0) * 0.04, 20 * 864e5); t0 -= pad; t1 += pad;
+    var x = function (d) { return L + (new Date(d).getTime() - t0) / (t1 - t0) * (W - L - R); };
+    var y = function (v) { return T + (1 - v / 100) * (H - T - B); };
+    [0, 25, 50, 75, 100].forEach(function (v) { svgEl(svg, 'line', { x1: L, x2: W - R, y1: y(v), y2: y(v) }, 'stroke:' + (v ? 'var(--grid)' : 'var(--line-2)')); text(svg, L - 8, y(v) + 4, v + '%', { anchor: 'end' }); });
+    var spanDays = (t1 - t0) / 864e5, start = new Date(t0), ticks = [];
+    if (spanDays > 500) { for (var yr = start.getFullYear() + 1; yr <= new Date(t1).getFullYear(); yr++) ticks.push([new Date(yr, 0, 1), String(yr)]); }
+    else { for (var d = new Date(start.getFullYear(), Math.ceil((start.getMonth() + 1) / 3) * 3, 1); d.getTime() < t1; d = new Date(d.getFullYear(), d.getMonth() + 3, 1)) ticks.push([d, MON[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2)]); }
+    var every = Math.ceil(ticks.length / Math.max(2, Math.floor((W - L - R) / 70)));
+    ticks.forEach(function (tk, i) { if (i % every === 0) text(svg, x(tk[0]), H - 8, tk[1]); });
+    var colours = ['var(--red)', 'var(--series2)'], labelAll = series.length === 1 && pts.length <= 12;
+    series.forEach(function (sp, si) {
+      var colour = colours[si], runs = [[sp[0]]];
+      for (var i = 1; i < sp.length; i++) { if (new Date(sp[i].date) - new Date(sp[i - 1].date) > 120 * 864e5 && grain === 'Each survey') runs.push([]); runs[runs.length - 1].push(sp[i]); }
+      for (var r = 1; r < runs.length; r++) { var a = runs[r - 1][runs[r - 1].length - 1], b = runs[r][0]; svgEl(svg, 'line', { x1: x(a.date), y1: y(a.pct), x2: x(b.date), y2: y(b.pct), 'stroke-width': 1.5, 'stroke-dasharray': '4 4' }, 'stroke:var(--line-2)'); }
+      runs.forEach(function (run) { if (run.length > 1) svgEl(svg, 'path', { d: run.map(function (p, j) { return (j ? 'L' : 'M') + x(p.date).toFixed(1) + ' ' + y(p.pct).toFixed(1); }).join(''), fill: 'none', 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, 'stroke:' + colour); });
+      sp.forEach(function (p, i) {
+        var last = i === sp.length - 1;
+        var dot = svgEl(svg, 'circle', { cx: x(p.date), cy: y(p.pct), r: last ? 6 : 4.5, 'stroke-width': 2 }, 'fill:' + colour + ';stroke:var(--surface)');
+        tipFor(wrap, svg, dot, x(p.date), y(p.pct), '<strong>' + p.pct.toFixed(1) + '%</strong> ' + esc(chart.series[si].name.toLowerCase()) + '<br>' + esc(p.label));
+        if (chart.focus === p.date) svgEl(svg, 'circle', { cx: x(p.date), cy: y(p.pct), r: 11, fill: 'none', 'stroke-width': 2 }, 'stroke:var(--ink)');
+        if (labelAll && !last) text(svg, x(p.date), y(p.pct) - 12, p.pct.toFixed(1) + '%', { size: 11.5, weight: 600, fill: 'var(--ink-2)' });
+      });
+      var lp = sp[sp.length - 1], lx = x(lp.date) + 10, ly = y(lp.pct);
+      if (series.length > 1 && si === 1 && Math.abs(ly - y(series[0][series[0].length - 1].pct)) < 24) ly += ly > y(series[0][series[0].length - 1].pct) ? 12 : -12;
+      svgEl(svg, 'rect', { x: lx, y: ly - 11, width: 46, height: 22, rx: 11 }, 'fill:' + (si ? 'var(--series2)' : 'var(--fill)'));
+      text(svg, lx + 23, ly + 4, lp.pct.toFixed(1) + '%', { size: 12, weight: 700, fill: '#fff' });
+    });
+    if (grain === 'Each survey') (chart.unusual || []).forEach(function (u) {
+      var p = pts.filter(function (q) { return q.date === u.date; })[0];
+      if (p) text(svg, Math.min(Math.max(x(p.date), L + 70), W - R - 70), y(p.pct) + (/low/.test(u.label) ? 24 : -14), u.label, { size: 11.5, weight: 700, fill: 'var(--ink-2)' });
+    });
+    svg.setAttribute('aria-label', chart.title + ': ' + pts.map(function (p) { return p.label + ' ' + p.pct.toFixed(1) + '%'; }).join(', '));
+  }
+
+  function barFill(b, hasSides) { return b.small ? 'url(#hatch)' : b.side === 'pos' ? 'var(--series2)' : b.side === 'neg' ? 'var(--red)' : hasSides ? 'var(--neutral-bar)' : 'var(--red)'; }
+
+  function drawColumns(wrap, chart, paired) {
+    var svg = wrap.querySelector('svg'), W = wrap.clientWidth, bars = chart.bars, n = bars.length;
+    var hasSides = bars.some(function (b) { return b.side; });
+    var slot = (W - 44) / n, tilt = slot < 64;   // narrow columns: labels at an angle, one line each
+    var lines = bars.map(function (b) { return tilt ? wrapLabel(b.label, 18, 1) : wrapLabel(b.label, Math.max(6, Math.floor(slot / 6.4)), 3); });
+    var labelRows = Math.max.apply(null, lines.map(function (l) { return l.length; }));
+    var B = tilt ? 96 : 14 + labelRows * 13, H = 216 + B, L = 40, R = 4, T = 22;
+    svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.innerHTML = '';
+    var maxV = Math.max.apply(null, bars.map(function (b) { return Math.max(b.pct, b.old || 0); }));
+    var top = maxV > 60 ? 100 : maxV > 30 ? 60 : 40, y = function (v) { return T + (1 - v / top) * (H - T - B); };
+    var grid = top === 100 ? [0, 25, 50, 75, 100] : top === 60 ? [0, 20, 40, 60] : [0, 10, 20, 30, 40];
+    grid.forEach(function (v) { svgEl(svg, 'line', { x1: L, x2: W - R, y1: y(v), y2: y(v) }, 'stroke:' + (v ? 'var(--grid)' : 'var(--line-2)')); text(svg, L - 8, y(v) + 4, v + '%', { anchor: 'end' }); });
+    var step = (W - L - R) / n, bw = Math.min(paired ? 34 : 56, step * (paired ? 0.42 : 0.62));
+    bars.forEach(function (b, i) {
+      var cx = L + step * (i + 0.5);
+      var cols = paired ? [[b.old, cx - bw / 2 - 2, 'old'], [b.pct, cx + bw / 2 + 2, 'new']] : [[b.pct, cx, 'new']];
+      cols.forEach(function (c) {
+        var v = c[0], bx = c[1] - bw / 2, by = y(v), hgt = y(0) - by;
+        var rect = svgEl(svg, 'path', { d: 'M' + bx + ' ' + y(0) + 'V' + (by + 4) + 'Q' + bx + ' ' + by + ' ' + (bx + 4) + ' ' + by + 'H' + (bx + bw - 4) + 'Q' + (bx + bw) + ' ' + by + ' ' + (bx + bw) + ' ' + (by + 4) + 'V' + y(0) + 'Z' },
+          'fill:' + (c[2] === 'old' ? 'var(--red-soft)' : barFill(b, hasSides)) + (c[2] === 'old' ? ';stroke:var(--red);stroke-width:1.5' : ''));
+        if (hgt < 4) rect.setAttribute('d', 'M' + bx + ' ' + y(0) + 'h' + bw + 'v-2h-' + bw + 'z');
+        text(svg, c[1], by - 6, v.toFixed(1) + '%', { size: paired || step < 40 ? 11 : 12, weight: 700, fill: c[2] === 'old' ? 'var(--ink-2)' : 'var(--ink)' });
+        tipFor(wrap, svg, rect, c[1], by, '<strong>' + v.toFixed(1) + '%</strong> ' + esc(b.label) + (paired ? '<br>' + esc(chart.periods[c[2] === 'old' ? 0 : 1]) : '') + (b.small ? '<br>Fewer than 50 people: read with caution' : ''));
+      });
+      if (tilt) text(svg, cx + 4, y(0) + 14, lines[i][0], { size: 11, fill: 'var(--ink-2)', anchor: 'end' }).setAttribute('transform', 'rotate(-40 ' + (cx + 4) + ' ' + (y(0) + 14) + ')');
+      else lines[i].forEach(function (ln, j) { text(svg, cx, y(0) + 16 + j * 13, ln, { size: 11, fill: 'var(--ink-2)' }); });
+    });
+    svg.setAttribute('aria-label', chart.title + ': ' + bars.map(function (b) { return b.label + ' ' + (paired ? b.old.toFixed(1) + '% then ' : '') + b.pct.toFixed(1) + '%'; }).join(', '));
+  }
+
+  function drawBars(wrap, chart) {   // horizontal bars, biggest first, for long ranked lists
+    var svg = wrap.querySelector('svg'), W = wrap.clientWidth, bars = chart.bars, row = 30;
+    var labelW = Math.min(170, W * 0.42), H = bars.length * row + 10, R = 52;
+    svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.innerHTML = '';
+    var maxV = Math.max.apply(null, bars.map(function (b) { return b.pct; })), x = function (v) { return labelW + v / maxV * (W - labelW - R); };
+    bars.forEach(function (b, i) {
+      var yy = i * row + 6, label = wrapLabel(b.label, Math.floor(labelW / 6.2), 1)[0];
+      text(svg, labelW - 8, yy + 15, label, { anchor: 'end', size: 12, fill: 'var(--ink-2)' });
+      var w = x(b.pct) - labelW, rect = svgEl(svg, 'path', { d: 'M' + labelW + ' ' + (yy + 3) + 'H' + (labelW + w - 4) + 'Q' + (labelW + w) + ' ' + (yy + 3) + ' ' + (labelW + w) + ' ' + (yy + 7) + 'V' + (yy + 17) + 'Q' + (labelW + w) + ' ' + (yy + 21) + ' ' + (labelW + w - 4) + ' ' + (yy + 21) + 'H' + labelW + 'Z' }, 'fill:var(--red)');
+      text(svg, labelW + w + 6, yy + 16, b.pct.toFixed(1) + '%', { anchor: 'start', size: 12, weight: 700, fill: 'var(--ink)' });
+      tipFor(wrap, svg, rect, labelW + w / 2, yy + 3, '<strong>' + b.pct.toFixed(1) + '%</strong> ' + esc(b.label));
+    });
+    svg.setAttribute('aria-label', chart.title + ': ' + bars.map(function (b) { return b.label + ' ' + b.pct.toFixed(1) + '%'; }).join(', '));
+  }
+
+  function chartCard(chart) {
+    var card = h('div', { class: 'chart-card' }), view = { grain: (chart.grains || [])[0], range: chart.default_range || 0 };
+    var top = h('div', { class: 'chart-top' }, '<div><h3>' + esc(chart.title) + '</h3><p>' + esc(chart.unit) + '</p></div>');
+    var ctrls = h('div', { class: 'ctrls' });
+    function group(label, items, key) {
+      if (!items || items.length < 2) return;
+      var g = h('div', { class: 'range', role: 'group', 'aria-label': label });
+      items.forEach(function (it, i) {
+        var b = h('button', { type: 'button', 'aria-pressed': String(key === 'range' ? i === view.range : key === 'grain' ? it === view.grain : i === 0) }, esc(it));
+        b.addEventListener('click', function () {
+          if (key === 'range') view.range = i; else if (key === 'grain') view.grain = it; else if (i) toast('In the product: every survey of the last 12 months added up, steadier for small groups');
+          [].forEach.call(g.children, function (c) { c.setAttribute('aria-pressed', String(c === b)); }); draw();
+        });
+        g.appendChild(b);
+      });
+      ctrls.appendChild(g);
+    }
+    if (chart.kind === 'line') { group('Time range', chart.ranges, 'range'); group('Period', chart.grains, 'grain'); }
+    else group('Period', chart.ranges, 'none');
+    top.appendChild(ctrls); card.appendChild(top);
+    if (chart.kind === 'line' && chart.series.length > 1) card.appendChild(h('p', { class: 'legend' }, chart.series.map(function (s, i) { return '<span><i style="background:' + (i ? 'var(--series2)' : 'var(--red)') + '"></i>' + esc(s.name) + '</span>'; }).join('')));
+    if (chart.kind === 'paired') card.appendChild(h('p', { class: 'legend' }, '<span><i class="box" style="background:var(--red-soft);border:1.5px solid var(--red)"></i>' + esc(chart.periods[0]) + '</span><span><i class="box" style="background:var(--red)"></i>' + esc(chart.periods[1]) + '</span>'));
+    if (chart.bars && chart.bars.some(function (b) { return b.side; })) card.appendChild(h('p', { class: 'legend' }, '<span><i class="box" style="background:var(--series2)"></i>Better / positive side</span><span><i class="box" style="background:var(--red)"></i>Worse / negative side</span>'));
+    var plots = [];
+    function plot(parent, title) { var box = h('div'); if (title) box.appendChild(h('h4', {}, title)); var w = h('div', { class: 'svgwrap' }, '<svg role="img"></svg><div class="tip"></div>'); box.appendChild(w); parent.appendChild(box); plots.push(w); return w; }
+    if (chart.kind === 'both-bars') { var pair = h('div', { class: 'pair' }); plot(pair, 'A. Vertical bars (as decided)'); plot(pair, 'B. Horizontal bars (easier with long names)'); card.appendChild(pair); }
+    else plot(card);
+    card.appendChild(h('p', { class: 'foot' }, (chart.foot || []).map(esc).join(' ')));
+    function draw() {
+      if (!card.isConnected) return;
+      if (chart.kind === 'line') drawLine(plots[0], chart, view);
+      else if (chart.kind === 'both-bars') { drawColumns(plots[0], chart, false); drawBars(plots[1], chart); }
+      else drawColumns(plots[0], chart, chart.kind === 'paired');
+    }
+    drawers.push(draw);
+    return card;
+  }
+
+  /* ---------- an answer card ---------- */
+  function copyText(question, a) {
+    return ['Q: ' + question, plain(a.headline)].concat(a.cards.map(function (c) { return c.label + ': ' + c.value + ' (' + c.note + ')'; }))
+      .concat(a.evidence.wording.map(function (w, i) { return i ? w : 'Question asked: “' + w + '”'; }), ['Source: ' + a.evidence.source + '.']).join('\n');
+  }
+  function answerCard(s, a, notice) {
+    var card = h('article', { class: 'ans' });
+    var head = h('div', { class: 'ans-head' }, '<span class="by">' + MARK + '<span><b>Ask CIP</b> <span class="by-src">' + esc(a.survey) + '</span></span><span class="meta-tag">' + s.id.toUpperCase() + ' · ' + esc(s.level) + ' · ' + esc(s.type) + '</span></span>');
+    var tools = h('div', { class: 'tools' });
+    var copy = h('button', { class: 'btn', type: 'button' }, icon('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>') + 'Copy');
+    copy.addEventListener('click', function () { var t = copyText(s.question, a); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast('Copied the full answer'); }, function () { toast('Copy needs a secure page; in the product it copies the full answer'); }); });
+    var exp = h('button', { class: 'btn', type: 'button' }, icon('<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>') + 'Export');
+    exp.addEventListener('click', function () { toast('In the product: an Excel workbook with this chart and its numbers'); });
+    tools.appendChild(copy); tools.appendChild(exp); head.appendChild(tools); card.appendChild(head);
+    var body = h('div', { class: 'ans-body' });
+    if (notice) body.appendChild(h('p', { class: 'notice' }, esc(notice)));
+    body.appendChild(h('p', { class: 'headline' }, a.headline));
+    body.appendChild(h('ul', { class: 'facts', 'aria-label': 'Key figures' }, a.cards.map(function (c) {
+      var arrow = c.tone === 'up' ? '↑ ' : c.tone === 'down' ? '↓ ' : '';
+      return '<li class="' + (c.tone === 'main' ? 'main' : '') + '"><span class="f-k">' + esc(c.label) + '</span><span class="f-v">' + arrow + esc(c.value) + '</span><span class="f-s">' + esc(c.note) + '</span></li>';
+    }).join('')));
+    body.appendChild(chartCard(a.chart));
+    var trust = h('div', { class: 'trust' });
+    a.evidence.wording.forEach(function (w, i) { trust.appendChild(h('p', {}, '<span class="t-lbl">' + (i ? '' : 'Question asked') + '</span>' + (i ? esc(w) : '<q>' + esc(w) + '</q>'))); });   // later lines say who was asked
+    trust.appendChild(h('p', {}, '<span class="t-lbl">Source</span>' + esc(a.evidence.source)));
+    var t = a.evidence.table;
+    trust.appendChild(h('details', {}, '<summary>' + icon('<path d="M9 6l6 6-6 6"/>') + 'See every survey result</summary><div class="tbl-wrap"><table><thead><tr>' + t.head.map(function (x) { return '<th>' + esc(x) + '</th>'; }).join('') + '</tr></thead><tbody>' + t.rows.map(function (r) { return '<tr>' + r.map(function (x) { return '<td>' + esc(x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>'));
+    if ((s.alternatives || []).length) {
+      var wrong = h('div', { class: 'wrong' }, 'Not what you meant? <button type="button" aria-expanded="false">Pick a different survey question</button>');
+      var list = h('ul', { class: 'alts', hidden: '' }, s.alternatives.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join(''));
+      wrong.querySelector('button').addEventListener('click', function (e) { var open = list.hasAttribute('hidden'); list.toggleAttribute('hidden'); e.target.setAttribute('aria-expanded', String(open)); });
+      wrong.appendChild(list); trust.appendChild(wrong);
+    }
+    body.appendChild(trust);
+    body.appendChild(chips(a.chips || s.chips));
+    card.appendChild(body);
+    return card;
+  }
+  function chips(list) {
+    var next = h('div', { class: 'next' }, '<h3>Dig deeper</h3>'), row = h('div', { class: 'chips-row' });
+    list.forEach(function (c) {
+      var b = h('button', { class: 'chip', type: 'button' }, esc(c.label));
+      b.addEventListener('click', function () {
+        if (c.goto) open(c.goto);
+        else if (c.market) { state.choice = c.market; render(); }
+        else toast('In the product this asks “' + c.label + '” at once');
+      });
+      row.appendChild(b);
+    });
+    next.appendChild(row); return next;
+  }
+
+  /* ---------- the thread ---------- */
+  function render() {
+    var s = BY_ID[state.id];
+    drawers = []; thread.innerHTML = '';
+    if (s.previous) {
+      var p = BY_ID[s.previous];
+      thread.appendChild(h('p', { class: 'q' }, esc(p.question)));
+      var past = h('div', { class: 'past' }, '<p>' + esc(plain(p.headline)) + '</p>');   // the earlier answer folded to its direct answer
+      var more = h('button', { class: 'link', type: 'button', 'aria-expanded': 'false' }, 'Show full answer');
+      more.addEventListener('click', function () { open(p.id); });
+      past.appendChild(more); thread.appendChild(past);
+    }
+    thread.appendChild(h('p', { class: 'q' }, esc(s.question)));
+    if (s.read_as) thread.appendChild(h('p', { class: 'read-as' }, 'Read as: ' + esc(s.read_as)));
+    if (s.no_answer) {
+      var card = h('article', { class: 'ans' }, '<div class="ans-head"><span class="by">' + MARK + '<span><b>Ask CIP</b></span><span class="meta-tag">' + s.id.toUpperCase() + ' · ' + esc(s.level) + ' · ' + esc(s.type) + '</span></span></div>');
+      var body = h('div', { class: 'ans-body askback' }, '<p>' + esc(s.no_answer.text) + '</p>');
+      var row = h('div', { class: 'chips-row' });
+      s.no_answer.closest.forEach(function (c) { var b = h('button', { class: 'chip', type: 'button' }, esc(c)); b.addEventListener('click', function () { toast('In the product this answers from that survey question'); }); row.appendChild(b); });
+      body.appendChild(row); card.appendChild(body); thread.appendChild(card);
+    } else if (s.ask_back) {
+      var want = state.market !== 'both' ? state.market : state.choice;
+      if (state.market === 'both') {
+        var ab = h('article', { class: 'ans' }, '<div class="ans-head"><span class="by">' + MARK + '<span><b>Ask CIP</b></span><span class="meta-tag">' + s.id.toUpperCase() + ' · ' + esc(s.level) + ' · ' + esc(s.type) + '</span></span></div>');
+        var abBody = h('div', { class: 'ans-body askback' }, '<p>' + esc(s.ask_back.text) + '</p>'), abRow = h('div', { class: 'chips-row', role: 'group', 'aria-label': 'Choose a market' });
+        s.ask_back.choices.forEach(function (c) {
+          var b = h('button', { class: 'chip', type: 'button', 'aria-pressed': String(state.choice === c.market) }, esc(c.label));
+          b.addEventListener('click', function () { state.choice = c.market; render(); });
+          abRow.appendChild(b);
+        });
+        abBody.appendChild(abRow); ab.appendChild(abBody); thread.appendChild(ab);
+      }
+      if (want) thread.appendChild(answerCard(s, s.answers[want]));
+    } else {
+      var notice = s.market === 'US' && state.market === 'CN' ? 'The China survey does not ask this, so these are US results.'
+        : s.market === 'CN' && state.market === 'US' ? 'Your question names China, so these are China survey results.' : '';
+      thread.appendChild(answerCard(s, s, notice));
+    }
+    requestAnimationFrame(function () { drawers.forEach(function (d) { d(); }); });
+    document.getElementById('pick').value = s.id;
+    [].forEach.call(document.querySelectorAll('#hist button'), function (b) { b.setAttribute('aria-current', String(b.dataset.id === s.id)); });
+  }
+  function open(id) { state.id = id; state.choice = null; history.replaceState(null, '', location.pathname + location.search + '#' + id); render(); document.querySelector('.page').scrollTo({ top: 0 }); }
+
+  /* ---------- page controls ---------- */
+  var pick = document.getElementById('pick'), hist = document.getElementById('hist'), histBtn = document.getElementById('histBtn');
+  SAMPLES.forEach(function (s) {
+    pick.appendChild(h('option', { value: s.id }, esc(s.id.toUpperCase() + ' (' + s.level + ') ' + s.question)));
+    var b = h('button', { type: 'button', 'data-id': s.id }, esc(s.question));
+    b.addEventListener('click', function () { hist.classList.remove('open'); histBtn.setAttribute('aria-expanded', 'false'); open(s.id); });
+    hist.appendChild(b);
+  });
+  document.getElementById('histLabel').textContent = 'History (' + SAMPLES.length + ')';
+  pick.addEventListener('change', function () { open(pick.value); });
+  histBtn.addEventListener('click', function (e) { e.stopPropagation(); var o = hist.classList.toggle('open'); histBtn.setAttribute('aria-expanded', String(o)); });
+  document.addEventListener('click', function (e) { if (!hist.contains(e.target)) { hist.classList.remove('open'); histBtn.setAttribute('aria-expanded', 'false'); } });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && hist.classList.contains('open')) { hist.classList.remove('open'); histBtn.setAttribute('aria-expanded', 'false'); histBtn.focus(); } });
+  document.getElementById('oqList').innerHTML = window.OPEN_QUESTIONS.map(function (q) { return '<li><b>' + esc(q[0]) + '</b> Default: ' + esc(q[1]) + '</li>'; }).join('');
+  document.getElementById('oqBtn').addEventListener('click', function (e) { var o = document.getElementById('oq').classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', String(o)); });
+  [].forEach.call(document.querySelectorAll('#market button'), function (b, i, all) {
+    b.addEventListener('click', function () { state.market = b.dataset.market; state.choice = null; [].forEach.call(all, function (x) { x.setAttribute('aria-pressed', String(x === b)); }); render(); });
+  });
+  var input = document.getElementById('ask'), hint = document.getElementById('hint');
+  function send() {
+    var q = input.value.trim().toLowerCase();
+    if (!q) { hint.textContent = 'Type a question first.'; hint.className = 'hint err'; input.focus(); return; }
+    var found = SAMPLES.filter(function (s) { return s.question.toLowerCase().replace(/[?]/g, '') === q.replace(/[?]/g, ''); })[0];
+    if (found) { input.value = ''; hint.textContent = ''; open(found.id); }
+    else { hint.textContent = 'This mock-up answers its sample questions only: pick one above.'; hint.className = 'hint'; }
+  }
+  document.getElementById('send').addEventListener('click', send);
+  input.addEventListener('keydown', function (e) { if (e.key === 'Enter') send(); });
+  input.addEventListener('input', function () { hint.textContent = ''; });
+  document.getElementById('newQ').addEventListener('click', function () { thread.innerHTML = ''; drawers = []; input.value = ''; hint.textContent = ''; input.focus(); });
+  var root = document.documentElement, wanted = new URLSearchParams(location.search).get('theme');
+  if (wanted === 'dark' || (!wanted && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches)) root.setAttribute('data-theme', 'dark');
+  document.getElementById('themeBtn').addEventListener('click', function () { if (root.getAttribute('data-theme') === 'dark') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', 'dark'); });
+  var resizeQueued = false;
+  window.addEventListener('resize', function () { if (resizeQueued) return; resizeQueued = true; requestAnimationFrame(function () { resizeQueued = false; drawers.forEach(function (d) { d(); }); }); });
+  window.addEventListener('hashchange', function () { var id = location.hash.slice(1); if (BY_ID[id] && id !== state.id) open(id); });
+  state.id = BY_ID[location.hash.slice(1)] ? location.hash.slice(1) : 's2';
+  render();
+})();
+</script>
+</body>
+</html>

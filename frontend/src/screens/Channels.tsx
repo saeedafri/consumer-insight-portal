@@ -24,8 +24,8 @@ import { Card, Empty, ExportButtons, Failure, marketOptions, SkeletonScreen } fr
 import { downloadTable } from "../csv";
 import type { Format } from "../csv";
 import { C, useTheme } from "../theme";
-import { fmtDate } from "../stats";
-import { chosenCut, drawnWeeks, EVERYONE, figure, shares, SKIP, time, trendWeeks } from "../weekly";
+import { fmtDate, pts } from "../stats";
+import { baseText, chosenCut, drawnWeeks, EVERYONE, figure, groupLabel, rowLabel, shares, SKIP, time, trendWeeks } from "../weekly";
 
 const pct = (v: number | null | undefined) => v == null ? "–" : `${v.toFixed(1)}%`;
 
@@ -35,7 +35,8 @@ const pct = (v: number | null | undefined) => v == null ? "–" : `${v.toFixed(1
 const SURVEYS = {
   US: { family: "CSI-US", store: ["q2", "Q4"], online: ["q3", "Q5"], storeWording: /in a store in the past two weeks/i,
         onlineWording: /online in the past two weeks/i, source: "Coresight Research US Consumer Survey, weekly tracker, about " +
-        "400 US adults a week; questions q2 (in a store) and q3 (online), asked as Q4 and Q5 until December 2023, past two weeks" },
+        "400 US adults a week; questions q2 (in a store) and q3 (online), asked as Q11_2/Q11_3, Q9_1/Q9_2 and Q5_1/Q5_2 from " +
+        "December 2020 to July 2022, Q4/Q5 to December 2023, Q2/Q3 to April 2025 and q0004/q0005 in May 2025, past two weeks" },
   CN: { family: "CSI-CN", store: ["Q5", ""], online: ["Q6", ""], storeWording: /purchased in physical stores/i,
         onlineWording: /purchased online/i, source: "Coresight Research China Consumer Survey, weekly, about 550 adults in " +
         "China a week; questions Q5 (in physical stores) and Q6 (online), past two weeks" },
@@ -100,7 +101,7 @@ export default function Channels() {
     .sort((x, y) => (data.inStore(week, cut, y) ?? 0) - (data.inStore(week, cut, x) ?? 0));
   const category = categories.includes(params.get("c") ?? "") ? params.get("c")! : categories[0];
   const kindName = CUT_NAMES[kind] ?? kind;
-  const groupName = cut === EVERYONE ? "Everyone" : `${kindName}: ${cut.slice(kind.length + 1)}`;
+  const groupName = cut === EVERYONE ? "Everyone" : `${kindName}: ${groupLabel(cut.slice(kind.length + 1))}`;
   const nowStore = data.inStore(week, cut, category), nowOnline = data.onLine(week, cut, category);
   const change = (fn: typeof data.inStore, now: number | null) => prior && now != null && fn(prior[0], cut, category) != null ? now - fn(prior[0], cut, category)! : null;
   // a row of the bar chart: a category of the group, or (a kind chosen) a group of the kind for the category; only the
@@ -124,6 +125,8 @@ export default function Channels() {
   const { drawn, unanswered, rangeText } = drawnWeeks(span, answered);
   const both = drawn.at(-1);   // the last week, where the gap between the two lines is marked
   const bothStore = both && figure(data.inStore(both[0], cut, category)), bothOnline = both && figure(data.onLine(both[0], cut, category));
+  // the gap from the unrounded figures, as the Store lead card: from the rounded ones it read +13.3 where the card said 13.4
+  const gap = both && bothStore != null && bothOnline != null ? data.inStore(both[0], cut, category)! - data.onLine(both[0], cut, category)! : null;
 
   const withEveryone = cut !== EVERYONE;   // Everyone's figure beside a group's
   const channels = [["In a store", data.inStore, C.red, "store"], ["Online", data.onLine, C.blue, "online"]] as const;
@@ -137,13 +140,15 @@ export default function Channels() {
    *  a tick could cross it. */
   const barOption = () => ({
     tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "shadow" },
-      formatter: ([p]: { name: string }[]) => `${p.name}<br>` + channels.map(([name, fn]) => `${name} <b>${pct(barFigure(fn, p.name))}</b>` +
+      formatter: ([p]: { name: string }[]) => `${groupLabel(p.name)}<br>` + channels.map(([name, fn, , style]) => `${name} <b>${pct(barFigure(fn, p.name))}</b>` +
+        ` <span style="color:${C.ink3}">${baseText((style === "store" ? data.storeBase : data.onlineBase)(week, barCut(p.name)))}</span>` +
         (withEveryone ? ` <span style="color:${C.ink3}">Everyone ${pct(barFigure(fn, p.name, EVERYONE))}</span>` : "")).join("<br>") },
     legend: { top: 0, left: 0, textStyle: axisText(), data: ["In a store", "Online", ...(withEveryone ? [{ name: "Everyone", icon: "path://M0 0H2V12H0Z" }] : [])] },
     grid: { left: 8, right: 8, top: 32, bottom: 8, containLabel: true },
     xAxis: { type: "value", axisLabel: { ...valueText(), formatter: "{value}%" } },
     yAxis: [{ type: "category", inverse: true, data: rows, triggerEvent: true,
-              axisLabel: { ...axisText(), width: 190, overflow: "truncate", color: (row?: string) => row === focus ? C.ink : C.ink3 } },
+              axisLabel: { ...axisText(), width: 190, overflow: "truncate", color: (row?: string) => row === focus ? C.ink : C.ink3,
+                           formatter: (row: string) => rowLabel(row, data.storeBase(week, barCut(row))) } },
             // in a store over online, beside each pair of bars (two 10 px bars 3 px apart: 13 px between their middles)
             { type: "category", inverse: true, data: rows, position: "right", axisLabel: { align: "right", margin: 44, lineHeight: 13,
               formatter: (r: string) => r === focus ? channels.map(([, fn, , style]) => `{${style}|${pct(barFigure(fn, r))}}`).join("\n") : "",
@@ -158,7 +163,7 @@ export default function Channels() {
   const barTitle = sideBySide ? `${category} by ${kindName.toLowerCase()}` : "All categories, this week";
   const exportBars = (format: Format) => downloadTable(format, `${barTitle} ${date}`,
     [sideBySide ? kindName : "Category", "In a store %", "Online %", ...(withEveryone ? ["Everyone in a store %", "Everyone online %"] : []), "In a store base", "Online base"],
-    rows.map(r => [r, ...channels.map(([, fn]) => barFigure(fn, r)), ...(withEveryone ? channels.map(([, fn]) => barFigure(fn, r, EVERYONE)) : []),
+    rows.map(r => [groupLabel(r), ...channels.map(([, fn]) => barFigure(fn, r)), ...(withEveryone ? channels.map(([, fn]) => barFigure(fn, r, EVERYONE)) : []),
                    data.storeBase(week, barCut(r)), data.onlineBase(week, barCut(r))]),
     [`${barTitle}: ${groupName}, ${fmtDate(date)}`, source]);
 
@@ -167,7 +172,7 @@ export default function Channels() {
       // the base beside each figure: a small group (Non-binary, a handful a week) swings, and "check its base" is the rule
       formatter: (points: { marker: string; seriesName: string; value: [number, number | null, number | null] }[]) =>
         `${fmtDate(new Date(points[0].value[0]).toISOString().slice(0, 10))}<br>` + points.filter(p => p.seriesName !== "gap")
-          .map(p => `${p.marker}${p.seriesName} <b>${pct(p.value[1])}</b> <span style="color:${C.ink3}">n ${p.value[2] ?? "–"}</span>`).join("<br>") },
+          .map(p => `${p.marker}${p.seriesName} <b>${pct(p.value[1])}</b> <span style="color:${C.ink3}">${baseText(p.value[2])}</span>`).join("<br>") },
     legend: { top: 0, left: 0, textStyle: axisText(), data: ["In a store", "Online"] },
     grid: { left: 8, right: 112, top: 36, bottom: 28, containLabel: true },   // right: room for the end labels
     xAxis: { type: "time", min: "dataMin", max: "dataMax", axisLabel: valueText() },
@@ -183,10 +188,10 @@ export default function Channels() {
       })),
       // the gap between the two lines, once, at the last week both were asked: a bracket between the lines' ends and its
       // figure as an end label between theirs (a label on the bracket itself would be turned on its side)
-      ...(both && bothStore != null && bothOnline != null ? [{
+      ...(both && bothStore != null && bothOnline != null && gap != null ? [{
         type: "line", name: "gap", silent: true, showSymbol: false, lineStyle: { opacity: 0 }, tooltip: { show: false },
         data: [[time(both[1]), (bothStore + bothOnline) / 2]], labelLayout: { moveOverlap: "shiftY" },
-        endLabel: { show: true, color: C.ink2, fontSize: 11, formatter: `${bothStore >= bothOnline ? "+" : ""}${(bothStore - bothOnline).toFixed(1)} pts gap` },
+        endLabel: { show: true, color: C.ink2, fontSize: 11, formatter: `${pts(gap)} gap` },
         markLine: { silent: true, symbol: "none", animation: false, label: { show: false }, lineStyle: { color: C.ink3, type: "solid", width: 1 },
                     data: [[{ coord: [time(both[1]), bothStore] }, { coord: [time(both[1]), bothOnline] }]] },
       }] : [])],
@@ -211,7 +216,7 @@ export default function Channels() {
         {data.weeks.map(w => <option key={w[0]} value={w[0]}>{fmtDate(w[1])}</option>)}</select></label>
       <label><span>Respondent group</span><select value={kind} onChange={e => chooseKind(e.target.value)}>{kindOptions}</select></label>
       {kind !== "total" && <label><span>{kindName}</span><select value={cut} onChange={e => chooseGroup(e.target.value)}>
-        {groups.map(c => <option key={c[1]} value={c.join(":")}>{c[1]}</option>)}</select></label>}
+        {groups.map(c => <option key={c[1]} value={c.join(":")}>{groupLabel(c[1])}</option>)}</select></label>}
       <label><span>Category</span><select value={category} onChange={e => pick("c", e.target.value)}>
         {categories.map(l => <option key={l}>{l}</option>)}</select></label>
     </section>
@@ -222,7 +227,7 @@ export default function Channels() {
       <div className="card kpi"><div className="k-label">Bought online</div><div className="k-value">{pct(nowOnline)}</div>
         <div className="k-note"><Delta d={change(data.onLine, nowOnline)} label={vs} flags={[]} /></div></div>
       <div className="card kpi"><div className="k-label">Store lead over online</div>
-        <div className="k-value">{nowStore != null && nowOnline != null ? `${(nowStore - nowOnline).toFixed(1)} pts` : "–"}</div>
+        <div className="k-value">{nowStore != null && nowOnline != null ? pts(nowStore - nowOnline) : "–"}</div>
         <div className="k-note">{category}</div></div>
       <div className="card kpi"><div className="k-label">Online share of the category</div>
         <div className="k-value">{nowStore != null && nowOnline != null && nowStore + nowOnline > 0 ? pct(100 * nowOnline / (nowStore + nowOnline)) : "–"}</div>
@@ -254,7 +259,7 @@ export default function Channels() {
             {oldestFirst.map(w => <option key={w[0]} value={w[0]}>To {fmtDate(w[1])}</option>)}</select>
         </div>
         {kind !== "total" && <div className="seg" role="group" aria-label={`${kindName}: one group at a time`} style={{ marginBottom: 8 }}>
-          {groups.map(c => <button key={c[1]} type="button" aria-pressed={c.join(":") === cut} onClick={() => chooseGroup(c.join(":"))}>{c[1]}</button>)}
+          {groups.map(c => <button key={c[1]} type="button" aria-pressed={c.join(":") === cut} onClick={() => chooseGroup(c.join(":"))}>{groupLabel(c[1])}</button>)}
         </div>}
         {drawn.length
           ? <EChart height={height - (kind !== "total" ? 92 : 48)} label={`${category}: in store vs online over time, ${groupName}`}

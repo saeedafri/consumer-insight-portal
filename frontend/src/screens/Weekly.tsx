@@ -20,7 +20,7 @@ import type { Format } from "../csv";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { C, useTheme } from "../theme";
 import { fmtDate } from "../stats";
-import { chosenCut, drawnWeeks, EVERYONE, figure, time, trendWeeks } from "../weekly";
+import { axisNumber, baseText, chosenCut, drawnWeeks, EVERYONE, figure, groupLabel, rowLabel, time, trendWeeks } from "../weekly";
 
 const DAY = 86_400_000;
 const SURVEY = "Coresight Research US Consumer Survey, weekly tracker, about 400 US adults a week";
@@ -77,7 +77,7 @@ export default function Weekly() {
   const chooseGroup = (g: string) => setParams(p => { p.set("g", g); p.set("c", answer); return p; }, { replace: true });
   const chooseKind = (k: string) => chooseGroup(offered.find(c => c[0] === k)!.join(":"));   // a kind opens on its first group
   const kindOptions = kinds.map(k => <option key={k} value={k}>{k === "total" ? "Everyone" : CUT_NAMES[k] ?? k}</option>);
-  const groupName = cut === EVERYONE ? "Everyone" : `${kindName}: ${cut.slice(kind.length + 1)}`;
+  const groupName = cut === EVERYONE ? "Everyone" : `${kindName}: ${groupLabel(cut.slice(kind.length + 1))}`;
   const now = data.value(week, cut, answer);
   const change = (then: [number, string] | undefined) => {
     const was = then && data.value(then[0], cut, answer);
@@ -100,14 +100,15 @@ export default function Weekly() {
    *  are in the hover. */
   const barOption = () => ({
     tooltip: { ...tooltip(), trigger: "axis", axisPointer: { type: "shadow" },
-      formatter: ([p]: { name: string }[]) => `${p.name}<br>${tab.name} <b>${rowText(p.name, barFigure(p.name))}</b>` +
+      formatter: ([p]: { name: string }[]) => `${groupLabel(p.name)}<br>${tab.name} <b>${rowText(p.name, barFigure(p.name))}</b>` +
         (withEveryone ? ` <span style="color:${C.ink3}">Everyone ${rowText(p.name, barFigure(p.name, EVERYONE))}</span>` : "") +
-        ` <span style="color:${C.ink3}">n ${data.base(week, barCut(p.name)) ?? "–"}</span>` },
+        ` <span style="color:${C.ink3}">${baseText(data.base(week, barCut(p.name)))}</span>` },
     legend: { show: withEveryone, top: 0, left: 0, textStyle: axisText(), data: [tab.name, { name: "Everyone", icon: "path://M0 0H2V12H0Z" }] },
     grid: { left: 8, right: 8, top: withEveryone ? 32 : 8, bottom: 8, containLabel: true },
-    xAxis: { type: "value", axisLabel: { ...valueText(), formatter: netAxis ? "{value}" : "{value}%" } },
+    xAxis: { type: "value", axisLabel: { ...valueText(), formatter: axisNumber(netAxis ? "" : "%") } },
     yAxis: [{ type: "category", inverse: true, data: rows, triggerEvent: true,
-              axisLabel: { ...axisText(), width: 190, overflow: "truncate", color: (row?: string) => row === focus ? C.ink : C.ink3 } },
+              axisLabel: { ...axisText(), width: 190, overflow: "truncate", color: (row?: string) => row === focus ? C.ink : C.ink3,
+                           formatter: (row: string) => rowLabel(row, data.base(week, barCut(row))) } },
             { type: "category", inverse: true, data: rows, position: "right",
               axisLabel: { align: "right", margin: 52, color: C.red, fontSize: 11, fontWeight: 700, formatter: (r: string) => r === focus ? rowText(r, barFigure(r)) : "" } }],
     series: [{ type: "bar", name: tab.name, barMaxWidth: 14, itemStyle: { color: C.red, borderRadius: [2, 4, 4, 2] },
@@ -118,7 +119,7 @@ export default function Weekly() {
   const barTitle = sideBySide ? `${answer} by ${kindName.toLowerCase()}` : `${tab.name}, this week`;
   const exportBars = (format: Format) => downloadTable(format, `${barTitle} ${date}`,
     [sideBySide ? kindName : tab.answer, !netAxis ? `${tab.name} %` : rows.every(r => data.nets.has(sideBySide ? answer : r)) ? `${tab.name} (points)` : `${tab.name} (%; a net in points)`, ...(withEveryone ? ["Everyone"] : []), "People asked"],
-    rows.map(r => [r, barFigure(r), ...(withEveryone ? [barFigure(r, EVERYONE)] : []), data.base(week, barCut(r))]),
+    rows.map(r => [groupLabel(r), barFigure(r), ...(withEveryone ? [barFigure(r, EVERYONE)] : []), data.base(week, barCut(r))]),
     [`${barTitle}: ${groupName}, ${fmtDate(date)}`, sideBySide ? tab.each : tab.all, source], netAxis ? {} : { unit: "%" });
 
   // the trend's dates: the year up to the week chosen above, unless From / To are chosen; choosing another week clears them
@@ -130,11 +131,11 @@ export default function Weekly() {
   const lineOption = () => ({
     tooltip: { ...tooltip(), trigger: "axis",
       formatter: (points: { value: [number, number | null, number | null] }[]) => `${fmtDate(new Date(points[0].value[0]).toISOString().slice(0, 10))}<br>` +
-        `${answer} <b>${rowText(answer, points[0].value[1])}</b> <span style="color:${C.ink3}">n ${points[0].value[2] ?? "–"}</span>` },
+        `${answer} <b>${rowText(answer, points[0].value[1])}</b> <span style="color:${C.ink3}">${baseText(points[0].value[2])}</span>` },
     grid: { left: 8, right: 96, top: 16, bottom: 28, containLabel: true },   // right: room for the end label
     // months, or a month and day on a short span (Spending pressure's expenses start in July 2026), never a bare day
     xAxis: { type: "time", min: "dataMin", max: "dataMax", axisLabel: { ...valueText(), hideOverlap: true, formatter: { year: "{yyyy}", month: "{MMM}", day: "{MMM} {d}" } } },
-    yAxis: { type: "value", scale: data.nets.has(answer), axisLabel: { ...valueText(), formatter: data.nets.has(answer) ? "{value}" : "{value}%" } },
+    yAxis: { type: "value", scale: data.nets.has(answer), axisLabel: { ...valueText(), formatter: axisNumber(data.nets.has(answer) ? "" : "%") } },
     series: [{ type: "line", name: answer, showSymbol: false, smooth: 0.2, color: C.red, lineStyle: { width: 2 },
                data: drawn.map(w => [time(w[1]), trendFigure(w), data.base(w[0], cut)]),
                endLabel: { show: true, color: C.red, fontSize: 12, formatter: (p: { value: [number, number | null] }) => rowText(answer, p.value[1]) } }],
@@ -151,7 +152,7 @@ export default function Weekly() {
         {data.weeks.map(w => <option key={w[0]} value={w[0]}>{fmtDate(w[1])}</option>)}</select></label>
       <label><span>Respondent group</span><select value={kind} onChange={e => chooseKind(e.target.value)}>{kindOptions}</select></label>
       {kind !== "total" && <label><span>{kindName}</span><select value={cut} onChange={e => chooseGroup(e.target.value)}>
-        {groups.map(c => <option key={c[1]} value={c.join(":")}>{c[1]}</option>)}</select></label>}
+        {groups.map(c => <option key={c[1]} value={c.join(":")}>{groupLabel(c[1])}</option>)}</select></label>}
       <label><span>{tab.answer}</span><select value={answer} onChange={e => pick("c", e.target.value)}>
         {answers.map(a => <option key={a}>{a}</option>)}</select></label>
     </section>
@@ -186,7 +187,7 @@ export default function Weekly() {
             {oldestFirst.map(w => <option key={w[0]} value={w[0]}>To {fmtDate(w[1])}</option>)}</select>
         </div>
         {kind !== "total" && <div className="seg" role="group" aria-label={`${kindName}: one group at a time`} style={{ marginBottom: 8 }}>
-          {groups.map(c => <button key={c[1]} type="button" aria-pressed={c.join(":") === cut} onClick={() => chooseGroup(c.join(":"))}>{c[1]}</button>)}
+          {groups.map(c => <button key={c[1]} type="button" aria-pressed={c.join(":") === cut} onClick={() => chooseGroup(c.join(":"))}>{groupLabel(c[1])}</button>)}
         </div>}
         {drawn.length
           ? <EChart height={height - (kind !== "total" ? 92 : 48)} label={`${tab.name}: ${answer} over time, ${groupName}`}

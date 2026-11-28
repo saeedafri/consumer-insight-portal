@@ -22,6 +22,7 @@ import gzip
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -35,6 +36,15 @@ sys.path.insert(0, str(ROOT))
 
 PUBLISHED = ROOT / "data" / "published" / "current" / "api" / "v1"
 GOLDEN = ROOT / "scripts" / "ask_golden.yml"
+# the real set's scripted suffixes: 179 of its 232 questions are 115 stems with "by income", "in the latest wave"… added,
+# so its misses are counted by stem too (docs/research/ask-cip-rebuild-2026-11-27/04-council-verdict.md, edit 4)
+SUFFIX = re.compile(r"\s+(in the latest wave|latest wave|in (the )?all waves|in the first and latest wave|first and latest wave|"
+                    r"by (generation|income|household income|gender|age( group)?|region)|in 20\d\d( vs 20\d\d)?|monthly|over time)\s*\??$", re.I)
+
+
+def stem(question: str) -> str:
+    """A question without the real set's scripted suffix: "Top beauty retailers by income" is "top beauty retailers"."""
+    return SUFFIX.sub("", question.strip()).strip(" ?").lower()
 
 
 def score(item: dict, found: dict, countries: dict) -> list[str]:
@@ -58,6 +68,18 @@ def score(item: dict, found: dict, countries: dict) -> list[str]:
     if check == "top" and len(found["chart"]["categories"]) < 3:
         problems.append("no ranked list")
     return problems
+
+
+def outcome(item: dict, found: dict, problems: list[str], index: Index) -> str:
+    """One of the four counts every set is scored by: right; asked back with the right question among the choices;
+    wrong (answered, but the wrong question or figure); no answer (refused, or asked back without the right question)."""
+    if not problems:
+        return "right"
+    want = [] if item.get("want", "none") == "none" else item["want"]   # strict cases carry expect, not want
+    if found["mode"] == "choose" and any(w in index.docs[s["key"]]["text"].lower() for s in found.get("suggestions", [])
+                                         if s.get("key") in index.docs for w in want):
+        return "asked back"
+    return "wrong" if found["mode"] == "figures" else "no answer"
 
 
 def check_evidence(item: dict) -> None:
@@ -201,19 +223,23 @@ def main() -> int:
     print(f"Model {'off (quick)' if quick else 'on (' + ask_model.model() + ')' if ask_model.ready() else 'off (rules only)'} · {len(golden)} questions\n")
     countries = {w["survey_id"]: w.get("country") or "US" for w in waves}
     before = ask_model.spent()["usd"]
-    right, times = 0, []
+    times, counts, missed_stems = [], {"right": 0, "asked back": 0, "wrong": 0, "no answer": 0}, set()
     for item in golden:
         started = time.perf_counter()
         shown = set(item["visible_survey_ids"]) if args.strict and "visible_survey_ids" in item else visible
         found = assistant.answer(item["q"], index, shown, quick)
         times.append(time.perf_counter() - started)
         problems = score_exact(item["expect"], found, shown) if args.strict else score(item, found, countries)
-        right += not problems
+        counts[outcome(item, found, problems, index)] += 1
+        if problems:
+            missed_stems.add(stem(item["q"]))
         code = found["sources"][0]["qcode"] if found["sources"] else "-"
         print(f"{'ok  ' if not problems else 'MISS'} {times[-1]:4.1f}s {item['q'][:60]:<60} → {code:<6} {found.get('understood', '-'):<8} {'; '.join(problems)}")
+    right, stems = counts["right"], {stem(item["q"]) for item in golden}
     print(f"\n{right} of {len(golden)} right ({right / len(golden):.0%}) · median {sorted(times)[len(times) // 2]:.3f} s, "
           f"slowest {max(times):.3f} s · "
           f"model spend this run ${ask_model.spent()['usd'] - before:.4f}")
+    print("  ".join(f"{name} {n}" for name, n in counts.items()) + f"  ·  stems with a miss {len(missed_stems)} of {len(stems)}")
     return int(args.strict and right != len(golden))
 
 

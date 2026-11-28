@@ -22,6 +22,10 @@ CN:
   name: China
   family: CSI-CN
   ask_words: [china, chinese, prc, mainland]
+  # Ask CIP: China's question → the US question that asks the same (api/assistant.py ask). With the market set to Both, a
+  # question either survey asks is asked back: "US results or China results?". Answer lists differ between the two;
+  # personal finances (US CS1, China Q8) to be confirmed with the research team before it joins (01-template-spec.md T13)
+  ask_twins: {Q4: q1, Q5: q2, Q6: q3, Q9: CS2}
   language: zh        # what respondents read; the portal stores and shows the codebook's English
   currency: CNY
   active: true

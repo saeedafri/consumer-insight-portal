@@ -21,6 +21,9 @@ from etl.weekly_report import band
 
 PERIOD_KEY = {"month": lambda d: d[:7], "quarter": lambda d: f"{d[:4]}-Q{(int(d[5:7]) + 2) // 3}", "year": lambda d: d[:4]}
 AUTO_WAVES, AUTO_MONTHS = 26, 36   # a trend with no grain asked: waves up to 26 points, then months, then quarters
+# a weekly question (a survey every 10 days or less) over three months or more opens by month, however long it runs
+# (the user, 28 Nov 2026); the Ask page's Each survey button still shows every survey
+WEEKLY_DAYS, WEEKLY_MONTHS = 10, 3
 
 
 def label_date(day: str) -> str:
@@ -122,9 +125,14 @@ def calendar_label(key: str) -> str:
 
 
 def auto_grain(indexes: list[int], dates: list[str]) -> str:
+    """The grain of a trend asked with none: weekly questions by month, others by wave while readable."""
+    months = {dates[i][:7] for i in indexes}
+    days = [date.fromisoformat(dates[i]) for i in indexes]
+    gaps = sorted((b - a).days for a, b in zip(days, days[1:]))
+    if gaps and gaps[len(gaps) // 2] <= WEEKLY_DAYS and len(months) >= WEEKLY_MONTHS:
+        return "month"
     if len(indexes) <= AUTO_WAVES:
         return "wave"
-    months = {dates[i][:7] for i in indexes}
     return "month" if len(months) <= AUTO_MONTHS else "quarter"
 
 
